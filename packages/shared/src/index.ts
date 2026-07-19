@@ -62,6 +62,8 @@ export interface RulesConfig {
   readonly footSize: number;
   /** Extra decks beyond one per player; decks in play = playerCount + extraDecks. */
   readonly extraDecks: number;
+  /** Flip one card from the stock to start the discard pile after dealing (assumption; confirm). */
+  readonly initialDiscardFlip: boolean;
   readonly mode: GameMode;
   readonly pauseEnabled: boolean;
   readonly timers: StageTimers;
@@ -78,6 +80,7 @@ export const EAST_COAST: RulesConfig = {
   handSize: 14,
   footSize: 14,
   extraDecks: 1,
+  initialDiscardFlip: true,
   mode: "family",
   pauseEnabled: true,
   timers: { drawMs: 30000, meldMs: 45000, discardMs: 20000, meldIncrementMs: 10000 },
@@ -88,3 +91,32 @@ export const WEST_COAST: RulesConfig = {
   ...EAST_COAST,
   wildRatio: "naturals-equal-wilds",
 };
+
+export type Zone = "hand" | "foot";
+
+export type Phase = "draw" | "play" | "discard";
+
+export interface Meld {
+  readonly rank: Rank;
+  readonly cards: readonly Card[];
+}
+
+export interface PlayerState {
+  readonly hand: readonly Card[];
+  readonly foot: readonly Card[];
+  readonly melds: readonly Meld[];
+  readonly isDown: boolean;
+  readonly inFoot: boolean;
+  readonly footPending: boolean;
+}
+
+export interface GameState {
+  readonly config: RulesConfig;
+  readonly seed: number;
+  readonly roundNumber: number;
+  readonly players: readonly PlayerState[];
+  readonly currentSeat: number;
+  readonly phase: Phase;
+  readonly stock: readonly Card[];
+  readonly discard: readonly Card[];
+}
