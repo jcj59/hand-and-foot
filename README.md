@@ -1,6 +1,6 @@
 # Hand and Foot
 
-An online multiplayer implementation of Hand and Foot (a Canasta variant), playable in the browser with friends via room codes.
+An online multiplayer implementation of Hand and Foot, playable in the browser with friends via room codes.
 
 ## Status
 
