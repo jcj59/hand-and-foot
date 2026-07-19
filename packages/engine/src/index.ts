@@ -1,6 +1,7 @@
 import { EAST_COAST, type RulesConfig } from "@hf/shared";
 
 export * from "./deck";
+export * from "./rng";
 
 export const defaultConfig: RulesConfig = EAST_COAST;
 
