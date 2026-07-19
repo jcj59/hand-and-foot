@@ -21,6 +21,21 @@ export function isWild(rank: Rank): boolean {
   return WILD_RANKS.has(rank);
 }
 
+/** A card is red if it is a diamond or a heart. */
+export function isRed(card: Card): boolean {
+  return card.suit === "diamonds" || card.suit === "hearts";
+}
+
+/** Red threes are a penalty card and can never be melded. */
+export function isRedThree(card: Card): boolean {
+  return card.rank === "3" && isRed(card);
+}
+
+/** Black threes are meldable only from the foot, as a book of seven or more. */
+export function isBlackThree(card: Card): boolean {
+  return card.rank === "3" && (card.suit === "clubs" || card.suit === "spades");
+}
+
 export type GameMode = "family" | "competitive";
 
 /** How wild cards may be mixed into a meld (the East Coast vs. West Coast difference). */
@@ -45,6 +60,8 @@ export interface RulesConfig {
   readonly goOutDirtyBooks: number;
   readonly handSize: number;
   readonly footSize: number;
+  /** Extra decks beyond one per player; decks in play = playerCount + extraDecks. */
+  readonly extraDecks: number;
   readonly mode: GameMode;
   readonly pauseEnabled: boolean;
   readonly timers: StageTimers;
@@ -60,6 +77,7 @@ export const EAST_COAST: RulesConfig = {
   goOutDirtyBooks: 2,
   handSize: 14,
   footSize: 14,
+  extraDecks: 1,
   mode: "family",
   pauseEnabled: true,
   timers: { drawMs: 30000, meldMs: 45000, discardMs: 20000, meldIncrementMs: 10000 },
