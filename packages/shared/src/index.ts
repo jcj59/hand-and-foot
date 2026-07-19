@@ -120,3 +120,31 @@ export interface GameState {
   readonly stock: readonly Card[];
   readonly discard: readonly Card[];
 }
+
+/** What one player can see of another player: counts, not hidden card contents. */
+export interface OpponentView {
+  readonly seat: number;
+  readonly handCount: number;
+  readonly footCount: number;
+  readonly melds: readonly Meld[];
+  readonly isDown: boolean;
+  readonly inFoot: boolean;
+}
+
+/** The filtered game state a single player is allowed to see (the anti-cheat boundary). */
+export interface PlayerView {
+  readonly seat: number;
+  readonly hand: readonly Card[];
+  /** Own foot cards, revealed only once picked up (inFoot); otherwise null. */
+  readonly foot: readonly Card[] | null;
+  readonly footCount: number;
+  readonly melds: readonly Meld[];
+  readonly isDown: boolean;
+  readonly inFoot: boolean;
+  readonly opponents: readonly OpponentView[];
+  readonly discard: readonly Card[];
+  readonly stockCount: number;
+  readonly currentSeat: number;
+  readonly phase: Phase;
+  readonly roundNumber: number;
+}
