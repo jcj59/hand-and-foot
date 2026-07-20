@@ -6,10 +6,11 @@ export * from "./deal";
 export * from "./view";
 export * from "./meld";
 export * from "./scoring";
+export * from "./scoreRound";
 export * from "./reducer";
 export * from "./feasibility";
 export * from "./goout";
-export * from "./scoreRound";
+export * from "./legal";
 
 export const defaultConfig: RulesConfig = EAST_COAST;
 
