@@ -10,11 +10,10 @@ import { cardValue, classifyBook } from "./scoring";
  * whole submission is validated against a working copy before anything changes,
  * so an invalid submission leaves the state untouched.
  *
- * A player who is not yet down must, in this single turn, lay melds whose value
- * meets the round minimum, after which they are marked down and the minimum no
- * longer applies. The value counted is the sum of the face values of the cards
- * laid this turn plus the book bonus for any book (seven or more) completed in
- * the same turn.
+ * A player who is not yet down must meet the round minimum in this single turn
+ * (card values laid plus book bonuses for books completed this turn), after
+ * which they are marked down. If melding empties the hand, the player picks up
+ * their foot immediately and play continues in the same turn.
  */
 export function applyPlayMelds(state: GameState, plays: readonly MeldPlay[]): ApplyResult {
   if (state.phase !== "play") {
@@ -80,6 +79,10 @@ export function applyPlayMelds(state: GameState, plays: readonly MeldPlay[]): Ap
 
   const newMelds: Meld[] = [...melds.entries()].map(([rank, cards]) => ({ rank, cards }));
   return ok(
-    updatePlayer(state, seat, (p) => setActiveCards({ ...p, melds: newMelds, isDown: down }, zone)),
+    updatePlayer(state, seat, (p) => {
+      const withZone = setActiveCards({ ...p, melds: newMelds, isDown: down }, zone);
+      const enterFoot = !p.inFoot && zone.length === 0 && p.foot.length > 0;
+      return enterFoot ? { ...withZone, inFoot: true } : withZone;
+    }),
   );
 }
