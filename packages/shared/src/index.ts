@@ -176,3 +176,16 @@ export interface PlayerView {
   readonly phase: Phase;
   readonly roundNumber: number;
 }
+
+/** One meld a player lays or extends: the cards to add and the rank they form. */
+export interface MeldPlay {
+  readonly rank: Rank;
+  readonly cardIds: readonly string[];
+}
+
+/** A player action submitted to the engine. */
+export type Action =
+  | { readonly type: "draw" }
+  | { readonly type: "takePile" }
+  | { readonly type: "playMelds"; readonly melds: readonly MeldPlay[] }
+  | { readonly type: "discard"; readonly cardId: string };
