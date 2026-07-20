@@ -5,15 +5,15 @@ import { cardValue, classifyBook } from "./scoring";
 
 /**
  * Lay new melds and extend existing ones from the current player's active zone.
- * Each MeldPlay targets the single meld of its rank (creating it if absent,
- * extending it if present), which enforces one meld per rank per player. The
- * whole submission is validated against a working copy before anything changes,
- * so an invalid submission leaves the state untouched.
+ * Each MeldPlay targets the single meld of its rank, which enforces one meld per
+ * rank per player. The whole submission is validated against a working copy
+ * before anything changes, so an invalid submission leaves the state untouched.
  *
- * A player who is not yet down must meet the round minimum in this single turn
- * (card values laid plus book bonuses for books completed this turn), after
- * which they are marked down. If melding empties the hand, the player picks up
- * their foot immediately and play continues in the same turn.
+ * A player who is not yet down must meet the round minimum in this single turn,
+ * after which they are marked down. The Marva rule is the exception: if the
+ * submission lays the player's entire hand and sends them into the foot, it is
+ * accepted even below the minimum (and the player is then down). If melding
+ * empties the hand, the player picks up their foot and play continues.
  */
 export function applyPlayMelds(state: GameState, plays: readonly MeldPlay[]): ApplyResult {
   if (state.phase !== "play") {
@@ -57,6 +57,7 @@ export function applyPlayMelds(state: GameState, plays: readonly MeldPlay[]): Ap
     melds.set(play.rank, combined);
   }
 
+  const emptiesHand = !player.inFoot && zone.length === 0 && player.foot.length > 0;
   let down = player.isDown;
   if (!player.isDown) {
     const minimum = state.config.layDownMinimums[state.roundNumber - 1] ?? 0;
@@ -71,7 +72,7 @@ export function applyPlayMelds(state: GameState, plays: readonly MeldPlay[]): Ap
             : state.config.scoring.dirtyBookBonus;
       }
     }
-    if (value < minimum) {
+    if (value < minimum && !(state.config.marvaRule && emptiesHand)) {
       return fail(`this lay-down is worth ${value}, below the round minimum of ${minimum}`);
     }
     down = true;
@@ -81,8 +82,7 @@ export function applyPlayMelds(state: GameState, plays: readonly MeldPlay[]): Ap
   return ok(
     updatePlayer(state, seat, (p) => {
       const withZone = setActiveCards({ ...p, melds: newMelds, isDown: down }, zone);
-      const enterFoot = !p.inFoot && zone.length === 0 && p.foot.length > 0;
-      return enterFoot ? { ...withZone, inFoot: true } : withZone;
+      return emptiesHand ? { ...withZone, inFoot: true } : withZone;
     }),
   );
 }
