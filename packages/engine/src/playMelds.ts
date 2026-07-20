@@ -1,4 +1,12 @@
-import type { Card, GameState, Meld, MeldPlay, Rank } from "@hf/shared";
+import {
+  type Card,
+  type GameState,
+  type Meld,
+  type MeldPlay,
+  type Rank,
+  isBlackThree,
+  isRedThree,
+} from "@hf/shared";
 import { type ApplyResult, activeCards, fail, ok, setActiveCards, updatePlayer } from "./core";
 import { naturalRank, validateMeld } from "./meld";
 import { cardValue, classifyBook } from "./scoring";
@@ -9,11 +17,11 @@ import { cardValue, classifyBook } from "./scoring";
  * rank per player. The whole submission is validated against a working copy
  * before anything changes, so an invalid submission leaves the state untouched.
  *
- * A player who is not yet down must meet the round minimum in this single turn,
- * after which they are marked down. The Marva rule is the exception: if the
- * submission lays the player's entire hand and sends them into the foot, it is
- * accepted even below the minimum (and the player is then down). If melding
- * empties the hand, the player picks up their foot and play continues.
+ * A player who is not yet down must meet the round minimum in this single turn
+ * unless the Marva rule applies (entire hand laid, going to the foot). Red threes
+ * can never be melded; black threes can be melded only from the foot and only as
+ * a book of seven or more. If melding empties the hand, the player picks up their
+ * foot and play continues.
  */
 export function applyPlayMelds(state: GameState, plays: readonly MeldPlay[]): ApplyResult {
   if (state.phase !== "play") {
@@ -44,8 +52,19 @@ export function applyPlayMelds(state: GameState, plays: readonly MeldPlay[]): Ap
       taken.push(zone[idx]);
       zone = [...zone.slice(0, idx), ...zone.slice(idx + 1)];
     }
+    if (taken.some(isRedThree)) {
+      return fail("red threes can never be melded");
+    }
     laid.push(...taken);
     const combined = [...(melds.get(play.rank) ?? []), ...taken];
+    if (combined.some(isBlackThree)) {
+      if (!player.inFoot) {
+        return fail("black threes can only be melded from the foot");
+      }
+      if (combined.length < 7) {
+        return fail("black threes can only be melded as a book of seven or more");
+      }
+    }
     const validation = validateMeld(combined, state.config);
     if (!validation.valid) {
       return fail(validation.reason);
