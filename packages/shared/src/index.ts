@@ -49,6 +49,21 @@ export interface StageTimers {
   readonly meldIncrementMs: number;
 }
 
+/** Point values and bonuses used when scoring a round. */
+export interface ScoringConfig {
+  readonly joker: number;
+  readonly two: number;
+  readonly ace: number;
+  readonly tenToKing: number;
+  readonly fourToNine: number;
+  readonly blackThree: number;
+  /** Signed value of a red three (a penalty; never melded). */
+  readonly redThree: number;
+  readonly cleanBookBonus: number;
+  readonly dirtyBookBonus: number;
+  readonly goOutBonus: number;
+}
+
 export interface RulesConfig {
   /** Number of rounds in the match (1 to 4). */
   readonly rounds: number;
@@ -64,6 +79,7 @@ export interface RulesConfig {
   readonly extraDecks: number;
   /** Flip one card from the stock to start the discard pile after dealing (assumption; confirm). */
   readonly initialDiscardFlip: boolean;
+  readonly scoring: ScoringConfig;
   readonly mode: GameMode;
   readonly pauseEnabled: boolean;
   readonly timers: StageTimers;
@@ -81,6 +97,18 @@ export const EAST_COAST: RulesConfig = {
   footSize: 14,
   extraDecks: 1,
   initialDiscardFlip: true,
+  scoring: {
+    joker: 50,
+    two: 20,
+    ace: 15,
+    tenToKing: 10,
+    fourToNine: 5,
+    blackThree: 5,
+    redThree: -500,
+    cleanBookBonus: 500,
+    dirtyBookBonus: 300,
+    goOutBonus: 100,
+  },
   mode: "family",
   pauseEnabled: true,
   timers: { drawMs: 30000, meldMs: 45000, discardMs: 20000, meldIncrementMs: 10000 },

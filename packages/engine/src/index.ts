@@ -5,6 +5,7 @@ export * from "./rng";
 export * from "./deal";
 export * from "./view";
 export * from "./meld";
+export * from "./scoring";
 
 export const defaultConfig: RulesConfig = EAST_COAST;
 
