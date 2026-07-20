@@ -1,16 +1,20 @@
 import type { Card, GameState, Meld, MeldPlay, Rank } from "@hf/shared";
 import { type ApplyResult, activeCards, fail, ok, setActiveCards, updatePlayer } from "./core";
 import { naturalRank, validateMeld } from "./meld";
+import { cardValue, classifyBook } from "./scoring";
 
 /**
  * Lay new melds and extend existing ones from the current player's active zone.
  * Each MeldPlay targets the single meld of its rank (creating it if absent,
- * extending it if present), which is how one-meld-per-rank is enforced: there is
- * never a way to make a second meld of a rank you already hold. The whole
- * submission is validated against a working copy before anything changes, so an
- * invalid submission leaves the state untouched. The getting-down minimum for a
- * player's first lay-down is added in the next diff; this handles the mechanics
- * for a player who is already down.
+ * extending it if present), which enforces one meld per rank per player. The
+ * whole submission is validated against a working copy before anything changes,
+ * so an invalid submission leaves the state untouched.
+ *
+ * A player who is not yet down must, in this single turn, lay melds whose value
+ * meets the round minimum, after which they are marked down and the minimum no
+ * longer applies. The value counted is the sum of the face values of the cards
+ * laid this turn plus the book bonus for any book (seven or more) completed in
+ * the same turn.
  */
 export function applyPlayMelds(state: GameState, plays: readonly MeldPlay[]): ApplyResult {
   if (state.phase !== "play") {
@@ -24,8 +28,13 @@ export function applyPlayMelds(state: GameState, plays: readonly MeldPlay[]): Ap
   const player = state.players[seat];
   let zone: Card[] = [...activeCards(player)];
   const melds = new Map<Rank, Card[]>();
-  for (const m of player.melds) melds.set(m.rank, [...m.cards]);
+  const beforeSize = new Map<Rank, number>();
+  for (const m of player.melds) {
+    melds.set(m.rank, [...m.cards]);
+    beforeSize.set(m.rank, m.cards.length);
+  }
 
+  const laid: Card[] = [];
   for (const play of plays) {
     const taken: Card[] = [];
     for (const id of play.cardIds) {
@@ -36,6 +45,7 @@ export function applyPlayMelds(state: GameState, plays: readonly MeldPlay[]): Ap
       taken.push(zone[idx]);
       zone = [...zone.slice(0, idx), ...zone.slice(idx + 1)];
     }
+    laid.push(...taken);
     const combined = [...(melds.get(play.rank) ?? []), ...taken];
     const validation = validateMeld(combined, state.config);
     if (!validation.valid) {
@@ -48,6 +58,28 @@ export function applyPlayMelds(state: GameState, plays: readonly MeldPlay[]): Ap
     melds.set(play.rank, combined);
   }
 
+  let down = player.isDown;
+  if (!player.isDown) {
+    const minimum = state.config.layDownMinimums[state.roundNumber - 1] ?? 0;
+    let value = laid.reduce((sum, c) => sum + cardValue(c, state.config), 0);
+    for (const [rank, cards] of melds) {
+      const before = beforeSize.get(rank) ?? 0;
+      if (cards.length >= 7 && before < 7) {
+        const kind = classifyBook({ rank, cards });
+        value +=
+          kind === "clean"
+            ? state.config.scoring.cleanBookBonus
+            : state.config.scoring.dirtyBookBonus;
+      }
+    }
+    if (value < minimum) {
+      return fail(`this lay-down is worth ${value}, below the round minimum of ${minimum}`);
+    }
+    down = true;
+  }
+
   const newMelds: Meld[] = [...melds.entries()].map(([rank, cards]) => ({ rank, cards }));
-  return ok(updatePlayer(state, seat, (p) => setActiveCards({ ...p, melds: newMelds }, zone)));
+  return ok(
+    updatePlayer(state, seat, (p) => setActiveCards({ ...p, melds: newMelds, isDown: down }, zone)),
+  );
 }
