@@ -11,6 +11,7 @@ export * from "./reducer";
 export * from "./feasibility";
 export * from "./goout";
 export * from "./legal";
+export * from "./replay";
 
 export const defaultConfig: RulesConfig = EAST_COAST;
 
