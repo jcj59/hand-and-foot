@@ -79,6 +79,8 @@ export interface RulesConfig {
   readonly extraDecks: number;
   /** Flip one card from the stock to start the discard pile after dealing (assumption; confirm). */
   readonly initialDiscardFlip: boolean;
+  /** What happens when the stock runs out mid-round. */
+  readonly stockExhaustion: "reshuffle" | "end";
   readonly scoring: ScoringConfig;
   readonly mode: GameMode;
   readonly pauseEnabled: boolean;
@@ -97,6 +99,7 @@ export const EAST_COAST: RulesConfig = {
   footSize: 14,
   extraDecks: 1,
   initialDiscardFlip: true,
+  stockExhaustion: "reshuffle",
   scoring: {
     joker: 50,
     two: 20,
