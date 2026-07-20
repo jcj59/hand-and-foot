@@ -2,6 +2,7 @@ import type { Action, GameState } from "@hf/shared";
 import { type ApplyResult, fail } from "./core";
 import { applyDraw } from "./draw";
 import { applyDiscard } from "./discard";
+import { applyPlayMelds } from "./playMelds";
 
 export type { ApplyResult };
 
@@ -19,7 +20,8 @@ export function applyAction(state: GameState, action: Action): ApplyResult {
     case "discard":
       return applyDiscard(state, action.cardId);
     case "playMelds":
+      return applyPlayMelds(state, action.melds);
     case "takePile":
-      return fail(`the "${action.type}" action is not yet implemented`);
+      return fail(`the "takePile" action is not yet implemented`);
   }
 }
