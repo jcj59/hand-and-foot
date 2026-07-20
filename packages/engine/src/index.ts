@@ -8,6 +8,7 @@ export * from "./meld";
 export * from "./scoring";
 export * from "./reducer";
 export * from "./feasibility";
+export * from "./goout";
 
 export const defaultConfig: RulesConfig = EAST_COAST;
 

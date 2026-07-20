@@ -54,7 +54,7 @@ describe("red and black three rules", () => {
 
   it("rejects a black-three meld of fewer than seven cards", () => {
     const blacks = cards("3", 3, "spades");
-    const s = gs(player({ foot: blacks, inFoot: true }));
+    const s = gs(player({ foot: [...blacks, card("9")], inFoot: true }));
     const r = applyAction(s, {
       type: "playMelds",
       melds: [{ rank: "3", cardIds: blacks.map((c) => c.id) }],
@@ -64,7 +64,9 @@ describe("red and black three rules", () => {
 
   it("accepts a black-three book of seven from the foot and classifies it dirty", () => {
     const blacks = cards("3", 7, "spades");
-    const s = gs(player({ foot: blacks, inFoot: true }));
+    // A spare foot card so melding the book does not empty the foot (which would
+    // require the go-out books).
+    const s = gs(player({ foot: [...blacks, card("9")], inFoot: true }));
     const r = applyAction(s, {
       type: "playMelds",
       melds: [{ rank: "3", cardIds: blacks.map((c) => c.id) }],

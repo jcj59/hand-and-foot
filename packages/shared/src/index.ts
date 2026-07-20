@@ -149,6 +149,10 @@ export interface GameState {
   readonly phase: Phase;
   readonly stock: readonly Card[];
   readonly discard: readonly Card[];
+  /** True once the round has ended (a player has gone out). */
+  readonly roundEnded?: boolean;
+  /** Remaining turns in the final lap after a without-discard go-out. */
+  readonly finalLapRemaining?: number;
 }
 
 /** What one player can see of another player: counts, not hidden card contents. */

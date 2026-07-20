@@ -10,17 +10,19 @@ import {
 import { type ApplyResult, activeCards, fail, ok, setActiveCards, updatePlayer } from "./core";
 import { naturalRank, validateMeld } from "./meld";
 import { cardValue, classifyBook } from "./scoring";
+import { canGoOut } from "./goout";
 
 /**
  * Lay new melds and extend existing ones from the current player's active zone.
- * Each MeldPlay targets the single meld of its rank, which enforces one meld per
- * rank per player. The whole submission is validated against a working copy
- * before anything changes, so an invalid submission leaves the state untouched.
+ * Each MeldPlay targets the single meld of its rank, enforcing one meld per rank
+ * per player. The submission is validated against a working copy before anything
+ * changes, so an invalid submission leaves state untouched.
  *
- * A player who is not yet down must meet the round minimum this turn unless the
- * Marva rule applies. Red threes can never be melded; black threes only from the
- * foot as a book of seven or more. Emptying the hand picks up the foot. Playing a
- * card taken from the pile this turn satisfies the take-pile obligation.
+ * Rules layered here: the getting-down minimum (with the Marva exception), red
+ * threes never meldable and black threes only from the foot as a book of seven,
+ * the take-pile obligation, foot pickup when the hand empties, and going out
+ * without a discard when melding empties the foot (which requires the go-out
+ * books and starts a final lap for the other players).
  */
 export function applyPlayMelds(state: GameState, plays: readonly MeldPlay[]): ApplyResult {
   if (state.phase !== "play") {
@@ -76,6 +78,7 @@ export function applyPlayMelds(state: GameState, plays: readonly MeldPlay[]): Ap
   }
 
   const emptiesHand = !player.inFoot && zone.length === 0 && player.foot.length > 0;
+  const emptiesFoot = player.inFoot && zone.length === 0;
   let down = player.isDown;
   if (!player.isDown) {
     const minimum = state.config.layDownMinimums[state.roundNumber - 1] ?? 0;
@@ -99,11 +102,25 @@ export function applyPlayMelds(state: GameState, plays: readonly MeldPlay[]): Ap
   const owed = player.pickedUp ?? [];
   const obligationMet = owed.length > 0 && laid.some((c) => owed.includes(c.id));
   const newMelds: Meld[] = [...melds.entries()].map(([rank, cards]) => ({ rank, cards }));
-  return ok(
-    updatePlayer(state, seat, (p) => {
-      const withZone = setActiveCards({ ...p, melds: newMelds, isDown: down }, zone);
-      const withFoot = emptiesHand ? { ...withZone, inFoot: true } : withZone;
-      return obligationMet ? { ...withFoot, pickedUp: [] } : withFoot;
-    }),
-  );
+  const nextState = updatePlayer(state, seat, (p) => {
+    const withZone = setActiveCards({ ...p, melds: newMelds, isDown: down }, zone);
+    const withFoot = emptiesHand ? { ...withZone, inFoot: true } : withZone;
+    return obligationMet ? { ...withFoot, pickedUp: [] } : withFoot;
+  });
+
+  // Going out without a discard: melding emptied the foot.
+  if (emptiesFoot) {
+    if (!canGoOut(nextState.players[seat], state.config)) {
+      return fail("you cannot go out yet: you still need the required books");
+    }
+    const nextSeat = (seat + 1) % state.players.length;
+    return ok({
+      ...nextState,
+      currentSeat: nextSeat,
+      phase: "draw",
+      finalLapRemaining: state.players.length - 1,
+    });
+  }
+
+  return ok(nextState);
 }
