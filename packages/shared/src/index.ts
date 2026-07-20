@@ -136,6 +136,8 @@ export interface PlayerState {
   readonly isDown: boolean;
   readonly inFoot: boolean;
   readonly footPending: boolean;
+  /** Ids of pile cards taken this turn that still owe a play (take-pile obligation). */
+  readonly pickedUp?: readonly string[];
 }
 
 export interface GameState {

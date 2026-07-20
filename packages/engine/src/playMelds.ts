@@ -17,11 +17,10 @@ import { cardValue, classifyBook } from "./scoring";
  * rank per player. The whole submission is validated against a working copy
  * before anything changes, so an invalid submission leaves the state untouched.
  *
- * A player who is not yet down must meet the round minimum in this single turn
- * unless the Marva rule applies (entire hand laid, going to the foot). Red threes
- * can never be melded; black threes can be melded only from the foot and only as
- * a book of seven or more. If melding empties the hand, the player picks up their
- * foot and play continues.
+ * A player who is not yet down must meet the round minimum this turn unless the
+ * Marva rule applies. Red threes can never be melded; black threes only from the
+ * foot as a book of seven or more. Emptying the hand picks up the foot. Playing a
+ * card taken from the pile this turn satisfies the take-pile obligation.
  */
 export function applyPlayMelds(state: GameState, plays: readonly MeldPlay[]): ApplyResult {
   if (state.phase !== "play") {
@@ -97,11 +96,14 @@ export function applyPlayMelds(state: GameState, plays: readonly MeldPlay[]): Ap
     down = true;
   }
 
+  const owed = player.pickedUp ?? [];
+  const obligationMet = owed.length > 0 && laid.some((c) => owed.includes(c.id));
   const newMelds: Meld[] = [...melds.entries()].map(([rank, cards]) => ({ rank, cards }));
   return ok(
     updatePlayer(state, seat, (p) => {
       const withZone = setActiveCards({ ...p, melds: newMelds, isDown: down }, zone);
-      return emptiesHand ? { ...withZone, inFoot: true } : withZone;
+      const withFoot = emptiesHand ? { ...withZone, inFoot: true } : withZone;
+      return obligationMet ? { ...withFoot, pickedUp: [] } : withFoot;
     }),
   );
 }

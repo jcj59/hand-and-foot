@@ -4,9 +4,9 @@ import { type ApplyResult, activeCards, fail, ok, setActiveCards, updatePlayer }
 /**
  * Discard exactly one card from the current player's active zone to the top of
  * the discard pile, ending the turn: play advances to the next seat in the draw
- * phase. If the discard empties the hand (and the player has not yet reached the
- * foot), the foot becomes pending, so on this player's next turn it is picked up
- * in place of a draw.
+ * phase. If a card taken from the pile this turn still owes a play, the turn
+ * cannot be ended yet. If the discard empties the hand (and the player has not
+ * yet reached the foot), the foot becomes pending for the player's next turn.
  */
 export function applyDiscard(state: GameState, cardId: string): ApplyResult {
   if (state.phase !== "play") {
@@ -14,6 +14,9 @@ export function applyDiscard(state: GameState, cardId: string): ApplyResult {
   }
   const seat = state.currentSeat;
   const player = state.players[seat];
+  if ((player.pickedUp ?? []).length > 0) {
+    return fail("you must play at least one card taken from the pile before discarding");
+  }
   const cards = activeCards(player);
   const idx = cards.findIndex((c) => c.id === cardId);
   if (idx === -1) {
