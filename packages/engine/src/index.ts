@@ -1,7 +1,17 @@
 import { EAST_COAST, type RulesConfig } from "@hf/shared";
 
-// Placeholder for the pure rules engine. The real (state, action) => state reducer,
-// scoring, and validation land in M1. This just proves the workspace wiring resolves.
+export * from "./deck";
+export * from "./rng";
+export * from "./deal";
+export * from "./view";
+export * from "./meld";
+export * from "./scoring";
+export * from "./scoreRound";
+export * from "./reducer";
+export * from "./feasibility";
+export * from "./goout";
+export * from "./legal";
+export * from "./replay";
 
 export const defaultConfig: RulesConfig = EAST_COAST;
 
