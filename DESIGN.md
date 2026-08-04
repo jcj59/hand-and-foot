@@ -104,12 +104,14 @@ player can.
 ### Phase-grained actions with client-side staging
 
 A turn is represented as a short sequence of atomic, server-validated actions (draw, play melds,
-discard) that correspond to the game's phases, rather than a single whole-turn submission or a
-per-card stream. The rules require this: the per-round minimum must be validated across an entire
-lay-down at once, and a drawn card is concealed until the server reveals it, so a turn cannot be
-planned in advance in a single message. The client stages a player's melds locally, with a running
-total against the minimum, and submits only committed actions. This keeps the server the sole
-authority while the interface remains responsive.
+discard) rather than a single whole-turn submission or a per-card stream. Only draw and play melds
+correspond to a game phase; the discard ends the play phase rather than being one, and a player who
+has shed every card ends the turn without it. The rules require this action-grained shape regardless:
+the per-round minimum must be validated across an entire lay-down at once, and a drawn card is
+concealed until the server reveals it, so a turn cannot be planned in advance in a single message.
+The client stages a player's melds locally, with a running total against the minimum, and submits
+only committed actions. This keeps the server the sole authority while the interface remains
+responsive.
 
 ### Individual scoring rather than partnerships
 
