@@ -9,7 +9,7 @@ import {
   type Suit,
 } from "@hf/shared";
 import { applyAction } from "./reducer";
-import { canGoOut } from "./goout";
+import { bookCounts, canGoOut } from "./goout";
 
 let idc = 0;
 function card(rank: Rank, suit: Suit = "clubs"): Card {
@@ -52,12 +52,39 @@ function table(p0: PlayerState, n: number): GameState {
 
 const books = [cleanBook("K"), dirtyBook("Q"), dirtyBook("J")];
 
+describe("bookCounts", () => {
+  it("counts completed books by kind and ignores incomplete melds", () => {
+    const p = player({
+      melds: [cleanBook("K"), dirtyBook("Q"), dirtyBook("J"), { rank: "5", cards: cards("5", 4) }],
+    });
+    expect(bookCounts(p)).toEqual({ clean: 1, dirty: 2 });
+  });
+
+  it("counts nothing for a player with no melds", () => {
+    expect(bookCounts(player({}))).toEqual({ clean: 0, dirty: 0 });
+  });
+});
+
 describe("canGoOut", () => {
   it("is false without the required books", () => {
     expect(
       canGoOut(player({ inFoot: true, melds: [cleanBook("K"), dirtyBook("Q")] }), EAST_COAST),
     ).toBe(false);
   });
+  // The two requirements are independent: neither one on its own is enough. The
+  // clean requirement is the easier one to drop by accident, because a dirty book
+  // is the commoner shape.
+  it("is false with enough dirty books but no clean book", () => {
+    const p = player({ inFoot: true, melds: [dirtyBook("Q"), dirtyBook("J"), dirtyBook("10")] });
+    expect(canGoOut(p, EAST_COAST)).toBe(false);
+    expect(bookCounts(p)).toEqual({ clean: 0, dirty: 3 });
+  });
+
+  it("is false with enough clean books but too few dirty books", () => {
+    const p = player({ inFoot: true, melds: [cleanBook("K"), cleanBook("A")] });
+    expect(canGoOut(p, EAST_COAST)).toBe(false);
+  });
+
   it("is false when not in the foot", () => {
     expect(canGoOut(player({ inFoot: false, melds: books }), EAST_COAST)).toBe(false);
   });
@@ -97,9 +124,68 @@ describe("going out", () => {
     expect(r.state.roundEnded).toBe(true);
   });
 
-  it("rejects going out without the required books", () => {
+  it("runs the final lap through every other seat and never returns to the winner", () => {
+    const tens = cards("10", 3);
+    const winner = player({ inFoot: true, foot: [...tens], melds: books });
+    const s: GameState = {
+      config: EAST_COAST,
+      seed: 0,
+      roundNumber: 1,
+      players: [
+        winner,
+        player({ isDown: false, hand: [card("6"), card("7")] }),
+        player({ isDown: false, hand: [card("6"), card("7")] }),
+        player({ isDown: false, hand: [card("6"), card("7")] }),
+      ],
+      currentSeat: 0,
+      phase: "play",
+      stock: cards("9", 10),
+      discard: [card("8")],
+    };
+
+    const out = applyAction(s, {
+      type: "playMelds",
+      melds: [{ rank: "10", cardIds: tens.map((c) => c.id) }],
+    });
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    let state = out.state;
+    expect(state.wentOutSeat).toBe(0);
+    expect(state.finalLapRemaining).toBe(3);
+    const winnerAfterGoingOut = JSON.stringify(state.players[0]);
+
+    // Each remaining seat takes exactly one turn.
+    for (const seat of [1, 2, 3]) {
+      expect(state.currentSeat).toBe(seat);
+      expect(state.roundEnded ?? false).toBe(false);
+      const drew = applyAction(state, { type: "draw" });
+      expect(drew.ok).toBe(true);
+      if (!drew.ok) return;
+      const disc = applyAction(drew.state, {
+        type: "discard",
+        cardId: drew.state.players[seat].hand[0].id,
+      });
+      expect(disc.ok).toBe(true);
+      if (!disc.ok) return;
+      state = disc.state;
+    }
+
+    // The lap is spent, the round is over, and the winner's cards never changed.
+    expect(state.roundEnded).toBe(true);
+    expect(state.finalLapRemaining).toBe(0);
+    expect(state.wentOutSeat).toBe(0);
+    expect(JSON.stringify(state.players[0])).toBe(winnerAfterGoingOut);
+    // Even though the seat pointer has wrapped back, the winner cannot act again.
+    expect(applyAction(state, { type: "draw" }).ok).toBe(false);
+  });
+
+  it("does not go out when the last card is shed without the required books", () => {
     const p0 = player({ inFoot: true, foot: [card("5")], melds: [cleanBook("K")] });
     const r = applyAction(table(p0, 2), { type: "discard", cardId: p0.foot[0].id });
-    expect(r.ok).toBe(false);
+    // The discard is legal; the player is simply left cardless and the round runs on.
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.state.roundEnded ?? false).toBe(false);
+    expect(r.state.wentOutSeat).toBeUndefined();
   });
 });

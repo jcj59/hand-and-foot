@@ -111,6 +111,16 @@ planned in advance in a single message. The client stages a player's melds local
 total against the minimum, and submits only committed actions. This keeps the server the sole
 authority while the interface remains responsive.
 
+### Individual scoring rather than partnerships
+
+Hand and Foot is often played in partnerships, where partners build shared books and going out is a
+team condition. This implementation scores every player individually, which is how the game is
+played in the family this was built for. The choice is structural rather than cosmetic: melds belong
+to a `PlayerState`, and the take-pile solver, the lay-down minimum, the go-out check and round
+scoring all read melds from the player taking the action. Partnership play would move melds to a
+team and change each of those, so it is a deliberate decision recorded here rather than an
+assumption to be discovered later.
+
 ### Transport
 
 I used Socket.io for the transport layer. It provides rooms, acknowledgement callbacks (which map

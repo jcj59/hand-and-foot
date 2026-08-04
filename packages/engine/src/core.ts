@@ -30,3 +30,25 @@ export function updatePlayer(
 ): GameState {
   return { ...state, players: state.players.map((p, i) => (i === seat ? fn(p) : p)) };
 }
+
+/**
+ * End the current player's turn: pass to the next seat in the draw phase and
+ * decrement a running final lap (started by a without-discard go-out), ending the
+ * round once it reaches zero. A turn normally ends with a discard, but a player
+ * who has shed every card ends it without one, so both paths share this.
+ */
+export function advanceTurn(state: GameState, seat: number): GameState {
+  let finalLap = state.finalLapRemaining;
+  let roundEnded = false;
+  if (finalLap !== undefined && finalLap > 0) {
+    finalLap -= 1;
+    if (finalLap === 0) roundEnded = true;
+  }
+  return {
+    ...state,
+    currentSeat: (seat + 1) % state.players.length,
+    phase: "draw",
+    finalLapRemaining: finalLap,
+    roundEnded,
+  };
+}

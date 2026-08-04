@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { EAST_COAST, type Card, type Meld, type Rank, type Suit } from "@hf/shared";
 import { cardValue, classifyBook, meldPoints } from "./scoring";
+import { buildShoe } from "./deck";
 
 let idc = 0;
 function card(rank: Rank, suit: Suit = "clubs"): Card {
@@ -22,6 +23,19 @@ describe("cardValue", () => {
     expect(cardValue(card("4"), EAST_COAST)).toBe(5);
     expect(cardValue(card("3", "clubs"), EAST_COAST)).toBe(5); // black three
     expect(cardValue(card("3", "hearts"), EAST_COAST)).toBe(-500); // red three
+  });
+
+  it("scores every rank a real shoe can produce", () => {
+    // No card built by buildShoe should fall through to the zero default.
+    for (const c of buildShoe(2)) {
+      expect(cardValue(c, EAST_COAST)).not.toBe(0);
+    }
+  });
+
+  it("falls back to zero for a card no scoring rule covers", () => {
+    // A suitless three cannot come out of buildShoe; this pins the defensive
+    // default so an unrecognised card is worth 0 rather than NaN or undefined.
+    expect(cardValue({ id: "odd", rank: "3", suit: null }, EAST_COAST)).toBe(0);
   });
 });
 

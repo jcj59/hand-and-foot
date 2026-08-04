@@ -17,6 +17,23 @@ describe("countWilds / naturalRank", () => {
     expect(naturalRank(meld)).toBe("K");
     expect(naturalRank([card("2"), card("JOKER")])).toBeNull();
   });
+
+  it("skips leading wilds to find the natural rank", () => {
+    expect(naturalRank([card("2"), card("JOKER"), card("9"), card("9")])).toBe("9");
+  });
+
+  // `validateMeld` rejects mixed naturals, so a caller only ever sees this on an
+  // invalid meld. `applyPlayMelds` still calls it there to name the offending rank
+  // in its error, so pin *which* rank it names: the first natural, in card order.
+  it("reports the first natural rank when the cards disagree", () => {
+    expect(naturalRank([card("K"), card("9")])).toBe("K");
+    expect(naturalRank([card("9"), card("K")])).toBe("9");
+  });
+
+  it("counts no wilds in an all-natural meld", () => {
+    expect(countWilds(cards("K", 3))).toBe(0);
+    expect(countWilds([])).toBe(0);
+  });
 });
 
 describe("validateMeld", () => {
@@ -56,5 +73,18 @@ describe("validateMeld", () => {
   it("rejects wilds equal to naturals under East Coast (2 naturals, 2 wilds)", () => {
     const meld = [...cards("5", 2), card("2"), card("2")];
     expect(isValidMeld(meld, EAST_COAST)).toBe(false);
+  });
+
+  it("rejects wilds outnumbering naturals under West Coast (2 naturals, 3 wilds)", () => {
+    const meld = [...cards("5", 2), card("2"), card("2"), card("JOKER")];
+    const r = validateMeld(meld, WEST_COAST);
+    expect(r.valid).toBe(false);
+    if (!r.valid) expect(r.reason).toMatch(/West Coast/);
+  });
+
+  it("accepts a large meld under either preset when naturals dominate", () => {
+    const meld = [...cards("8", 5), card("2"), card("JOKER")];
+    expect(isValidMeld(meld, EAST_COAST)).toBe(true);
+    expect(isValidMeld(meld, WEST_COAST)).toBe(true);
   });
 });
