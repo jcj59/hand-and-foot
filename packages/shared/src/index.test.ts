@@ -176,9 +176,10 @@ describe("rule presets", () => {
     expect(EAST_COAST.timers.incrementMs).toBeLessThan(EAST_COAST.timers.baseMs);
   });
 
-  it("keeps the whole turn, grace included, under the three minutes it promises", () => {
-    // The grace sits on top of the cap deliberately, so the worst case is
-    // cap + grace rather than cap. Pin it so nobody quietly makes it unbounded.
+  it("caps melding at three minutes and keeps the grace on top short", () => {
+    // Two separate promises, and the second is not "three minutes": the grace
+    // sits on top of the cap by design, so the real worst case for a whole turn
+    // is cap + grace. Pin both so neither quietly becomes unbounded.
     const { capMs, discardGraceMs } = EAST_COAST.timers;
     expect(capMs).toBe(180_000);
     expect(capMs + discardGraceMs).toBeLessThanOrEqual(200_000);
