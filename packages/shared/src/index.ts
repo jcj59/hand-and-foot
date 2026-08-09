@@ -65,9 +65,18 @@ export interface ScoringConfig {
 }
 
 export interface RulesConfig {
-  /** Number of rounds in the match (1 to 4). */
+  /**
+   * Number of rounds in the match. **Reserved and currently unenforced**: the first
+   * release is a single round, so nothing advances `roundNumber` past 1 and no code
+   * reads this field. It is kept so the config shape stays stable for multi-round
+   * matches (roadmap item 1); wire it up there rather than assuming it works.
+   */
   readonly rounds: number;
-  /** Per-round point minimum required to lay your first melds. */
+  /**
+   * Per-round point minimum required to lay your first melds, indexed by
+   * `roundNumber - 1`. This one *is* honored, so escalating minimums already work
+   * as soon as rounds advance.
+   */
   readonly layDownMinimums: readonly number[];
   readonly wildRatio: WildRatioRule;
   readonly marvaRule: boolean;
@@ -77,7 +86,11 @@ export interface RulesConfig {
   readonly footSize: number;
   /** Extra decks beyond one per player; decks in play = playerCount + extraDecks. */
   readonly extraDecks: number;
-  /** Flip one card from the stock to start the discard pile after dealing (assumption; confirm). */
+  /**
+   * Flip one card from the stock to start the discard pile after dealing. Confirmed
+   * as the house rule (2026-08-04). Turning it off is supported and tested; it makes
+   * the first player's take-pile impossible rather than merely unlikely.
+   */
   readonly initialDiscardFlip: boolean;
   /** What happens when the stock runs out mid-round. */
   readonly stockExhaustion: "reshuffle" | "end";
@@ -125,7 +138,13 @@ export const WEST_COAST: RulesConfig = {
 
 export type Zone = "hand" | "foot";
 
-export type Phase = "draw" | "play" | "discard";
+/**
+ * A turn is `draw -> play`; the discard is what ends the play phase rather than a
+ * phase of its own, and a player who has shed every card ends the turn without one.
+ * The client derives "you must discard now" from the play phase plus a settled
+ * take-pile obligation.
+ */
+export type Phase = "draw" | "play";
 
 export interface Meld {
   readonly rank: Rank;
@@ -152,10 +171,16 @@ export interface GameState {
   readonly phase: Phase;
   readonly stock: readonly Card[];
   readonly discard: readonly Card[];
-  /** True once the round has ended (a player has gone out). */
+  /** True once the round has ended (a player went out, or the stock ran out). */
   readonly roundEnded?: boolean;
   /** Remaining turns in the final lap after a without-discard go-out. */
   readonly finalLapRemaining?: number;
+  /**
+   * Seat of the player who went out, if any. A player may shed every card without
+   * holding the go-out books, so having no cards left is not by itself going out;
+   * only this seat earns the go-out bonus.
+   */
+  readonly wentOutSeat?: number;
 }
 
 /** What one player can see of another player: counts, not hidden card contents. */

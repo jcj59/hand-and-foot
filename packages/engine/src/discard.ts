@@ -1,14 +1,28 @@
 import type { GameState } from "@hf/shared";
-import { type ApplyResult, activeCards, fail, ok, setActiveCards, updatePlayer } from "./core";
-import { canGoOut } from "./goout";
+import {
+  type ApplyResult,
+  activeCards,
+  advanceTurn,
+  fail,
+  ok,
+  setActiveCards,
+  updatePlayer,
+} from "./core";
+import { claimsGoOut } from "./goout";
 
 /**
  * Discard exactly one card from the current player's active zone. If a picked-up
- * pile card still owes a play, the turn cannot end yet. Discarding the last card
- * of the foot is going out with a discard, which ends the round immediately and
- * requires the go-out books. Discarding the last card of the hand makes the foot
- * pending. Otherwise the turn advances to the next seat in the draw phase, and a
- * running final lap (from a without-discard go-out) is decremented.
+ * pile card still owes a play, the turn cannot end yet.
+ *
+ * Discarding the last card of the foot ends the round only if the player is the one
+ * going out. Without the books the discard is still legal: the player simply keeps
+ * playing with no cards, drawing one each turn until the books are complete, so
+ * shedding every card early is a bad position rather than an illegal move. (An
+ * earlier version rejected the discard, which deadlocked the turn: a player who
+ * had melded down to one card had no legal action left at all.)
+ *
+ * Discarding the last card of the hand makes the foot pending. Otherwise the turn
+ * advances to the next seat in the draw phase.
  */
 export function applyDiscard(state: GameState, cardId: string): ApplyResult {
   if (state.phase !== "play") {
@@ -30,12 +44,11 @@ export function applyDiscard(state: GameState, cardId: string): ApplyResult {
     setActiveCards(p, remaining),
   );
 
-  // Going out with a discard: the foot is now empty.
-  if (player.inFoot && remaining.length === 0) {
-    if (!canGoOut(player, state.config)) {
-      return fail("you cannot go out yet: you still need the required books");
-    }
-    return ok({ ...afterDiscard, roundEnded: true });
+  // Going out with a discard: the foot is now empty, the books are complete, and
+  // nobody has gone out yet. Otherwise the player has just shed every card and the
+  // turn ends normally.
+  if (player.inFoot && remaining.length === 0 && claimsGoOut(state, player)) {
+    return ok({ ...afterDiscard, roundEnded: true, wentOutSeat: seat });
   }
 
   // Emptying the hand by discarding makes the foot pending for next turn.
@@ -45,19 +58,5 @@ export function applyDiscard(state: GameState, cardId: string): ApplyResult {
     footPending: footPending || p.footPending,
   }));
 
-  // Advance the turn, decrementing a running final lap.
-  let finalLap = state.finalLapRemaining;
-  let roundEnded = false;
-  if (finalLap !== undefined && finalLap > 0) {
-    finalLap -= 1;
-    if (finalLap === 0) roundEnded = true;
-  }
-  const nextSeat = (seat + 1) % state.players.length;
-  return ok({
-    ...withFlags,
-    currentSeat: nextSeat,
-    phase: "draw",
-    finalLapRemaining: finalLap,
-    roundEnded,
-  });
+  return ok(advanceTurn(withFlags, seat));
 }

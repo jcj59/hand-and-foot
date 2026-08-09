@@ -47,4 +47,61 @@ describe("discard", () => {
     const r = applyAction(s0, { type: "discard", cardId: s0.players[0].hand[0].id });
     expect(r.ok).toBe(false);
   });
+
+  // Emptying the hand makes the foot pending — but only if there is a foot to pick
+  // up. Without that guard the player would be sent to draw an empty foot next turn
+  // and be marked `inFoot` holding nothing they ever dealt.
+  it("does not make the foot pending when there is no foot to pick up", () => {
+    const only = { id: "d-only", rank: "K" as const, suit: "clubs" as const };
+    const s: GameState = {
+      config: EAST_COAST,
+      seed: 0,
+      roundNumber: 1,
+      players: [
+        { hand: [only], foot: [], melds: [], isDown: true, inFoot: false, footPending: false },
+        { hand: [], foot: [], melds: [], isDown: false, inFoot: false, footPending: false },
+      ],
+      currentSeat: 0,
+      phase: "play",
+      stock: [{ id: "d-stock", rank: "9", suit: "clubs" }],
+      discard: [],
+    };
+    const r = applyAction(s, { type: "discard", cardId: only.id });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.state.players[0].footPending).toBe(false);
+    expect(r.state.players[0].inFoot).toBe(false);
+    expect(r.state.roundEnded ?? false).toBe(false);
+    expect(r.state.currentSeat).toBe(1);
+  });
+
+  // The contrast case: an identical discard with a real foot behind it does set the
+  // flag, so the assertion above is about the foot being empty and nothing else.
+  it("does make the foot pending when a foot is waiting", () => {
+    const only = { id: "d-only2", rank: "K" as const, suit: "clubs" as const };
+    const s: GameState = {
+      config: EAST_COAST,
+      seed: 0,
+      roundNumber: 1,
+      players: [
+        {
+          hand: [only],
+          foot: [{ id: "d-foot", rank: "5", suit: "clubs" }],
+          melds: [],
+          isDown: true,
+          inFoot: false,
+          footPending: false,
+        },
+        { hand: [], foot: [], melds: [], isDown: false, inFoot: false, footPending: false },
+      ],
+      currentSeat: 0,
+      phase: "play",
+      stock: [{ id: "d-stock2", rank: "9", suit: "clubs" }],
+      discard: [],
+    };
+    const r = applyAction(s, { type: "discard", cardId: only.id });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.state.players[0].footPending).toBe(true);
+  });
 });

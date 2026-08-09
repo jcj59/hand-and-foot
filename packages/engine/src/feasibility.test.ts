@@ -62,6 +62,24 @@ describe("canTakePile (already down)", () => {
     const s = state({ isDown: true, hand: cards("K", 3) }, []);
     expect(canTakePile(s, 0).feasible).toBe(false);
   });
+
+  // A new meld needs three naturals. Reporting a pair feasible would hand back a
+  // plan the reducer then rejects, breaking the solver's soundness guarantee.
+  it("will not form a new meld from a pair", () => {
+    const s = state({ isDown: true, hand: [card("K")] }, [card("K")]);
+    expect(canTakePile(s, 0).feasible).toBe(false);
+
+    // One more natural and the same position becomes feasible.
+    const three = state({ isDown: true, hand: cards("K", 2) }, [card("K")]);
+    expect(canTakePile(three, 0).feasible).toBe(true);
+  });
+
+  // Extending an existing meld needs only one card, which is the other half of the
+  // rule above and the reason the threshold is conditional.
+  it("extends an existing meld with a single pile card", () => {
+    const s = state({ isDown: true, melds: [{ rank: "K", cards: cards("K", 3) }] }, [card("K")]);
+    expect(canTakePile(s, 0).feasible).toBe(true);
+  });
 });
 
 describe("canTakePile (not yet down, minimum 60)", () => {
@@ -75,6 +93,34 @@ describe("canTakePile (not yet down, minimum 60)", () => {
     // hand alone makes 60 (3 kings + 3 queens); the single pile 9 cannot be played
     const s = state({ hand: [...cards("K", 3), ...cards("Q", 3)] }, [card("9")]);
     expect(canTakePile(s, 0).feasible).toBe(false);
+  });
+});
+
+describe("book bonuses in the minimum calculation", () => {
+  it("counts a book the pile would complete toward the minimum", () => {
+    // Six fours in hand plus one from the pile is a clean book: 35 in card value
+    // plus the 500 bonus clears 60, which the cards alone never would.
+    const s = state({ hand: cards("4", 6) }, [card("4")]);
+    expect(canTakePile(s, 0).feasible).toBe(true);
+  });
+
+  it("is infeasible when the same low cards fall short of a book", () => {
+    const s = state({ hand: cards("4", 2) }, [card("4")]); // three fours = 15
+    expect(canTakePile(s, 0).feasible).toBe(false);
+  });
+
+  it("does not add a second bonus for a meld that is already a book", () => {
+    const extra = card("4");
+    const s = state({ isDown: true, melds: [{ rank: "4", cards: cards("4", 7) }] }, [extra]);
+    const f = canTakePile(s, 0);
+    expect(f.feasible).toBe(true); // already down, so no minimum applies
+    expect(f.plan).toEqual([{ rank: "4", cardIds: [extra.id] }]);
+  });
+
+  it("applies no minimum in a round the config does not configure one for", () => {
+    // layDownMinimums has a single entry, so round 2 falls back to no minimum.
+    const s: GameState = { ...state({ hand: cards("4", 2) }, [card("4")]), roundNumber: 2 };
+    expect(canTakePile(s, 0).feasible).toBe(true);
   });
 });
 

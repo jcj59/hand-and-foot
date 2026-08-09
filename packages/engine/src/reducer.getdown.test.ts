@@ -83,6 +83,42 @@ describe("getting-down minimum (round 1 = 60)", () => {
     expect(withoutBook.ok).toBe(false);
   });
 
+  it("counts a dirty book's bonus toward the minimum", () => {
+    // Six fours and a wild two: 30 + 20 = 50 in card value, below 60, but seven
+    // cards containing a wild is a dirty book and its 300 bonus tips it over.
+    const sevenWithWild = [...cards("4", 6), card("2")];
+    const r = applyAction(notDown(sevenWithWild), {
+      type: "playMelds",
+      melds: [{ rank: "4", cardIds: sevenWithWild.map((c) => c.id) }],
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.state.players[0].isDown).toBe(true);
+
+    // One card fewer is not a book, so only the 45 in card value counts.
+    const sixWithWild = [...cards("4", 5), card("2")];
+    const short = applyAction(notDown(sixWithWild), {
+      type: "playMelds",
+      melds: [{ rank: "4", cardIds: sixWithWild.map((c) => c.id) }],
+    });
+    expect(short.ok).toBe(false);
+    if (short.ok) return;
+    expect(short.error).toMatch(/below the round minimum of 60/);
+  });
+
+  it("applies no minimum in a round the config does not configure one for", () => {
+    // layDownMinimums has a single entry, so round 2 falls back to no minimum.
+    const hand = cards("4", 3); // worth 15, far below 60
+    const s: GameState = { ...notDown(hand), roundNumber: 2 };
+    const r = applyAction(s, {
+      type: "playMelds",
+      melds: [{ rank: "4", cardIds: hand.map((c) => c.id) }],
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.state.players[0].isDown).toBe(true);
+  });
+
   it("applies no minimum once the player is already down", () => {
     const hand = cards("4", 3); // worth 15, well below 60
     const s = stateWith({

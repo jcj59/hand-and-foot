@@ -55,6 +55,10 @@ export function canTakePile(state: GameState, seat: number): Feasibility {
     const hasExisting = existing.has(rank);
     const canForm = hasExisting ? naturals.length >= 1 : naturals.length >= 3;
     if (!canForm) continue;
+    // Defensive, and currently unreachable: `naturals` is three or more cards of a
+    // single rank with no wilds, which every wild-ratio setting accepts. It becomes
+    // live the moment the search starts allocating wilds into plans, so it stays.
+    /* v8 ignore next */
     if (!hasExisting && !validateMeld(naturals, state.config).valid) continue;
 
     plays.push({ rank, cardIds: naturals.map((c) => c.id) });

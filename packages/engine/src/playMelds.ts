@@ -7,10 +7,18 @@ import {
   isBlackThree,
   isRedThree,
 } from "@hf/shared";
-import { type ApplyResult, activeCards, fail, ok, setActiveCards, updatePlayer } from "./core";
+import {
+  type ApplyResult,
+  activeCards,
+  advanceTurn,
+  fail,
+  ok,
+  setActiveCards,
+  updatePlayer,
+} from "./core";
 import { naturalRank, validateMeld } from "./meld";
 import { cardValue, classifyBook } from "./scoring";
-import { canGoOut } from "./goout";
+import { claimsGoOut } from "./goout";
 
 /**
  * Lay new melds and extend existing ones from the current player's active zone.
@@ -20,9 +28,10 @@ import { canGoOut } from "./goout";
  *
  * Rules layered here: the getting-down minimum (with the Marva exception), red
  * threes never meldable and black threes only from the foot as a book of seven,
- * the take-pile obligation, foot pickup when the hand empties, and going out
- * without a discard when melding empties the foot (which requires the go-out
- * books and starts a final lap for the other players).
+ * the take-pile obligation, foot pickup when the hand empties, and the two ways
+ * melding can empty the foot — going out without a discard when the go-out books
+ * are held (starting a final lap for the other players), or merely shedding every
+ * card without them, which ends the turn and leaves the player cardless.
  */
 export function applyPlayMelds(state: GameState, plays: readonly MeldPlay[]): ApplyResult {
   if (state.phase !== "play") {
@@ -108,10 +117,13 @@ export function applyPlayMelds(state: GameState, plays: readonly MeldPlay[]): Ap
     return obligationMet ? { ...withFoot, pickedUp: [] } : withFoot;
   });
 
-  // Going out without a discard: melding emptied the foot.
+  // Melding emptied the foot. For the player going out this is going out without a
+  // discard, which starts the final lap. Otherwise — no books, or someone has
+  // already gone out and this is the final lap — the player has simply shed every
+  // card; there is nothing left to discard, so the turn ends here.
   if (emptiesFoot) {
-    if (!canGoOut(nextState.players[seat], state.config)) {
-      return fail("you cannot go out yet: you still need the required books");
+    if (!claimsGoOut(state, nextState.players[seat])) {
+      return ok(advanceTurn(nextState, seat));
     }
     const nextSeat = (seat + 1) % state.players.length;
     return ok({
@@ -119,6 +131,7 @@ export function applyPlayMelds(state: GameState, plays: readonly MeldPlay[]): Ap
       currentSeat: nextSeat,
       phase: "draw",
       finalLapRemaining: state.players.length - 1,
+      wentOutSeat: seat,
     });
   }
 
