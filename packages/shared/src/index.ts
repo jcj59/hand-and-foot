@@ -41,12 +41,32 @@ export type GameMode = "family" | "competitive";
 /** How wild cards may be mixed into a meld (the East Coast vs. West Coast difference). */
 export type WildRatioRule = "naturals-exceed-wilds" | "naturals-equal-wilds";
 
-export interface StageTimers {
-  readonly drawMs: number;
-  readonly meldMs: number;
-  readonly discardMs: number;
-  /** Time added to the meld clock on each submission (Fischer-style increment). */
-  readonly meldIncrementMs: number;
+/**
+ * Pacing for a single turn. The **turn**, not the phase, is the unit of time:
+ * the discard stopped being a phase of its own, so there is no longer anything
+ * for a per-stage clock to attach to.
+ *
+ * A turn starts with `baseMs` and earns `incrementMs` for each accepted action,
+ * so a player who is actively laying down is not punished for taking the moves
+ * to do it. The accrued total can never push the turn past `capMs` from the
+ * moment it started: that hard ceiling is the whole point, since an unbounded
+ * turn is the thing the clock exists to prevent, and it also makes farming the
+ * increment harmless rather than something to police.
+ *
+ * When the clock expires with no discard played yet, `discardGraceMs` opens a
+ * discard-only window *on top of* the cap. Melding is closed, but the player
+ * still picks their own card instead of having one picked for them — which is
+ * the point of the grace, so the cap must not eat it.
+ */
+export interface TurnTimers {
+  /** Clock a turn starts with. */
+  readonly baseMs: number;
+  /** Added to the turn clock on each accepted action. */
+  readonly incrementMs: number;
+  /** Hard ceiling on one turn's wall clock, increments included. */
+  readonly capMs: number;
+  /** Discard-only window granted, on top of the cap, once the clock expires. */
+  readonly discardGraceMs: number;
 }
 
 /** Point values and bonuses used when scoring a round. */
@@ -96,8 +116,15 @@ export interface RulesConfig {
   readonly stockExhaustion: "reshuffle" | "end";
   readonly scoring: ScoringConfig;
   readonly mode: GameMode;
+  /**
+   * Whether any player may pause the table. Unrestricted by design in Family
+   * mode (2026-08-09): the player on the clock can pause their own turn, which
+   * makes `timers.capMs` a hard ceiling in Competitive play and a soft one at a
+   * family table. That is the intended trade, not an oversight — add a pause
+   * budget only if it is actually abused.
+   */
   readonly pauseEnabled: boolean;
-  readonly timers: StageTimers;
+  readonly timers: TurnTimers;
 }
 
 /** East Coast preset (default): naturals must strictly outnumber wilds; Family-paced. */
@@ -127,7 +154,7 @@ export const EAST_COAST: RulesConfig = {
   },
   mode: "family",
   pauseEnabled: true,
-  timers: { drawMs: 30000, meldMs: 45000, discardMs: 20000, meldIncrementMs: 10000 },
+  timers: { baseMs: 90_000, incrementMs: 10_000, capMs: 180_000, discardGraceMs: 20_000 },
 };
 
 /** West Coast preset: wilds may equal naturals. Otherwise identical for now. */
@@ -223,3 +250,11 @@ export type Action =
   | { readonly type: "takePile" }
   | { readonly type: "playMelds"; readonly melds: readonly MeldPlay[] }
   | { readonly type: "discard"; readonly cardId: string };
+
+/** One player's score for a completed round. */
+export interface RoundScore {
+  readonly seat: number;
+  readonly score: number;
+}
+
+export * from "./protocol";

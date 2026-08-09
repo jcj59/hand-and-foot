@@ -12,6 +12,7 @@ import { applyAction } from "./reducer";
 import { prng } from "./rng";
 import { canTakePile } from "./feasibility";
 import { naturalRank, validateMeld } from "./meld";
+import { defaultAction } from "./policy";
 import { project } from "./view";
 
 function allCardIds(state: GameState): string[] {
@@ -263,6 +264,95 @@ describe("engine invariants under play that takes the pile", () => {
     // Guards against the policy silently never taking the pile, which would make
     // the properties above a re-run of the draw/discard case.
     expect(totalTakes).toBeGreaterThan(20);
+  });
+});
+
+describe("the default policy (property-based)", () => {
+  /**
+   * The guarantee the server leans on: whatever position a player is abandoned
+   * in, there is a move to make on their behalf. A default that is merely
+   * *usually* legal is worse than none, because the one position it cannot
+   * handle is a wedged table with no way forward.
+   */
+  it("offers an action the reducer accepts at every state of a random game", () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 1_000_000 }),
+        fc.integer({ min: 2, max: 6 }),
+        (seed, players) => {
+          const check = (state: GameState): void => {
+            if (state.roundEnded) {
+              expect(defaultAction(state)).toBeNull();
+              return;
+            }
+            const action = defaultAction(state);
+            expect(action, `no default available on seed ${seed}`).not.toBeNull();
+            const r = applyAction(state, action as Action);
+            expect(r.ok, `default rejected on seed ${seed}: ${r.ok ? "" : r.error}`).toBe(true);
+          };
+          check(deal(players, EAST_COAST, seed));
+          // playRandomGame reaches take-pile positions, so this also covers the
+          // states where a discard is refused until the obligation is settled.
+          playRandomGame(seed, players, 200, check);
+        },
+      ),
+      { numRuns: 40 },
+    );
+  });
+
+  it("never hands an absent player the pile, and so never a fresh obligation", () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 1, max: 1_000_000 }), (seed) => {
+        playRandomGame(seed, 4, 200, (state) => {
+          if (state.phase === "draw" && !state.roundEnded) {
+            expect(defaultAction(state)).toEqual({ type: "draw" });
+          }
+        });
+      }),
+      { numRuns: 25 },
+    );
+  });
+
+  /**
+   * A table where every seat is on the default: the shape of a room whose players
+   * have all dropped. The policy stays legal and the state stays sound for as long
+   * as it runs, which is the guarantee the server needs.
+   *
+   * It also pins the limitation, because it is load-bearing: **an all-default table
+   * never ends the round.** The policy only melds to discharge a take-pile
+   * obligation, so nobody gets down, no books complete, nobody goes out, and the
+   * stock reshuffles out of the discard pile indefinitely. That is the right call
+   * for a timeout — laying a player's cards down while they are gone commits them
+   * to a position they never chose — but it means the server cannot rely on a
+   * round ending on its own, and an abandoned room has to be reaped explicitly.
+   */
+  it("stays legal indefinitely with every seat defaulting, without ending the round", () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 1_000_000 }),
+        fc.integer({ min: 2, max: 6 }),
+        (seed, players) => {
+          let state = deal(players, EAST_COAST, seed);
+          const shoeSize = allCardIds(state).length;
+          let steps = 0;
+          for (; steps < 1500 && !state.roundEnded; steps++) {
+            const action = defaultAction(state);
+            expect(action, `stuck at step ${steps} on seed ${seed}`).not.toBeNull();
+            const r = applyAction(state, action as Action);
+            expect(r.ok, `illegal at step ${steps} on seed ${seed}`).toBe(true);
+            if (!r.ok) return;
+            state = r.state;
+            assertWellFormed(state, seed);
+            const ids = allCardIds(state);
+            expect(new Set(ids).size).toBe(shoeSize);
+          }
+          // Long past the point a played-out round would have finished.
+          expect(state.roundEnded ?? false, `seed ${seed} ended unexpectedly`).toBe(false);
+          expect(steps).toBe(1500);
+        },
+      ),
+      { numRuns: 15 },
+    );
   });
 });
 

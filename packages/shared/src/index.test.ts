@@ -162,11 +162,26 @@ describe("rule presets", () => {
     expect(EAST_COAST.scoring.cleanBookBonus).toBeGreaterThan(EAST_COAST.scoring.dirtyBookBonus);
   });
 
-  it("configures a timer for every stage of a turn", () => {
-    const { drawMs, meldMs, discardMs, meldIncrementMs } = EAST_COAST.timers;
-    for (const ms of [drawMs, meldMs, discardMs, meldIncrementMs]) {
+  it("configures every part of the turn clock", () => {
+    const { baseMs, incrementMs, capMs, discardGraceMs } = EAST_COAST.timers;
+    for (const ms of [baseMs, incrementMs, capMs, discardGraceMs]) {
       expect(ms).toBeGreaterThan(0);
     }
+  });
+
+  it("caps a turn above the clock it starts with, leaving room for increments", () => {
+    // A cap at or below the base would make the increment dead config: the turn
+    // would end at the base no matter how much the player earned.
+    expect(EAST_COAST.timers.capMs).toBeGreaterThan(EAST_COAST.timers.baseMs);
+    expect(EAST_COAST.timers.incrementMs).toBeLessThan(EAST_COAST.timers.baseMs);
+  });
+
+  it("keeps the whole turn, grace included, under the three minutes it promises", () => {
+    // The grace sits on top of the cap deliberately, so the worst case is
+    // cap + grace rather than cap. Pin it so nobody quietly makes it unbounded.
+    const { capMs, discardGraceMs } = EAST_COAST.timers;
+    expect(capMs).toBe(180_000);
+    expect(capMs + discardGraceMs).toBeLessThanOrEqual(200_000);
   });
 
   it("pairs the family mode with pausing enabled", () => {

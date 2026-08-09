@@ -93,31 +93,37 @@ Tests are colocated as `*.test.ts` beside the source. Naming in `packages/engine
 
 ### Coverage status and how it was established (as of 2026-08-04)
 
-`@hf/engine` is at **100% statements / branches / functions / lines** across all 18 modules (224
-tests); `@hf/shared` has 17. Line coverage is treated as a floor, not the goal — the suite was then
-validated by **mutation testing**: 81 deliberate single-edit bugs across the engine and 20 across
-shared, each applied, tested, and reverted. Current state: **76/81 engine mutants killed with the
-other 5 proven equivalent**, and **20/20 shared**.
+`@hf/engine` is at **100% statements / branches / functions / lines** across all 20 modules (245
+tests); `@hf/shared` has 25. Line coverage is treated as a floor, not the goal — the suite was then
+validated by **mutation testing**: 98 deliberate single-edit bugs across the engine and 20 across
+shared, each applied, tested, and reverted. Current state: **92/98 engine mutants killed with the
+other 6 proven equivalent**, and **20/20 shared**.
 
 If you add engine behavior, validate it the same way rather than trusting coverage: break the new
 guard, confirm the intended test fails, restore, and confirm `git diff` is empty.
 
-The 5 surviving engine mutants are *equivalent* — the mutated branch is unreachable because a second
-guard shields it. Each was proven by removing that guard too and watching the suite fail. Don't
-"fix" these with a test; the state they need cannot be reached through `applyAction`:
+The 6 surviving engine mutants are *equivalent*. Five are unreachable because a second guard shields
+them, each proven by removing that guard too and watching the suite fail; the sixth is an arithmetic
+no-op. Don't "fix" these with a test; the state they need cannot be reached through `applyAction`:
 
 | Mutation | Why it is unobservable |
 | --- | --- |
 | `advanceTurn`: `finalLap >= 0` instead of `> 0` | Reaching 0 sets `roundEnded`, and `applyAction` refuses every action after that, so `advanceTurn` never sees a 0. |
-| `feasibility`: form a new meld from a natural **pair** | The `validateMeld(naturals)` line (the one marked `/* v8 ignore */`) rejects a 2-card meld first. That line is load-bearing despite being unreachable on its own — keep it. |
-| `feasibility`: treat wilds as naturals | Same guard: an all-wild group fails `validateMeld`, so it is skipped. |
-| `feasibility`: credit a book bonus the player already had | `value` is only *used* when `!isDown`, and a not-down player holds no melds, so `existing` is empty. |
+| `plan`: form a new meld from a natural **pair** | The `validateMeld(naturals)` line (the one marked `/* v8 ignore */`) rejects a 2-card meld first. That line is load-bearing despite being unreachable on its own — keep it. |
+| `plan`: treat wilds as naturals | Same guard: an all-wild group fails `validateMeld`, so it is skipped. |
+| `plan`: credit a book bonus the player already had | `value` is only *used* when `!isDown`, and a not-down player holds no melds, so `existing` is empty. |
 | `playMelds`: drop `before < 7` when awarding a book bonus | Same reason — that block only runs under `if (!player.isDown)`, where `beforeSize` is provably empty. |
+| `policy`: drop `c.id !== card.id` from the companion count | Not a shielded branch but an arithmetic no-op: it adds exactly 1 to *every* candidate's `keepScore`, so the ranking — and the card chosen — is unchanged. Keep the clause anyway; "companions" means the *other* cards, and removing it would make the name a lie. |
 
 The last two share a premise: **a not-down player never holds melds.** `assertWellFormed` in
 `invariants.property.test.ts` checks it over thousands of random games. If multi-round play ever
-breaks it, both lines go live *and* they disagree — `feasibility.ts` adds `cleanBookBonus` (500)
+breaks it, both lines go live *and* they disagree — `plan.ts` adds `cleanBookBonus` (500)
 unconditionally while `playMelds` uses `classifyBook` (300 for a dirty book). Fix them together.
+
+These three moved from `feasibility.ts` to `plan.ts` in M2a, when the lay-down search was extracted
+so `canTakePile` and the default policy could not drift apart. The extraction was behaviour-preserving
+— the whole M1 suite passed unchanged through it — but the mutants were re-run against the new home
+rather than assumed to have travelled.
 
 Rules tests go **through `applyAction`**, not through the internal handler, so the phase and dispatch
 checks are exercised too. Fixtures are built inline per file with local `card()` / `cards()` /
@@ -145,18 +151,30 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   with book bonuses, foot transition (with and without a discard), Marva rule, red/black threes,
   take-pile feasibility solver, go-out conditions, round scoring, stock exhaustion, legal-move hints,
   property tests, golden-game replay.
-- **M2 — server.** Not started. Authoritative Socket.io server, per-room game manager, per-player
-  view broadcast, pacing/timers with the chess-clock meld increment, pause (family mode) vs. no-pause
-  (competitive), disconnect → timeout → safe default move, append-only action log to Postgres with
-  replay-on-restart.
+- **M2 — server.** In progress, split into three PRs so each is independently green:
+  - **M2a — contract + default policy.** `TurnTimers` replaces the old per-stage `StageTimers`, the
+    socket contract lands in `@hf/shared/protocol.ts`, and `defaultAction` / `chooseDiscard` land in
+    `@hf/engine/policy.ts` with the lay-down search extracted to `plan.ts`.
+  - **M2b — rooms and transport.** Room manager, shareable room code, seat assignment, Socket.io
+    wiring with ack callbacks, per-seat `project()` broadcast, append-only log behind an interface
+    (in-memory; Postgres is M4). View security asserted *over the wire*, not just on `project()`.
+  - **M2c — clock, pause, disconnect.** Per-room turn clock, pause, reconnect grace, absent-player
+    fast-forward, restart-from-log. All timer tests run on an injected clock — nothing sleeps.
+- **Reaping abandoned rooms is M2c work, and it is not optional.** A table where every seat is on the
+  default *never ends the round*: `defaultAction` never melds voluntarily, so nobody gets down and the
+  stock reshuffles out of the discard pile forever. Pinned by a property test in
+  `invariants.property.test.ts`.
 - **M3 — client.** Not started. React/Vite table UI, local meld staging with a running total against
   the minimum, SVG cards, lobby and room links.
 - **M4 — deploy.** Not started. No `Dockerfile` or `fly.toml` exists yet; the plan is server on
   Fly.io, client on Vercel, Postgres on Neon.
 - **Bot milestone — the RL agent.** The point of the whole project. Design not yet written; the
   section in `DESIGN.md` is a placeholder. Observation = `PlayerView` (by construction the agent
-  cannot see more than a human), reward is end-of-round, baseline policy = the discard heuristic used
-  for disconnected players.
+  cannot see more than a human), reward is end-of-round. The evaluation baseline is **not**
+  `defaultAction`: that is a safe timeout default that never melds, so it never scores and never ends
+  a round. A playing heuristic strong enough to be a baseline is separate work; it belongs beside
+  `defaultAction` in `policy.ts` and should reuse `chooseDiscard`. `LoggedAction.source` marks which
+  moves were forced, so timeouts can be filtered out of any imitation-learning corpus.
 
 ## Known wrinkles and open questions
 
