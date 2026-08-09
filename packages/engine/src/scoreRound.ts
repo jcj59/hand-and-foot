@@ -1,10 +1,9 @@
-import type { GameState } from "@hf/shared";
+import type { GameState, RoundScore } from "@hf/shared";
 import { cardValue, classifyBook } from "./scoring";
 
-export interface RoundScore {
-  readonly seat: number;
-  readonly score: number;
-}
+// Defined in the shared package so the client can render a scoreboard without
+// depending on the engine; re-exported here so engine consumers keep finding it.
+export type { RoundScore };
 
 /**
  * Score a completed round for every player: the point value of all melded cards,

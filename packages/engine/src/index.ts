@@ -9,6 +9,8 @@ export * from "./scoring";
 export * from "./scoreRound";
 export * from "./reducer";
 export * from "./feasibility";
+export * from "./plan";
+export * from "./policy";
 export * from "./goout";
 export * from "./legal";
 export * from "./replay";

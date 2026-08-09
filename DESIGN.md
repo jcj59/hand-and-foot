@@ -133,12 +133,28 @@ demonstrate.
 
 ### Pacing and disconnection
 
-Each stage of a turn is timed, and the meld stage uses a chess-clock increment so that active play
-is not penalized while stalling is. A Family mode permits any player to pause; a Competitive mode
-disables pausing. Disconnections are handled by the same timing mechanism: a disconnected player
-times out through the stages and the server plays a safe default move, using a discard heuristic
-that also serves as a baseline policy when evaluating the agent. All timers are part of the rule
-configuration.
+The turn, not the phase, is the unit of time. A turn starts with a base clock and earns a
+chess-clock increment for each action taken, so active play is not penalized while stalling is, but
+a hard per-turn cap bounds the total no matter how much increment is accrued. The cap is what
+actually solves the problem the clock exists for — an unbounded turn — and it has the useful side
+effect of making the increment impossible to farm, so it needs no policing of its own. When the
+clock expires before a discard, a short discard-only grace opens on top of the cap: melding is
+closed, but the player still chooses their own card rather than having one chosen for them.
+
+A Family mode permits any player to pause, including the player currently on the clock; a
+Competitive mode disables pausing. This makes the cap a hard ceiling in Competitive play and a soft
+one at a family table, which is the intended trade rather than an oversight.
+
+Disconnections use the same mechanism: a disconnected player times out and the server plays a safe
+default move on their behalf. That default is a pure function in the engine, so a forced move
+replays exactly like a chosen one. It is deliberately conservative — it draws, settles a take-pile
+obligation if one is open, and otherwise discards by heuristic, but it never melds voluntarily,
+because laying a player's cards down while they are away commits them to a position they never
+chose. One consequence matters for the server: a table of nothing but defaults never ends a round,
+so an abandoned room is reaped rather than left to finish. A heuristic strong enough to serve as the
+agent's evaluation baseline is separate, later work that will share the discard heuristic.
+
+All timers are part of the rule configuration.
 
 ### Persistence
 
