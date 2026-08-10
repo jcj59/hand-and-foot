@@ -16,7 +16,7 @@ pnpm + Turborepo monorepo, TypeScript everywhere, four workspace packages:
 | --- | --- | --- |
 | `packages/shared` | `@hf/shared` | Domain types, rules config, presets, client/server contract. Done for M1. |
 | `packages/engine` | `@hf/engine` | Pure rules engine `(state, action) => newState`. **Complete (M1).** |
-| `packages/server` | `@hf/server` | Authoritative Socket.io server: rooms, seats, per-seat broadcast, action log. Turn clock/pacing = M2c; Postgres persistence = M4. |
+| `packages/server` | `@hf/server` | Authoritative Socket.io server: rooms, seats, per-seat broadcast, turn clock, action log. Postgres persistence = M4. |
 | `packages/client` | `@hf/client` | Placeholder stub only. React + Vite + Tailwind + Zustand app = **M3**. |
 
 Libraries are consumed **from source** — each `package.json` points `main`/`types`/`exports` at
@@ -125,9 +125,9 @@ so `canTakePile` and the default policy could not drift apart. The extraction wa
 — the whole M1 suite passed unchanged through it — but the mutants were re-run against the new home
 rather than assumed to have travelled.
 
-### Server testing (M2b)
+### Server testing (M2b, M2c)
 
-`@hf/server` is also at **100%** (71 tests). The load-bearing tests are the ones in
+`@hf/server` is also at **100%** (103 tests). The load-bearing tests are the ones in
 `socket.integration.test.ts` that drive *real* Socket.io clients against a real server on an
 ephemeral port: `project()` being clean says nothing about whether the transport routes the right
 payload to the right socket, and that is what actually leaks a hand. Mutation tested the same way as
@@ -138,6 +138,24 @@ holes the suite could not see:
   token could name someone else's seat. Pinned now by a forged-seat test.
 - **the room filter in `broadcastViews`** — the cross-room test asserted too early, so a stray view
   delivered a tick later slipped past. It now drains the loop before asserting.
+
+M2c added 17 more mutants, all killed. Three only died after the tests were sharpened, and one of
+those was a real defect rather than a test gap:
+
+- **an absent player held the table for a full turn clock**, because `rearm` only ran on events so
+  nothing woke up when the reconnect grace elapsed. Fixed by arming at whichever deadline comes
+  first.
+- **a fully abandoned table span at zero delay forever** — every seat absent means each forced turn
+  re-arms immediately, and the default policy never ends a round to stop it. `rearm` now goes quiet
+  on an abandoned room and leaves it to the reaper. Found because the mutation runner *hung*, which
+  is worth remembering: a hanging suite is a killed mutant, so bound each run and treat a timeout as
+  a failure.
+- **pausing mid-grace** was only asserted as "still their turn", which cannot see a grace deadline
+  left in the past, because the timer that fires on it is scheduled rather than immediate. Pin the
+  deadline value, not just the seat.
+
+When mutation-testing the server, **check `git diff` afterwards**: a runner killed mid-mutation
+leaves the edit on disk. It happened once here and was caught that way.
 
 Socket tests must attach listeners **before** the call that triggers the broadcast. The server emits
 immediately after the ack, so a listener attached afterwards misses it and hangs; use `waitFor` with
@@ -177,8 +195,11 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
     alphabet, case-insensitive lookup), `Room` (seats, seat tokens, host, pause, log, projection),
     `socket.ts` (ack callbacks, per-seat broadcast), `InMemoryActionLog` behind an `ActionLog`
     interface, and `clock.ts` with an injectable `Clock` + `FakeClock`.
-  - **M2c — clock, pause, disconnect.** Per-room turn clock, pause, reconnect grace, absent-player
-    fast-forward, restart-from-log. All timer tests run on an injected clock — nothing sleeps.
+  - **M2c — clock, pause, disconnect.** Done. Per-room turn clock (base -> increment per action ->
+    hard cap, discard-only grace stacked on top), pause that credits back exactly the frozen time,
+    reconnect grace, absent-player fast-forward, and abandoned-room reaping in `RoomManager`. Every
+    timer test runs on `FakeClock` — nothing sleeps. Restart-from-log is deferred with the rest of
+    persistence to M4.
 - **Reaping abandoned rooms is M2c work, and it is not optional.** A table where every seat is on the
   default *never ends the round*: `defaultAction` never melds voluntarily, so nobody gets down and the
   stock reshuffles out of the discard pile forever. Pinned by a property test in

@@ -12,7 +12,7 @@ import {
   type ViewUpdate,
 } from "@hf/shared";
 import { defaultAction } from "@hf/engine";
-import { createServer, type HandAndFootServer } from "./index";
+import { createServer, FakeClock, type HandAndFootServer } from "./index";
 
 type Client = ClientSocket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -479,6 +479,63 @@ describe("reconnection", () => {
     expect(wrongRoom.ok).toBe(false);
     const wrongToken = await resumeSeat(other, { ...guestCreds, token: "forged" });
     expect(wrongToken.ok).toBe(false);
+  });
+});
+
+describe("the clock over the wire", () => {
+  it("pushes a fresh view when the server moves for a player who ran out of time", async () => {
+    // Nobody asked for anything, so without the room notifying the transport the
+    // table would silently fall behind until somebody happened to act.
+    const clock = new FakeClock(1_000);
+    const server = createServer({ clock });
+    started.push(server);
+    const port = await server.listen(0);
+
+    const host = await connect(port);
+    const guest = await connect(port);
+    const created = await createRoom(host, "ana");
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    await joinRoom(guest, created.data.roomId, "ben");
+    await startGame(host);
+
+    const room = server.manager.get(created.data.roomId)!;
+    expect(room.gameState!.phase).toBe("draw");
+
+    // The main clock expires: the server draws and opens the discard grace.
+    const timedOut = waitFor(guest, "view", (u) => u.clock.inDiscardGrace);
+    clock.advance(EAST_COAST.timers.baseMs);
+    const update = await timedOut;
+
+    expect(update.view.phase).toBe("play");
+    expect(update.clock.deadlineAt).toBe(
+      1_000 + EAST_COAST.timers.baseMs + EAST_COAST.timers.discardGraceMs,
+    );
+    expect(room.log.entries().at(-1)).toMatchObject({ source: "timeout" });
+  });
+
+  it("sends a deadline the client can anchor against its own clock", async () => {
+    const clock = new FakeClock(500_000);
+    const server = createServer({ clock });
+    started.push(server);
+    const port = await server.listen(0);
+
+    const host = await connect(port);
+    const guest = await connect(port);
+    const created = await createRoom(host, "ana");
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    await joinRoom(guest, created.data.roomId, "ben");
+
+    const dealt = waitFor(host, "view", (u) => u.view.hand.length > 0);
+    await startGame(host);
+    const update = await dealt;
+
+    // Absolute instants, both on the server's clock, so the client computes one
+    // offset rather than counting down a figure that drifts on every update.
+    expect(update.clock.serverNow).toBe(500_000);
+    expect(update.clock.deadlineAt).toBe(500_000 + EAST_COAST.timers.baseMs);
+    expect(update.clock.paused).toBe(false);
   });
 });
 

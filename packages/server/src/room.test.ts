@@ -249,11 +249,10 @@ describe("projection and results", () => {
     expect(mine.view.hand).toHaveLength(EAST_COAST.handSize);
   });
 
-  it("reports no deadline yet, since the turn clock lands in M2c", () => {
+  it("reports no deadline before the game starts", () => {
     const clock = new FakeClock(9_000);
     const room = newRoom(EAST_COAST, clock);
     seated(room, ["ana", "ben"]);
-    room.start(0);
     expect(room.clockState()).toEqual({
       serverNow: 9_000,
       deadlineAt: null,

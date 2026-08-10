@@ -174,6 +174,80 @@ describe("seeds and isolation", () => {
     expect(manager.size).toBe(2);
   });
 
+  it("reaps a room once everyone has been gone long enough", () => {
+    // Not tidiness: an all-default table never ends its round, because the
+    // policy never melds, so an abandoned room would play forever.
+    const clock = new FakeClock(1_000);
+    const manager = new RoomManager({ clock, abandonedRoomMs: 5_000 });
+    const room = manager.create();
+    room.join("ana");
+    room.join("ben");
+    room.start(0);
+
+    room.setConnected(0, false);
+    room.setConnected(1, false);
+    clock.advance(4_999);
+    expect(manager.sweep()).toEqual([]);
+    expect(manager.size).toBe(1);
+
+    clock.advance(2);
+    expect(manager.sweep()).toEqual([room.id]);
+    expect(manager.size).toBe(0);
+    // And its turn clock went with it.
+    expect(clock.pendingCount()).toBe(0);
+  });
+
+  it("keeps a room where anyone is still connected", () => {
+    const clock = new FakeClock(1_000);
+    const manager = new RoomManager({ clock, abandonedRoomMs: 5_000 });
+    const room = manager.create();
+    room.join("ana");
+    room.join("ben");
+    room.setConnected(0, false);
+    clock.advance(100_000);
+    expect(manager.sweep()).toEqual([]);
+    expect(manager.size).toBe(1);
+  });
+
+  it("reaps a code that was generated and never used", () => {
+    const clock = new FakeClock(1_000);
+    const manager = new RoomManager({ clock, abandonedRoomMs: 5_000 });
+    manager.create();
+    clock.advance(5_001);
+    expect(manager.sweep()).toHaveLength(1);
+  });
+
+  it("sweeps on its own schedule once started, and stops when told", () => {
+    const clock = new FakeClock(1_000);
+    const manager = new RoomManager({ clock, abandonedRoomMs: 1_000, sweepIntervalMs: 500 });
+    manager.create();
+    manager.startSweeping();
+    // Starting twice must not stack two sweep loops.
+    manager.startSweeping();
+
+    clock.advance(2_000);
+    expect(manager.size).toBe(0);
+
+    manager.create();
+    manager.stopSweeping();
+    clock.advance(10_000);
+    expect(manager.size).toBe(1);
+    manager.disposeAll();
+    expect(clock.pendingCount()).toBe(0);
+  });
+
+  it("releases a removed room's timer", () => {
+    const clock = new FakeClock(1_000);
+    const manager = new RoomManager({ clock });
+    const room = manager.create();
+    room.join("ana");
+    room.join("ben");
+    room.start(0);
+    expect(clock.pendingCount()).toBe(1);
+    expect(manager.remove(room.id)).toBe(true);
+    expect(clock.pendingCount()).toBe(0);
+  });
+
   it("defaults a room to the engine's default rules", () => {
     expect(newManager().create().config).toEqual(EAST_COAST);
   });

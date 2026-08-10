@@ -164,7 +164,13 @@ chose. One consequence matters for the server: a table of nothing but defaults n
 so an abandoned room is reaped rather than left to finish. A heuristic strong enough to serve as the
 agent's evaluation baseline is separate, later work that will share the discard heuristic.
 
-All timers are part of the rule configuration.
+Pacing timers are part of the rule configuration, since they change how the game plays. The
+reconnect grace and the abandoned-room threshold are not: they are operational settings on the
+server, because how long to wait for a dropped socket is not a rule of Hand and Foot.
+
+A table where every seat has dropped is reaped rather than left running. That is not housekeeping:
+the safe default never melds, so such a table never ends its round, and left alone it would keep
+playing forever.
 
 ### Persistence
 

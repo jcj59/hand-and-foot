@@ -13,6 +13,10 @@ export * from "./socket";
 export interface ServerOptions {
   readonly clock?: Clock;
   readonly random?: () => number;
+  /** Grace a dropped player gets before the server starts playing their turns. */
+  readonly reconnectGraceMs?: number;
+  /** How long a room with nobody in it is kept before being reaped. */
+  readonly abandonedRoomMs?: number;
   /** Allowed browser origins. The client is served from a different host in production. */
   readonly cors?: readonly string[];
 }
@@ -37,8 +41,11 @@ export function createServer(options: ServerOptions = {}): HandAndFootServer {
   const manager = new RoomManager({
     clock: options.clock ?? systemClock,
     random: options.random,
+    reconnectGraceMs: options.reconnectGraceMs,
+    abandonedRoomMs: options.abandonedRoomMs,
   });
   attachSocketServer(io, manager);
+  manager.startSweeping();
 
   return {
     http,
@@ -57,6 +64,9 @@ export function createServer(options: ServerOptions = {}): HandAndFootServer {
       });
     },
     close() {
+      // Rooms hold live timers; dropping the server without releasing them would
+      // keep firing turn clocks for tables that no longer exist.
+      manager.disposeAll();
       return new Promise((resolve) => {
         io.close(() => resolve());
       });

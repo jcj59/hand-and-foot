@@ -53,6 +53,22 @@ export function attachSocketServer(io: HfServer, manager: RoomManager): void {
     }
   }
 
+  /**
+   * Make sure the room pushes to the table when the *server* moves.
+   *
+   * Timeouts and disconnect defaults change the game without any client having
+   * asked for anything, so without this the table would silently fall behind
+   * until somebody happened to act.
+   */
+  function wire(room: Room): Room {
+    room.onChange = () => {
+      broadcastViews(room);
+      broadcastRoom(room);
+      broadcastResult(room);
+    };
+    return room;
+  }
+
   /** The room this socket is seated in, with its seat, or null if it has none. */
   function sessionOf(socket: HfSocket): { room: Room; seat: number } | null {
     const session = sessions.get(socket.id);
@@ -64,7 +80,7 @@ export function attachSocketServer(io: HfServer, manager: RoomManager): void {
 
   io.on("connection", (socket: HfSocket) => {
     socket.on("createRoom", (payload, ack) => {
-      const room = manager.create(configFor(payload.options));
+      const room = wire(manager.create(configFor(payload.options)));
       const joined = room.join(payload.name);
       /* v8 ignore next -- a room created one statement ago cannot be full or started */
       if (!joined.ok) return ack({ ok: false, error: joined.error });
@@ -82,6 +98,7 @@ export function attachSocketServer(io: HfServer, manager: RoomManager): void {
       const joined = manager.join(payload.roomId, payload.name);
       if (!joined.ok) return ack({ ok: false, error: joined.error });
       const { room, seat, token } = joined.value;
+      wire(room);
       sessions.set(socket.id, { roomId: room.id, seat });
       ack({ ok: true, data: { roomId: room.id, seat, token } });
       broadcastRoom(room);
@@ -90,6 +107,7 @@ export function attachSocketServer(io: HfServer, manager: RoomManager): void {
     socket.on("resumeSeat", (payload, ack) => {
       const room = manager.get(payload.roomId);
       if (!room) return ack({ ok: false, error: "no room with that code" });
+      wire(room);
       const resumed = room.resume(payload.token);
       if (!resumed.ok) return ack({ ok: false, error: resumed.error });
       // The seat comes from the token, not from the payload's seat field: trusting
