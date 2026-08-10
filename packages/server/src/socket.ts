@@ -1,6 +1,6 @@
 import type { Server, Socket } from "socket.io";
 import type { Ack, ClientToServerEvents, SeatCredentials, ServerToClientEvents } from "@hf/shared";
-import type { RoomManager } from "./manager";
+import { configFor, type RoomManager } from "./manager";
 import type { Room, RoomResult } from "./room";
 
 export type HfServer = Server<ClientToServerEvents, ServerToClientEvents>;
@@ -64,7 +64,7 @@ export function attachSocketServer(io: HfServer, manager: RoomManager): void {
 
   io.on("connection", (socket: HfSocket) => {
     socket.on("createRoom", (payload, ack) => {
-      const room = manager.create();
+      const room = manager.create(configFor(payload.options));
       const joined = room.join(payload.name);
       /* v8 ignore next -- a room created one statement ago cannot be full or started */
       if (!joined.ok) return ack({ ok: false, error: joined.error });

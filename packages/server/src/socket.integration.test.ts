@@ -5,6 +5,7 @@ import {
   type Ack,
   type Action,
   type ClientToServerEvents,
+  type RoomOptions,
   type RoundEnded,
   type SeatCredentials,
   type ServerToClientEvents,
@@ -56,8 +57,12 @@ function trackViews(socket: Client): { last: ViewUpdate | null } {
   return box;
 }
 
-function createRoom(socket: Client, name: string): Promise<Ack<SeatCredentials>> {
-  return new Promise((resolve) => socket.emit("createRoom", { name }, resolve));
+function createRoom(
+  socket: Client,
+  name: string,
+  options?: RoomOptions,
+): Promise<Ack<SeatCredentials>> {
+  return new Promise((resolve) => socket.emit("createRoom", { name, options }, resolve));
 }
 function joinRoom(socket: Client, roomId: string, name: string): Promise<Ack<SeatCredentials>> {
   return new Promise((resolve) => socket.emit("joinRoom", { roomId, name }, resolve));
@@ -268,6 +273,67 @@ describe("lobby over the wire", () => {
     const payload = JSON.stringify(await info);
     expect(payload).not.toContain(hostCreds.token);
     expect(payload).not.toContain(guestCreds.token);
+  });
+});
+
+describe("choosing the rules when creating a room", () => {
+  it("opens an East Coast family table when the creator picks nothing", async () => {
+    const { host } = await seatTwo();
+    const info = await waitFor(host, "room", () => true);
+    expect(info.config.wildRatio).toBe("naturals-exceed-wilds");
+    expect(info.config.mode).toBe("family");
+    expect(info.config.pauseEnabled).toBe(true);
+  });
+
+  it("honors the creator's preset and mode over the wire", async () => {
+    const { port } = await boot();
+    const host = await connect(port);
+    // Attached first: the room broadcast goes out with the ack.
+    const opened = waitFor(host, "room", () => true);
+    const created = await createRoom(host, "ana", {
+      preset: "west-coast",
+      mode: "competitive",
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    const info = await opened;
+    expect(info.config.wildRatio).toBe("naturals-equal-wilds");
+    expect(info.config.mode).toBe("competitive");
+    expect(info.config.pauseEnabled).toBe(false);
+  });
+
+  it("actually enforces the chosen rules, not just reports them", async () => {
+    // A competitive table is one where the clock cannot be stopped, and the
+    // server has to refuse the pause, not merely render a different label.
+    const { port } = await boot();
+    const host = await connect(port);
+    const created = await createRoom(host, "ana", { mode: "competitive" });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    const guest = await connect(port);
+    await joinRoom(guest, created.data.roomId, "ben");
+    await startGame(host);
+
+    const refused = await setPaused(guest, true);
+    expect(refused.ok).toBe(false);
+  });
+
+  it("keeps each room on its own rules", async () => {
+    const { port } = await boot();
+    const a = await connect(port);
+    const b = await connect(port);
+    const openedA = waitFor(a, "room", () => true);
+    const openedB = waitFor(b, "room", () => true);
+    const roomA = await createRoom(a, "ana", { preset: "east-coast" });
+    const roomB = await createRoom(b, "zoe", { preset: "west-coast" });
+    expect(roomA.ok && roomB.ok).toBe(true);
+    if (!roomA.ok || !roomB.ok) return;
+
+    const infoA = await openedA;
+    const infoB = await openedB;
+    expect(infoA.config.wildRatio).toBe("naturals-exceed-wilds");
+    expect(infoB.config.wildRatio).toBe("naturals-equal-wilds");
   });
 });
 

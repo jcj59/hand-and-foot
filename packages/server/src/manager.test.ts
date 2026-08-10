@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { EAST_COAST } from "@hf/shared";
+import { EAST_COAST, WEST_COAST } from "@hf/shared";
 import { FakeClock } from "./clock";
-import { RoomManager } from "./manager";
+import { configFor, RoomManager } from "./manager";
 
 /** A deterministic stand-in for Math.random, cycling a fixed sequence. */
 function sequence(values: number[]): () => number {
@@ -78,6 +78,42 @@ describe("joining through the manager", () => {
     room.join("ben");
     room.start(0);
     expect(manager.join(room.id, "late").ok).toBe(false);
+  });
+});
+
+describe("configFor", () => {
+  it("defaults to the East Coast family game", () => {
+    // The rules this was built for, so opening a room with no choices at all
+    // gives the game the family actually plays.
+    expect(configFor()).toEqual(EAST_COAST);
+    expect(configFor({})).toEqual(EAST_COAST);
+  });
+
+  it("selects the West Coast preset", () => {
+    expect(configFor({ preset: "west-coast" })).toEqual(WEST_COAST);
+    expect(configFor({ preset: "west-coast" }).wildRatio).toBe("naturals-equal-wilds");
+  });
+
+  it("ties pausing to the mode rather than leaving it a second switch", () => {
+    // A competitive table is precisely one where the clock cannot be stopped;
+    // letting the two be set apart would only create states nobody wants.
+    const competitive = configFor({ mode: "competitive" });
+    expect(competitive.mode).toBe("competitive");
+    expect(competitive.pauseEnabled).toBe(false);
+
+    const family = configFor({ mode: "family" });
+    expect(family.mode).toBe("family");
+    expect(family.pauseEnabled).toBe(true);
+  });
+
+  it("combines a preset with a mode", () => {
+    const c = configFor({ preset: "west-coast", mode: "competitive" });
+    expect(c.wildRatio).toBe("naturals-equal-wilds");
+    expect(c.pauseEnabled).toBe(false);
+  });
+
+  it("leaves the preset's own mode alone when none is chosen", () => {
+    expect(configFor({ preset: "west-coast" }).pauseEnabled).toBe(WEST_COAST.pauseEnabled);
   });
 });
 

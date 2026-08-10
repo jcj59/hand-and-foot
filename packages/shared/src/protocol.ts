@@ -8,7 +8,7 @@
 // file: the server sends a `PlayerView` produced by the engine's projection,
 // which is the anti-cheat boundary, and these types only wrap it.
 
-import type { Action, PlayerView, RoundScore, RulesConfig } from "./index";
+import type { Action, GameMode, PlayerView, RoundScore, RulesConfig } from "./index";
 
 /** Where an action in the log came from. */
 export type ActionSource = "player" | "timeout" | "disconnect";
@@ -101,16 +101,35 @@ export interface SeatCredentials {
   readonly token: string;
 }
 
+/** Rules preset a room is opened with. */
+export type RulesPreset = "east-coast" | "west-coast";
+
+/**
+ * What the room creator chooses when opening a table.
+ *
+ * Both fields are optional and both are unions: omitting them gives the East
+ * Coast family game this was built for, and no value outside these sets can be
+ * sent. `mode` carries pausing with it — a competitive table is exactly one
+ * where the clock cannot be stopped — so the two never drift apart.
+ */
+export interface RoomOptions {
+  readonly preset?: RulesPreset;
+  readonly mode?: GameMode;
+}
+
 export interface ClientToServerEvents {
   /**
-   * Rooms always start with `defaultConfig`. Per-room rules selection is
-   * deliberately deferred to the configurable rules editor (DESIGN.md
-   * roadmap item 2), where the room creator will choose them with a real UI
-   * and validation — don't reintroduce a client-supplied config here before
-   * that lands.
+   * Open a new room. The creator picks the house rules here, because the table's
+   * rules are settled before anyone sits down, not changed mid-game.
+   *
+   * Deliberately a small set of named choices rather than a `Partial<RulesConfig>`:
+   * every field below is a union, so an option that arrives over the wire is valid
+   * by construction and there is no validator to get wrong. The full rules surface
+   * gets exposed by the configurable rules editor (DESIGN.md roadmap item 2),
+   * which is where arbitrary overrides belong — don't widen this to a raw config.
    */
   createRoom: (
-    payload: { readonly name: string },
+    payload: { readonly name: string; readonly options?: RoomOptions },
     ack: (result: Ack<SeatCredentials>) => void,
   ) => void;
   joinRoom: (

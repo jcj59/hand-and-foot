@@ -1,5 +1,20 @@
-import type { RulesConfig } from "@hf/shared";
+import { EAST_COAST, WEST_COAST, type RoomOptions, type RulesConfig } from "@hf/shared";
 import { defaultConfig } from "@hf/engine";
+
+/**
+ * Turn the creator's choices into the rules the table will actually play by.
+ *
+ * Every branch here is driven by a union, so there is nothing to validate: an
+ * option that type-checks is already a legal option. `mode` decides pausing
+ * rather than leaving it as a second switch, because a competitive table is
+ * precisely one where the clock cannot be stopped, and letting the two be set
+ * independently would only create states nobody wants.
+ */
+export function configFor(options: RoomOptions = {}): RulesConfig {
+  const preset = options.preset === "west-coast" ? WEST_COAST : EAST_COAST;
+  if (options.mode === undefined) return preset;
+  return { ...preset, mode: options.mode, pauseEnabled: options.mode === "family" };
+}
 import { type Clock, systemClock } from "./clock";
 import { Room, type RoomResult } from "./room";
 

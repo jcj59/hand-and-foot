@@ -123,6 +123,16 @@ scoring all read melds from the player taking the action. Partnership play would
 team and change each of those, so it is a deliberate decision recorded here rather than an
 assumption to be discovered later.
 
+### Rules chosen when a room is opened
+
+A table's rules are settled before anyone sits down, so the creator picks them at room creation and
+they do not change mid-game. The choice is a small set of named options — which preset, and family
+versus competitive — rather than an arbitrary partial rules object. Every option is a union, so
+anything that arrives over the wire is valid by construction and there is no validator to get wrong,
+and the mode carries pausing with it because a competitive table is precisely one where the clock
+cannot be stopped. Exposing the full rules surface belongs with the configurable rules editor
+(roadmap item 2), which can present and validate it properly.
+
 ### Transport
 
 I used Socket.io for the transport layer. It provides rooms, acknowledgement callbacks (which map
