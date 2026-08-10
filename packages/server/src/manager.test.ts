@@ -115,6 +115,15 @@ describe("configFor", () => {
   it("leaves the preset's own mode alone when none is chosen", () => {
     expect(configFor({ preset: "west-coast" }).pauseEnabled).toBe(WEST_COAST.pauseEnabled);
   });
+
+  it("normalizes a bogus mode arriving over the wire to the family default", () => {
+    // Types are erased at runtime, so a socket payload can carry a string
+    // outside the GameMode union; simulate that with a cast a real client
+    // couldn't produce through the typed API.
+    const bogus = configFor({ mode: "whatever" as unknown as "family" });
+    expect(bogus.mode).toBe("family");
+    expect(bogus.pauseEnabled).toBe(true);
+  });
 });
 
 describe("seeds and isolation", () => {

@@ -4,16 +4,20 @@ import { defaultConfig } from "@hf/engine";
 /**
  * Turn the creator's choices into the rules the table will actually play by.
  *
- * Every branch here is driven by a union, so there is nothing to validate: an
- * option that type-checks is already a legal option. `mode` decides pausing
- * rather than leaving it as a second switch, because a competitive table is
- * precisely one where the clock cannot be stopped, and letting the two be set
- * independently would only create states nobody wants.
+ * The option set is deliberately small and closed so that a value outside it
+ * can be coerced to a safe default without a validator — TypeScript only
+ * enforces the `RoomOptions` union for typed callers, and `options` here
+ * arrives from an untyped socket payload, so every field is normalized
+ * rather than trusted as-is. `mode` decides pausing rather than leaving it as
+ * a second switch, because a competitive table is precisely one where the
+ * clock cannot be stopped, and letting the two be set independently would
+ * only create states nobody wants.
  */
 export function configFor(options: RoomOptions = {}): RulesConfig {
   const preset = options.preset === "west-coast" ? WEST_COAST : EAST_COAST;
   if (options.mode === undefined) return preset;
-  return { ...preset, mode: options.mode, pauseEnabled: options.mode === "family" };
+  const mode = options.mode === "competitive" ? "competitive" : "family";
+  return { ...preset, mode, pauseEnabled: mode === "family" };
 }
 import { type Clock, systemClock } from "./clock";
 import { Room, type RoomResult } from "./room";
