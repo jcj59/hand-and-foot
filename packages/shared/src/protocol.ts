@@ -102,8 +102,15 @@ export interface SeatCredentials {
 }
 
 export interface ClientToServerEvents {
+  /**
+   * Rooms always start with `defaultConfig`. Per-room rules selection is
+   * deliberately deferred to the configurable rules editor (DESIGN.md
+   * roadmap item 2), where the room creator will choose them with a real UI
+   * and validation — don't reintroduce a client-supplied config here before
+   * that lands.
+   */
   createRoom: (
-    payload: { readonly name: string; readonly config?: Partial<RulesConfig> },
+    payload: { readonly name: string },
     ack: (result: Ack<SeatCredentials>) => void,
   ) => void;
   joinRoom: (
