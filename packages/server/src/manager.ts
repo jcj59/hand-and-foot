@@ -1,5 +1,7 @@
 import { EAST_COAST, WEST_COAST, type RoomOptions, type RulesConfig } from "@hf/shared";
 import { defaultConfig } from "@hf/engine";
+import { type Clock, systemClock } from "./clock";
+import { Room, type RoomResult } from "./room";
 
 /**
  * Turn the creator's choices into the rules the table will actually play by.
@@ -19,8 +21,6 @@ export function configFor(options: RoomOptions = {}): RulesConfig {
   const mode = options.mode === "competitive" ? "competitive" : "family";
   return { ...preset, mode, pauseEnabled: mode === "family" };
 }
-import { type Clock, systemClock } from "./clock";
-import { Room, type RoomResult } from "./room";
 
 /**
  * Room codes are typed by a human off a shared link or read aloud across a
