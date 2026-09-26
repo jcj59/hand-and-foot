@@ -16,14 +16,19 @@ pnpm + Turborepo monorepo, TypeScript everywhere, four workspace packages:
 | --- | --- | --- |
 | `packages/shared` | `@hf/shared` | Domain types, rules config, presets, client/server contract. Done for M1. |
 | `packages/engine` | `@hf/engine` | Pure rules engine `(state, action) => newState`. **Complete (M1).** |
-| `packages/server` | `@hf/server` | Authoritative Socket.io server: rooms, seats, per-seat broadcast, turn clock, action log. Postgres persistence = M4. |
+| `packages/server` | `@hf/server` | Authoritative Socket.io server: rooms, seats, per-seat broadcast, turn clock, action log, runnable entrypoint. **Complete (M2).** Postgres persistence = M4. |
 | `packages/client` | `@hf/client` | Placeholder stub only. React + Vite + Tailwind + Zustand app = **M3**. |
 
 Libraries are consumed **from source** — each `package.json` points `main`/`types`/`exports` at
 `./src/index.ts`, and there is no build step. `tsconfig.base.json` sets `noEmit: true`. The
 `turbo run build` task exists but no package defines a `build` script, so `pnpm build` is currently a
-no-op. Don't "fix" that until something actually needs bundling (the server container in M2, the Vite
-client in M3).
+no-op. Don't "fix" that until something actually needs bundling (the Vite client in M3, possibly the
+server image in M4).
+
+Running the server from source therefore needs a TypeScript runtime: `@hf/server` carries `tsx` as a
+devDependency and its `start`/`dev` scripts go through it. Node's own `--experimental-strip-types`
+will not do — `moduleResolution: "Bundler"` means imports are extensionless, which Node's ESM
+resolver does not accept.
 
 ## Commands
 
@@ -43,6 +48,17 @@ real re-run use `pnpm exec turbo run test --force`; `pnpm test -- --force` does 
 flag and exits non-zero. To run one engine test file:
 `pnpm --filter @hf/engine exec vitest run src/<file>.test.ts`. Engine coverage:
 `pnpm --filter @hf/engine test:coverage`.
+
+To actually run a table locally:
+
+```bash
+pnpm --filter @hf/server start     # tsx src/main.ts
+pnpm --filter @hf/server dev       # same, restarting on change
+```
+
+`PORT` (default 3000) and the `HF_`-prefixed operational settings — `HF_CORS_ORIGINS`,
+`HF_RECONNECT_GRACE_MS`, `HF_ABANDONED_ROOM_MS` — configure it; see `env.ts`. A value it cannot parse
+stops the process with a message rather than falling back to a default.
 
 `tsconfig.base.json` sets `lib: ["ES2022"]` with no DOM lib, so runtime globals Node provides but
 ES2022 does not type — `structuredClone`, `fetch`, timers on `window` — compile-fail even though
@@ -125,9 +141,9 @@ so `canTakePile` and the default policy could not drift apart. The extraction wa
 — the whole M1 suite passed unchanged through it — but the mutants were re-run against the new home
 rather than assumed to have travelled.
 
-### Server testing (M2b, M2c)
+### Server testing (M2b, M2c, M2d)
 
-`@hf/server` is also at **100%** (103 tests). The load-bearing tests are the ones in
+`@hf/server` is also at **100%** (154 tests). The load-bearing tests are the ones in
 `socket.integration.test.ts` that drive *real* Socket.io clients against a real server on an
 ephemeral port: `project()` being clean says nothing about whether the transport routes the right
 payload to the right socket, and that is what actually leaks a hand. Mutation tested the same way as
@@ -154,8 +170,17 @@ those was a real defect rather than a test gap:
   left in the past, because the timer that fires on it is scheduled rather than immediate. Pin the
   deadline value, not just the seat.
 
+M2d added 27 mutants over `env.ts` and `main.ts`, all killed. One only died after a test was added,
+and it is worth keeping in mind as a shape of gap rather than a one-off: every port assertion compared
+against the `DEFAULT_PORT` constant, so **changing the constant moved both sides of the comparison and
+nothing failed.** A default that some other package will hard-code against is pinned to a literal
+(`expect(DEFAULT_PORT).toBe(3000)`) for exactly that reason. Watch for the same trap wherever a test
+imports the constant it is checking.
+
 When mutation-testing the server, **check `git diff` afterwards**: a runner killed mid-mutation
-leaves the edit on disk. It happened once here and was caught that way.
+leaves the edit on disk. It happened once here and was caught that way. Note that `git diff` says
+nothing about a file that is still untracked — when the mutated module is new, compare against a copy
+instead.
 
 Socket tests must attach listeners **before** the call that triggers the broadcast. The server emits
 immediately after the ack, so a listener attached afterwards misses it and hangs; use `waitFor` with
@@ -187,7 +212,7 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   with book bonuses, foot transition (with and without a discard), Marva rule, red/black threes,
   take-pile feasibility solver, go-out conditions, round scoring, stock exhaustion, legal-move hints,
   property tests, golden-game replay.
-- **M2 — server.** In progress, split into three PRs so each is independently green:
+- **M2 — server.** Done, split into four PRs so each was independently green:
   - **M2a — contract + default policy.** Done. `TurnTimers` replaces the old per-stage `StageTimers`, the
     socket contract lands in `@hf/shared/protocol.ts`, and `defaultAction` / `chooseDiscard` land in
     `@hf/engine/policy.ts` with the lay-down search extracted to `plan.ts`.
@@ -200,6 +225,10 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
     reconnect grace, absent-player fast-forward, and abandoned-room reaping in `RoomManager`. Every
     timer test runs on `FakeClock` — nothing sleeps. Restart-from-log is deferred with the rest of
     persistence to M4.
+  - **M2d — runnable entrypoint.** Done. `env.ts` parses `PORT` and the `HF_`-prefixed operational
+    settings, `main.ts` binds the port and closes the rooms down on SIGTERM/SIGINT, and `tsx` runs it
+    from source. Before this, `createServer` existed but nothing called it: the server was a library
+    with no way to start one.
 - **Reaping abandoned rooms is M2c work, and it is not optional.** A table where every seat is on the
   default *never ends the round*: `defaultAction` never melds voluntarily, so nobody gets down and the
   stock reshuffles out of the discard pile forever. Pinned by a property test in
@@ -207,7 +236,10 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
 - **M3 — client.** Not started. React/Vite table UI, local meld staging with a running total against
   the minimum, SVG cards, lobby and room links.
 - **M4 — deploy.** Not started. No `Dockerfile` or `fly.toml` exists yet; the plan is server on
-  Fly.io, client on Vercel, Postgres on Neon.
+  Fly.io, client on Vercel, Postgres on Neon. One thing already established by hand: the container
+  must exec the server **directly** (`tsx src/main.ts`), not via `pnpm start`. The pnpm wrapper does
+  not forward SIGTERM, so through it the process is killed outright (exit 143) and the graceful
+  shutdown never runs — verified both ways locally.
 - **Bot milestone — the RL agent.** The point of the whole project. Design not yet written; the
   section in `DESIGN.md` is a placeholder. Observation = `PlayerView` (by construction the agent
   cannot see more than a human), reward is end-of-round. The evaluation baseline is **not**
@@ -252,10 +284,10 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   requires that `wentOutSeat` is still unset. Otherwise a player who sheds their last card during the
   final lap while holding the books steals the go-out (and, via `playMelds`, restarts the final lap).
   `reducer.shedall.test.ts` covers this.
-- **Local pnpm drift (as of 2026-07-27).** The working tree has uncommitted changes bumping
-  `packageManager` to `pnpm@12.0.0-alpha.21` plus matching `pnpm-lock.yaml` / `pnpm-workspace.yaml`
-  additions. That came from the globally installed pnpm 12 alpha self-pinning on `pnpm install`, not
-  from a deliberate upgrade. CI's `pnpm/action-setup@v4` reads `packageManager`, so committing it
-  would put a prerelease pnpm in CI — and PR #2 already existed to fix a pnpm version conflict there.
-  Prefer `git checkout -- package.json pnpm-lock.yaml pnpm-workspace.yaml` and installing with pnpm 9
-  unless the user actually wants the upgrade.
+- **Local pnpm drift — resolved, but stay alert (as of 2026-09-26).** The local pnpm is 9.15.9 and
+  matches `packageManager`, so `pnpm install` is currently safe and leaves the lockfile alone. The
+  hazard that caused the earlier drift has not gone away: a globally installed pnpm 12 self-pins on
+  `pnpm install`, rewriting `packageManager` plus `pnpm-lock.yaml` / `pnpm-workspace.yaml`, and CI's
+  `pnpm/action-setup@v4` reads `packageManager` — so that would put a prerelease pnpm in CI, which PR
+  #2 already existed once to fix. After any `pnpm install`, check `git status` for those three files
+  and `git checkout --` them unless the upgrade is deliberate.
