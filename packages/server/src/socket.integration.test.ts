@@ -472,6 +472,50 @@ describe("reconnection", () => {
     expect((await submit(back, { type: "draw" })).ok).toBe(false);
   });
 
+  it("ignores a late disconnect from a socket whose seat was already reclaimed", async () => {
+    // A phone switching networks resumes on a new socket before the server has
+    // noticed the old one is dead. When the old one's disconnect finally lands it
+    // must not mark the live player gone, or their turns get played for them.
+    const clock = new FakeClock(1_000);
+    const server = createServer({ clock, reconnectGraceMs: 1_000 });
+    started.push(server);
+    const port = await server.listen(0);
+
+    const host = await connect(port);
+    const stale = await connect(port);
+    const created = await createRoom(host, "ana");
+    if (!created.ok) throw new Error(created.error);
+    const joined = await joinRoom(stale, created.data.roomId, "ben");
+    if (!joined.ok) throw new Error(joined.error);
+    await startGame(host);
+    const room = server.manager.get(created.data.roomId)!;
+
+    const fresh = await connect(port);
+    expect((await resumeSeat(fresh, joined.data)).ok).toBe(true);
+
+    const hostSawDrop = waitFor(host, "room", (info) => info.players[1].connected === false, 300);
+    stale.disconnect();
+    // A later round trip on the live socket proves the server has handled the
+    // disconnect before the negative assertions below.
+    expect((await setPaused(fresh, true)).ok).toBe(true);
+    expect((await setPaused(fresh, false)).ok).toBe(true);
+    await expect(hostSawDrop).rejects.toThrow();
+    expect(room.info().players[1].connected).toBe(true);
+
+    // Seat 1 is live, so its turn is not played out once the grace would be gone.
+    expect(room.submitAction(0, { type: "draw" }).ok).toBe(true);
+    const seat0 = room.gameState!.players[0];
+    expect(room.submitAction(0, { type: "discard", cardId: seat0.hand[0].id }).ok).toBe(true);
+    clock.advance(5_000);
+    expect(room.gameState!.currentSeat).toBe(1);
+    expect(room.log.entries().every((e) => e.source === "player")).toBe(true);
+
+    // The live socket's own disconnect still counts.
+    const sawDrop = waitFor(host, "room", (info) => info.players[1].connected === false);
+    fresh.disconnect();
+    await sawDrop;
+  });
+
   it("refuses to reclaim a seat with a token from another room", async () => {
     const { port, guestCreds } = await seatTwo();
     const other = await connect(port);

@@ -220,12 +220,18 @@ export class Room {
       this.pausedAt = this.deps.clock.now();
     } else {
       // Give back exactly the time the table stood still, so a pause costs the
-      // player on the clock nothing.
+      // player on the clock nothing — and a dropped player nothing either. A
+      // family table often pauses precisely to wait for someone who dropped;
+      // leaving their reconnect grace running would have the server play their
+      // turns the instant the table resumed.
       // `pausedAt` is set whenever the table is paused, and it is paused here.
       /* v8 ignore next */
       const frozenFor = this.pausedAt === null ? 0 : this.deps.clock.now() - this.pausedAt;
       if (this.turnStartedAt !== null) this.turnStartedAt += frozenFor;
       if (this.graceUntil !== null) this.graceUntil += frozenFor;
+      for (const player of this.players) {
+        if (player.disconnectedAt !== null) player.disconnectedAt += frozenFor;
+      }
       this.pausedSeat = undefined;
       this.pausedAt = null;
     }

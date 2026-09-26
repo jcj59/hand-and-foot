@@ -260,6 +260,41 @@ describe("disconnection", () => {
     expect(room.gameState!.currentSeat).toBe(1);
   });
 
+  it("freezes the reconnect grace while the table is paused", () => {
+    // A family table often pauses precisely to wait for whoever dropped, so the
+    // grace must not run out behind the pause and forfeit their turns on resume.
+    const grace = 30_000;
+    const { room, clock } = started({}, new FakeClock(T0), grace);
+    room.setConnected(0, false);
+    clock.advance(10_000);
+    room.setPaused(1, true);
+    clock.advance(grace * 10);
+    room.setPaused(1, false);
+
+    // The drop itself moves by the pause, which is also what the reaper reads.
+    room.setConnected(1, false);
+    expect(room.abandonedSince).toBe(T0 + 10_000 + grace * 10);
+    room.setConnected(1, true);
+
+    // Exactly the 20s of grace left before the pause remain, no more and no less.
+    clock.advance(grace - 10_000 - 1);
+    expect(room.gameState!.currentSeat).toBe(0);
+    expect(room.log.length).toBe(0);
+    clock.advance(1);
+    expect(room.gameState!.currentSeat).toBe(1);
+    expect(room.log.entries().every((e) => e.source === "disconnect")).toBe(true);
+  });
+
+  it("leaves a connected player's reconnect state alone across a pause", () => {
+    const { room, clock } = started({}, new FakeClock(T0), 1_000);
+    room.setPaused(1, true);
+    clock.advance(5_000);
+    room.setPaused(1, false);
+    room.setConnected(0, false);
+    room.setConnected(1, false);
+    expect(room.abandonedSince).toBe(T0 + 5_000);
+  });
+
   it("hands the clock back the moment an absent player returns", () => {
     const { room, clock } = started({}, new FakeClock(T0), 1_000);
     room.setConnected(0, false);

@@ -78,6 +78,14 @@ export function attachSocketServer(io: HfServer, manager: RoomManager): void {
     return { room, seat: session.seat };
   }
 
+  /** Whether any still-connected socket holds this seat. */
+  function seatHeld(roomId: string, seat: number): boolean {
+    for (const session of sessions.values()) {
+      if (session.roomId === roomId && session.seat === seat) return true;
+    }
+    return false;
+  }
+
   io.on("connection", (socket: HfSocket) => {
     socket.on("createRoom", (payload, ack) => {
       const room = wire(manager.create(configFor(payload.options)));
@@ -153,6 +161,10 @@ export function attachSocketServer(io: HfServer, manager: RoomManager): void {
       const session = sessionOf(socket);
       sessions.delete(socket.id);
       if (!session) return;
+      // A seat reclaimed on a newer socket outlives the old one, whose disconnect
+      // may only arrive at its ping timeout. Marking the seat gone then would have
+      // the server play a live player's turns and could reap a room in use.
+      if (seatHeld(session.room.id, session.seat)) return;
       session.room.setConnected(session.seat, false);
       broadcastRoom(session.room);
     });
