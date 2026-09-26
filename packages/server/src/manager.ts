@@ -31,6 +31,9 @@ export function configFor(options: RoomOptions = {}): RulesConfig {
 const CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
 const CODE_LENGTH = 6;
 
+export const DEFAULT_ABANDONED_ROOM_MS = 10 * 60_000;
+export const DEFAULT_SWEEP_INTERVAL_MS = 60_000;
+
 export interface ManagerOptions {
   readonly clock?: Clock;
   /**
@@ -39,6 +42,11 @@ export interface ManagerOptions {
    * it determines the deck order.
    */
   readonly random?: () => number;
+  /** Grace a dropped player gets before the server plays their turns. */
+  readonly reconnectGraceMs?: number;
+  /** How long a room with nobody in it is kept before being reaped. */
+  readonly abandonedRoomMs?: number;
+  readonly sweepIntervalMs?: number;
 }
 
 function randomString(alphabet: string, length: number, random: () => number): string {
@@ -54,10 +62,17 @@ export class RoomManager {
   private readonly rooms = new Map<string, Room>();
   private readonly clock: Clock;
   private readonly random: () => number;
+  private readonly reconnectGraceMs: number | undefined;
+  private readonly abandonedRoomMs: number;
+  private readonly sweepIntervalMs: number;
+  private cancelSweep: (() => void) | null = null;
 
   constructor(options: ManagerOptions = {}) {
     this.clock = options.clock ?? systemClock;
     this.random = options.random ?? Math.random;
+    this.reconnectGraceMs = options.reconnectGraceMs;
+    this.abandonedRoomMs = options.abandonedRoomMs ?? DEFAULT_ABANDONED_ROOM_MS;
+    this.sweepIntervalMs = options.sweepIntervalMs ?? DEFAULT_SWEEP_INTERVAL_MS;
   }
 
   get size(): number {
@@ -78,6 +93,7 @@ export class RoomManager {
       clock: this.clock,
       seed: Math.floor(this.random() * 2 ** 31),
       newToken: () => randomString(CODE_ALPHABET, 24, this.random),
+      reconnectGraceMs: this.reconnectGraceMs,
     });
     this.rooms.set(id, room);
     return room;
@@ -93,7 +109,54 @@ export class RoomManager {
   }
 
   remove(roomId: string): boolean {
+    const room = this.get(roomId);
+    // Dropping the reference is not enough: a room holds a live timer, and one
+    // left armed would keep firing against a table nobody can see.
+    room?.dispose();
     return this.rooms.delete(roomId.toUpperCase());
+  }
+
+  /**
+   * Drop rooms nobody is in any more.
+   *
+   * This is not just tidiness. A table where every seat has dropped never ends
+   * its round on its own — the default policy settles obligations and discards
+   * but never melds, so nobody gets down, nobody goes out, and the stock keeps
+   * reshuffling out of the discard pile. Left alone, such a room plays forever.
+   */
+  sweep(): readonly string[] {
+    const now = this.clock.now();
+    const reaped: string[] = [];
+    for (const [id, room] of this.rooms) {
+      const since = room.abandonedSince;
+      if (since === null || now - since < this.abandonedRoomMs) continue;
+      // One teardown path, so a room can never be dropped without releasing its
+      // timer. (In practice an abandoned room has already gone quiet, but that
+      // is a property of `Room`, not something the manager should rely on.)
+      this.remove(id);
+      reaped.push(id);
+    }
+    return reaped;
+  }
+
+  startSweeping(): void {
+    if (this.cancelSweep) return;
+    const tick = (): void => {
+      this.sweep();
+      this.cancelSweep = this.clock.setTimer(this.sweepIntervalMs, tick);
+    };
+    this.cancelSweep = this.clock.setTimer(this.sweepIntervalMs, tick);
+  }
+
+  stopSweeping(): void {
+    this.cancelSweep?.();
+    this.cancelSweep = null;
+  }
+
+  /** Release every room's timer. Used when the process is shutting down. */
+  disposeAll(): void {
+    this.stopSweeping();
+    for (const room of this.rooms.values()) room.dispose();
   }
 
   private newCode(): string {

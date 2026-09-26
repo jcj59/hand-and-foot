@@ -1,0 +1,114 @@
+/**
+ * Reading the process environment, kept apart from starting the server so that
+ * the parsing can be tested without binding a port.
+ *
+ * Operator configuration is validated rather than coerced, which is the
+ * opposite of how `configFor` treats a room's options — deliberately so. A
+ * room's options arrive in an untrusted socket payload, where the only safe
+ * response to nonsense is a known default. An environment variable is set by
+ * whoever deploys the server, so quietly ignoring `PORT=808O` would leave them
+ * believing they had configured something they had not. A bad value stops the
+ * process at boot, which is the cheapest place to notice it.
+ */
+import type { ServerOptions } from "./index";
+
+/** Where the server listens when `PORT` is unset. */
+export const DEFAULT_PORT = 3000;
+
+export interface ServerEnv {
+  readonly port: number;
+  readonly options: ServerOptions;
+}
+
+/** Mirrors `RoomResult`: a bad environment is reported, never thrown. */
+export type ServerEnvResult =
+  { readonly ok: true; readonly value: ServerEnv } | { readonly ok: false; readonly error: string };
+
+/** Only what this server reads, so a test can pass an object literal. */
+export type Environment = Readonly<Record<string, string | undefined>>;
+
+/**
+ * A whole non-negative number and nothing else. `Number` would accept `""` as
+ * 0, `"1e3"` as 1000 and `"0x10"` as 16; `parseInt` would accept `"12abc"` as
+ * 12. Every one of those is far likelier to be a typo than an intention.
+ * Surrounding whitespace is forgiven, since compose files and shell exports
+ * introduce it by accident.
+ */
+function wholeNumber(raw: string): number | null {
+  const trimmed = raw.trim();
+  return /^\d+$/.test(trimmed) ? Number(trimmed) : null;
+}
+
+type MaybeMs =
+  | { readonly ok: true; readonly value: number | undefined }
+  | { readonly ok: false; readonly error: string };
+
+/**
+ * An optional duration. Blank is treated as unset rather than as zero, because
+ * an unset variable and one exported empty are hard to tell apart, and zero
+ * here means "no grace at all" — too sharp a behaviour to arrive by accident.
+ */
+function optionalMs(env: Environment, key: string): MaybeMs {
+  const raw = env[key];
+  if (raw === undefined || raw.trim() === "") return { ok: true, value: undefined };
+  const ms = wholeNumber(raw);
+  if (ms === null) {
+    return {
+      ok: false,
+      error: `${key} must be a whole number of milliseconds, not ${JSON.stringify(raw)}`,
+    };
+  }
+  return { ok: true, value: ms };
+}
+
+/**
+ * Allowed origins, comma-separated because an environment variable cannot hold
+ * a list. Unset and blank both mean "any origin", matching `createServer`'s
+ * default: a deployment that intends to restrict origins names them.
+ */
+function corsOrigins(raw: string | undefined): readonly string[] | undefined {
+  if (raw === undefined) return undefined;
+  const origins = raw
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter((origin) => origin !== "");
+  return origins.length > 0 ? origins : undefined;
+}
+
+/**
+ * Turn the environment into the arguments `createServer` and `listen` take.
+ *
+ * `PORT` is unprefixed because every host that injects one — Fly, Render,
+ * Heroku — calls it that. The server's own settings are `HF_`-prefixed so they
+ * cannot collide with anything else in a container's environment. Note that
+ * these are operational settings only: the pacing timers that change how the
+ * game plays belong to the room's `RulesConfig`, not here.
+ */
+export function parseServerEnv(env: Environment): ServerEnvResult {
+  const port = env.PORT === undefined ? DEFAULT_PORT : wholeNumber(env.PORT);
+  // Port 0 is kept legal: it asks the OS for a free port, which is how the
+  // tests and some container setups bind.
+  if (port === null || port > 65_535) {
+    return {
+      ok: false,
+      error: `PORT must be a whole number from 0 to 65535, not ${JSON.stringify(env.PORT)}`,
+    };
+  }
+
+  const reconnectGraceMs = optionalMs(env, "HF_RECONNECT_GRACE_MS");
+  if (!reconnectGraceMs.ok) return reconnectGraceMs;
+  const abandonedRoomMs = optionalMs(env, "HF_ABANDONED_ROOM_MS");
+  if (!abandonedRoomMs.ok) return abandonedRoomMs;
+
+  return {
+    ok: true,
+    value: {
+      port,
+      options: {
+        reconnectGraceMs: reconnectGraceMs.value,
+        abandonedRoomMs: abandonedRoomMs.value,
+        cors: corsOrigins(env.HF_CORS_ORIGINS),
+      },
+    },
+  };
+}

@@ -12,7 +12,7 @@ import {
   type ViewUpdate,
 } from "@hf/shared";
 import { defaultAction } from "@hf/engine";
-import { createServer, type HandAndFootServer } from "./index";
+import { createServer, FakeClock, type HandAndFootServer } from "./index";
 
 type Client = ClientSocket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -472,6 +472,84 @@ describe("reconnection", () => {
     expect((await submit(back, { type: "draw" })).ok).toBe(false);
   });
 
+  it("ignores a late disconnect from a socket whose seat was already reclaimed", async () => {
+    // A phone switching networks resumes on a new socket before the server has
+    // noticed the old one is dead. When the old one's disconnect finally lands it
+    // must not mark the live player gone, or their turns get played for them.
+    const clock = new FakeClock(1_000);
+    const server = createServer({ clock, reconnectGraceMs: 1_000 });
+    started.push(server);
+    const port = await server.listen(0);
+
+    const host = await connect(port);
+    const stale = await connect(port);
+    const created = await createRoom(host, "ana");
+    if (!created.ok) throw new Error(created.error);
+    const joined = await joinRoom(stale, created.data.roomId, "ben");
+    if (!joined.ok) throw new Error(joined.error);
+    await startGame(host);
+    const room = server.manager.get(created.data.roomId)!;
+
+    const fresh = await connect(port);
+    expect((await resumeSeat(fresh, joined.data)).ok).toBe(true);
+
+    const hostSawDrop = waitFor(host, "room", (info) => info.players[1].connected === false, 300);
+    stale.disconnect();
+    // A later round trip on the live socket proves the server has handled the
+    // disconnect before the negative assertions below.
+    expect((await setPaused(fresh, true)).ok).toBe(true);
+    expect((await setPaused(fresh, false)).ok).toBe(true);
+    await expect(hostSawDrop).rejects.toThrow();
+    expect(room.info().players[1].connected).toBe(true);
+
+    // Seat 1 is live, so its turn is not played out once the grace would be gone.
+    expect(room.submitAction(0, { type: "draw" }).ok).toBe(true);
+    const seat0 = room.gameState!.players[0];
+    expect(room.submitAction(0, { type: "discard", cardId: seat0.hand[0].id }).ok).toBe(true);
+    clock.advance(5_000);
+    expect(room.gameState!.currentSeat).toBe(1);
+    expect(room.log.entries().every((e) => e.source === "player")).toBe(true);
+
+    // The live socket's own disconnect still counts.
+    const sawDrop = waitFor(host, "room", (info) => info.players[1].connected === false);
+    fresh.disconnect();
+    await sawDrop;
+  });
+
+  it("marks a seat gone the moment its live socket drops, even with a stale one registered", async () => {
+    // The old socket has not timed out yet, so its session is still on the books.
+    // That must not hold the seat open: the reconnect grace starts now.
+    const { server, port, host, guest, roomId, guestCreds } = await seatTwo();
+    await startGame(host);
+    const room = server.manager.get(roomId)!;
+
+    const fresh = await connect(port);
+    expect((await resumeSeat(fresh, guestCreds)).ok).toBe(true);
+    expect(guest.connected).toBe(true);
+
+    const sawDrop = waitFor(host, "room", (info) => info.players[1].connected === false);
+    fresh.disconnect();
+    await sawDrop;
+    expect(room.info().players[1].connected).toBe(false);
+  });
+
+  it("lets go of a seat when its socket takes a seat somewhere else", async () => {
+    const { server, port, host, guest, roomId } = await seatTwo();
+    const room = server.manager.get(roomId)!;
+
+    const sawDrop = waitFor(host, "room", (info) => info.players[1].connected === false);
+    expect((await createRoom(guest, "ben elsewhere")).ok).toBe(true);
+    await sawDrop;
+    expect(room.info().players[1].connected).toBe(false);
+
+    // Reclaiming the seat the socket already holds is not a move.
+    const other = await connect(port);
+    const created = await createRoom(other, "cy");
+    if (!created.ok) throw new Error(created.error);
+    expect((await resumeSeat(other, created.data)).ok).toBe(true);
+    expect(server.manager.get(created.data.roomId)!.info().players[0].connected).toBe(true);
+  });
+
   it("refuses to reclaim a seat with a token from another room", async () => {
     const { port, guestCreds } = await seatTwo();
     const other = await connect(port);
@@ -479,6 +557,63 @@ describe("reconnection", () => {
     expect(wrongRoom.ok).toBe(false);
     const wrongToken = await resumeSeat(other, { ...guestCreds, token: "forged" });
     expect(wrongToken.ok).toBe(false);
+  });
+});
+
+describe("the clock over the wire", () => {
+  it("pushes a fresh view when the server moves for a player who ran out of time", async () => {
+    // Nobody asked for anything, so without the room notifying the transport the
+    // table would silently fall behind until somebody happened to act.
+    const clock = new FakeClock(1_000);
+    const server = createServer({ clock });
+    started.push(server);
+    const port = await server.listen(0);
+
+    const host = await connect(port);
+    const guest = await connect(port);
+    const created = await createRoom(host, "ana");
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    await joinRoom(guest, created.data.roomId, "ben");
+    await startGame(host);
+
+    const room = server.manager.get(created.data.roomId)!;
+    expect(room.gameState!.phase).toBe("draw");
+
+    // The main clock expires: the server draws and opens the discard grace.
+    const timedOut = waitFor(guest, "view", (u) => u.clock.inDiscardGrace);
+    clock.advance(EAST_COAST.timers.baseMs);
+    const update = await timedOut;
+
+    expect(update.view.phase).toBe("play");
+    expect(update.clock.deadlineAt).toBe(
+      1_000 + EAST_COAST.timers.baseMs + EAST_COAST.timers.discardGraceMs,
+    );
+    expect(room.log.entries().at(-1)).toMatchObject({ source: "timeout" });
+  });
+
+  it("sends a deadline the client can anchor against its own clock", async () => {
+    const clock = new FakeClock(500_000);
+    const server = createServer({ clock });
+    started.push(server);
+    const port = await server.listen(0);
+
+    const host = await connect(port);
+    const guest = await connect(port);
+    const created = await createRoom(host, "ana");
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    await joinRoom(guest, created.data.roomId, "ben");
+
+    const dealt = waitFor(host, "view", (u) => u.view.hand.length > 0);
+    await startGame(host);
+    const update = await dealt;
+
+    // Absolute instants, both on the server's clock, so the client computes one
+    // offset rather than counting down a figure that drifts on every update.
+    expect(update.clock.serverNow).toBe(500_000);
+    expect(update.clock.deadlineAt).toBe(500_000 + EAST_COAST.timers.baseMs);
+    expect(update.clock.paused).toBe(false);
   });
 });
 

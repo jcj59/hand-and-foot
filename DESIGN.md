@@ -164,7 +164,26 @@ chose. One consequence matters for the server: a table of nothing but defaults n
 so an abandoned room is reaped rather than left to finish. A heuristic strong enough to serve as the
 agent's evaluation baseline is separate, later work that will share the discard heuristic.
 
-All timers are part of the rule configuration.
+Pacing timers are part of the rule configuration, since they change how the game plays. The
+reconnect grace and the abandoned-room threshold are not: they are operational settings on the
+server, because how long to wait for a dropped socket is not a rule of Hand and Foot. That division
+decides where each setting is configured. Rules are chosen by whoever opens the room; operational
+settings are read from the process environment at startup, where the person deploying the server sets
+them and no player can reach them.
+
+Environment values are validated rather than coerced, which is the opposite of how the server treats
+a room's options arriving over a socket. An untrusted payload is normalized to a safe default, since
+refusing to seat a player over a malformed field would be the worse outcome. An environment variable
+is set deliberately by whoever deploys the server, so silently substituting a default would leave
+them believing they had configured something they had not; the process stops at boot with a message
+naming the variable instead. Shutdown is the same concern from the other end: the server closes its
+rooms on SIGTERM so that every turn clock is released, because a process torn down with timers still
+armed is the same runaway that the abandoned-room reaper exists to prevent, with no reaper left
+running to catch it.
+
+A table where every seat has dropped is reaped rather than left running. That is not housekeeping:
+the safe default never melds, so such a table never ends its round, and left alone it would keep
+playing forever.
 
 ### Persistence
 

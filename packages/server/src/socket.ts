@@ -53,6 +53,22 @@ export function attachSocketServer(io: HfServer, manager: RoomManager): void {
     }
   }
 
+  /**
+   * Make sure the room pushes to the table when the *server* moves.
+   *
+   * Timeouts and disconnect defaults change the game without any client having
+   * asked for anything, so without this the table would silently fall behind
+   * until somebody happened to act.
+   */
+  function wire(room: Room): Room {
+    room.onChange = () => {
+      broadcastViews(room);
+      broadcastRoom(room);
+      broadcastResult(room);
+    };
+    return room;
+  }
+
   /** The room this socket is seated in, with its seat, or null if it has none. */
   function sessionOf(socket: HfSocket): { room: Room; seat: number } | null {
     const session = sessions.get(socket.id);
@@ -62,13 +78,48 @@ export function attachSocketServer(io: HfServer, manager: RoomManager): void {
     return { room, seat: session.seat };
   }
 
+  /**
+   * The one socket that currently speaks for each seat, keyed by room and seat.
+   *
+   * A reconnecting player resumes on a new socket before the server has noticed
+   * the old one is dead, which can take a full ping timeout. Only the owner's
+   * disconnect marks the seat gone: a superseded socket's late disconnect must
+   * not have the server play a live player's turns or reap a room in use, and
+   * the live socket's own disconnect must start the reconnect grace at once
+   * rather than waiting out a dead socket still sitting in `sessions`.
+   */
+  const owners = new Map<string, string>();
+  const seatKey = (roomId: string, seat: number): string => `${roomId}:${seat}`;
+
+  /** Seat this socket, taking the seat over from any socket that held it before. */
+  function claim(socketId: string, roomId: string, seat: number): void {
+    const prior = sessions.get(socketId);
+    if (prior && (prior.roomId !== roomId || prior.seat !== seat)) release(socketId);
+    sessions.set(socketId, { roomId, seat });
+    owners.set(seatKey(roomId, seat), socketId);
+  }
+
+  /** Unseat this socket, marking its seat disconnected only if it still owned it. */
+  function release(socketId: string): void {
+    const session = sessions.get(socketId);
+    sessions.delete(socketId);
+    if (!session) return;
+    const key = seatKey(session.roomId, session.seat);
+    if (owners.get(key) !== socketId) return;
+    owners.delete(key);
+    const room = manager.get(session.roomId);
+    if (!room) return;
+    room.setConnected(session.seat, false);
+    broadcastRoom(room);
+  }
+
   io.on("connection", (socket: HfSocket) => {
     socket.on("createRoom", (payload, ack) => {
-      const room = manager.create(configFor(payload.options));
+      const room = wire(manager.create(configFor(payload.options)));
       const joined = room.join(payload.name);
       /* v8 ignore next -- a room created one statement ago cannot be full or started */
       if (!joined.ok) return ack({ ok: false, error: joined.error });
-      sessions.set(socket.id, { roomId: room.id, seat: joined.value.seat });
+      claim(socket.id, room.id, joined.value.seat);
       const credentials: SeatCredentials = {
         roomId: room.id,
         seat: joined.value.seat,
@@ -82,7 +133,8 @@ export function attachSocketServer(io: HfServer, manager: RoomManager): void {
       const joined = manager.join(payload.roomId, payload.name);
       if (!joined.ok) return ack({ ok: false, error: joined.error });
       const { room, seat, token } = joined.value;
-      sessions.set(socket.id, { roomId: room.id, seat });
+      wire(room);
+      claim(socket.id, room.id, seat);
       ack({ ok: true, data: { roomId: room.id, seat, token } });
       broadcastRoom(room);
     });
@@ -90,11 +142,12 @@ export function attachSocketServer(io: HfServer, manager: RoomManager): void {
     socket.on("resumeSeat", (payload, ack) => {
       const room = manager.get(payload.roomId);
       if (!room) return ack({ ok: false, error: "no room with that code" });
+      wire(room);
       const resumed = room.resume(payload.token);
       if (!resumed.ok) return ack({ ok: false, error: resumed.error });
       // The seat comes from the token, not from the payload's seat field: trusting
       // the field would let anyone with a valid token claim any seat in the room.
-      sessions.set(socket.id, { roomId: room.id, seat: resumed.value.seat });
+      claim(socket.id, room.id, resumed.value.seat);
       ack({ ok: true, data: undefined });
       broadcastRoom(room);
       const update = room.viewFor(resumed.value.seat);
@@ -131,12 +184,6 @@ export function attachSocketServer(io: HfServer, manager: RoomManager): void {
       broadcastViews(session.room);
     });
 
-    socket.on("disconnect", () => {
-      const session = sessionOf(socket);
-      sessions.delete(socket.id);
-      if (!session) return;
-      session.room.setConnected(session.seat, false);
-      broadcastRoom(session.room);
-    });
+    socket.on("disconnect", () => release(socket.id));
   });
 }
