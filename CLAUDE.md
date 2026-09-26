@@ -16,7 +16,7 @@ pnpm + Turborepo monorepo, TypeScript everywhere, four workspace packages:
 | --- | --- | --- |
 | `packages/shared` | `@hf/shared` | Domain types, rules config, presets, client/server contract. Done for M1. |
 | `packages/engine` | `@hf/engine` | Pure rules engine `(state, action) => newState`. **Complete (M1).** |
-| `packages/server` | `@hf/server` | Placeholder stub only. Socket.io server, rooms, timers, action-log persistence = **M2**. |
+| `packages/server` | `@hf/server` | Authoritative Socket.io server: rooms, seats, per-seat broadcast, action log. Turn clock/pacing = M2c; Postgres persistence = M4. |
 | `packages/client` | `@hf/client` | Placeholder stub only. React + Vite + Tailwind + Zustand app = **M3**. |
 
 Libraries are consumed **from source** — each `package.json` points `main`/`types`/`exports` at
@@ -125,6 +125,24 @@ so `canTakePile` and the default policy could not drift apart. The extraction wa
 — the whole M1 suite passed unchanged through it — but the mutants were re-run against the new home
 rather than assumed to have travelled.
 
+### Server testing (M2b)
+
+`@hf/server` is also at **100%** (71 tests). The load-bearing tests are the ones in
+`socket.integration.test.ts` that drive *real* Socket.io clients against a real server on an
+ephemeral port: `project()` being clean says nothing about whether the transport routes the right
+payload to the right socket, and that is what actually leaks a hand. Mutation tested the same way as
+the engine — **14/14 killed**. Two only died after new tests were added, and both were security
+holes the suite could not see:
+
+- **the seat on `resumeSeat` came from the payload, not the token** — a player with their own valid
+  token could name someone else's seat. Pinned now by a forged-seat test.
+- **the room filter in `broadcastViews`** — the cross-room test asserted too early, so a stray view
+  delivered a tick later slipped past. It now drains the loop before asserting.
+
+Socket tests must attach listeners **before** the call that triggers the broadcast. The server emits
+immediately after the ack, so a listener attached afterwards misses it and hangs; use `waitFor` with
+a predicate rather than a bare `once`, since an earlier broadcast can otherwise satisfy it.
+
 Rules tests go **through `applyAction`**, not through the internal handler, so the phase and dispatch
 checks are exercised too. Fixtures are built inline per file with local `card()` / `cards()` /
 `stateWith()` helpers — there is deliberately no shared fixture module, so each test reads
@@ -152,12 +170,13 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   take-pile feasibility solver, go-out conditions, round scoring, stock exhaustion, legal-move hints,
   property tests, golden-game replay.
 - **M2 — server.** In progress, split into three PRs so each is independently green:
-  - **M2a — contract + default policy.** `TurnTimers` replaces the old per-stage `StageTimers`, the
+  - **M2a — contract + default policy.** Done. `TurnTimers` replaces the old per-stage `StageTimers`, the
     socket contract lands in `@hf/shared/protocol.ts`, and `defaultAction` / `chooseDiscard` land in
     `@hf/engine/policy.ts` with the lay-down search extracted to `plan.ts`.
-  - **M2b — rooms and transport.** Room manager, shareable room code, seat assignment, Socket.io
-    wiring with ack callbacks, per-seat `project()` broadcast, append-only log behind an interface
-    (in-memory; Postgres is M4). View security asserted *over the wire*, not just on `project()`.
+  - **M2b — rooms and transport.** Done. `RoomManager` (collision-free codes from a no-look-alike
+    alphabet, case-insensitive lookup), `Room` (seats, seat tokens, host, pause, log, projection),
+    `socket.ts` (ack callbacks, per-seat broadcast), `InMemoryActionLog` behind an `ActionLog`
+    interface, and `clock.ts` with an injectable `Clock` + `FakeClock`.
   - **M2c — clock, pause, disconnect.** Per-room turn clock, pause, reconnect grace, absent-player
     fast-forward, restart-from-log. All timer tests run on an injected clock — nothing sleeps.
 - **Reaping abandoned rooms is M2c work, and it is not optional.** A table where every seat is on the
