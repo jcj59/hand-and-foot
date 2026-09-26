@@ -271,13 +271,41 @@ describe("disconnection", () => {
     clock.advance(grace * 10);
     room.setPaused(1, false);
 
-    // The drop itself moves by the pause, which is also what the reaper reads.
+    // The drop moves by exactly the pause, so the 20s left when the table paused
+    // are what remain now — no more and no less.
+    const since = room.seats()[0].disconnectedAt!;
+    expect(since).toBe(T0 + grace * 10);
+    expect(since).toBeLessThanOrEqual(clock.now());
+    expect(since + grace - clock.now()).toBe(grace - 10_000);
+
+    clock.advance(grace - 10_000 - 1);
+    expect(room.gameState!.currentSeat).toBe(0);
+    expect(room.log.length).toBe(0);
+    clock.advance(1);
+    expect(room.gameState!.currentSeat).toBe(1);
+    expect(room.log.entries().every((e) => e.source === "disconnect")).toBe(true);
+  });
+
+  it("starts the grace of a player who dropped mid-pause at the resume, not later", () => {
+    // Only the overlap with the pause is frozen. Crediting the whole pause would
+    // put the drop in the future: extra grace, and a room that reaps late.
+    const grace = 30_000;
+    const { room, clock } = started({}, new FakeClock(T0), grace);
+    room.setPaused(1, true);
+    clock.advance(50_000);
+    room.setConnected(0, false);
+    clock.advance(20_000);
+    room.setPaused(1, false);
+
+    const resumedAt = T0 + 70_000;
+    expect(clock.now()).toBe(resumedAt);
+    expect(room.seats()[0].disconnectedAt).toBe(resumedAt);
+
     room.setConnected(1, false);
-    expect(room.abandonedSince).toBe(T0 + 10_000 + grace * 10);
+    expect(room.abandonedSince).toBe(resumedAt);
     room.setConnected(1, true);
 
-    // Exactly the 20s of grace left before the pause remain, no more and no less.
-    clock.advance(grace - 10_000 - 1);
+    clock.advance(grace - 1);
     expect(room.gameState!.currentSeat).toBe(0);
     expect(room.log.length).toBe(0);
     clock.advance(1);

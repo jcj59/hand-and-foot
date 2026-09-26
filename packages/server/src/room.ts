@@ -224,13 +224,17 @@ export class Room {
       // family table often pauses precisely to wait for someone who dropped;
       // leaving their reconnect grace running would have the server play their
       // turns the instant the table resumed.
+      const now = this.deps.clock.now();
       // `pausedAt` is set whenever the table is paused, and it is paused here.
       /* v8 ignore next */
-      const frozenFor = this.pausedAt === null ? 0 : this.deps.clock.now() - this.pausedAt;
+      const frozenFor = this.pausedAt === null ? 0 : now - this.pausedAt;
       if (this.turnStartedAt !== null) this.turnStartedAt += frozenFor;
       if (this.graceUntil !== null) this.graceUntil += frozenFor;
       for (const player of this.players) {
-        if (player.disconnectedAt !== null) player.disconnectedAt += frozenFor;
+        if (player.disconnectedAt === null) continue;
+        // Only the part of the drop that overlapped the pause was frozen: someone
+        // who dropped mid-pause starts their grace at the resume, never later.
+        player.disconnectedAt = Math.min(player.disconnectedAt + frozenFor, now);
       }
       this.pausedSeat = undefined;
       this.pausedAt = null;

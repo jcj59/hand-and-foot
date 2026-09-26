@@ -516,6 +516,40 @@ describe("reconnection", () => {
     await sawDrop;
   });
 
+  it("marks a seat gone the moment its live socket drops, even with a stale one registered", async () => {
+    // The old socket has not timed out yet, so its session is still on the books.
+    // That must not hold the seat open: the reconnect grace starts now.
+    const { server, port, host, guest, roomId, guestCreds } = await seatTwo();
+    await startGame(host);
+    const room = server.manager.get(roomId)!;
+
+    const fresh = await connect(port);
+    expect((await resumeSeat(fresh, guestCreds)).ok).toBe(true);
+    expect(guest.connected).toBe(true);
+
+    const sawDrop = waitFor(host, "room", (info) => info.players[1].connected === false);
+    fresh.disconnect();
+    await sawDrop;
+    expect(room.info().players[1].connected).toBe(false);
+  });
+
+  it("lets go of a seat when its socket takes a seat somewhere else", async () => {
+    const { server, port, host, guest, roomId } = await seatTwo();
+    const room = server.manager.get(roomId)!;
+
+    const sawDrop = waitFor(host, "room", (info) => info.players[1].connected === false);
+    expect((await createRoom(guest, "ben elsewhere")).ok).toBe(true);
+    await sawDrop;
+    expect(room.info().players[1].connected).toBe(false);
+
+    // Reclaiming the seat the socket already holds is not a move.
+    const other = await connect(port);
+    const created = await createRoom(other, "cy");
+    if (!created.ok) throw new Error(created.error);
+    expect((await resumeSeat(other, created.data)).ok).toBe(true);
+    expect(server.manager.get(created.data.roomId)!.info().players[0].connected).toBe(true);
+  });
+
   it("refuses to reclaim a seat with a token from another room", async () => {
     const { port, guestCreds } = await seatTwo();
     const other = await connect(port);
