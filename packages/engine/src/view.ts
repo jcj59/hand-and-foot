@@ -36,5 +36,8 @@ export function project(state: GameState, seat: number): PlayerView {
     currentSeat: state.currentSeat,
     phase: state.phase,
     roundNumber: state.roundNumber,
+    // The viewer's own obligation, and only ever theirs: `OpponentView` has no such
+    // field, so another seat's is not merely omitted here but unrepresentable.
+    pickedUp: self.pickedUp ?? [],
   };
 }

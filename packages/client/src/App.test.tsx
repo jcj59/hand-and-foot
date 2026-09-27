@@ -85,6 +85,7 @@ function viewUpdate(room: RoomInfo = roomInfo({ started: true })): ViewUpdate {
       currentSeat: 1,
       phase: "draw",
       roundNumber: 3,
+      pickedUp: [],
     },
     clock: { serverNow: 1_000, deadlineAt: 31_000, inDiscardGrace: false, paused: false },
     room,

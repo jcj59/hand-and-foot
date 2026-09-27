@@ -236,6 +236,17 @@ export interface PlayerView {
   readonly currentSeat: number;
   readonly phase: Phase;
   readonly roundNumber: number;
+  /**
+   * Ids of pile cards taken this turn that still owe a play — the viewer's own
+   * take-pile obligation.
+   *
+   * The viewer's own information: these cards are in the hand they can already see,
+   * and it is only ever projected for the seat receiving the view, never for an
+   * opponent. It is here because the alternative is a client that cannot tell a
+   * player why their discard is about to be refused, or which of the cards in their
+   * hand would settle it.
+   */
+  readonly pickedUp: readonly string[];
 }
 
 /** One meld a player lays or extends: the cards to add and the rank they form. */
