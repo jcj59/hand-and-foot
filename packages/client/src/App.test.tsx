@@ -174,7 +174,10 @@ describe("routing", () => {
       useSession.getState().seat({ roomId: "ABC234", seat: 0, token: "t0" });
     });
     socket.fire("view", viewUpdate());
-    expect(screen.getByText(/round 3, seat 1 to act/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /table ABC234/i })).toBeInTheDocument();
+    expect(screen.getByText(/round 3/i)).toBeInTheDocument();
+    // Seat 1 is on turn in this fixture, so the table offers nothing and says so.
+    expect(screen.getByText(/waiting for ben/i)).toBeInTheDocument();
   });
 
   it("sends an unknown URL back to the home screen", () => {

@@ -804,6 +804,66 @@ describe("a whole round, end to end", () => {
     expect(endings[0].scores.map((s) => s.seat)).toEqual([0, 1]);
   }, 30_000);
 
+  it("gives a seat that resumes after the round ended the result, and only that seat", async () => {
+    // The result is broadcast once, at the end of the round. A player who reloads
+    // after that holds a finished view with no scores, and the table would go back
+    // to showing a turn that will never come.
+    const { server, port } = await boot();
+    const room = server.manager.create({
+      ...EAST_COAST,
+      extraDecks: 0,
+      stockExhaustion: "end",
+    });
+
+    const host = await connect(port);
+    const guest = await connect(port);
+    const created = await joinRoom(host, room.id, "ana");
+    const joined = await joinRoom(guest, room.id, "ben");
+    expect(created.ok && joined.ok).toBe(true);
+    if (!joined.ok) return;
+
+    const sockets = [host, guest];
+    const endings: RoundEnded[] = [];
+    for (const s of sockets) s.on("roundEnded", (r) => endings.push(r));
+    expect((await startGame(host)).ok).toBe(true);
+
+    let moves = 0;
+    while (!room.gameState?.roundEnded && moves < 500) {
+      const state = room.gameState!;
+      const action = defaultAction(state);
+      expect(action, `no default at move ${moves}`).not.toBeNull();
+      expect((await submit(sockets[state.currentSeat], action as Action)).ok).toBe(true);
+      moves++;
+    }
+    expect(room.gameState?.roundEnded).toBe(true);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(endings).toHaveLength(2);
+
+    const fresh = await connect(port);
+    const heard: RoundEnded[] = [];
+    fresh.on("roundEnded", (r) => heard.push(r));
+    const views = trackViews(fresh);
+    expect((await resumeSeat(fresh, joined.data)).ok).toBe(true);
+
+    await new Promise((r) => setTimeout(r, 50));
+    expect(heard).toEqual([room.result()]);
+    expect(heard[0]).toEqual(endings[1]);
+    expect(views.last?.clock.deadlineAt).toBeNull();
+    // Resuming one seat does not replay the result to the rest of the table.
+    expect(endings).toHaveLength(2);
+  }, 30_000);
+
+  it("sends no result to a seat that resumes while the round is still live", async () => {
+    const { port, host, guestCreds } = await seatTwo();
+    expect((await startGame(host)).ok).toBe(true);
+    const fresh = await connect(port);
+    const heard: RoundEnded[] = [];
+    fresh.on("roundEnded", (r) => heard.push(r));
+    expect((await resumeSeat(fresh, guestCreds)).ok).toBe(true);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(heard).toEqual([]);
+  });
+
   it("keeps a finished round's scores out of another room on the same server", async () => {
     // The room filter on the roundEnded broadcast, which the view broadcast has
     // its own test for. Scores name every seat at the table, so one delivered to

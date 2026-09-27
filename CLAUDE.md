@@ -158,7 +158,7 @@ rather than assumed to have travelled.
 
 ### Server testing (M2b, M2c, M2d)
 
-`@hf/server` is also at **100%** (173 tests). The load-bearing tests are the ones in
+`@hf/server` is also at **100%** (176 tests). The load-bearing tests are the ones in
 `socket.integration.test.ts` that drive *real* Socket.io clients against a real server on an
 ephemeral port: `project()` being clean says nothing about whether the transport routes the right
 payload to the right socket, and that is what actually leaks a hand. Mutation tested the same way as
@@ -319,8 +319,13 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
     seat number**, `resumeSeat` acks the resolved `SeatCredentials`, and a per-socket `seat` event
     tells a moved client its new number. Once dealt, the seat stays and is marked `left`, which
     `seatIsAbsent` treats as grace already expired. Only the seat's current owner socket may leave.
-  - **M3c — table.** Not started. SVG cards, hand, opponents' counts, melds, discard pile, stock
-    count, turn indicator, and the turn clock rendered through `serverTime.ts`.
+  - **M3c — table.** Done. `PlayingCard` (SVG, so a card scales with no assets and its rank and suit
+    are real text), `Melds`, `Seats`, `TurnClock`, and the `Table` route. Hand ordering
+    (`handOrder.ts`) groups cards by how they play rather than by rank: naturals ascending, then black
+    threes, then wilds, then red threes, because a rank-only sort scatters the wilds to both ends and
+    drops both kinds of three among the naturals. Draw and take-pile are wired; both are driven by
+    `hints`, never by a local guess. Accessible names are load-bearing, not decoration — they are how
+    the tests find one card among fourteen.
   - **M3d — staging and commit.** Not started. The subtle one: staging melds locally with a running
     total against the round minimum (reusing `validateMeld` / `meldPoints` from the engine rather than
     reimplementing them), the take-pile obligation, "you must discard now", and the go-out affordance.

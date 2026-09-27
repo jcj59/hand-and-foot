@@ -41,7 +41,10 @@ export interface ClockState {
    * update.
    */
   readonly serverNow: number;
-  /** Absolute server time the current window expires; null when paused or not started. */
+  /**
+   * Absolute server time the current window expires; null when paused, not
+   * started, or once the round is over and no turn is live.
+   */
   readonly deadlineAt: number | null;
   /** True once the main clock has run out and only a discard will be accepted. */
   readonly inDiscardGrace: boolean;

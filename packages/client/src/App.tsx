@@ -12,6 +12,7 @@ import { ConnectionBanner } from "./ConnectionBanner";
 import { loadCredentials } from "./credentials";
 import { Home } from "./routes/Home";
 import { Lobby } from "./routes/Lobby";
+import { Table } from "./routes/Table";
 import { attachSession, useSession } from "./session";
 import type { HfClientSocket } from "./socket";
 
@@ -102,21 +103,6 @@ function RoomRoute({ socket }: { readonly socket: HfClientSocket }): React.React
   const room = useSession((s) => s.room);
 
   if (!credentials) return <Home socket={socket} />;
-  if (room?.started) return <Table />;
+  if (room?.started) return <Table socket={socket} />;
   return <Lobby socket={socket} />;
-}
-
-/** Placeholder for the table (M3c). */
-function Table(): React.ReactElement {
-  const update = useSession((s) => s.update);
-  return (
-    <main className="mx-auto flex w-full max-w-md flex-col gap-4 p-8">
-      <h1 className="text-2xl font-semibold">Table</h1>
-      <p className="text-white/70">
-        {update
-          ? `Round ${update.view.roundNumber}, seat ${update.hints.seatToAct} to act.`
-          : "Waiting for the first deal."}
-      </p>
-    </main>
-  );
 }
