@@ -155,6 +155,14 @@ describe("joining a table", () => {
     mount(fakeSocket().socket, "/room/abc234");
     expect(codeBox()).toHaveValue("ABC234");
     expect(screen.getByText(/invited to a table/i)).not.toBeNull();
+    // The name is the only thing missing, so the cursor goes there.
+    expect(nameBox()).toHaveFocus();
+  });
+
+  it("starts with the name field focused on a plain visit too", () => {
+    // A name comes first whichever way the player then goes.
+    mount(fakeSocket().socket);
+    expect(nameBox()).toHaveFocus();
   });
 
   it("shows the server's reason when the table is not there", async () => {

@@ -68,7 +68,8 @@ export function Home({ socket }: HomeProps): React.ReactElement {
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="e.g. Ana"
-          autoFocus={!fromLink}
+          // First either way, and from a shared link it is the only thing missing.
+          autoFocus
           maxLength={24}
         />
       </label>
@@ -87,7 +88,6 @@ export function Home({ socket }: HomeProps): React.ReactElement {
             value={code}
             onChange={(e) => setCode(normalizeRoomCode(e.target.value))}
             placeholder="ABC234"
-            autoFocus={Boolean(fromLink)}
             // The browser truncates to this before normalizing ever sees it, so it
             // leaves room for the separators people type: "ABC-234", "a b c 2 3 4".
             maxLength={ROOM_CODE_LENGTH * 2}
