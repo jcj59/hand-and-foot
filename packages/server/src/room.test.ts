@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { EAST_COAST, type RulesConfig } from "@hf/shared";
+import { legalHints } from "@hf/engine";
 import { FakeClock } from "./clock";
 import { InMemoryActionLog } from "./log";
 import { MAX_PLAYERS, Room } from "./room";
@@ -247,6 +248,55 @@ describe("projection and results", () => {
     const visible = JSON.stringify(mine.view);
     for (const id of theirs) expect(visible).not.toContain(id);
     expect(mine.view.hand).toHaveLength(EAST_COAST.handSize);
+  });
+
+  it("sends each seat the hints for that seat, not the seat on turn", () => {
+    // The whole point of shipping hints is that the client cannot derive them:
+    // canTakePile and canGoOut read the full state. Computing them for the wrong
+    // seat would both mislead the receiver and tell them something about another
+    // player's hand, so the seat has to be threaded through correctly.
+    const room = newRoom();
+    seated(room, ["ana", "ben"]);
+    room.start(0);
+    const onTurn = room.viewFor(0)!;
+    const waiting = room.viewFor(1)!;
+
+    expect(onTurn.hints).toEqual(legalHints(room.gameState!, 0));
+    expect(waiting.hints).toEqual(legalHints(room.gameState!, 1));
+    // Seat 0 opens the round, so only it may act.
+    expect(onTurn.hints.seatToAct).toBe(0);
+    expect(onTurn.hints.canDraw).toBe(true);
+    expect(waiting.hints.canDraw).toBe(false);
+  });
+
+  it("keeps hints free of any card identity, so they cannot leak a hand", () => {
+    // Hints are booleans, a seat number and a list of ranks. If a card id ever
+    // appeared in one it would be a hole in the same boundary `view` defends.
+    const room = newRoom();
+    seated(room, ["ana", "ben"]);
+    room.start(0);
+    const everyCardId = room
+      .gameState!.players.flatMap((p) => [...p.hand, ...p.foot])
+      .map((c) => c.id);
+    for (const seat of [0, 1]) {
+      const serialized = JSON.stringify(room.viewFor(seat)!.hints);
+      for (const id of everyCardId) expect(serialized).not.toContain(id);
+    }
+  });
+
+  it("moves the hints along with the turn", () => {
+    // Pinned because a stale hint is worse than no hint: a client that still
+    // believes it may draw will offer an action the reducer now refuses.
+    const room = newRoom();
+    seated(room, ["ana", "ben"]);
+    room.start(0);
+    room.submitAction(0, { type: "draw" });
+    expect(room.viewFor(0)!.hints.phase).toBe("play");
+    expect(room.viewFor(0)!.hints.canDraw).toBe(false);
+    room.submitAction(0, { type: "discard", cardId: room.gameState!.players[0].hand[0].id });
+    expect(room.viewFor(1)!.hints.seatToAct).toBe(1);
+    expect(room.viewFor(1)!.hints.canDraw).toBe(true);
+    expect(room.viewFor(0)!.hints.canDraw).toBe(false);
   });
 
   it("reports no deadline before the game starts", () => {

@@ -22,10 +22,10 @@
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
+    "@vitest/coverage-v8": "^5.0.2",
     "socket.io-client": "^4.8.3",
     "tsx": "^4.20.6",
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8",
-    "@vitest/coverage-v8": "^2.1.9"
+    "vitest": "^5.0.2"
   }
 }

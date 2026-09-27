@@ -1,6 +1,6 @@
 import {
   type GameState,
-  type Phase,
+  type LegalHints,
   type Rank,
   isBlackThree,
   isRedThree,
@@ -10,14 +10,10 @@ import { activeCards } from "./core";
 import { canTakePile } from "./feasibility";
 import { canGoOut } from "./goout";
 
-export interface LegalHints {
-  readonly seatToAct: number;
-  readonly phase: Phase;
-  readonly canDraw: boolean;
-  readonly canTakePile: boolean;
-  readonly meldableRanks: readonly Rank[];
-  readonly canGoOut: boolean;
-}
+// `LegalHints` itself lives in `@hf/shared`: it crosses the socket inside a
+// `ViewUpdate`, so the client has to be able to name the type too. Re-exported
+// here so that existing `@hf/engine` importers are unaffected.
+export type { LegalHints };
 
 function meldableRanks(state: GameState, seat: number): Rank[] {
   const player = state.players[seat];

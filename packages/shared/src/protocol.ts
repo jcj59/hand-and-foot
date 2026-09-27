@@ -8,7 +8,7 @@
 // file: the server sends a `PlayerView` produced by the engine's projection,
 // which is the anti-cheat boundary, and these types only wrap it.
 
-import type { Action, GameMode, PlayerView, RoundScore, RulesConfig } from "./index";
+import type { Action, GameMode, LegalHints, PlayerView, RoundScore, RulesConfig } from "./index";
 
 /** Where an action in the log came from. */
 export type ActionSource = "player" | "timeout" | "disconnect";
@@ -73,6 +73,17 @@ export interface ViewUpdate {
   readonly view: PlayerView;
   readonly clock: ClockState;
   readonly room: RoomInfo;
+  /**
+   * Which kinds of move are open to this seat, computed by the server.
+   *
+   * The client cannot work this out for itself: `canTakePile` and `canGoOut` are
+   * decided by predicates that read the whole `GameState`, and a client only ever
+   * holds its own `PlayerView`. Sending the answer keeps one implementation of
+   * legality — the reducer's — instead of a second, drifting copy in the UI. It
+   * discloses nothing, since every field describes the seat's own cards and the
+   * face-up discard pile.
+   */
+  readonly hints: LegalHints;
 }
 
 /** Sent once when a round finishes, to every seat. */
