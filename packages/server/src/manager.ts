@@ -1,4 +1,11 @@
-import { EAST_COAST, WEST_COAST, type RoomOptions, type RulesConfig } from "@hf/shared";
+import {
+  EAST_COAST,
+  ROOM_CODE_ALPHABET,
+  ROOM_CODE_LENGTH,
+  WEST_COAST,
+  type RoomOptions,
+  type RulesConfig,
+} from "@hf/shared";
 import { defaultConfig } from "@hf/engine";
 import { type Clock, systemClock } from "./clock";
 import { Room, type RoomResult } from "./room";
@@ -22,14 +29,9 @@ export function configFor(options: RoomOptions = {}): RulesConfig {
   return { ...preset, mode, pauseEnabled: mode === "family" };
 }
 
-/**
- * Room codes are typed by a human off a shared link or read aloud across a
- * table, so the alphabet leaves out the characters people confuse: no O/0, no
- * I/1/L. Six characters from a 30-symbol alphabet is ~2.9 billion codes, which
- * is ample for a game whose rooms are short-lived.
- */
-const CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
-const CODE_LENGTH = 6;
+// The alphabet and length live in `@hf/shared`, because the client validates a
+// typed code against them before spending a round trip. Six characters from a
+// 31-symbol alphabet is ~2.9 billion codes, ample for short-lived rooms.
 
 export const DEFAULT_ABANDONED_ROOM_MS = 10 * 60_000;
 export const DEFAULT_SWEEP_INTERVAL_MS = 60_000;
@@ -92,7 +94,7 @@ export class RoomManager {
     const room = new Room(id, config, {
       clock: this.clock,
       seed: Math.floor(this.random() * 2 ** 31),
-      newToken: () => randomString(CODE_ALPHABET, 24, this.random),
+      newToken: () => randomString(ROOM_CODE_ALPHABET, 24, this.random),
       reconnectGraceMs: this.reconnectGraceMs,
     });
     this.rooms.set(id, room);
@@ -160,6 +162,6 @@ export class RoomManager {
   }
 
   private newCode(): string {
-    return randomString(CODE_ALPHABET, CODE_LENGTH, this.random);
+    return randomString(ROOM_CODE_ALPHABET, ROOM_CODE_LENGTH, this.random);
   }
 }

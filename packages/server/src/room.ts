@@ -1,4 +1,6 @@
 import {
+  MAX_PLAYERS,
+  MIN_PLAYERS,
   type Action,
   type ActionSource,
   type ClockState,
@@ -13,8 +15,9 @@ import type { Clock } from "./clock";
 import { type ActionLog, InMemoryActionLog } from "./log";
 
 /** The engine will deal any number of seats; a game of Hand and Foot will not. */
-export const MIN_PLAYERS = 2;
-export const MAX_PLAYERS = 8;
+// Defined in `@hf/shared` so the client can say "a table seats at most eight"
+// without a second copy of the number. Re-exported for existing importers.
+export { MAX_PLAYERS, MIN_PLAYERS };
 
 /**
  * Ceiling on forced moves the server will play in one go. A turn is at most
@@ -25,7 +28,11 @@ export const MAX_PLAYERS = 8;
 const MAX_FORCED_MOVES_PER_TURN = 12;
 
 export interface RoomPlayer {
-  readonly seat: number;
+  /**
+   * Position at the table. Stable once dealt; in the lobby a departure closes the
+   * gap, so anything that has to survive that keys on `token` instead.
+   */
+  seat: number;
   readonly name: string;
   /**
    * Bearer credential for this seat, used to reclaim it after a disconnect.
@@ -36,6 +43,12 @@ export interface RoomPlayer {
   connected: boolean;
   /** When they dropped, so the reconnect grace can be measured. Null while connected. */
   disconnectedAt: number | null;
+  /**
+   * Walked away from a dealt game on purpose. Such a seat is played for at once
+   * rather than after the reconnect grace — nobody is coming back to it — until
+   * the same token resumes it.
+   */
+  left: boolean;
 }
 
 export type RoomResult<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -167,8 +180,40 @@ export class Room {
       token: this.deps.newToken(),
       connected: true,
       disconnectedAt: null,
+      left: false,
     };
     this.players.push(player);
+    return succeed(player);
+  }
+
+  /**
+   * Give up a seat on purpose.
+   *
+   * Before the deal the seat is removed outright and the ones after it close up,
+   * because `deal` seats exactly `players.length` players and a gap would be dealt
+   * a hand nobody holds. The first seat hosts, so a departing host hands the table
+   * to whoever is next in line. After the deal the engine's player count is fixed,
+   * so the seat stays and is treated as a disconnect whose grace has already run
+   * out: the default policy plays it straight away instead of stalling the table.
+   */
+  leave(token: string): RoomResult<RoomPlayer> {
+    const player = this.seatOf(token);
+    if (!player) return fail("that seat token does not belong to this room");
+    if (!this.started) {
+      const pauser = this.pausedSeat === undefined ? undefined : this.players[this.pausedSeat];
+      this.players.splice(this.players.indexOf(player), 1);
+      this.players.forEach((p, index) => {
+        p.seat = index;
+      });
+      // The pause belongs to a player, not a number: it follows its holder to
+      // their new seat, and goes with them if they are the one leaving, since
+      // nobody else is holding it.
+      if (pauser === player) this.unpause();
+      else if (pauser) this.pausedSeat = pauser.seat;
+      return succeed(player);
+    }
+    player.left = true;
+    this.setConnected(player.seat, false);
     return succeed(player);
   }
 
@@ -176,6 +221,7 @@ export class Room {
   resume(token: string): RoomResult<RoomPlayer> {
     const player = this.seatOf(token);
     if (!player) return fail("that seat token does not belong to this room");
+    player.left = false;
     this.setConnected(player.seat, true);
     return succeed(player);
   }
@@ -202,7 +248,10 @@ export class Room {
     return succeed(this.state);
   }
 
-  /** The first seat to join hosts. Kept simple deliberately: no host migration yet. */
+  /**
+   * The first seat hosts. A host who leaves the lobby passes it on without any
+   * bookkeeping, because the seats behind them close up and the next becomes 0.
+   */
   get hostSeat(): number {
     return 0;
   }
@@ -218,29 +267,34 @@ export class Room {
     if (paused) {
       this.pausedSeat = seat;
       this.pausedAt = this.deps.clock.now();
+      this.rearm();
     } else {
-      // Give back exactly the time the table stood still, so a pause costs the
-      // player on the clock nothing — and a dropped player nothing either. A
-      // family table often pauses precisely to wait for someone who dropped;
-      // leaving their reconnect grace running would have the server play their
-      // turns the instant the table resumed.
-      const now = this.deps.clock.now();
-      // `pausedAt` is set whenever the table is paused, and it is paused here.
-      /* v8 ignore next */
-      const frozenFor = this.pausedAt === null ? 0 : now - this.pausedAt;
-      if (this.turnStartedAt !== null) this.turnStartedAt += frozenFor;
-      if (this.graceUntil !== null) this.graceUntil += frozenFor;
-      for (const player of this.players) {
-        if (player.disconnectedAt === null) continue;
-        // Only the part of the drop that overlapped the pause was frozen: someone
-        // who dropped mid-pause starts their grace at the resume, never later.
-        player.disconnectedAt = Math.min(player.disconnectedAt + frozenFor, now);
-      }
-      this.pausedSeat = undefined;
-      this.pausedAt = null;
+      this.unpause();
     }
-    this.rearm();
     return succeed(undefined);
+  }
+
+  private unpause(): void {
+    // Give back exactly the time the table stood still, so a pause costs the
+    // player on the clock nothing — and a dropped player nothing either. A
+    // family table often pauses precisely to wait for someone who dropped;
+    // leaving their reconnect grace running would have the server play their
+    // turns the instant the table resumed.
+    const now = this.deps.clock.now();
+    // `pausedAt` is set whenever the table is paused, and it is paused here.
+    /* v8 ignore next */
+    const frozenFor = this.pausedAt === null ? 0 : now - this.pausedAt;
+    if (this.turnStartedAt !== null) this.turnStartedAt += frozenFor;
+    if (this.graceUntil !== null) this.graceUntil += frozenFor;
+    for (const player of this.players) {
+      if (player.disconnectedAt === null) continue;
+      // Only the part of the drop that overlapped the pause was frozen: someone
+      // who dropped mid-pause starts their grace at the resume, never later.
+      player.disconnectedAt = Math.min(player.disconnectedAt + frozenFor, now);
+    }
+    this.pausedSeat = undefined;
+    this.pausedAt = null;
+    this.rearm();
   }
 
   /**
@@ -327,10 +381,12 @@ export class Room {
    * are set together and the timestamp is the one carrying the information.
    */
   private seatIsAbsent(seat: number): boolean {
+    const player = this.players[seat];
     /* v8 ignore next -- currentSeat always indexes a real seat */
-    const since = this.players[seat]?.disconnectedAt ?? null;
-    if (since === null) return false;
-    return this.deps.clock.now() - since >= this.reconnectGraceMs;
+    if (!player) return false;
+    if (player.left) return true;
+    if (player.disconnectedAt === null) return false;
+    return this.deps.clock.now() - player.disconnectedAt >= this.reconnectGraceMs;
   }
 
   private rearm(): void {

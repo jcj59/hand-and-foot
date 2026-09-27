@@ -258,6 +258,29 @@ export interface RoundScore {
 }
 
 /**
+ * How a table is addressed, and how many may sit at it.
+ *
+ * These live here rather than in the server because the client needs them too: it
+ * validates a typed room code before spending a round trip on it, and it has to
+ * say "a table seats at most eight" while the Deal button is still disabled.
+ * Duplicating them in the interface would let the two drift, and the copy that
+ * drifted would be the one a player is arguing with.
+ *
+ * The alphabet leaves out every character people confuse when reading a code off
+ * a link or hearing it across a table: no O or 0, no I, 1 or L. A consequence
+ * worth knowing in the interface: since none of those ever appears in a real
+ * code, a player who typed one made a mistake that cannot be silently corrected —
+ * there is no unambiguous character to map it to — so the input rejects it rather
+ * than guessing at a room.
+ */
+export const ROOM_CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
+export const ROOM_CODE_LENGTH = 6;
+
+/** A table needs two to deal and seats eight at most. */
+export const MIN_PLAYERS = 2;
+export const MAX_PLAYERS = 8;
+
+/**
  * A summary of the kinds of move available to one seat right now.
  *
  * It lives here rather than beside `legalHints` in the engine because it crosses

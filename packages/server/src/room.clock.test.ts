@@ -344,6 +344,50 @@ describe("disconnection", () => {
   });
 });
 
+describe("leaving a dealt game", () => {
+  it("keeps the seat but plays it at once instead of waiting out the grace", () => {
+    const { room, clock } = started({}, new FakeClock(T0), 30_000);
+    const token = room.seats()[0].token;
+    expect(room.leave(token).ok).toBe(true);
+    expect(room.seatCount).toBe(2);
+    expect(room.info().players[0].connected).toBe(false);
+
+    clock.advance(0);
+    expect(room.gameState!.currentSeat).toBe(1);
+    expect(room.log.entries().every((e) => e.source === "disconnect")).toBe(true);
+
+    // And on every later turn, still without a wait.
+    draw(room);
+    discardSomething(room);
+    clock.advance(0);
+    expect(room.gameState!.currentSeat).toBe(1);
+  });
+
+  it("stays absent across a pause, rather than being handed a fresh grace", () => {
+    const { room, clock } = started({}, new FakeClock(T0), 30_000);
+    expect(room.setPaused(1, true).ok).toBe(true);
+    room.leave(room.seats()[0].token);
+    clock.advance(10_000);
+    expect(room.setPaused(1, false).ok).toBe(true);
+    clock.advance(0);
+    expect(room.gameState!.currentSeat).toBe(1);
+  });
+
+  it("gives the seat back to the same token if it resumes", () => {
+    const { room, clock } = started({}, new FakeClock(T0), 30_000);
+    const token = room.seats()[1].token;
+    room.leave(token);
+    expect(room.resume(token).ok).toBe(true);
+    draw(room);
+    discardSomething(room);
+    expect(room.gameState!.currentSeat).toBe(1);
+    clock.advance(10);
+    // Back in control: the seat waits for its own move again.
+    expect(room.gameState!.currentSeat).toBe(1);
+    expect(room.log.entries().every((e) => e.source === "player")).toBe(true);
+  });
+});
+
 describe("clock lifecycle", () => {
   it("leaves no timer armed when a player's own move ends the round", () => {
     // The timer path already clears itself on the way through, so only a round

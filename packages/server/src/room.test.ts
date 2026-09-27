@@ -101,6 +101,98 @@ describe("seat tokens", () => {
   });
 });
 
+describe("leaving the lobby", () => {
+  it("frees the seat and closes the gap behind it", () => {
+    const room = newRoom();
+    seated(room, ["ana", "ben", "cy"]);
+    const cyToken = room.seats()[2].token;
+    const left = room.leave(room.seats()[1].token);
+    expect(left.ok && left.value.name).toBe("ben");
+    expect(room.info().players).toEqual([
+      { seat: 0, name: "ana", connected: true },
+      { seat: 1, name: "cy", connected: true },
+    ]);
+    // The token is what survives a renumbering; it now resolves to the new seat.
+    expect(room.seatOf(cyToken)?.seat).toBe(1);
+  });
+
+  it("lets someone else take the freed seat", () => {
+    const room = newRoom();
+    seated(
+      room,
+      Array.from({ length: MAX_PLAYERS }, (_, i) => `p${i}`),
+    );
+    expect(room.join("waiting").ok).toBe(false);
+    const leaver = room.seats()[3].token;
+    expect(room.leave(leaver).ok).toBe(true);
+    const joined = room.join("waiting");
+    expect(joined.ok && joined.value.seat).toBe(MAX_PLAYERS - 1);
+    // The departed token is gone for good, not parked on a seat.
+    expect(room.resume(leaver).ok).toBe(false);
+  });
+
+  it("deals only the players still seated", () => {
+    const room = newRoom();
+    seated(room, ["ana", "ben", "cy"]);
+    room.leave(room.seats()[2].token);
+    expect(room.start(0).ok).toBe(true);
+    expect(room.gameState!.players).toHaveLength(2);
+  });
+
+  it("hands the host to the next seat when the host leaves", () => {
+    const room = newRoom();
+    seated(room, ["ana", "ben", "cy"]);
+    room.leave(room.seats()[0].token);
+    expect(room.info().hostSeat).toBe(0);
+    expect(room.info().players[0].name).toBe("ben");
+    expect(room.start(0).ok).toBe(true);
+  });
+
+  it("leaves the room reapable once the last player goes", () => {
+    const room = newRoom();
+    seated(room, ["ana"]);
+    expect(room.abandonedSince).toBeNull();
+    room.leave(room.seats()[0].token);
+    expect(room.seatCount).toBe(0);
+    expect(room.abandonedSince).toBe(room.createdAt);
+  });
+
+  it("lifts the pause when the player holding it leaves", () => {
+    const room = newRoom();
+    seated(room, ["ana", "ben"]);
+    expect(room.setPaused(0, true).ok).toBe(true);
+    room.leave(room.seats()[0].token);
+    // Otherwise the pause would be credited to ben, who moved up into seat 0.
+    expect(room.paused).toBe(false);
+    expect(room.info().pausedBy).toBeUndefined();
+    expect(room.setPaused(0, true).ok).toBe(true);
+  });
+
+  it("moves the pause down with its holder when a lower seat leaves", () => {
+    const room = newRoom();
+    seated(room, ["ana", "ben"]);
+    expect(room.setPaused(1, true).ok).toBe(true);
+    room.leave(room.seats()[0].token);
+    expect(room.info().pausedBy).toBe(0);
+    expect(room.info().players[0].name).toBe("ben");
+  });
+
+  it("leaves the pause where it is when a higher seat leaves", () => {
+    const room = newRoom();
+    seated(room, ["ana", "ben", "cy"]);
+    expect(room.setPaused(0, true).ok).toBe(true);
+    room.leave(room.seats()[2].token);
+    expect(room.info().pausedBy).toBe(0);
+  });
+
+  it("refuses a token that is not at the table", () => {
+    const room = newRoom();
+    seated(room, ["ana", "ben"]);
+    expect(room.leave("not-a-real-token").ok).toBe(false);
+    expect(room.seatCount).toBe(2);
+  });
+});
+
 describe("submitting actions", () => {
   it("rejects an action before the game has started", () => {
     const room = newRoom();

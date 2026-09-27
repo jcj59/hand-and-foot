@@ -189,6 +189,17 @@ chose. One consequence matters for the server: a table of nothing but defaults n
 so an abandoned room is reaped rather than left to finish. A heuristic strong enough to serve as the
 agent's evaluation baseline is separate, later work that will share the discard heuristic.
 
+Leaving on purpose is a separate `leaveRoom` request rather than a closed socket, because the tab
+usually stays open and the connection outlives the player's interest in the table. Before the deal
+the seat is removed and the seats behind it close up, since `deal` seats exactly as many players as
+there are and a gap would be dealt a hand nobody holds; the first seat hosts, so a departing host
+hands the table to the next in line with no extra bookkeeping. Closing the gap renumbers other
+players, so the server keys each socket's seat by token rather than by number, answers a
+`resumeSeat` with the seat it resolved, and tells any socket that moved its new number. After the
+deal the player count is fixed, so the seat stays and is treated as a disconnect whose grace has
+already run out: the server plays it at once instead of stalling the table for a player who has
+said they are not coming back.
+
 Pacing timers are part of the rule configuration, since they change how the game plays. The
 reconnect grace and the abandoned-room threshold are not: they are operational settings on the
 server, because how long to wait for a dropped socket is not a rule of Hand and Foot. That division

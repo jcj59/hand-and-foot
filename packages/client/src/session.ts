@@ -35,6 +35,12 @@ export interface SessionState {
   setStatus(status: ConnectionStatus): void;
   /** Remember a seat, persisting it so a reload can reclaim it. */
   seat(credentials: SeatCredentials): void;
+  /**
+   * Take the seat number the server says this socket now holds, after others
+   * left the lobby and the seats closed up. The token, and so the seat, is the
+   * same; only its position moved.
+   */
+  reseat(seat: number): void;
   /** Forget the seat and everything about the table. */
   leave(): void;
   applyRoom(room: RoomInfo): void;
@@ -57,6 +63,12 @@ export const useSession = create<SessionState>((set, get) => ({
   seat: (credentials) => {
     saveCredentials(credentials);
     set({ credentials });
+  },
+
+  reseat: (seat) => {
+    const credentials = get().credentials;
+    if (!credentials) return;
+    get().seat({ ...credentials, seat });
   },
 
   leave: () => {
@@ -97,16 +109,18 @@ export interface SessionSocket {
   on(event: "view", handler: (update: ViewUpdate) => void): void;
   on(event: "room", handler: (info: RoomInfo) => void): void;
   on(event: "roundEnded", handler: (result: RoundEnded) => void): void;
+  on(event: "seat", handler: (seat: number) => void): void;
   off(event: "connect" | "disconnect", handler: () => void): void;
   off(event: "view", handler: (update: ViewUpdate) => void): void;
   off(event: "room", handler: (info: RoomInfo) => void): void;
   off(event: "roundEnded", handler: (result: RoundEnded) => void): void;
+  off(event: "seat", handler: (seat: number) => void): void;
 }
 
 /** The subset of the store the wiring writes to. */
 export type SessionSink = Pick<
   SessionState,
-  "setStatus" | "applyRoom" | "applyUpdate" | "applyResult"
+  "setStatus" | "applyRoom" | "applyUpdate" | "applyResult" | "reseat"
 >;
 
 /**
@@ -122,12 +136,14 @@ export function attachSession(socket: SessionSocket, sink: SessionSink): () => v
   const onView = (update: ViewUpdate): void => sink.applyUpdate(update);
   const onRoom = (info: RoomInfo): void => sink.applyRoom(info);
   const onResult = (result: RoundEnded): void => sink.applyResult(result);
+  const onSeat = (seat: number): void => sink.reseat(seat);
 
   socket.on("connect", onConnect);
   socket.on("disconnect", onDisconnect);
   socket.on("view", onView);
   socket.on("room", onRoom);
   socket.on("roundEnded", onResult);
+  socket.on("seat", onSeat);
 
   return () => {
     socket.off("connect", onConnect);
@@ -135,5 +151,6 @@ export function attachSession(socket: SessionSocket, sink: SessionSink): () => v
     socket.off("view", onView);
     socket.off("room", onRoom);
     socket.off("roundEnded", onResult);
+    socket.off("seat", onSeat);
   };
 }

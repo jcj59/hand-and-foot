@@ -100,8 +100,13 @@ export function joinRoom(
 export function resumeSeat(
   socket: HfClientSocket,
   credentials: SeatCredentials,
-): Promise<Ack<undefined>> {
+): Promise<Ack<SeatCredentials>> {
   return ask((ack) => socket.emit("resumeSeat", credentials, ack));
+}
+
+/** Give up the seat this socket holds. */
+export function leaveRoom(socket: HfClientSocket): Promise<Ack<undefined>> {
+  return ask((ack) => socket.emit("leaveRoom", ack));
 }
 
 export function startGame(socket: HfClientSocket): Promise<Ack<undefined>> {

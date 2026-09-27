@@ -158,7 +158,7 @@ rather than assumed to have travelled.
 
 ### Server testing (M2b, M2c, M2d)
 
-`@hf/server` is also at **100%** (165 tests). The load-bearing tests are the ones in
+`@hf/server` is also at **100%** (173 tests). The load-bearing tests are the ones in
 `socket.integration.test.ts` that drive *real* Socket.io clients against a real server on an
 ephemeral port: `project()` being clean says nothing about whether the transport routes the right
 payload to the right socket, and that is what actually leaks a hand. Mutation tested the same way as
@@ -217,7 +217,12 @@ The bar is **split by kind**, deliberately, rather than one number for the packa
 report rather than showing as 0%. It is the browser entry, the counterpart of the server's process
 entry, and it is verified by actually running the app.
 
-Two things that will bite:
+Client layering, which later parts should keep to: **components render state and call `actions.ts`;
+they never touch the socket.** `actions.ts` owns the sequencing — send, await the ack, keep the seat
+only if it was granted, put a refusal on the store as a notice — because that is the part worth
+asserting without rendering anything. `socket.ts` below it is only the typed transport.
+
+Three things that will bite:
 
 - **A broadcast has to be wrapped in `act`.** Server events land in the zustand store from outside
   React, so without `act` the re-render is not flushed and the assertion reads stale DOM. The fake
@@ -226,6 +231,11 @@ Two things that will bite:
 - **The store's `clock` is a mutable singleton.** `useSession` is module state and the clock carries an
   offset, so a `beforeEach` that resets the store must *replace* the clock too — otherwise a test that
   anchored it leaks an anchored clock into the next one. This was a real failure while writing M3a.
+- **jsdom provides no clipboard and its `localStorage` never throws.** Both are replaced with
+  `Object.defineProperty` and restored in a `finally`; see `withClipboard` in `Lobby.test.tsx` and the
+  blocked-storage test in `credentials.test.ts`. Testing those paths matters because both fail in
+  ordinary situations — an insecure origin, a declined permission, a browser blocking site data — and
+  neither is allowed to break the screen.
 
 ### The constant-on-both-sides trap (it has now happened twice)
 
@@ -297,9 +307,18 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
     Router, jsdom/Testing Library set up, the typed socket wrapper with promise-shaped acks,
     `SeatCredentials` persisted for reload recovery, the zustand session store, and server-time
     anchoring. Also the protocol change below: `LegalHints` now rides in every `ViewUpdate`.
-  - **M3b — lobby.** Not started. Home → create/join, room code and shareable link, seat list with
-    connection state, host-only start, rules preset and mode on create, and auto-`resumeSeat` on load
-    from the stored credentials.
+  - **M3b — lobby.** Done. `Home` (name, join by code, or open a table with a preset and mode),
+    `Lobby` (shareable link, seat list with connection dots, host-only deal, leave), `actions.ts` as
+    the one place that sequences a request against the store, `roomCode.ts` for normalizing what a
+    person types, and auto-`resumeSeat` on load. Also moved `ROOM_CODE_ALPHABET`/`ROOM_CODE_LENGTH`
+    and `MIN_PLAYERS`/`MAX_PLAYERS` into `@hf/shared` (re-exported from the server) so the client can
+    validate a code and count seats without a second copy of either.
+    Leave is a real `leaveRoom` request, not just forgetting the seat locally — otherwise the
+    departed player's still-open socket held the seat (and the host) forever. In the lobby the seat
+    is removed and the rest close up, so the server's socket sessions are keyed by **token, not
+    seat number**, `resumeSeat` acks the resolved `SeatCredentials`, and a per-socket `seat` event
+    tells a moved client its new number. Once dealt, the seat stays and is marked `left`, which
+    `seatIsAbsent` treats as grace already expired. Only the seat's current owner socket may leave.
   - **M3c — table.** Not started. SVG cards, hand, opponents' counts, melds, discard pile, stock
     count, turn indicator, and the turn clock rendered through `serverTime.ts`.
   - **M3d — staging and commit.** Not started. The subtle one: staging melds locally with a running
