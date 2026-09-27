@@ -302,8 +302,7 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   default *never ends the round*: `defaultAction` never melds voluntarily, so nobody gets down and the
   stock reshuffles out of the discard pile forever. Pinned by a property test in
   `invariants.property.test.ts`.
-- **M3 — client.** In progress, split into four PRs on the M2 pattern:
-  M3 is complete; the game is playable end to end.
+- **M3 — client.** Done, split into four PRs on the M2 pattern; the game is playable end to end.
 
   - **M3a — scaffold and the session layer.** Done. Vite + React 19 + Tailwind 4 + Zustand + React
     Router, jsdom/Testing Library set up, the typed socket wrapper with promise-shaped acks,
