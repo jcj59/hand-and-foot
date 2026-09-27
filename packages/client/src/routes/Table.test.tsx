@@ -641,6 +641,117 @@ describe("discarding", () => {
   });
 });
 
+describe("when the turn ends without the player", () => {
+  /** A socket whose acks are held until released, so a move can be caught in flight. */
+  function heldSocket(): {
+    socket: HfClientSocket;
+    readonly sent: { event: string; args: unknown[] }[];
+    release: () => void;
+  } {
+    const sent: { event: string; args: unknown[] }[] = [];
+    const pending: ((result: Ack<unknown>) => void)[] = [];
+    const socket = {
+      emit: (event: string, ...args: unknown[]) => {
+        sent.push({ event, args: args.slice(0, -1) });
+        pending.push(args[args.length - 1] as (result: Ack<unknown>) => void);
+        return socket;
+      },
+    } as unknown as HfClientSocket;
+    return {
+      socket,
+      sent,
+      release: () => pending.splice(0).forEach((ack) => ack({ ok: true, data: undefined })),
+    };
+  }
+
+  const hand = [card("K", "clubs"), card("K", "hearts"), card("9", "hearts"), card("4", "spades")];
+  const playing = (cards: Card[]): ViewUpdate =>
+    update({ view: { hand: cards, phase: "play" }, hints: { phase: "play", canDraw: false } });
+  // The clock ran out: the server discarded for the player and the turn passed.
+  const passed = (cards: Card[]): ViewUpdate =>
+    update({ view: { hand: cards, currentSeat: 1 }, hints: { seatToAct: 1, canDraw: false } });
+  const deliver = (payload: ViewUpdate): void =>
+    act(() => useSession.getState().applyUpdate(payload));
+
+  it("leaves discard mode, so next turn's first click stages instead of discarding", async () => {
+    const { socket, sent } = fakeSocket();
+    mount(socket, playing(hand));
+    fireEvent.click(screen.getByRole("button", { name: /^discard$/i }));
+    expect(screen.getByText(/pick a card to discard/i)).toBeInTheDocument();
+
+    const after = hand.filter((c) => c.id !== "4-spades");
+    deliver(passed(after));
+    expect(screen.queryByText(/pick a card to discard/i)).toBeNull();
+
+    deliver(update({ view: { hand: after } }));
+    fireEvent.click(screen.getByRole("button", { name: /^draw$/i }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    deliver(playing([...after, card("7", "clubs")]));
+
+    expect(screen.getByRole("button", { name: /^discard$/i })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "King of clubs" }));
+    expect(sent).toHaveLength(1);
+    expect(screen.getByLabelText(/lay-down being built/i)).toBeInTheDocument();
+  });
+
+  it("drops a staged lay-down when the turn passes", () => {
+    mount(fakeSocket().socket, playing(hand));
+    fireEvent.click(screen.getByRole("button", { name: "King of clubs" }));
+    expect(screen.getByLabelText(/lay-down being built/i)).toBeInTheDocument();
+
+    deliver(passed(hand));
+    deliver(playing(hand));
+    expect(screen.queryByLabelText(/lay-down being built/i)).toBeNull();
+    expect(screen.getByRole("button", { name: /^discard$/i })).not.toBeDisabled();
+  });
+
+  it("leaves discard mode when the round ends", () => {
+    mount(fakeSocket().socket, playing(hand));
+    fireEvent.click(screen.getByRole("button", { name: /^discard$/i }));
+    act(() => useSession.setState({ result: { scores: [], wentOutSeat: 1 } }));
+    expect(screen.queryByText(/pick a card to discard/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Nine of hearts" })).toBeNull();
+  });
+
+  it("unstages a card the server has taken out of the hand", async () => {
+    const kings = [
+      card("K", "clubs"),
+      card("K", "hearts"),
+      card("K", "spades"),
+      card("K", "diamonds"),
+    ];
+    const down = (cards: Card[]): ViewUpdate =>
+      update({
+        view: { hand: [...cards, card("9", "hearts")], phase: "play", isDown: true },
+        hints: { phase: "play", canDraw: false },
+      });
+    const { socket, sent } = fakeSocket();
+    mount(socket, down(kings));
+    for (const suit of ["clubs", "hearts", "spades", "diamonds"]) {
+      fireEvent.click(screen.getByRole("button", { name: `King of ${suit}` }));
+    }
+
+    deliver(down(kings.slice(0, 3)));
+    fireEvent.click(screen.getByRole("button", { name: /play these melds/i }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    const action = sent[0].args[0] as { melds: { rank: string; cardIds: string[] }[] };
+    expect(action.melds).toEqual([{ rank: "K", cardIds: ["K-clubs", "K-hearts", "K-spades"] }]);
+  });
+
+  it("sends exactly one discard for two quick clicks", async () => {
+    const { socket, sent, release } = heldSocket();
+    mount(socket, playing(hand));
+    fireEvent.click(screen.getByRole("button", { name: /^discard$/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Nine of hearts" }));
+    fireEvent.click(screen.getByRole("button", { name: "Four of spades" }));
+    await act(async () => release());
+    expect(sent).toHaveLength(1);
+  });
+});
+
 describe("going out", () => {
   it("says so when the books are in place", () => {
     mount(

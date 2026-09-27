@@ -4,6 +4,7 @@ import {
   EMPTY_STAGING,
   focusGroup,
   previewLayDown,
+  retainCards,
   settlesObligation,
   stageCard,
   stagedCount,
@@ -136,6 +137,29 @@ describe("unstaging", () => {
   it("ignores a card that was never staged", () => {
     const staging = stageAll(cards("K", 2));
     expect(unstageCard(staging, "nope")).toEqual(staging);
+  });
+});
+
+describe("retainCards", () => {
+  it("returns the very same value when every staged card is still held", () => {
+    const kings = cards("K", 2);
+    const staging = stageAll(kings);
+    expect(retainCards(staging, [...kings, card("9")])).toBe(staging);
+  });
+
+  it("drops a staged card that has left the zone", () => {
+    const kings = cards("K", 3);
+    const staging = retainCards(stageAll(kings), [kings[0], kings[2]]);
+    expect(staging.groups[0].cardIds).toEqual([kings[0].id, kings[2].id]);
+  });
+
+  it("drops a group whose every card has gone, and its focus", () => {
+    const kings = cards("K", 2);
+    const fours = cards("4", 3);
+    const staging = retainCards(stageAll([...kings, ...fours]), fours);
+    expect(staging.groups.map((group) => group.rank)).toEqual(["4"]);
+    expect(staging.focusedRank).toBe("4");
+    expect(retainCards(stageAll(kings), [])).toEqual(EMPTY_STAGING);
   });
 });
 

@@ -12,7 +12,7 @@
  * locally, because the per-round minimum is checked across a whole lay-down at once
  * and a player has to be able to watch the total before committing to it.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Card, Rank } from "@hf/shared";
 import { pauseTable, play } from "../actions";
 import { FaceDownPile, PlayingCard } from "../cards/PlayingCard";
@@ -27,6 +27,7 @@ import {
   EMPTY_STAGING,
   focusGroup,
   previewLayDown,
+  retainCards,
   stageCard,
   stagedIds,
   toMeldPlays,
@@ -48,6 +49,20 @@ export function Table({ socket }: TableProps): React.ReactElement {
   const [discarding, setDiscarding] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  const turnOpen =
+    update !== null && update.hints.seatToAct === update.view.seat && result === null;
+  useEffect(() => {
+    if (!turnOpen) {
+      setDiscarding(false);
+      setStaging(EMPTY_STAGING);
+    }
+  }, [turnOpen]);
+
+  const liveZone = update && (update.view.inFoot ? update.view.foot : update.view.hand);
+  useEffect(() => {
+    if (liveZone) setStaging((current) => retainCards(current, liveZone));
+  }, [liveZone]);
+
   // Between the deal being ordered and the first view arriving there is nothing to
   // draw. Normal, not a fault.
   if (!update) {
@@ -55,7 +70,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
   }
 
   const { view, room, hints, clock } = update;
-  const myTurn = hints.seatToAct === view.seat;
+  const myTurn = turnOpen;
   const sink = { seat, setNotice };
   // The foot is revealed only once picked up; before that the server sends a count
   // and no cards, so there is nothing to show but a back.
@@ -84,6 +99,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
   }
 
   function onCardSelect(card: Card): void {
+    if (busy) return;
     if (discarding) {
       // The discard ends the turn, so it goes straight off rather than being staged.
       void send({ type: "discard", cardId: card.id }, () => {

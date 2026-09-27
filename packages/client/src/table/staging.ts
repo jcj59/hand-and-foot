@@ -116,6 +116,21 @@ export function unstageCard(staging: Staging, cardId: string): Staging {
   return { groups, focusedRank: focusStillThere ? staging.focusedRank : null };
 }
 
+/**
+ * Drop staged cards that are no longer in the zone.
+ *
+ * The server can move cards without the player acting — a forced default when the
+ * clock runs out — and a staged id that has left the hand would be previewed as
+ * absent but still submitted, which the reducer refuses. Returns the same value
+ * when nothing is missing, so it is cheap to apply on every update.
+ */
+export function retainCards(staging: Staging, zone: readonly Card[]): Staging {
+  const present = new Set(zone.map((card) => card.id));
+  const missing = [...stagedIds(staging)].filter((id) => !present.has(id));
+  if (missing.length === 0) return staging;
+  return missing.reduce(unstageCard, staging);
+}
+
 /** What crosses the wire. Empty groups are dropped: the engine rejects them. */
 export function toMeldPlays(staging: Staging): MeldPlay[] {
   return staging.groups
