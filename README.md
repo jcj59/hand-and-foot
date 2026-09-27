@@ -7,14 +7,15 @@ the design decisions, and the direction for the agent.
 
 ## Status
 
-The game is not yet playable end to end: the browser client has its shell and session layer, but
-no lobby or table yet.
+The game is not yet playable end to end: the browser client can open or join a table and wait at
+it, but there is no game table yet.
 
 - **Rules engine** (`packages/engine`) — complete and fully tested.
 - **Server** (`packages/server`) — complete and fully tested: the authoritative real-time
   Socket.io server, with rooms, per-player filtered views, turn clock, and disconnect handling.
 - **Browser client** (`packages/client`) — in progress: the application shell, the connection
-  and session layer, and server-time anchoring are done; the lobby, table and meld staging follow.
+  and session layer, server-time anchoring, and the lobby (open or join a table by code or shared
+  link, wait for players, host deals) are done; the table and meld staging follow.
 - Persistence and deployment follow the client; the agent comes after that.
 
 ## Running the server locally

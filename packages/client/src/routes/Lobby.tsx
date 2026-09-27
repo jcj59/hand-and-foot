@@ -1,7 +1,7 @@
 /**
  * The waiting room: who is here, how to invite the rest, and the button that deals.
  *
- * Only the host's client offers Start, mirroring the server's rule rather than
+ * Only the host's client offers Deal, mirroring the server's rule rather than
  * duplicating its reasoning — `hostSeat` says whose it is. The seat count gates it
  * too, because the server refuses under two players and an enabled button that
  * bounces is worse than one that explains itself.

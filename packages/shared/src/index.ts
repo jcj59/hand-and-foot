@@ -262,7 +262,7 @@ export interface RoundScore {
  *
  * These live here rather than in the server because the client needs them too: it
  * validates a typed room code before spending a round trip on it, and it has to
- * say "a table seats at most eight" while the Start button is still disabled.
+ * say "a table seats at most eight" while the Deal button is still disabled.
  * Duplicating them in the interface would let the two drift, and the copy that
  * drifted would be the one a player is arguing with.
  *
