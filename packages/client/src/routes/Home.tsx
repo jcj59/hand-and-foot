@@ -1,0 +1,148 @@
+/**
+ * Getting to a table: pick a name, then open one or join one.
+ *
+ * Both paths live on one screen because they are the same decision, and because
+ * arriving from a shared link is the common case — the code is already known, so
+ * the only thing missing is a name. When that happens the join half is filled in
+ * and focused, and the create half stays available for someone who followed a link
+ * to a table that has since gone.
+ */
+import { useState, type FormEvent } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import type { GameMode, RulesPreset } from "@hf/shared";
+import { createTable, joinTable } from "../actions";
+import { isPossibleRoomCode, normalizeRoomCode } from "../roomCode";
+import { useSession } from "../session";
+import type { HfClientSocket } from "../socket";
+
+export interface HomeProps {
+  readonly socket: HfClientSocket;
+}
+
+export function Home({ socket }: HomeProps): React.ReactElement {
+  const navigate = useNavigate();
+  const { roomId: fromLink } = useParams<{ roomId?: string }>();
+  const seat = useSession((s) => s.seat);
+  const setNotice = useSession((s) => s.setNotice);
+  const notice = useSession((s) => s.notice);
+
+  const [name, setName] = useState("");
+  const [code, setCode] = useState(fromLink ? normalizeRoomCode(fromLink) : "");
+  const [preset, setPreset] = useState<RulesPreset>("east-coast");
+  const [mode, setMode] = useState<GameMode>("family");
+  // One flag for both buttons: a request is in flight and neither should be sent
+  // twice, which double-seats the sender at their own table.
+  const [busy, setBusy] = useState(false);
+
+  const named = name.trim() !== "";
+  const sink = { seat, setNotice };
+
+  async function submit(event: FormEvent, join: boolean): Promise<void> {
+    event.preventDefault();
+    if (busy || !named) return;
+    setBusy(true);
+    try {
+      const roomId = join
+        ? await joinTable(socket, code, name, sink)
+        : await createTable(socket, name, { preset, mode }, sink);
+      if (roomId) navigate(`/room/${roomId}`);
+    } finally {
+      // Cleared even on refusal, so a wrong code can be corrected and retried.
+      setBusy(false);
+    }
+  }
+
+  return (
+    <main className="mx-auto flex w-full max-w-md flex-col gap-6 p-6">
+      <header>
+        <h1 className="text-3xl font-semibold">Hand and Foot</h1>
+        <p className="mt-1 text-sm text-white/60">
+          {fromLink ? "You were invited to a table." : "Open a table, or join one with a code."}
+        </p>
+      </header>
+
+      <label className="flex flex-col gap-1">
+        <span className="text-sm font-medium text-white/80">Your name</span>
+        <input
+          className="rounded border border-white/20 bg-black/20 px-3 py-2 text-white placeholder:text-white/30"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="e.g. Ana"
+          autoFocus={!fromLink}
+          maxLength={24}
+        />
+      </label>
+
+      {notice && (
+        <p role="alert" className="rounded bg-red-600/20 px-3 py-2 text-sm text-red-200">
+          {notice}
+        </p>
+      )}
+
+      <form className="flex flex-col gap-3" onSubmit={(e) => void submit(e, true)}>
+        <label className="flex flex-col gap-1">
+          <span className="text-sm font-medium text-white/80">Table code</span>
+          <input
+            className="rounded border border-white/20 bg-black/20 px-3 py-2 font-mono tracking-widest text-white uppercase placeholder:text-white/30"
+            value={code}
+            onChange={(e) => setCode(normalizeRoomCode(e.target.value))}
+            placeholder="ABC234"
+            autoFocus={Boolean(fromLink)}
+            maxLength={6}
+          />
+        </label>
+        <button
+          type="submit"
+          // Disabled rather than validated on submit, so an impossible code never
+          // costs a round trip; the server still has the final say on whether the
+          // table exists.
+          disabled={busy || !named || !isPossibleRoomCode(code)}
+          className="rounded bg-white px-4 py-2 font-medium text-felt-900 disabled:opacity-40"
+        >
+          Join table
+        </button>
+      </form>
+
+      <div className="flex items-center gap-3 text-xs text-white/40">
+        <span className="h-px flex-1 bg-white/15" />
+        or
+        <span className="h-px flex-1 bg-white/15" />
+      </div>
+
+      <form className="flex flex-col gap-3" onSubmit={(e) => void submit(e, false)}>
+        <fieldset className="flex flex-col gap-2">
+          <legend className="text-sm font-medium text-white/80">House rules</legend>
+          <label className="flex items-center justify-between text-sm">
+            <span className="text-white/70">Variant</span>
+            <select
+              className="rounded border border-white/20 bg-black/30 px-2 py-1"
+              value={preset}
+              onChange={(e) => setPreset(e.target.value as RulesPreset)}
+            >
+              <option value="east-coast">East Coast</option>
+              <option value="west-coast">West Coast</option>
+            </select>
+          </label>
+          <label className="flex items-center justify-between text-sm">
+            <span className="text-white/70">Mode</span>
+            <select
+              className="rounded border border-white/20 bg-black/30 px-2 py-1"
+              value={mode}
+              onChange={(e) => setMode(e.target.value as GameMode)}
+            >
+              <option value="family">Family — anyone can pause</option>
+              <option value="competitive">Competitive — no pausing</option>
+            </select>
+          </label>
+        </fieldset>
+        <button
+          type="submit"
+          disabled={busy || !named}
+          className="rounded border border-white/30 px-4 py-2 font-medium disabled:opacity-40"
+        >
+          Open a new table
+        </button>
+      </form>
+    </main>
+  );
+}

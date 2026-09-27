@@ -1,4 +1,6 @@
 import {
+  MAX_PLAYERS,
+  MIN_PLAYERS,
   type Action,
   type ActionSource,
   type ClockState,
@@ -13,8 +15,9 @@ import type { Clock } from "./clock";
 import { type ActionLog, InMemoryActionLog } from "./log";
 
 /** The engine will deal any number of seats; a game of Hand and Foot will not. */
-export const MIN_PLAYERS = 2;
-export const MAX_PLAYERS = 8;
+// Defined in `@hf/shared` so the client can say "a table seats at most eight"
+// without a second copy of the number. Re-exported for existing importers.
+export { MAX_PLAYERS, MIN_PLAYERS };
 
 /**
  * Ceiling on forced moves the server will play in one go. A turn is at most

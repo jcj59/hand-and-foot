@@ -1,27 +1,52 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { EAST_COAST, type RoomInfo, type ViewUpdate } from "@hf/shared";
+import { EAST_COAST, type Ack, type RoomInfo, type ViewUpdate } from "@hf/shared";
 import { App } from "./App";
+import { CREDENTIALS_KEY, loadCredentials, saveCredentials } from "./credentials";
 import { createServerClock } from "./serverTime";
-import { useSession, type SessionSocket } from "./session";
+import { useSession } from "./session";
+import type { HfClientSocket } from "./socket";
 
 /**
- * A transport the test drives by hand.
+ * A transport the test drives by hand, with both halves the shell uses: listeners
+ * for broadcasts and `emit` for requests.
  *
  * `fire` wraps the handler in `act`, because a broadcast arrives from outside
- * React: it lands in the zustand store directly, and without `act` the resulting
- * render is not flushed before the assertion reads the DOM.
+ * React — straight into the zustand store — and without `act` the resulting render
+ * is not flushed before the assertion reads the DOM.
  */
-function fakeSocket(): SessionSocket & { fire(event: string, payload?: unknown): void } {
+function fakeSocket(answers: Ack<unknown>[] = []): {
+  socket: HfClientSocket;
+  fire(event: string, payload?: unknown): void;
+  readonly sent: { event: string; args: unknown[] }[];
+  readonly removed: string[];
+} {
   const handlers = new Map<string, (payload?: unknown) => void>();
-  return {
-    on: ((event: string, handler: (payload?: unknown) => void) => {
+  const sent: { event: string; args: unknown[] }[] = [];
+  const removed: string[] = [];
+  const queue = [...answers];
+  const socket = {
+    on: (event: string, handler: (payload?: unknown) => void) => {
       handlers.set(event, handler);
-    }) as SessionSocket["on"],
-    off: (event: string) => {
-      handlers.delete(event);
+      return socket;
     },
+    off: (event: string) => {
+      removed.push(event);
+      handlers.delete(event);
+      return socket;
+    },
+    emit: (event: string, ...args: unknown[]) => {
+      const ack = args[args.length - 1] as (result: Ack<unknown>) => void;
+      sent.push({ event, args: args.slice(0, -1) });
+      ack(queue.shift() ?? { ok: true, data: undefined });
+      return socket;
+    },
+  } as unknown as HfClientSocket;
+  return {
+    socket,
+    sent,
+    removed,
     fire: (event, payload) => {
       act(() => {
         handlers.get(event)?.(payload);
@@ -30,17 +55,21 @@ function fakeSocket(): SessionSocket & { fire(event: string, payload?: unknown):
   };
 }
 
-function room(): RoomInfo {
+function roomInfo(overrides: Partial<RoomInfo> = {}): RoomInfo {
   return {
-    roomId: "ABC123",
-    players: [{ seat: 0, name: "ana", connected: true }],
+    roomId: "ABC234",
+    players: [
+      { seat: 0, name: "ana", connected: true },
+      { seat: 1, name: "ben", connected: true },
+    ],
     hostSeat: 0,
-    started: true,
+    started: false,
     config: EAST_COAST,
+    ...overrides,
   };
 }
 
-function update(): ViewUpdate {
+function viewUpdate(room: RoomInfo = roomInfo({ started: true })): ViewUpdate {
   return {
     view: {
       seat: 0,
@@ -58,7 +87,7 @@ function update(): ViewUpdate {
       roundNumber: 3,
     },
     clock: { serverNow: 1_000, deadlineAt: 31_000, inDiscardGrace: false, paused: false },
-    room: room(),
+    room,
     hints: {
       seatToAct: 1,
       phase: "draw",
@@ -70,8 +99,8 @@ function update(): ViewUpdate {
   };
 }
 
-function mount(socket: SessionSocket, path = "/"): void {
-  render(
+function mount(socket: HfClientSocket, path = "/"): { unmount: () => void } {
+  return render(
     <MemoryRouter initialEntries={[path]}>
       <App socket={socket} />
     </MemoryRouter>,
@@ -79,6 +108,7 @@ function mount(socket: SessionSocket, path = "/"): void {
 }
 
 beforeEach(() => {
+  window.localStorage.removeItem(CREDENTIALS_KEY);
   useSession.setState({
     status: "connecting",
     credentials: null,
@@ -90,61 +120,152 @@ beforeEach(() => {
   });
 });
 
-describe("the shell", () => {
-  it("shows the connecting banner before the socket is up", () => {
-    mount(fakeSocket());
+describe("the connection banner", () => {
+  it("shows while connecting", () => {
+    mount(fakeSocket().socket);
     expect(screen.getByRole("status").textContent).toMatch(/connecting/i);
   });
 
-  it("hides the banner once connected", () => {
+  it("goes away once connected", () => {
     const socket = fakeSocket();
-    mount(socket);
+    mount(socket.socket);
     socket.fire("connect");
     expect(screen.queryByRole("status")).toBeNull();
   });
 
   it("warns that turns may be played for you when the socket drops", () => {
-    // The server plays a dropped player's turns once the grace elapses, so this
-    // is a consequence the player has to be told about, not decoration.
+    // The server plays a dropped player's turns once the grace elapses, so this is
+    // a consequence the player has to be told about, not decoration.
     const socket = fakeSocket();
-    mount(socket);
+    mount(socket.socket);
     socket.fire("connect");
     socket.fire("disconnect");
     expect(screen.getByRole("status").textContent).toMatch(/turns may be played for you/i);
   });
+});
 
-  it("wires the socket to the store, so a broadcast reaches the screen", () => {
-    // The end-to-end check for the shell: a `room` event with no React involvement
-    // of its own has to land in the store and re-render.
+describe("routing", () => {
+  it("starts on the home screen", () => {
+    mount(fakeSocket().socket);
+    expect(screen.getByRole("heading", { name: /hand and foot/i })).toBeInTheDocument();
+  });
+
+  it("offers the join form to a visitor arriving at a table with no seat", () => {
+    mount(fakeSocket().socket, "/room/abc234");
+    expect(screen.getByLabelText(/table code/i)).toHaveValue("ABC234");
+  });
+
+  it("shows the lobby once seated at a table that has not dealt", () => {
     const socket = fakeSocket();
-    mount(socket);
-    socket.fire("room", room());
-    expect(screen.getByText(/table ABC123/i)).not.toBeNull();
+    mount(socket.socket, "/room/ABC234");
+    act(() => {
+      useSession.getState().seat({ roomId: "ABC234", seat: 1, token: "t1" });
+    });
+    socket.fire("room", roomInfo());
+    expect(screen.getByRole("heading", { name: /table ABC234/i })).toBeInTheDocument();
   });
 
-  it("renders the table route from the latest update", () => {
+  it("shows the table once the room says it has started", () => {
+    // The server owns that transition, so the client reads `started` rather than
+    // tracking it.
     const socket = fakeSocket();
-    mount(socket, "/room/ABC123");
-    socket.fire("view", update());
-    expect(screen.getByText(/round 3, seat 1 to act/i)).not.toBeNull();
+    mount(socket.socket, "/room/ABC234");
+    act(() => {
+      useSession.getState().seat({ roomId: "ABC234", seat: 0, token: "t0" });
+    });
+    socket.fire("view", viewUpdate());
+    expect(screen.getByText(/round 3, seat 1 to act/i)).toBeInTheDocument();
   });
 
-  it("waits quietly on the table route before the game starts", () => {
-    mount(fakeSocket(), "/room/ABC123");
-    expect(screen.getByText(/waiting for the game to start/i)).not.toBeNull();
+  it("sends an unknown URL back to the home screen", () => {
+    mount(fakeSocket().socket, "/nonsense");
+    expect(screen.getByRole("heading", { name: /hand and foot/i })).toBeInTheDocument();
+  });
+});
+
+describe("reclaiming a stored seat", () => {
+  it("asks for the seat back once the socket is up", async () => {
+    // This is what makes a reload recoverable rather than a lost place.
+    saveCredentials({ roomId: "ABC234", seat: 1, token: "tok" });
+    const socket = fakeSocket([{ ok: true, data: undefined }]);
+    mount(socket.socket);
+    socket.fire("connect");
+    await waitFor(() => expect(socket.sent).toHaveLength(1));
+    expect(socket.sent[0]).toEqual({
+      event: "resumeSeat",
+      args: [{ roomId: "ABC234", seat: 1, token: "tok" }],
+    });
+    expect(useSession.getState().credentials?.seat).toBe(1);
   });
 
-  it("detaches its listeners on unmount", () => {
+  it("waits for the connection rather than sending into a dead socket", () => {
+    saveCredentials({ roomId: "ABC234", seat: 1, token: "tok" });
+    const socket = fakeSocket();
+    mount(socket.socket);
+    expect(socket.sent).toEqual([]);
+  });
+
+  it("does nothing when there is no stored seat", () => {
+    const socket = fakeSocket();
+    mount(socket.socket);
+    socket.fire("connect");
+    expect(socket.sent).toEqual([]);
+  });
+
+  it("discards credentials the server will not honour", async () => {
+    // Expected rather than exceptional: the round may have ended or the room been
+    // reaped. Keeping them would retry a doomed reclaim on every load.
+    saveCredentials({ roomId: "ABC234", seat: 1, token: "stale" });
+    const socket = fakeSocket([{ ok: false, error: "that seat is not yours" }]);
+    mount(socket.socket);
+    socket.fire("connect");
+    await waitFor(() => expect(loadCredentials()).toBeNull());
+    expect(useSession.getState().credentials).toBeNull();
+    // And says nothing about it: the player did not ask for this.
+    expect(useSession.getState().notice).toBeNull();
+  });
+
+  it("tries only once, however many times the socket reconnects", async () => {
+    // A refusal means the seat is genuinely gone and the credentials are discarded,
+    // so a retry could only fail again.
+    saveCredentials({ roomId: "ABC234", seat: 1, token: "tok" });
+    const socket = fakeSocket([{ ok: true, data: undefined }]);
+    mount(socket.socket);
+    socket.fire("connect");
+    await waitFor(() => expect(socket.sent).toHaveLength(1));
+    socket.fire("disconnect");
+    socket.fire("connect");
+    await waitFor(() => expect(socket.sent).toHaveLength(1));
+  });
+
+  it("leaves a seat already held in this tab alone", () => {
+    // Reclaiming is for a fresh load; a live seat needs nothing.
+    saveCredentials({ roomId: "ABC234", seat: 1, token: "tok" });
+    useSession.setState({ credentials: { roomId: "ABC234", seat: 1, token: "tok" } });
+    const socket = fakeSocket();
+    mount(socket.socket);
+    socket.fire("connect");
+    expect(socket.sent).toEqual([]);
+  });
+});
+
+describe("listener lifecycle", () => {
+  it("detaches everything it attached", () => {
     // React StrictMode mounts twice in development; listeners left behind would
     // apply every later update twice over.
     const socket = fakeSocket();
-    const { unmount } = render(
-      <MemoryRouter>
-        <App socket={socket} />
-      </MemoryRouter>,
-    );
+    const { unmount } = mount(socket.socket);
     unmount();
-    socket.fire("room", room());
+    expect(socket.removed.sort()).toEqual(
+      ["connect", "disconnect", "room", "roundEnded", "view"].sort(),
+    );
+  });
+
+  it("stops applying updates after unmount", () => {
+    const socket = fakeSocket();
+    const { unmount } = mount(socket.socket);
+    unmount();
+    socket.fire("room", roomInfo());
     expect(useSession.getState().room).toBeNull();
   });
 });
