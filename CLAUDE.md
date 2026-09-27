@@ -17,7 +17,7 @@ pnpm + Turborepo monorepo, TypeScript everywhere, four workspace packages:
 | `packages/shared` | `@hf/shared` | Domain types, rules config, presets, client/server contract. Done for M1. |
 | `packages/engine` | `@hf/engine` | Pure rules engine `(state, action) => newState`. **Complete (M1).** |
 | `packages/server` | `@hf/server` | Authoritative Socket.io server: rooms, seats, per-seat broadcast, turn clock, action log, runnable entrypoint. **Complete (M2).** Postgres persistence = M4. |
-| `packages/client` | `@hf/client` | React + Vite + Tailwind + Zustand app. Scaffold, socket layer, session store and clock anchoring done (M3a); lobby, table and staging = rest of **M3**. |
+| `packages/client` | `@hf/client` | React + Vite + Tailwind + Zustand app: lobby, table, SVG cards, meld staging. **Complete (M3).** |
 
 The three **libraries** are consumed **from source** — each `package.json` points
 `main`/`types`/`exports` at `./src/index.ts`, and none of them has a build step;
@@ -302,7 +302,8 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   default *never ends the round*: `defaultAction` never melds voluntarily, so nobody gets down and the
   stock reshuffles out of the discard pile forever. Pinned by a property test in
   `invariants.property.test.ts`.
-- **M3 — client.** In progress, split into four PRs on the M2 pattern:
+- **M3 — client.** Done, split into four PRs on the M2 pattern; the game is playable end to end.
+
   - **M3a — scaffold and the session layer.** Done. Vite + React 19 + Tailwind 4 + Zustand + React
     Router, jsdom/Testing Library set up, the typed socket wrapper with promise-shaped acks,
     `SeatCredentials` persisted for reload recovery, the zustand session store, and server-time
@@ -326,9 +327,26 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
     drops both kinds of three among the naturals. Draw and take-pile are wired; both are driven by
     `hints`, never by a local guess. Accessible names are load-bearing, not decoration — they are how
     the tests find one card among fourteen.
-  - **M3d — staging and commit.** Not started. The subtle one: staging melds locally with a running
-    total against the round minimum (reusing `validateMeld` / `meldPoints` from the engine rather than
-    reimplementing them), the take-pile obligation, "you must discard now", and the go-out affordance.
+  - **M3d — staging and commit.** Done. `staging.ts` holds a lay-down as a plain value with pure
+    transitions, and `previewLayDown` **mirrors `applyPlayMelds` step for step** — the same
+    `validateMeld` / `naturalRank` / `cardValue` / `classifyBook`, the book bonuses that count toward
+    the minimum, and the Marva waiver. It is a preview, never an authority; the point of reusing the
+    engine's predicates is that it cannot quietly disagree with the answer. `StagingPanel` shows the
+    running total, `Hand` rings the cards owed to the pile, and the discard is gated on the play phase
+    plus a settled obligation. Also added `pickedUp` to `PlayerView` (see below).
+
+- **`PlayerView.pickedUp` carries the viewer's own take-pile obligation.** Added in M3d because
+  without it the client cannot say why a discard is about to be refused, or which cards would settle
+  it. It is the viewer's own information — those cards are in the hand they can already see — and it
+  is projected only for the receiving seat; `OpponentView` has no such field, so another seat's is
+  unrepresentable rather than merely omitted. `view.test.ts` pins all of that, per the rule that any
+  change to `view.ts` or `PlayerView` needs an assertion there.
+
+- **A wild needs a target before it can be staged.** A wild has no rank of its own, so `stageCard`
+  attaches it to the *focused* group and refuses to guess otherwise — guessing would be guessing at
+  the only decision a wild involves. A natural takes focus as it is staged, and the "Add to Ks"
+  buttons focus a rank whose book is already down, which is the only way to aim a wild at a book when
+  no natural of that rank is left in hand.
 
 - **Legality hints cross the socket; the client does not compute them.** `LegalHints` moved from
   `@hf/engine/legal.ts` to `@hf/shared` (re-exported from the engine, so existing importers are

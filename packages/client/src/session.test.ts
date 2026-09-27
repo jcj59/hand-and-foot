@@ -35,6 +35,7 @@ function viewUpdate(overrides: { serverNow?: number; roundNumber?: number } = {}
       currentSeat: 0,
       phase: "draw",
       roundNumber,
+      pickedUp: [],
     },
     clock: { serverNow, deadlineAt: serverNow + 30_000, inDiscardGrace: false, paused: false },
     room: roomInfo({ started: true }),

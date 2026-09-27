@@ -169,3 +169,50 @@ describe("project from any seat", () => {
     expect(v.discard).toEqual(s.discard);
   });
 });
+
+describe("the take-pile obligation in a view", () => {
+  it("shows the viewer their own outstanding obligation", () => {
+    // The client needs it to say why a discard is about to be refused, and which
+    // cards in hand would settle it.
+    const owed = card("7");
+    const s = table([player({ hand: [owed], pickedUp: [owed.id] }), player()]);
+    expect(project(s, 0).pickedUp).toEqual([owed.id]);
+  });
+
+  it("is an empty list rather than absent when nothing is owed", () => {
+    // `pickedUp` is optional on PlayerState but always present in a view, so the
+    // client never has to distinguish "no obligation" from "field missing".
+    const s = table([player({ hand: [card("7")] }), player()]);
+    expect(project(s, 0).pickedUp).toEqual([]);
+  });
+
+  it("never carries another seat's obligation", () => {
+    // The decisive check: an opponent's owed ids would say which cards they just
+    // took off the pile, which is theirs to know and not the viewer's. OpponentView
+    // has no such field, so this asserts the projection keeps it that way.
+    const mine = card("7");
+    const theirs = card("9", "spades");
+    const s = table([
+      player({ hand: [mine], pickedUp: [mine.id] }),
+      player({ hand: [theirs], pickedUp: [theirs.id] }),
+    ]);
+
+    const v = project(s, 0);
+    expect(v.pickedUp).toEqual([mine.id]);
+    expect(JSON.stringify(v)).not.toContain(theirs.id);
+    for (const opponent of v.opponents) {
+      expect(Object.prototype.hasOwnProperty.call(opponent, "pickedUp")).toBe(false);
+    }
+  });
+
+  it("gives each seat only its own, from the same state", () => {
+    const mine = card("7");
+    const theirs = card("9", "spades");
+    const s = table([
+      player({ hand: [mine], pickedUp: [mine.id] }),
+      player({ hand: [theirs], pickedUp: [theirs.id] }),
+    ]);
+    expect(project(s, 0).pickedUp).toEqual([mine.id]);
+    expect(project(s, 1).pickedUp).toEqual([theirs.id]);
+  });
+});
