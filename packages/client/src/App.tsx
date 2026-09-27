@@ -7,7 +7,7 @@
  */
 import { useEffect, useState } from "react";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
-import { resumeStoredSeat } from "./actions";
+import { reclaimOnReconnect, resumeStoredSeat } from "./actions";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { loadCredentials } from "./credentials";
 import { Home } from "./routes/Home";
@@ -26,12 +26,28 @@ export function App({ socket }: AppProps): React.ReactElement {
   const applyUpdate = useSession((s) => s.applyUpdate);
   const applyResult = useSession((s) => s.applyResult);
   const reseat = useSession((s) => s.reseat);
+  const seat = useSession((s) => s.seat);
+  const leave = useSession((s) => s.leave);
+  const setNotice = useSession((s) => s.setNotice);
 
   useEffect(
     // The teardown is the function `attachSession` returns, so a remount detaches
     // rather than stacking a second set of listeners that apply each update twice.
     () => attachSession(socket, { setStatus, applyRoom, applyUpdate, applyResult, reseat }),
     [socket, setStatus, applyRoom, applyUpdate, applyResult, reseat],
+  );
+
+  useEffect(
+    () =>
+      reclaimOnReconnect(socket, {
+        // Read when the connection comes back, not captured now: the seat is taken
+        // long after this effect runs.
+        credentials: () => useSession.getState().credentials,
+        seat,
+        leave,
+        setNotice,
+      }),
+    [socket, seat, leave, setNotice],
   );
 
   return (

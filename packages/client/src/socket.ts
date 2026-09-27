@@ -27,6 +27,16 @@ export type HfClientSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 export const ACK_TIMEOUT_MS = 10_000;
 
 /**
+ * What a request that was never answered resolves to.
+ *
+ * Exported so a caller can tell "the server said no" from "the server said
+ * nothing": a refused seat is gone, but an unanswered request says only that the
+ * connection is bad, and treating the two alike would throw a player out of a
+ * game over a slow network.
+ */
+export const NO_RESPONSE = "the server did not respond — check your connection";
+
+/**
  * Where the server lives.
  *
  * Separate origins in development on purpose: production serves the client from
@@ -65,10 +75,7 @@ export function ask<T>(
   clearTimer: typeof clearTimeout = clearTimeout,
 ): Promise<Ack<T>> {
   return new Promise((resolve) => {
-    const timer = setTimer(
-      () => resolve({ ok: false, error: "the server did not respond — check your connection" }),
-      timeoutMs,
-    );
+    const timer = setTimer(() => resolve({ ok: false, error: NO_RESPONSE }), timeoutMs);
     emit((result) => {
       // Cancelling matters: an armed timer would fire against an already-settled
       // promise and, in a browser, hold a wakeup for the full timeout after every
