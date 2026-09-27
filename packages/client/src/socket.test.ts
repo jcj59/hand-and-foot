@@ -6,6 +6,7 @@ import {
   connect,
   createRoom,
   joinRoom,
+  leaveRoom,
   resumeSeat,
   serverUrl,
   setPaused,
@@ -183,8 +184,16 @@ describe("request helpers", () => {
     const credentials: SeatCredentials = { roomId: "ABC123", seat: 1, token: "t2" };
     const pending = resumeSeat(socket, credentials);
     expect(sent[0]).toEqual({ event: "resumeSeat", args: [credentials] });
+    ackLast({ ok: true, data: credentials });
+    expect(await pending).toEqual({ ok: true, data: credentials });
+  });
+
+  it("leaves a room with no payload", async () => {
+    const { socket, sent, ackLast } = fakeSocket();
+    const pending = leaveRoom(socket);
+    expect(sent[0]).toEqual({ event: "leaveRoom", args: [] });
     ackLast({ ok: true, data: undefined });
-    await pending;
+    expect(await pending).toEqual({ ok: true, data: undefined });
   });
 
   it("starts the game with no payload", async () => {

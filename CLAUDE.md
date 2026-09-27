@@ -158,7 +158,7 @@ rather than assumed to have travelled.
 
 ### Server testing (M2b, M2c, M2d)
 
-`@hf/server` is also at **100%** (165 tests). The load-bearing tests are the ones in
+`@hf/server` is also at **100%** (179 tests). The load-bearing tests are the ones in
 `socket.integration.test.ts` that drive *real* Socket.io clients against a real server on an
 ephemeral port: `project()` being clean says nothing about whether the transport routes the right
 payload to the right socket, and that is what actually leaks a hand. Mutation tested the same way as
@@ -313,6 +313,12 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
     person types, and auto-`resumeSeat` on load. Also moved `ROOM_CODE_ALPHABET`/`ROOM_CODE_LENGTH`
     and `MIN_PLAYERS`/`MAX_PLAYERS` into `@hf/shared` (re-exported from the server) so the client can
     validate a code and count seats without a second copy of either.
+    Leave is a real `leaveRoom` request, not just forgetting the seat locally — otherwise the
+    departed player's still-open socket held the seat (and the host) forever. In the lobby the seat
+    is removed and the rest close up, so the server's socket sessions are keyed by **token, not
+    seat number**, `resumeSeat` acks the resolved `SeatCredentials`, and a per-socket `seat` event
+    tells a moved client its new number. Once dealt, the seat stays and is marked `left`, which
+    `seatIsAbsent` treats as grace already expired. Only the seat's current owner socket may leave.
   - **M3c — table.** Not started. SVG cards, hand, opponents' counts, melds, discard pile, stock
     count, turn indicator, and the turn clock rendered through `serverTime.ts`.
   - **M3d — staging and commit.** Not started. The subtle one: staging melds locally with a running

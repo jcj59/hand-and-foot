@@ -90,6 +90,20 @@ describe("holding a seat", () => {
     expect(loadCredentials()).toEqual(credentials);
   });
 
+  it("moves to the seat the server names, keeping the token", () => {
+    useSession.getState().seat({ roomId: "ABC123", seat: 2, token: "tok" });
+    useSession.getState().reseat(1);
+    const moved = { roomId: "ABC123", seat: 1, token: "tok" };
+    expect(useSession.getState().credentials).toEqual(moved);
+    expect(loadCredentials()).toEqual(moved);
+  });
+
+  it("ignores a seat number when it holds no seat", () => {
+    useSession.getState().reseat(1);
+    expect(useSession.getState().credentials).toBeNull();
+    expect(loadCredentials()).toBeNull();
+  });
+
   it("forgets the seat and the table on leaving", () => {
     useSession.getState().seat({ roomId: "ABC123", seat: 0, token: "tok" });
     useSession.getState().applyUpdate(viewUpdate());
@@ -195,6 +209,7 @@ describe("attachSession", () => {
       applyRoom: () => calls.push("room"),
       applyUpdate: () => calls.push("update"),
       applyResult: () => calls.push("result"),
+      reseat: (seat) => calls.push(`seat:${seat}`),
     };
   }
 
@@ -207,6 +222,7 @@ describe("attachSession", () => {
     socket.fire("view", viewUpdate());
     socket.fire("room", roomInfo());
     socket.fire("roundEnded", { scores: [] });
+    socket.fire("seat", 3);
     socket.fire("disconnect");
 
     expect(target.calls).toEqual([
@@ -214,6 +230,7 @@ describe("attachSession", () => {
       "update",
       "room",
       "result",
+      "seat:3",
       "status:disconnected",
     ]);
   });
@@ -225,7 +242,7 @@ describe("attachSession", () => {
     const detach = attachSession(socket, sink());
     detach();
     expect(socket.removed.sort()).toEqual(
-      ["connect", "disconnect", "room", "roundEnded", "view"].sort(),
+      ["connect", "disconnect", "room", "roundEnded", "seat", "view"].sort(),
     );
   });
 
@@ -242,8 +259,8 @@ describe("attachSession", () => {
     // End to end through the actual zustand store rather than a spy, so the
     // wiring and the reducers are checked together at least once.
     const socket = fakeSocket();
-    const { setStatus, applyRoom, applyUpdate, applyResult } = useSession.getState();
-    attachSession(socket, { setStatus, applyRoom, applyUpdate, applyResult });
+    const { setStatus, applyRoom, applyUpdate, applyResult, reseat } = useSession.getState();
+    attachSession(socket, { setStatus, applyRoom, applyUpdate, applyResult, reseat });
 
     socket.fire("connect");
     socket.fire("view", viewUpdate());

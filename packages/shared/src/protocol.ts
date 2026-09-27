@@ -153,8 +153,21 @@ export interface ClientToServerEvents {
     payload: { readonly roomId: string; readonly name: string },
     ack: (result: Ack<SeatCredentials>) => void,
   ) => void;
-  /** Reclaim a seat after a disconnect, using the token issued on join. */
-  resumeSeat: (payload: SeatCredentials, ack: (result: Ack) => void) => void;
+  /**
+   * Reclaim a seat after a disconnect, using the token issued on join.
+   *
+   * The ack carries the credentials back with the seat the server resolved from
+   * the token. The stored `seat` can be stale — someone ahead of this player may
+   * have left the lobby since — so the client takes the seat from here, never
+   * from what it sent.
+   */
+  resumeSeat: (payload: SeatCredentials, ack: (result: Ack<SeatCredentials>) => void) => void;
+  /**
+   * Give up this socket's seat on purpose. In the lobby the seat is freed for
+   * someone else and the seats behind it close up; once dealt, it is played for
+   * by the server from then on, without waiting out the reconnect grace.
+   */
+  leaveRoom: (ack: (result: Ack) => void) => void;
   startGame: (ack: (result: Ack) => void) => void;
   submitAction: (action: Action, ack: (result: Ack) => void) => void;
   setPaused: (payload: { readonly paused: boolean }, ack: (result: Ack) => void) => void;
@@ -165,5 +178,11 @@ export interface ServerToClientEvents {
   view: (update: ViewUpdate) => void;
   /** Broadcast: lobby membership, connection state, pause state. */
   room: (info: RoomInfo) => void;
+  /**
+   * Per-socket: the seat this socket now holds, sent when someone ahead of it
+   * left the lobby and the seats closed up. Without it a client would go on
+   * treating its old number as its own — and as the host's, or someone else's.
+   */
+  seat: (seat: number) => void;
   roundEnded: (result: RoundEnded) => void;
 }

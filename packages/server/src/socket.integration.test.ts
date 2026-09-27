@@ -76,8 +76,11 @@ function submit(socket: Client, action: Action): Promise<Ack<undefined>> {
 function setPaused(socket: Client, paused: boolean): Promise<Ack<undefined>> {
   return new Promise((resolve) => socket.emit("setPaused", { paused }, resolve));
 }
-function resumeSeat(socket: Client, creds: SeatCredentials): Promise<Ack<undefined>> {
+function resumeSeat(socket: Client, creds: SeatCredentials): Promise<Ack<SeatCredentials>> {
   return new Promise((resolve) => socket.emit("resumeSeat", creds, resolve));
+}
+function leaveRoom(socket: Client): Promise<Ack<undefined>> {
+  return new Promise((resolve) => socket.emit("leaveRoom", resolve));
 }
 
 /** Wait for the next event of a kind, so assertions do not race the broadcast. */
@@ -576,6 +579,122 @@ describe("reconnection", () => {
     expect(wrongRoom.ok).toBe(false);
     const wrongToken = await resumeSeat(other, { ...guestCreds, token: "forged" });
     expect(wrongToken.ok).toBe(false);
+  });
+});
+
+describe("leaving over the wire", () => {
+  it("frees a lobby seat, tells the table, and lets a newcomer take it", async () => {
+    const { port, host, guest, roomId, guestCreds } = await seatTwo();
+    const third = await connect(port);
+    const joined = await joinRoom(third, roomId, "cy");
+    if (!joined.ok) throw new Error(joined.error);
+
+    // Listen first: all of these go out straight after the ack.
+    const guestSaw = waitFor(guest, "room", (i) => i.players.length === 2);
+    const guestSeat = next(guest, "seat");
+    const thirdSeat = next(third, "seat");
+    expect((await leaveRoom(host)).ok).toBe(true);
+
+    // The host left, so the seats close up and the next in line hosts.
+    const info = await guestSaw;
+    expect(info.players.map((p) => [p.seat, p.name])).toEqual([
+      [0, "ben"],
+      [1, "cy"],
+    ]);
+    expect(info.hostSeat).toBe(0);
+    expect(await guestSeat).toBe(0);
+    expect(await thirdSeat).toBe(1);
+
+    // Stored credentials still carry the old number; resuming answers with the new one.
+    expect(guestCreds.seat).toBe(1);
+    const resumed = await resumeSeat(guest, guestCreds);
+    expect(resumed.ok && resumed.data.seat).toBe(0);
+
+    const newcomer = await connect(port);
+    const took = await joinRoom(newcomer, roomId, "dee");
+    expect(took.ok && took.data.seat).toBe(2);
+
+    // The new host's socket acts as the new seat 0, so it can deal.
+    const dealt = waitFor(third, "view", (u) => u.view.seat === 1);
+    expect((await startGame(guest)).ok).toBe(true);
+    expect((await dealt).view.hand).toHaveLength(EAST_COAST.handSize);
+  });
+
+  it("stops sending anything to the socket that left, or to another table", async () => {
+    const { port, host, guest, roomId } = await seatTwo();
+    const elsewhere = await connect(port);
+    expect((await createRoom(elsewhere, "zoe")).ok).toBe(true);
+    const elsewhereHeard = waitFor(elsewhere, "seat", () => true, 300);
+    const guestHeard = waitFor(guest, "seat", (seat) => seat === 0);
+    expect((await leaveRoom(host)).ok).toBe(true);
+    await guestHeard;
+    await expect(elsewhereHeard).rejects.toThrow();
+
+    expect((await joinRoom(host, roomId, "ana again")).ok).toBe(true);
+    expect((await leaveRoom(guest)).ok).toBe(true);
+    const leaverHeard = waitFor(guest, "room", () => true, 300);
+    const newcomer = await connect(port);
+    const hostSaw = waitFor(host, "room", (i) => i.players.length === 2);
+    expect((await joinRoom(newcomer, roomId, "cy")).ok).toBe(true);
+    await hostSaw;
+    await expect(leaverHeard).rejects.toThrow();
+  });
+
+  it("refuses a socket with no seat, and one whose seat was reclaimed elsewhere", async () => {
+    const { server, port, roomId, guest, guestCreds } = await seatTwo();
+    const nobody = await connect(port);
+    expect(await leaveRoom(nobody)).toEqual({ ok: false, error: "you are not seated in a room" });
+
+    // The superseded socket must not give away a seat that is in use.
+    const fresh = await connect(port);
+    expect((await resumeSeat(fresh, guestCreds)).ok).toBe(true);
+    expect((await leaveRoom(guest)).ok).toBe(false);
+    expect(server.manager.get(roomId)!.seatCount).toBe(2);
+
+    // Leaving twice is refused the second time rather than throwing.
+    expect((await leaveRoom(fresh)).ok).toBe(true);
+    expect((await leaveRoom(fresh)).ok).toBe(false);
+  });
+
+  it("drops a superseded socket along with the seat it once held", async () => {
+    const { port, host, guest, guestCreds } = await seatTwo();
+    const fresh = await connect(port);
+    expect((await resumeSeat(fresh, guestCreds)).ok).toBe(true);
+    expect((await leaveRoom(fresh)).ok).toBe(true);
+    // The stale socket is not seated anywhere now, and hears nothing further.
+    const staleHeard = waitFor(guest, "room", () => true, 300);
+    expect((await setPaused(host, true)).ok).toBe(true);
+    await expect(staleHeard).rejects.toThrow();
+    expect(await submit(guest, { type: "draw" })).toEqual({
+      ok: false,
+      error: "you are not seated in a room",
+    });
+  });
+
+  it("plays a departed seat at once in a dealt game, without waiting out the grace", async () => {
+    const clock = new FakeClock(1_000);
+    const server = createServer({ clock, reconnectGraceMs: 60_000 });
+    started.push(server);
+    const port = await server.listen(0);
+
+    const host = await connect(port);
+    const guest = await connect(port);
+    const created = await createRoom(host, "ana");
+    if (!created.ok) throw new Error(created.error);
+    await joinRoom(guest, created.data.roomId, "ben");
+    await startGame(host);
+    const room = server.manager.get(created.data.roomId)!;
+    expect(room.gameState!.currentSeat).toBe(0);
+
+    const played = waitFor(guest, "view", (u) => u.view.currentSeat === 1);
+    const dropped = waitFor(guest, "room", (i) => i.players[0].connected === false);
+    expect((await leaveRoom(host)).ok).toBe(true);
+    await dropped;
+    // No time passes beyond the zero-delay wake-up: the grace is not waited on.
+    clock.advance(0);
+    await played;
+    expect(room.seatCount).toBe(2);
+    expect(room.log.entries().every((e) => e.source === "disconnect")).toBe(true);
   });
 });
 

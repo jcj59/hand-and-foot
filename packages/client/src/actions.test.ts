@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { Ack, SeatCredentials } from "@hf/shared";
 import {
   createTable,
   joinTable,
+  leaveTable,
   pauseTable,
   play,
   resumeStoredSeat,
@@ -10,7 +11,7 @@ import {
   type ActionSink,
 } from "./actions";
 import { CREDENTIALS_KEY, loadCredentials, saveCredentials } from "./credentials";
-import type { HfClientSocket } from "./socket";
+import { ACK_TIMEOUT_MS, type HfClientSocket } from "./socket";
 
 /** A socket that records what was sent and answers with a queued ack. */
 function fakeSocket(answers: Ack<unknown>[]): {
@@ -127,13 +128,22 @@ describe("joinTable", () => {
 
 describe("resumeStoredSeat", () => {
   it("keeps the seat when the server honours the token", async () => {
-    const { socket, sent } = fakeSocket([{ ok: true, data: undefined }]);
+    const { socket, sent } = fakeSocket([{ ok: true, data: credentials }]);
     const target = sink();
     saveCredentials(credentials);
     expect(await resumeStoredSeat(socket, credentials, target)).toBe(true);
-    expect(sent[0].event).toBe("resumeSeat");
+    expect(sent[0]).toEqual({ event: "resumeSeat", args: [credentials] });
     expect(target.seated).toEqual([credentials]);
-    expect(loadCredentials()).toEqual(credentials);
+  });
+
+  it("takes the seat number from the server, not from what was stored", async () => {
+    // Someone ahead of this player left the lobby while they were away, and the
+    // seats closed up. The stored number now names somebody else's seat.
+    const moved: SeatCredentials = { ...credentials, seat: 1 };
+    const { socket } = fakeSocket([{ ok: true, data: moved }]);
+    const target = sink();
+    expect(await resumeStoredSeat(socket, { ...credentials, seat: 2 }, target)).toBe(true);
+    expect(target.seated).toEqual([moved]);
   });
 
   it("discards the credentials when the seat is gone", async () => {
@@ -155,6 +165,43 @@ describe("resumeStoredSeat", () => {
     const target = sink();
     await resumeStoredSeat(socket, credentials, target);
     expect(target.notices).toEqual([]);
+  });
+});
+
+describe("leaveTable", () => {
+  function leaver(): { leave(): void; readonly left: number[] } {
+    const left: number[] = [];
+    return { left, leave: () => left.push(1) };
+  }
+
+  it("tells the server, then forgets the seat", async () => {
+    const { socket, sent } = fakeSocket([{ ok: true, data: undefined }]);
+    const target = leaver();
+    await leaveTable(socket, target);
+    expect(sent).toEqual([{ event: "leaveRoom", args: [] }]);
+    expect(target.left).toHaveLength(1);
+  });
+
+  it("forgets the seat even when the server refuses", async () => {
+    const { socket } = fakeSocket([{ ok: false, error: "you are not seated in a room" }]);
+    const target = leaver();
+    await leaveTable(socket, target);
+    expect(target.left).toHaveLength(1);
+  });
+
+  it("forgets the seat even when the server never answers", async () => {
+    vi.useFakeTimers();
+    try {
+      const socket = { emit: () => socket } as unknown as HfClientSocket;
+      const target = leaver();
+      const leaving = leaveTable(socket, target);
+      expect(target.left).toHaveLength(0);
+      await vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS);
+      await leaving;
+      expect(target.left).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

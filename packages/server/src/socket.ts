@@ -6,10 +6,15 @@ import type { Room, RoomResult } from "./room";
 export type HfServer = Server<ClientToServerEvents, ServerToClientEvents>;
 export type HfSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
 
-/** Which seat in which room a connected socket is holding. */
+/**
+ * Which seat in which room a connected socket is holding.
+ *
+ * Held by token rather than seat number, because a lobby departure renumbers the
+ * seats behind it; the token is the one thing about a seat that never changes.
+ */
 interface Session {
   readonly roomId: string;
-  readonly seat: number;
+  readonly token: string;
 }
 
 function ackOf<T>(result: RoomResult<T>): Ack<T> {
@@ -33,7 +38,9 @@ export function attachSocketServer(io: HfServer, manager: RoomManager): void {
   function broadcastViews(room: Room): void {
     for (const [socketId, session] of sessions) {
       if (session.roomId !== room.id) continue;
-      const update = room.viewFor(session.seat);
+      const player = room.seatOf(session.token);
+      /* v8 ignore next -- a departed token's sessions are dropped with it */
+      const update = player ? room.viewFor(player.seat) : null;
       if (update) io.to(socketId).emit("view", update);
     }
   }
@@ -75,11 +82,14 @@ export function attachSocketServer(io: HfServer, manager: RoomManager): void {
     if (!session) return null;
     const room = manager.get(session.roomId);
     if (!room) return null;
-    return { room, seat: session.seat };
+    const player = room.seatOf(session.token);
+    /* v8 ignore next -- a departed token's sessions are dropped with it */
+    if (!player) return null;
+    return { room, seat: player.seat };
   }
 
   /**
-   * The one socket that currently speaks for each seat, keyed by room and seat.
+   * The one socket that currently speaks for each seat, keyed by room and token.
    *
    * A reconnecting player resumes on a new socket before the server has noticed
    * the old one is dead, which can take a full ping timeout. Only the owner's
@@ -89,27 +99,39 @@ export function attachSocketServer(io: HfServer, manager: RoomManager): void {
    * rather than waiting out a dead socket still sitting in `sessions`.
    */
   const owners = new Map<string, string>();
-  const seatKey = (roomId: string, seat: number): string => `${roomId}:${seat}`;
+  const seatKey = (roomId: string, token: string): string => `${roomId}:${token}`;
 
   /** Seat this socket, taking the seat over from any socket that held it before. */
-  function claim(socketId: string, roomId: string, seat: number): void {
+  function claim(socketId: string, roomId: string, token: string): void {
     const prior = sessions.get(socketId);
-    if (prior && (prior.roomId !== roomId || prior.seat !== seat)) release(socketId);
-    sessions.set(socketId, { roomId, seat });
-    owners.set(seatKey(roomId, seat), socketId);
+    if (prior && (prior.roomId !== roomId || prior.token !== token)) release(socketId);
+    sessions.set(socketId, { roomId, token });
+    owners.set(seatKey(roomId, token), socketId);
+  }
+
+  /**
+   * Forget this socket's seat, returning it only if the socket was still the
+   * seat's owner — the only case in which its going away says anything about the
+   * player.
+   */
+  function unseat(socketId: string): Session | null {
+    const session = sessions.get(socketId);
+    sessions.delete(socketId);
+    if (!session) return null;
+    const key = seatKey(session.roomId, session.token);
+    if (owners.get(key) !== socketId) return null;
+    owners.delete(key);
+    return session;
   }
 
   /** Unseat this socket, marking its seat disconnected only if it still owned it. */
   function release(socketId: string): void {
-    const session = sessions.get(socketId);
-    sessions.delete(socketId);
+    const session = unseat(socketId);
     if (!session) return;
-    const key = seatKey(session.roomId, session.seat);
-    if (owners.get(key) !== socketId) return;
-    owners.delete(key);
     const room = manager.get(session.roomId);
-    if (!room) return;
-    room.setConnected(session.seat, false);
+    const player = room?.seatOf(session.token);
+    if (!room || !player) return;
+    room.setConnected(player.seat, false);
     broadcastRoom(room);
   }
 
@@ -119,7 +141,7 @@ export function attachSocketServer(io: HfServer, manager: RoomManager): void {
       const joined = room.join(payload.name);
       /* v8 ignore next -- a room created one statement ago cannot be full or started */
       if (!joined.ok) return ack({ ok: false, error: joined.error });
-      claim(socket.id, room.id, joined.value.seat);
+      claim(socket.id, room.id, joined.value.token);
       const credentials: SeatCredentials = {
         roomId: room.id,
         seat: joined.value.seat,
@@ -134,7 +156,7 @@ export function attachSocketServer(io: HfServer, manager: RoomManager): void {
       if (!joined.ok) return ack({ ok: false, error: joined.error });
       const { room, seat, token } = joined.value;
       wire(room);
-      claim(socket.id, room.id, seat);
+      claim(socket.id, room.id, token);
       ack({ ok: true, data: { roomId: room.id, seat, token } });
       broadcastRoom(room);
     });
@@ -147,8 +169,11 @@ export function attachSocketServer(io: HfServer, manager: RoomManager): void {
       if (!resumed.ok) return ack({ ok: false, error: resumed.error });
       // The seat comes from the token, not from the payload's seat field: trusting
       // the field would let anyone with a valid token claim any seat in the room.
-      claim(socket.id, room.id, resumed.value.seat);
-      ack({ ok: true, data: undefined });
+      claim(socket.id, room.id, resumed.value.token);
+      ack({
+        ok: true,
+        data: { roomId: room.id, seat: resumed.value.seat, token: resumed.value.token },
+      });
       broadcastRoom(room);
       const update = room.viewFor(resumed.value.seat);
       if (update) socket.emit("view", update);
@@ -182,6 +207,35 @@ export function attachSocketServer(io: HfServer, manager: RoomManager): void {
       if (!paused.ok) return;
       broadcastRoom(session.room);
       broadcastViews(session.room);
+    });
+
+    socket.on("leaveRoom", (ack) => {
+      // Only the seat's current owner speaks for it: a socket superseded by a
+      // resume elsewhere must not be able to give away a seat still in use.
+      const session = unseat(socket.id);
+      if (!session) return ack({ ok: false, error: "you are not seated in a room" });
+      const room = manager.get(session.roomId);
+      /* v8 ignore next -- a room with a live owner is never abandoned, so never reaped */
+      if (!room) return ack({ ok: false, error: "you are not seated in a room" });
+      // Where everyone else sits now, so the ones who move up can be told.
+      const before = new Map(room.seats().map((p) => [p.token, p.seat]));
+      const left = room.leave(session.token);
+      /* v8 ignore next -- an owned token is always still seated: only its owner can leave */
+      if (!left.ok) return ack({ ok: false, error: left.error });
+      // A superseded socket still holding this token has nothing left to speak for.
+      for (const [socketId, other] of sessions) {
+        if (other.roomId === room.id && other.token === session.token) sessions.delete(socketId);
+      }
+      ack({ ok: true, data: undefined });
+      for (const [socketId, other] of sessions) {
+        if (other.roomId !== room.id) continue;
+        const player = room.seatOf(other.token);
+        if (player && player.seat !== before.get(other.token)) {
+          io.to(socketId).emit("seat", player.seat);
+        }
+      }
+      broadcastRoom(room);
+      broadcastViews(room);
     });
 
     socket.on("disconnect", () => release(socket.id));

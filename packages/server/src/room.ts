@@ -28,7 +28,11 @@ export { MAX_PLAYERS, MIN_PLAYERS };
 const MAX_FORCED_MOVES_PER_TURN = 12;
 
 export interface RoomPlayer {
-  readonly seat: number;
+  /**
+   * Position at the table. Stable once dealt; in the lobby a departure closes the
+   * gap, so anything that has to survive that keys on `token` instead.
+   */
+  seat: number;
   readonly name: string;
   /**
    * Bearer credential for this seat, used to reclaim it after a disconnect.
@@ -39,6 +43,12 @@ export interface RoomPlayer {
   connected: boolean;
   /** When they dropped, so the reconnect grace can be measured. Null while connected. */
   disconnectedAt: number | null;
+  /**
+   * Walked away from a dealt game on purpose. Such a seat is played for at once
+   * rather than after the reconnect grace — nobody is coming back to it — until
+   * the same token resumes it.
+   */
+  left: boolean;
 }
 
 export type RoomResult<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -170,8 +180,34 @@ export class Room {
       token: this.deps.newToken(),
       connected: true,
       disconnectedAt: null,
+      left: false,
     };
     this.players.push(player);
+    return succeed(player);
+  }
+
+  /**
+   * Give up a seat on purpose.
+   *
+   * Before the deal the seat is removed outright and the ones after it close up,
+   * because `deal` seats exactly `players.length` players and a gap would be dealt
+   * a hand nobody holds. The first seat hosts, so a departing host hands the table
+   * to whoever is next in line. After the deal the engine's player count is fixed,
+   * so the seat stays and is treated as a disconnect whose grace has already run
+   * out: the default policy plays it straight away instead of stalling the table.
+   */
+  leave(token: string): RoomResult<RoomPlayer> {
+    const player = this.seatOf(token);
+    if (!player) return fail("that seat token does not belong to this room");
+    if (!this.started) {
+      this.players.splice(this.players.indexOf(player), 1);
+      this.players.forEach((p, index) => {
+        p.seat = index;
+      });
+      return succeed(player);
+    }
+    player.left = true;
+    this.setConnected(player.seat, false);
     return succeed(player);
   }
 
@@ -179,6 +215,7 @@ export class Room {
   resume(token: string): RoomResult<RoomPlayer> {
     const player = this.seatOf(token);
     if (!player) return fail("that seat token does not belong to this room");
+    player.left = false;
     this.setConnected(player.seat, true);
     return succeed(player);
   }
@@ -205,7 +242,10 @@ export class Room {
     return succeed(this.state);
   }
 
-  /** The first seat to join hosts. Kept simple deliberately: no host migration yet. */
+  /**
+   * The first seat hosts. A host who leaves the lobby passes it on without any
+   * bookkeeping, because the seats behind them close up and the next becomes 0.
+   */
   get hostSeat(): number {
     return 0;
   }
@@ -330,10 +370,12 @@ export class Room {
    * are set together and the timestamp is the one carrying the information.
    */
   private seatIsAbsent(seat: number): boolean {
+    const player = this.players[seat];
     /* v8 ignore next -- currentSeat always indexes a real seat */
-    const since = this.players[seat]?.disconnectedAt ?? null;
-    if (since === null) return false;
-    return this.deps.clock.now() - since >= this.reconnectGraceMs;
+    if (!player) return false;
+    if (player.left) return true;
+    if (player.disconnectedAt === null) return false;
+    return this.deps.clock.now() - player.disconnectedAt >= this.reconnectGraceMs;
   }
 
   private rearm(): void {

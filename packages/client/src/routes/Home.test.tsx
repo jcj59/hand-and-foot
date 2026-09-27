@@ -141,6 +141,15 @@ describe("joining a table", () => {
     expect(sent[0]).toEqual({ event: "joinRoom", args: [{ roomId: "ABC234", name: "ben" }] });
   });
 
+  it("leaves room in the code box for a typed or pasted separator", () => {
+    // A browser truncates to maxlength before any change handler runs, and
+    // fireEvent.change bypasses that, so the limit itself is what is pinned: a
+    // box that only fits six characters turns a pasted "ABC-234" into "ABC23".
+    mount(fakeSocket().socket);
+    expect((codeBox() as HTMLInputElement).maxLength).toBeGreaterThanOrEqual("ABC-234".length);
+    expect((codeBox() as HTMLInputElement).maxLength).toBeGreaterThanOrEqual("A B C 2 3 4".length);
+  });
+
   it("fills in the code when arriving from a shared link", () => {
     // The common case: the code is already known and only a name is missing.
     mount(fakeSocket().socket, "/room/abc234");

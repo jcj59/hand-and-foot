@@ -24,12 +24,13 @@ export function App({ socket }: AppProps): React.ReactElement {
   const applyRoom = useSession((s) => s.applyRoom);
   const applyUpdate = useSession((s) => s.applyUpdate);
   const applyResult = useSession((s) => s.applyResult);
+  const reseat = useSession((s) => s.reseat);
 
   useEffect(
     // The teardown is the function `attachSession` returns, so a remount detaches
     // rather than stacking a second set of listeners that apply each update twice.
-    () => attachSession(socket, { setStatus, applyRoom, applyUpdate, applyResult }),
-    [socket, setStatus, applyRoom, applyUpdate, applyResult],
+    () => attachSession(socket, { setStatus, applyRoom, applyUpdate, applyResult, reseat }),
+    [socket, setStatus, applyRoom, applyUpdate, applyResult, reseat],
   );
 
   return (

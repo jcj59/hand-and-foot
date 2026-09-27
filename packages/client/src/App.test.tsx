@@ -187,7 +187,7 @@ describe("reclaiming a stored seat", () => {
   it("asks for the seat back once the socket is up", async () => {
     // This is what makes a reload recoverable rather than a lost place.
     saveCredentials({ roomId: "ABC234", seat: 1, token: "tok" });
-    const socket = fakeSocket([{ ok: true, data: undefined }]);
+    const socket = fakeSocket([{ ok: true, data: { roomId: "ABC234", seat: 1, token: "tok" } }]);
     mount(socket.socket);
     socket.fire("connect");
     await waitFor(() => expect(socket.sent).toHaveLength(1));
@@ -196,6 +196,40 @@ describe("reclaiming a stored seat", () => {
       args: [{ roomId: "ABC234", seat: 1, token: "tok" }],
     });
     expect(useSession.getState().credentials?.seat).toBe(1);
+  });
+
+  it("sits in the seat the server resolved, not the stale stored one", async () => {
+    // The host left while this browser was away and the seats closed up.
+    saveCredentials({ roomId: "ABC234", seat: 1, token: "tok" });
+    const socket = fakeSocket([{ ok: true, data: { roomId: "ABC234", seat: 0, token: "tok" } }]);
+    mount(socket.socket);
+    socket.fire("connect");
+    await waitFor(() => expect(useSession.getState().credentials?.seat).toBe(0));
+    expect(loadCredentials()?.seat).toBe(0);
+  });
+});
+
+describe("moving up a seat", () => {
+  it("becomes the host when the host leaves the lobby ahead of it", () => {
+    useSession.getState().seat({ roomId: "ABC234", seat: 1, token: "tok" });
+    const socket = fakeSocket();
+    mount(socket.socket, "/room/ABC234");
+    socket.fire("room", roomInfo());
+    expect(screen.queryByRole("button", { name: /deal/i })).not.toBeInTheDocument();
+
+    socket.fire("seat", 0);
+    socket.fire(
+      "room",
+      roomInfo({
+        players: [
+          { seat: 0, name: "ben", connected: true },
+          { seat: 1, name: "cy", connected: true },
+        ],
+      }),
+    );
+    expect(useSession.getState().credentials?.seat).toBe(0);
+    expect(loadCredentials()?.seat).toBe(0);
+    expect(screen.getByRole("button", { name: /deal/i })).toBeInTheDocument();
   });
 
   it("waits for the connection rather than sending into a dead socket", () => {
@@ -257,7 +291,7 @@ describe("listener lifecycle", () => {
     const { unmount } = mount(socket.socket);
     unmount();
     expect(socket.removed.sort()).toEqual(
-      ["connect", "disconnect", "room", "roundEnded", "view"].sort(),
+      ["connect", "disconnect", "room", "roundEnded", "seat", "view"].sort(),
     );
   });
 

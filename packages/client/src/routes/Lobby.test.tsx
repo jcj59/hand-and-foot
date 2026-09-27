@@ -227,12 +227,24 @@ describe("leaving", () => {
     useSession.getState().seat({ roomId: "ABC234", seat: 0, token: "t0" });
     expect(loadCredentials()).not.toBeNull();
 
-    mount(fakeSocket().socket);
+    const { socket, sent } = fakeSocket();
+    mount(socket);
     fireEvent.click(screen.getByRole("button", { name: /leave this table/i }));
 
     await waitFor(() => expect(useSession.getState().credentials).toBeNull());
     expect(loadCredentials()).toBeNull();
     expect(useSession.getState().room).toBeNull();
+    // And the server is told, so the seat is freed for the players still here.
+    expect(sent).toEqual([{ event: "leaveRoom", args: [] }]);
+  });
+
+  it("still leaves when the server refuses", async () => {
+    seated(0);
+    useSession.getState().seat({ roomId: "ABC234", seat: 0, token: "t0" });
+    mount(fakeSocket([{ ok: false, error: "you are not seated in a room" }]).socket);
+    fireEvent.click(screen.getByRole("button", { name: /leave this table/i }));
+    await waitFor(() => expect(useSession.getState().credentials).toBeNull());
+    expect(loadCredentials()).toBeNull();
   });
 });
 

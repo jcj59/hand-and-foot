@@ -9,7 +9,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { MAX_PLAYERS, MIN_PLAYERS } from "@hf/shared";
-import { startTable } from "../actions";
+import { leaveTable, startTable } from "../actions";
 import { roomLink } from "../roomCode";
 import { useSession } from "../session";
 import type { HfClientSocket } from "../socket";
@@ -137,9 +137,10 @@ export function Lobby({ socket }: LobbyProps): React.ReactElement {
         type="button"
         // Without this the stored credentials are a trap: a seat at a table that
         // never deals would be reclaimed on every load with no way to get out.
+        disabled={busy}
         onClick={() => {
-          leave();
-          navigate("/");
+          setBusy(true);
+          void leaveTable(socket, { leave }).then(() => navigate("/"));
         }}
         className="self-start text-sm text-white/50 underline"
       >

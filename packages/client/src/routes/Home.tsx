@@ -9,7 +9,7 @@
  */
 import { useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import type { GameMode, RulesPreset } from "@hf/shared";
+import { ROOM_CODE_LENGTH, type GameMode, type RulesPreset } from "@hf/shared";
 import { createTable, joinTable } from "../actions";
 import { isPossibleRoomCode, normalizeRoomCode } from "../roomCode";
 import { useSession } from "../session";
@@ -88,7 +88,9 @@ export function Home({ socket }: HomeProps): React.ReactElement {
             onChange={(e) => setCode(normalizeRoomCode(e.target.value))}
             placeholder="ABC234"
             autoFocus={Boolean(fromLink)}
-            maxLength={6}
+            // The browser truncates to this before normalizing ever sees it, so it
+            // leaves room for the separators people type: "ABC-234", "a b c 2 3 4".
+            maxLength={ROOM_CODE_LENGTH * 2}
           />
         </label>
         <button

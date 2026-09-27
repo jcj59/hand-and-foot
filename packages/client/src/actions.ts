@@ -79,11 +79,26 @@ export async function resumeStoredSeat(
 ): Promise<boolean> {
   const result = await wire.resumeSeat(socket, credentials);
   if (result.ok) {
-    sink.seat(credentials);
+    // The server's seat, not the stored one: seats close up when someone ahead
+    // leaves the lobby, so the number saved at join time may no longer be ours.
+    sink.seat(result.data);
     return true;
   }
   clearCredentials();
   return false;
+}
+
+/**
+ * Get up from the table, telling the server so the seat is freed — or, once dealt,
+ * played for — rather than held by a player who is no longer there.
+ *
+ * The local seat is forgotten whatever the server says. A refusal or a timeout
+ * means the server already has no seat for this socket, or cannot be reached, and
+ * in neither case should the player be kept at a table they asked to leave.
+ */
+export async function leaveTable(socket: HfClientSocket, sink: { leave(): void }): Promise<void> {
+  await wire.leaveRoom(socket);
+  sink.leave();
 }
 
 /** Deal the first round. Only the host's client offers this. */
