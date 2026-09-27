@@ -17,13 +17,13 @@ pnpm + Turborepo monorepo, TypeScript everywhere, four workspace packages:
 | `packages/shared` | `@hf/shared` | Domain types, rules config, presets, client/server contract. Done for M1. |
 | `packages/engine` | `@hf/engine` | Pure rules engine `(state, action) => newState`. **Complete (M1).** |
 | `packages/server` | `@hf/server` | Authoritative Socket.io server: rooms, seats, per-seat broadcast, turn clock, action log, runnable entrypoint. **Complete (M2).** Postgres persistence = M4. |
-| `packages/client` | `@hf/client` | Placeholder stub only. React + Vite + Tailwind + Zustand app = **M3**. |
+| `packages/client` | `@hf/client` | React + Vite + Tailwind + Zustand app. Scaffold, socket layer, session store and clock anchoring done (M3a); lobby, table and staging = rest of **M3**. |
 
-Libraries are consumed **from source** — each `package.json` points `main`/`types`/`exports` at
-`./src/index.ts`, and there is no build step. `tsconfig.base.json` sets `noEmit: true`. The
-`turbo run build` task exists but no package defines a `build` script, so `pnpm build` is currently a
-no-op. Don't "fix" that until something actually needs bundling (the Vite client in M3, possibly the
-server image in M4).
+The three **libraries** are consumed **from source** — each `package.json` points
+`main`/`types`/`exports` at `./src/index.ts`, and none of them has a build step;
+`tsconfig.base.json` sets `noEmit: true`. `@hf/client` is the exception and the only one: it is an
+application, not a library, so it has no `exports` at all and `pnpm build` now runs Vite for it. Keep
+the libraries buildless — nothing imports them as bundles.
 
 Running the server from source therefore needs a TypeScript runtime: `@hf/server` carries `tsx` as a
 devDependency and its `start`/`dev` scripts go through it. Node's own `--experimental-strip-types`
@@ -60,9 +60,24 @@ pnpm --filter @hf/server dev       # same, restarting on change
 `HF_RECONNECT_GRACE_MS`, `HF_ABANDONED_ROOM_MS` — configure it; see `env.ts`. A value it cannot parse
 stops the process with a message rather than falling back to a default.
 
+And the client, which needs the server running to be useful:
+
+```bash
+pnpm --filter @hf/client dev       # vite on :5173
+pnpm --filter @hf/client build     # vite build -> dist/
+```
+
+`VITE_SERVER_URL` points it at the server, defaulting to `http://localhost:3000` to match the
+server's own default. The two run on **separate origins in development on purpose**, because that is
+how they deploy (Vercel and Fly.io), so CORS is exercised locally instead of discovered on release —
+which means the server needs `HF_CORS_ORIGINS=http://localhost:5173` to be strict locally, and is
+wide open by default.
+
 `tsconfig.base.json` sets `lib: ["ES2022"]` with no DOM lib, so runtime globals Node provides but
 ES2022 does not type — `structuredClone`, `fetch`, timers on `window` — compile-fail even though
-vitest runs them fine. Tests pass, `pnpm typecheck` doesn't. Run both.
+vitest runs them fine. Tests pass, `pnpm typecheck` doesn't. Run both. `@hf/client` adds
+`DOM`/`DOM.Iterable` and `jsx: "react-jsx"` back in its **own** tsconfig rather than widening the base,
+because the engine and server must keep failing on a stray browser global.
 
 Note `.prettierignore` excludes `**/*.md`, so markdown is not format-checked — wrap prose in
 `DESIGN.md` by hand at ~100 columns to match the existing style.
@@ -143,7 +158,7 @@ rather than assumed to have travelled.
 
 ### Server testing (M2b, M2c, M2d)
 
-`@hf/server` is also at **100%** (160 tests). The load-bearing tests are the ones in
+`@hf/server` is also at **100%** (165 tests). The load-bearing tests are the ones in
 `socket.integration.test.ts` that drive *real* Socket.io clients against a real server on an
 ephemeral port: `project()` being clean says nothing about whether the transport routes the right
 payload to the right socket, and that is what actually leaks a hand. Mutation tested the same way as
@@ -185,6 +200,50 @@ instead.
 Socket tests must attach listeners **before** the call that triggers the broadcast. The server emits
 immediately after the ack, so a listener attached afterwards misses it and hangs; use `waitFor` with
 a predicate rather than a bare `once`, since an earlier broadcast can otherwise satisfy it.
+
+### Client testing (M3a)
+
+The bar is **split by kind**, deliberately, rather than one number for the package:
+
+- **Pure modules get engine treatment** — 100% coverage *and* mutation testing. That is
+  `serverTime.ts`, `credentials.ts`, `socket.ts` and `session.ts`: the logic where a bug is silent and
+  costly. M3a ran 30 mutants over them, **29 killed with 1 proven equivalent** (removing the
+  `raw === null` fast path in `loadCredentials` changes nothing, because `JSON.parse(null)` yields
+  `null`, which then fails validation anyway — keep the guard, it is clearer than relying on that).
+- **Components get behavioural tests** — React Testing Library, asserting what a player sees, with no
+  coverage mandate. They happen to be at 100% too, but don't chase that through markup.
+
+`main.tsx` is **not** instrumented at all: nothing imports it, so it never appears in the coverage
+report rather than showing as 0%. It is the browser entry, the counterpart of the server's process
+entry, and it is verified by actually running the app.
+
+Two things that will bite:
+
+- **A broadcast has to be wrapped in `act`.** Server events land in the zustand store from outside
+  React, so without `act` the re-render is not flushed and the assertion reads stale DOM. The fake
+  socket in `App.test.tsx` wraps `fire` for this reason. The symptom is a passing store and an
+  unchanged screen.
+- **The store's `clock` is a mutable singleton.** `useSession` is module state and the clock carries an
+  offset, so a `beforeEach` that resets the store must *replace* the clock too — otherwise a test that
+  anchored it leaks an anchored clock into the next one. This was a real failure while writing M3a.
+
+### The constant-on-both-sides trap (it has now happened twice)
+
+A test that asserts against the very constant it is checking cannot fail when that constant changes,
+because both sides of the comparison move together. It survived mutation testing twice:
+`DEFAULT_PORT` in M2d and `RESYNC_THRESHOLD_MS` in M3a. Both are now pinned to a **literal**
+(`expect(DEFAULT_PORT).toBe(3000)`). Any constant another package or a human decision depends on wants
+one literal assertion alongside the symbolic ones.
+
+### Vitest 5 (as of M3a)
+
+The repo was on vitest 2.1.9, which resolves **Vite 5** internally, while the client app needs Vite 8
+— vitest would have loaded `vite.config.ts` through the wrong major. All four packages moved to
+**vitest 5**; the 434 existing tests passed unchanged, so nothing was adapted for it. Note that its v8
+provider counts branches slightly differently and it **found a real gap** the old one missed: the room
+filter on the `roundEnded` broadcast had no cross-room test, so scores could have leaked to another
+table unnoticed. `vite.config.ts` imports `defineConfig` from `vitest/config`, not `vite`, or the
+`test` block is a type error.
 
 Rules tests go **through `applyAction`**, not through the internal handler, so the phase and dispatch
 checks are exercised too. Fixtures are built inline per file with local `card()` / `cards()` /
@@ -233,8 +292,30 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   default *never ends the round*: `defaultAction` never melds voluntarily, so nobody gets down and the
   stock reshuffles out of the discard pile forever. Pinned by a property test in
   `invariants.property.test.ts`.
-- **M3 — client.** Not started. React/Vite table UI, local meld staging with a running total against
-  the minimum, SVG cards, lobby and room links.
+- **M3 — client.** In progress, split into four PRs on the M2 pattern:
+  - **M3a — scaffold and the session layer.** Done. Vite + React 19 + Tailwind 4 + Zustand + React
+    Router, jsdom/Testing Library set up, the typed socket wrapper with promise-shaped acks,
+    `SeatCredentials` persisted for reload recovery, the zustand session store, and server-time
+    anchoring. Also the protocol change below: `LegalHints` now rides in every `ViewUpdate`.
+  - **M3b — lobby.** Not started. Home → create/join, room code and shareable link, seat list with
+    connection state, host-only start, rules preset and mode on create, and auto-`resumeSeat` on load
+    from the stored credentials.
+  - **M3c — table.** Not started. SVG cards, hand, opponents' counts, melds, discard pile, stock
+    count, turn indicator, and the turn clock rendered through `serverTime.ts`.
+  - **M3d — staging and commit.** Not started. The subtle one: staging melds locally with a running
+    total against the round minimum (reusing `validateMeld` / `meldPoints` from the engine rather than
+    reimplementing them), the take-pile obligation, "you must discard now", and the go-out affordance.
+
+- **Legality hints cross the socket; the client does not compute them.** `LegalHints` moved from
+  `@hf/engine/legal.ts` to `@hf/shared` (re-exported from the engine, so existing importers are
+  unaffected) and `Room.viewFor` now fills it in per seat. The reason is structural: `canTakePile`,
+  `canGoOut` and `meldableRanks` are decided by predicates that read the whole `GameState`, and a
+  client only ever holds its own `PlayerView` — so the alternative was a second copy of the legality
+  rules in the UI, free to drift from the reducer. It leaks nothing (booleans, a seat, and ranks, all
+  about the seat's own cards and the face-up pile), and the wrong-seat bug is the one that matters:
+  computing them for `currentSeat` instead of the recipient both misleads that client and tells it
+  something about another hand. Pinned in `room.test.ts` and over the wire in
+  `socket.integration.test.ts`, and both wrong-seat mutants were confirmed killed.
 - **M4 — deploy.** Not started. No `Dockerfile` or `fly.toml` exists yet; the plan is server on
   Fly.io, client on Vercel, Postgres on Neon. One thing already established by hand: the container
   must exec the server **directly** (`tsx src/main.ts`), not via `pnpm start`. The pnpm wrapper does

@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+/*
+ * Tailwind v4 is configured in CSS rather than a JS config file, so the table's
+ * palette lives here as theme variables the components reference by name.
+ *
+ * Only what the client actually needs: a felt green for the table surface and a
+ * neutral ramp for the chrome around it. Cards are drawn as SVG against white,
+ * so they need no tokens of their own.
+ */
+@theme {
+  --color-felt-700: oklch(0.42 0.07 158);
+  --color-felt-800: oklch(0.35 0.06 158);
+  --color-felt-900: oklch(0.27 0.05 158);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}

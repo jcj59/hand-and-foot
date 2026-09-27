@@ -8,7 +8,7 @@ import {
   type RulesConfig,
   type ViewUpdate,
 } from "@hf/shared";
-import { applyAction, deal, defaultAction, project, scoreRound } from "@hf/engine";
+import { applyAction, deal, defaultAction, legalHints, project, scoreRound } from "@hf/engine";
 import type { Clock } from "./clock";
 import { type ActionLog, InMemoryActionLog } from "./log";
 
@@ -515,7 +515,15 @@ export class Room {
   /** The filtered update for one seat. Null before the game starts. */
   viewFor(seat: number): ViewUpdate | null {
     if (!this.state) return null;
-    return { view: project(this.state, seat), clock: this.clockState(), room: this.info() };
+    return {
+      view: project(this.state, seat),
+      clock: this.clockState(),
+      room: this.info(),
+      // Computed here because it needs the full state, which never leaves the
+      // server. The alternative is a second copy of the legality rules in the
+      // client, which would be free to disagree with the reducer.
+      hints: legalHints(this.state, seat),
+    };
   }
 
   /** Final scores, once the round is over. */

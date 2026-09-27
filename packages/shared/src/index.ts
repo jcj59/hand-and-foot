@@ -257,4 +257,28 @@ export interface RoundScore {
   readonly score: number;
 }
 
+/**
+ * A summary of the kinds of move available to one seat right now.
+ *
+ * It lives here rather than beside `legalHints` in the engine because it crosses
+ * the socket as part of a `ViewUpdate`, and `@hf/shared` is the only package both
+ * sides may import. The engine computes it from the full `GameState`; a client
+ * holds only a `PlayerView` and so could not derive `canTakePile` or `canGoOut`
+ * for itself without reimplementing rules that must not exist in two places.
+ *
+ * Nothing here is privileged: every field is a fact about the seat's own cards
+ * and the visible discard pile, which is exactly what a human at the table knows.
+ * It reports which kinds of action are open, never concrete meld combinations,
+ * and a first lay-down still has to reach the round minimum — that is checked
+ * when the action is applied, not here.
+ */
+export interface LegalHints {
+  readonly seatToAct: number;
+  readonly phase: Phase;
+  readonly canDraw: boolean;
+  readonly canTakePile: boolean;
+  readonly meldableRanks: readonly Rank[];
+  readonly canGoOut: boolean;
+}
+
 export * from "./protocol";

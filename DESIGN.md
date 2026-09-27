@@ -113,6 +113,31 @@ The client stages a player's melds locally, with a running total against the min
 only committed actions. This keeps the server the sole authority while the interface remains
 responsive.
 
+### Legality decided once, on the server
+
+The interface has to know which moves are available in order to be usable: an enabled button that the
+server then refuses is a worse experience than one that was never offered. The obvious way to supply
+that is to work it out in the client from the state it already has, and it does not work here. Whether
+a player may take the discard pile is decided by a solver that reads the whole game state, and whether
+they may go out depends on their books and the rest of the round; a client holds only its own filtered
+view, by design. Answering those questions client-side would mean a second implementation of the rules
+living in the interface, free to disagree with the reducer — and the version that disagrees is the one
+the player sees.
+
+So the server, which already holds the authoritative state and already computes these predicates for
+its own validation, sends the answer alongside each filtered view. There is one implementation of
+legality and the interface renders it. This discloses nothing: the summary is a handful of booleans, a
+seat number and a list of ranks, every one of them a fact about the receiving player's own cards and
+the face-up discard pile — what a human at the table can see. The subtle failure is computing the
+summary for the wrong seat, which would both mislead that player and tell them something about another
+hand, so it is asserted per seat both in isolation and across the transport.
+
+The client still owns one derived quantity, because only it can: the offset between its clock and the
+server's. Deadlines cross the wire as absolute server times rather than as a remaining duration, since
+a duration is already stale when it is sent and would drift further on every update. The client
+measures the difference once and reads deadlines through it, re-measuring only when the estimate is
+provably wrong rather than on every message, which would make a countdown stutter with the network.
+
 ### Individual scoring rather than partnerships
 
 Hand and Foot is often played in partnerships, where partners build shared books and going out is a

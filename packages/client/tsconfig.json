@@ -1,4 +1,13 @@
 {
   "extends": "../../tsconfig.base.json",
-  "include": ["src"]
+  "compilerOptions": {
+    // The base config deliberately ships no DOM lib, because the engine and
+    // server must not reach for browser globals. The client is the one package
+    // that genuinely runs in a browser, so it adds them back here rather than
+    // widening the base for everyone.
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["vite/client"]
+  },
+  "include": ["src", "vite.config.ts"]
 }

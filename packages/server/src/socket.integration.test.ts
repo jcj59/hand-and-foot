@@ -367,6 +367,25 @@ describe("view security across the transport", () => {
     expect(update.view.stockCount).toBeGreaterThan(0);
     expect(JSON.stringify(update)).not.toContain('"stock"');
   });
+
+  it("delivers each socket the hints for its own seat", async () => {
+    // Same reasoning as the hand: project() being right says nothing about which
+    // socket the payload reaches. Seat 0 opens the round, so the two sockets must
+    // receive visibly different hints, and each the ones meant for it.
+    const { host, guest } = await seatTwo();
+    const hostView = next(host, "view");
+    const guestView = next(guest, "view");
+    await startGame(host);
+
+    const mine = await hostView;
+    const theirs = await guestView;
+    expect(mine.hints.seatToAct).toBe(0);
+    expect(theirs.hints.seatToAct).toBe(0);
+    expect(mine.hints.canDraw).toBe(true);
+    expect(theirs.hints.canDraw).toBe(false);
+    // Hints are booleans, a seat and ranks — never cards.
+    expect(JSON.stringify(mine.hints)).not.toContain([...theirs.view.hand.map((c) => c.id)][0]);
+  });
 });
 
 describe("playing over the wire", () => {
@@ -664,5 +683,52 @@ describe("a whole round, end to end", () => {
     expect(endings).toHaveLength(2);
     expect(endings[0].scores).toHaveLength(2);
     expect(endings[0].scores.map((s) => s.seat)).toEqual([0, 1]);
+  }, 30_000);
+
+  it("keeps a finished round's scores out of another room on the same server", async () => {
+    // The room filter on the roundEnded broadcast, which the view broadcast has
+    // its own test for. Scores name every seat at the table, so one delivered to
+    // a bystander leaks another table's whole result.
+    const { server, port } = await boot();
+    const room = server.manager.create({
+      ...EAST_COAST,
+      extraDecks: 0,
+      stockExhaustion: "end",
+    });
+
+    const host = await connect(port);
+    const guest = await connect(port);
+    expect((await joinRoom(host, room.id, "ana")).ok).toBe(true);
+    expect((await joinRoom(guest, room.id, "ben")).ok).toBe(true);
+
+    // A socket seated at a different table, which must hear nothing.
+    const bystander = await connect(port);
+    const other = await createRoom(bystander, "zoe");
+    expect(other.ok).toBe(true);
+    if (!other.ok) return;
+    expect(other.data.roomId).not.toBe(room.id);
+    const strayEndings: RoundEnded[] = [];
+    bystander.on("roundEnded", (r) => strayEndings.push(r));
+
+    const sockets = [host, guest];
+    const endings: RoundEnded[] = [];
+    for (const s of sockets) s.on("roundEnded", (r) => endings.push(r));
+    expect((await startGame(host)).ok).toBe(true);
+
+    let moves = 0;
+    while (!room.gameState?.roundEnded && moves < 500) {
+      const state = room.gameState!;
+      const action = defaultAction(state);
+      expect(action, `no default at move ${moves}`).not.toBeNull();
+      expect((await submit(sockets[state.currentSeat], action as Action)).ok).toBe(true);
+      moves++;
+    }
+    expect(room.gameState?.roundEnded).toBe(true);
+
+    // Drain before asserting the negative: a stray would arrive a tick after the
+    // intended pair, so an immediate assertion passes even with no filter at all.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(endings).toHaveLength(2);
+    expect(strayEndings).toEqual([]);
   }, 30_000);
 });
