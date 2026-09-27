@@ -369,6 +369,37 @@ describe("the round result", () => {
     expect(panel.textContent).toMatch(/ben: -20/);
     expect(panel.textContent).toMatch(/went out/);
   });
+
+  it("stops the clock and the turn once the round is over, even if a deadline arrives", () => {
+    // The update still names a seat to act and carries a live deadline; the result
+    // alone has to end the turn on screen.
+    mount(fakeSocket().socket, update({ hints: { seatToAct: 1 } }));
+    expect(screen.getByRole("timer")).toBeInTheDocument();
+    expect(screen.getByText(/waiting for ben/i)).toBeInTheDocument();
+    act(() => {
+      useSession.getState().applyResult({
+        scores: [
+          { seat: 0, score: 415 },
+          { seat: 1, score: -20 },
+        ],
+        wentOutSeat: 0,
+      });
+    });
+    expect(screen.getByLabelText(/round result/i)).toBeInTheDocument();
+    expect(screen.queryByRole("timer")).toBeNull();
+    expect(screen.queryByText(/waiting for/i)).toBeNull();
+    expect(screen.queryByLabelText(/your turn/i)).toBeNull();
+  });
+
+  it("offers no draw to the seat on turn once the round is over", () => {
+    mount(fakeSocket().socket);
+    expect(screen.getByRole("button", { name: /^draw$/i })).toBeInTheDocument();
+    act(() => {
+      useSession.getState().applyResult({ scores: [{ seat: 0, score: 0 }] });
+    });
+    expect(screen.queryByRole("button", { name: /^draw$/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /take the pile/i })).toBeNull();
+  });
 });
 
 describe("the clock", () => {

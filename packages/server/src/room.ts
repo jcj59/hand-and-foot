@@ -541,8 +541,10 @@ export class Room {
   clockState(): ClockState {
     const now = this.deps.clock.now();
     // While paused the deadline is meaningless — the clock is not running — so
-    // send none rather than one that silently slides.
-    const deadlineAt = this.paused || !this.started ? null : this.deadline();
+    // send none rather than one that silently slides. Once the round has ended no
+    // turn is live and nothing will fire, so a deadline would count down to nothing.
+    const deadlineAt =
+      this.paused || !this.started || this.state?.roundEnded ? null : this.deadline();
     return {
       serverNow: now,
       deadlineAt,

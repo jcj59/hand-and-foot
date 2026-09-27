@@ -67,7 +67,9 @@ export function Table({ socket }: TableProps): React.ReactElement {
             {view.isDown ? " · you are down" : " · not down"}
           </p>
         </div>
-        <TurnClock clock={clock} />
+        {/* Once the round is over no turn is live, so there is no clock to show even
+            if a deadline still arrives. */}
+        {!result && <TurnClock clock={clock} />}
       </header>
 
       {result && (
@@ -143,40 +145,42 @@ export function Table({ socket }: TableProps): React.ReactElement {
         </p>
       )}
 
-      <section className="flex flex-wrap items-center gap-3" aria-label="Your turn">
-        {myTurn ? (
-          <>
-            <button
-              type="button"
-              disabled={busy || !hints.canDraw}
-              onClick={() => void send({ type: "draw" })}
-              className="rounded bg-white px-4 py-2 font-medium text-felt-900 disabled:opacity-40"
-            >
-              Draw
-            </button>
-            <button
-              type="button"
-              // Whether the pile can be taken is decided by a solver over the whole
-              // state, so this is the server's answer, not a guess made here.
-              disabled={busy || !hints.canTakePile}
-              onClick={() => void send({ type: "takePile" })}
-              className="rounded border border-white/30 px-4 py-2 font-medium disabled:opacity-40"
-            >
-              Take the pile
-            </button>
+      {!result && (
+        <section className="flex flex-wrap items-center gap-3" aria-label="Your turn">
+          {myTurn ? (
+            <>
+              <button
+                type="button"
+                disabled={busy || !hints.canDraw}
+                onClick={() => void send({ type: "draw" })}
+                className="rounded bg-white px-4 py-2 font-medium text-felt-900 disabled:opacity-40"
+              >
+                Draw
+              </button>
+              <button
+                type="button"
+                // Whether the pile can be taken is decided by a solver over the whole
+                // state, so this is the server's answer, not a guess made here.
+                disabled={busy || !hints.canTakePile}
+                onClick={() => void send({ type: "takePile" })}
+                className="rounded border border-white/30 px-4 py-2 font-medium disabled:opacity-40"
+              >
+                Take the pile
+              </button>
+              <span className="text-sm text-white/60">
+                {hints.phase === "draw" ? "Draw, or take the pile." : "Melding lands in M3d."}
+              </span>
+            </>
+          ) : (
             <span className="text-sm text-white/60">
-              {hints.phase === "draw" ? "Draw, or take the pile." : "Melding lands in M3d."}
+              Waiting for{" "}
+              {room.players.find((p) => p.seat === hints.seatToAct)?.name ??
+                `seat ${hints.seatToAct}`}
+              .
             </span>
-          </>
-        ) : (
-          <span className="text-sm text-white/60">
-            Waiting for{" "}
-            {room.players.find((p) => p.seat === hints.seatToAct)?.name ??
-              `seat ${hints.seatToAct}`}
-            .
-          </span>
-        )}
-      </section>
+          )}
+        </section>
+      )}
     </main>
   );
 }

@@ -405,6 +405,22 @@ describe("clock lifecycle", () => {
     expect(clock.pendingCount()).toBe(0);
   });
 
+  it("sends no deadline once the round has ended", () => {
+    // No turn is live after the round ends, so a deadline would have every client
+    // count down to a timeout that never fires.
+    const { room } = started({ extraDecks: 0, stockExhaustion: "end" });
+    expect(room.viewFor(0)!.clock.deadlineAt).not.toBeNull();
+    let guard = 0;
+    while (!room.gameState!.roundEnded && guard++ < 2_000) {
+      const state = room.gameState!;
+      expect(room.submitAction(state.currentSeat, defaultAction(state)!, "player").ok).toBe(true);
+    }
+    expect(room.gameState!.roundEnded).toBe(true);
+    expect(room.clockState().deadlineAt).toBeNull();
+    expect(room.viewFor(0)!.clock.deadlineAt).toBeNull();
+    expect(room.viewFor(1)!.clock.deadlineAt).toBeNull();
+  });
+
   it("leaves no timer armed once the round ends", () => {
     const { room, clock } = started({ extraDecks: 0, stockExhaustion: "end" });
     let guard = 0;
