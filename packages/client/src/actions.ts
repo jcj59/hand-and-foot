@@ -65,6 +65,10 @@ export async function joinTable(
 /**
  * Ask for a seat back, and say which of three things happened.
  *
+ * This is what makes a reload — or a phone that locked itself — recoverable
+ * rather than a lost place at the table, and what keeps the seat across a dropped
+ * connection.
+ *
  * "gone" and "unreachable" are kept apart because they call for opposite
  * responses. A refusal means the seat no longer exists — the round finished, the
  * room was reaped, or the token predates a server that lost its tables — so the
@@ -87,22 +91,6 @@ export async function reclaimSeat(
   if (result.error === wire.NO_RESPONSE) return "unreachable";
   clearCredentials();
   return "gone";
-}
-
-/**
- * Reclaim a stored seat, which is what makes a reload — or a phone that locked
- * itself — recoverable rather than a lost place at the table.
- *
- * A refusal here is expected rather than exceptional, and deliberately raises no
- * notice: the player did not ask for this, and telling them a seat they had
- * forgotten about is gone would be noise.
- */
-export async function resumeStoredSeat(
-  socket: HfClientSocket,
-  credentials: SeatCredentials,
-  sink: ActionSink,
-): Promise<boolean> {
-  return (await reclaimSeat(socket, credentials, sink)) === "reclaimed";
 }
 
 /** What `reclaimOnReconnect` needs from the store. */

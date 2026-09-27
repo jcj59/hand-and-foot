@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { EAST_COAST, type Ack, type RoomInfo, type ViewUpdate } from "@hf/shared";
@@ -6,7 +6,7 @@ import { App } from "./App";
 import { CREDENTIALS_KEY, loadCredentials, saveCredentials } from "./credentials";
 import { createServerClock } from "./serverTime";
 import { useSession } from "./session";
-import type { HfClientSocket } from "./socket";
+import { ACK_TIMEOUT_MS, type HfClientSocket } from "./socket";
 
 /**
  * A transport the test drives by hand, with both halves the shell uses: listeners
@@ -16,7 +16,7 @@ import type { HfClientSocket } from "./socket";
  * React — straight into the zustand store — and without `act` the resulting render
  * is not flushed before the assertion reads the DOM.
  */
-function fakeSocket(answers: Ack<unknown>[] = []): {
+function fakeSocket(answers: (Ack<unknown> | "silent")[] = []): {
   socket: HfClientSocket;
   fire(event: string, payload?: unknown): void;
   readonly sent: { event: string; args: unknown[] }[];
@@ -41,7 +41,9 @@ function fakeSocket(answers: Ack<unknown>[] = []): {
     emit: (event: string, ...args: unknown[]) => {
       const ack = args[args.length - 1] as (result: Ack<unknown>) => void;
       sent.push({ event, args: args.slice(0, -1) });
-      ack(queue.shift() ?? { ok: true, data: undefined });
+      // "silent" is a request the server never answers, as over a dropped link.
+      const answer = queue.shift() ?? { ok: true, data: undefined };
+      if (answer !== "silent") ack(answer);
       return socket;
     },
   } as unknown as HfClientSocket;
@@ -281,6 +283,35 @@ describe("moving up a seat", () => {
     socket.fire("connect");
     await waitFor(() => expect(socket.sent).toHaveLength(2));
     expect(socket.sent.map((s) => s.event)).toEqual(["resumeSeat", "resumeSeat"]);
+  });
+
+  it("asks again on the next connection when the stored seat got no answer", async () => {
+    // The link dropped while the load-time reclaim was waiting. The seat never
+    // reached the store, so the reconnect path has nothing to ask for; giving up
+    // here would leave the server playing the seat until the player reloaded.
+    vi.useFakeTimers();
+    try {
+      const stored = { roomId: "ABC234", seat: 1, token: "tok" };
+      saveCredentials(stored);
+      const socket = fakeSocket(["silent", { ok: true, data: stored }]);
+      mount(socket.socket);
+      socket.fire("connect");
+      expect(socket.sent).toHaveLength(1);
+      await act(() => vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS));
+      expect(loadCredentials()).toEqual(stored);
+      expect(useSession.getState().credentials).toBeNull();
+
+      socket.fire("disconnect");
+      socket.fire("connect");
+      await act(() => vi.advanceTimersByTimeAsync(0));
+      expect(socket.sent).toEqual([
+        { event: "resumeSeat", args: [stored] },
+        { event: "resumeSeat", args: [stored] },
+      ]);
+      expect(useSession.getState().credentials).toEqual(stored);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("gives up the load-time reclaim once a stored seat is refused", async () => {

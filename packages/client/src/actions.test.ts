@@ -8,7 +8,6 @@ import {
   play,
   reclaimOnReconnect,
   reclaimSeat,
-  resumeStoredSeat,
   startTable,
   type ActionSink,
 } from "./actions";
@@ -128,12 +127,12 @@ describe("joinTable", () => {
   });
 });
 
-describe("resumeStoredSeat", () => {
+describe("reclaimSeat", () => {
   it("keeps the seat when the server honours the token", async () => {
     const { socket, sent } = fakeSocket([{ ok: true, data: credentials }]);
     const target = sink();
     saveCredentials(credentials);
-    expect(await resumeStoredSeat(socket, credentials, target)).toBe(true);
+    expect(await reclaimSeat(socket, credentials, target)).toBe("reclaimed");
     expect(sent[0]).toEqual({ event: "resumeSeat", args: [credentials] });
     expect(target.seated).toEqual([credentials]);
   });
@@ -144,7 +143,7 @@ describe("resumeStoredSeat", () => {
     const moved: SeatCredentials = { ...credentials, seat: 1 };
     const { socket } = fakeSocket([{ ok: true, data: moved }]);
     const target = sink();
-    expect(await resumeStoredSeat(socket, { ...credentials, seat: 2 }, target)).toBe(true);
+    expect(await reclaimSeat(socket, { ...credentials, seat: 2 }, target)).toBe("reclaimed");
     expect(target.seated).toEqual([moved]);
   });
 
@@ -155,22 +154,11 @@ describe("resumeStoredSeat", () => {
     const { socket } = fakeSocket([{ ok: false, error: "that seat is not yours" }]);
     const target = sink();
     saveCredentials(credentials);
-    expect(await resumeStoredSeat(socket, credentials, target)).toBe(false);
+    expect(await reclaimSeat(socket, credentials, target)).toBe("gone");
     expect(loadCredentials()).toBeNull();
     expect(target.seated).toEqual([]);
   });
 
-  it("stays silent about a refusal", async () => {
-    // The player did not ask for this; telling them a seat they had forgotten about
-    // is gone would be noise on a fresh load.
-    const { socket } = fakeSocket([{ ok: false, error: "that seat is not yours" }]);
-    const target = sink();
-    await resumeStoredSeat(socket, credentials, target);
-    expect(target.notices).toEqual([]);
-  });
-});
-
-describe("reclaimSeat", () => {
   it("tells a seat that is gone from a server that did not answer", async () => {
     // They call for opposite responses: gone credentials are dead, but a slow
     // network is no reason to throw a player out of a game.
@@ -188,13 +176,6 @@ describe("reclaimSeat", () => {
     const { socket } = fakeSocket([{ ok: false, error: "no room with that code" }]);
     expect(await reclaimSeat(socket, credentials, sink())).toBe("gone");
     expect(loadCredentials()).toBeNull();
-  });
-
-  it("reports a reclaimed seat", async () => {
-    const { socket } = fakeSocket([{ ok: true, data: credentials }]);
-    const target = sink();
-    expect(await reclaimSeat(socket, credentials, target)).toBe("reclaimed");
-    expect(target.seated).toEqual([credentials]);
   });
 });
 
