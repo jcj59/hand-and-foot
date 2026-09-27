@@ -158,7 +158,7 @@ rather than assumed to have travelled.
 
 ### Server testing (M2b, M2c, M2d)
 
-`@hf/server` is also at **100%** (173 tests). The load-bearing tests are the ones in
+`@hf/server` is also at **100%** (176 tests). The load-bearing tests are the ones in
 `socket.integration.test.ts` that drive *real* Socket.io clients against a real server on an
 ephemeral port: `project()` being clean says nothing about whether the transport routes the right
 payload to the right socket, and that is what actually leaks a hand. Mutation tested the same way as
