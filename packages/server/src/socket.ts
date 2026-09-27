@@ -177,6 +177,10 @@ export function attachSocketServer(io: HfServer, manager: RoomManager): void {
       broadcastRoom(room);
       const update = room.viewFor(resumed.value.seat);
       if (update) socket.emit("view", update);
+      // The result is broadcast once, when the round ends, so a seat that comes back
+      // afterwards would otherwise see a finished table with no scores on it.
+      const result = room.result();
+      if (result) socket.emit("roundEnded", result);
     });
 
     socket.on("startGame", (ack) => {
