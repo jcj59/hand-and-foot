@@ -157,6 +157,34 @@ describe("leaving the lobby", () => {
     expect(room.abandonedSince).toBe(room.createdAt);
   });
 
+  it("lifts the pause when the player holding it leaves", () => {
+    const room = newRoom();
+    seated(room, ["ana", "ben"]);
+    expect(room.setPaused(0, true).ok).toBe(true);
+    room.leave(room.seats()[0].token);
+    // Otherwise the pause would be credited to ben, who moved up into seat 0.
+    expect(room.paused).toBe(false);
+    expect(room.info().pausedBy).toBeUndefined();
+    expect(room.setPaused(0, true).ok).toBe(true);
+  });
+
+  it("moves the pause down with its holder when a lower seat leaves", () => {
+    const room = newRoom();
+    seated(room, ["ana", "ben"]);
+    expect(room.setPaused(1, true).ok).toBe(true);
+    room.leave(room.seats()[0].token);
+    expect(room.info().pausedBy).toBe(0);
+    expect(room.info().players[0].name).toBe("ben");
+  });
+
+  it("leaves the pause where it is when a higher seat leaves", () => {
+    const room = newRoom();
+    seated(room, ["ana", "ben", "cy"]);
+    expect(room.setPaused(0, true).ok).toBe(true);
+    room.leave(room.seats()[2].token);
+    expect(room.info().pausedBy).toBe(0);
+  });
+
   it("refuses a token that is not at the table", () => {
     const room = newRoom();
     seated(room, ["ana", "ben"]);
