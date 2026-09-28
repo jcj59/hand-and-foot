@@ -6,7 +6,8 @@ import {
   leaveTable,
   pauseTable,
   play,
-  resumeStoredSeat,
+  reclaimOnReconnect,
+  reclaimSeat,
   startTable,
   type ActionSink,
 } from "./actions";
@@ -126,12 +127,12 @@ describe("joinTable", () => {
   });
 });
 
-describe("resumeStoredSeat", () => {
+describe("reclaimSeat", () => {
   it("keeps the seat when the server honours the token", async () => {
     const { socket, sent } = fakeSocket([{ ok: true, data: credentials }]);
     const target = sink();
     saveCredentials(credentials);
-    expect(await resumeStoredSeat(socket, credentials, target)).toBe(true);
+    expect(await reclaimSeat(socket, credentials, target)).toBe("reclaimed");
     expect(sent[0]).toEqual({ event: "resumeSeat", args: [credentials] });
     expect(target.seated).toEqual([credentials]);
   });
@@ -142,7 +143,7 @@ describe("resumeStoredSeat", () => {
     const moved: SeatCredentials = { ...credentials, seat: 1 };
     const { socket } = fakeSocket([{ ok: true, data: moved }]);
     const target = sink();
-    expect(await resumeStoredSeat(socket, { ...credentials, seat: 2 }, target)).toBe(true);
+    expect(await reclaimSeat(socket, { ...credentials, seat: 2 }, target)).toBe("reclaimed");
     expect(target.seated).toEqual([moved]);
   });
 
@@ -153,18 +154,120 @@ describe("resumeStoredSeat", () => {
     const { socket } = fakeSocket([{ ok: false, error: "that seat is not yours" }]);
     const target = sink();
     saveCredentials(credentials);
-    expect(await resumeStoredSeat(socket, credentials, target)).toBe(false);
+    expect(await reclaimSeat(socket, credentials, target)).toBe("gone");
     expect(loadCredentials()).toBeNull();
     expect(target.seated).toEqual([]);
   });
 
-  it("stays silent about a refusal", async () => {
-    // The player did not ask for this; telling them a seat they had forgotten about
-    // is gone would be noise on a fresh load.
-    const { socket } = fakeSocket([{ ok: false, error: "that seat is not yours" }]);
-    const target = sink();
-    await resumeStoredSeat(socket, credentials, target);
-    expect(target.notices).toEqual([]);
+  it("tells a seat that is gone from a server that did not answer", async () => {
+    // They call for opposite responses: gone credentials are dead, but a slow
+    // network is no reason to throw a player out of a game.
+    vi.useFakeTimers();
+    try {
+      saveCredentials(credentials);
+      const silent = { emit: () => silent } as unknown as HfClientSocket;
+      const pending = reclaimSeat(silent, credentials, sink());
+      await vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS);
+      expect(await pending).toBe("unreachable");
+      expect(loadCredentials()).toEqual(credentials);
+    } finally {
+      vi.useRealTimers();
+    }
+    const { socket } = fakeSocket([{ ok: false, error: "no room with that code" }]);
+    expect(await reclaimSeat(socket, credentials, sink())).toBe("gone");
+    expect(loadCredentials()).toBeNull();
+  });
+});
+
+describe("reclaimOnReconnect", () => {
+  /** A socket whose `connect` the test fires, answering requests from a queue. */
+  function reconnecting(answers: Ack<unknown>[]): {
+    socket: HfClientSocket;
+    connect(): void;
+    readonly sent: { event: string; args: unknown[] }[];
+    readonly listening: () => number;
+  } {
+    const { socket, sent } = fakeSocket(answers);
+    const handlers = new Set<() => void>();
+    Object.assign(socket, {
+      on: (_event: "connect", handler: () => void) => handlers.add(handler),
+      off: (_event: "connect", handler: () => void) => handlers.delete(handler),
+    });
+    return {
+      socket,
+      sent,
+      connect: () => handlers.forEach((handler) => handler()),
+      listening: () => handlers.size,
+    };
+  }
+
+  function store(held: SeatCredentials | null): ReturnType<typeof sink> & {
+    credentials(): SeatCredentials | null;
+    leave(): void;
+    readonly left: number[];
+  } {
+    const left: number[] = [];
+    return { ...sink(), left, credentials: () => held, leave: () => left.push(1) };
+  }
+
+  it("asks for the held seat back on every reconnect", async () => {
+    const { socket, sent, connect } = reconnecting([
+      { ok: true, data: credentials },
+      { ok: true, data: credentials },
+    ]);
+    const target = store(credentials);
+    reclaimOnReconnect(socket, target);
+    connect();
+    connect();
+    await vi.waitFor(() => expect(target.seated).toHaveLength(2));
+    expect(sent).toEqual([
+      { event: "resumeSeat", args: [credentials] },
+      { event: "resumeSeat", args: [credentials] },
+    ]);
+  });
+
+  it("stays quiet with no seat held, as on a fresh load", () => {
+    const { socket, sent, connect } = reconnecting([]);
+    reclaimOnReconnect(socket, store(null));
+    connect();
+    expect(sent).toEqual([]);
+  });
+
+  it("leaves the table with a notice when the seat is gone", async () => {
+    const { socket, connect } = reconnecting([{ ok: false, error: "no room with that code" }]);
+    const target = store(credentials);
+    reclaimOnReconnect(socket, target);
+    connect();
+    await vi.waitFor(() => expect(target.left).toHaveLength(1));
+    expect(target.notices).toEqual(["that table is no longer available"]);
+  });
+
+  it("keeps the seat when the server does not answer, for the next reconnect to retry", async () => {
+    vi.useFakeTimers();
+    try {
+      const target = store(credentials);
+      const handlers = new Set<() => void>();
+      const silent = {
+        emit: () => silent,
+        on: (_event: string, handler: () => void) => handlers.add(handler),
+        off: (_event: string, handler: () => void) => handlers.delete(handler),
+      } as unknown as HfClientSocket;
+      reclaimOnReconnect(silent, target);
+      handlers.forEach((handler) => handler());
+      await vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS);
+      expect(target.left).toEqual([]);
+      expect(target.notices).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("detaches its listener", () => {
+    const { socket, listening } = reconnecting([]);
+    const detach = reclaimOnReconnect(socket, store(credentials));
+    expect(listening()).toBe(1);
+    detach();
+    expect(listening()).toBe(0);
   });
 });
 

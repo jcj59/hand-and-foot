@@ -358,11 +358,21 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   computing them for `currentSeat` instead of the recipient both misleads that client and tells it
   something about another hand. Pinned in `room.test.ts` and over the wire in
   `socket.integration.test.ts`, and both wrong-seat mutants were confirmed killed.
-- **M4 — deploy.** Not started. No `Dockerfile` or `fly.toml` exists yet; the plan is server on
-  Fly.io, client on Vercel, Postgres on Neon. One thing already established by hand: the container
-  must exec the server **directly** (`tsx src/main.ts`), not via `pnpm start`. The pnpm wrapper does
-  not forward SIGTERM, so through it the process is killed outright (exit 143) and the graceful
-  shutdown never runs — verified both ways locally.
+- **M4 — deploy.** In progress: server on Fly.io, client on Vercel, Postgres on Neon.
+  - **M4a — keeping a seat across a reconnect.** A new transport connection is a new socket to the
+    server, and a seat belongs to a socket only once it has presented the token — but the client
+    used to reclaim its seat only on page load. So any network blip, and *every server deploy*,
+    left the tab showing a connected table whose moves were all refused as "not seated" while the
+    server played the seat after the grace. `reclaimOnReconnect` (in `actions.ts`, wired in `App`)
+    re-sends `resumeSeat` on every reconnect while the store holds a seat. `reclaimSeat` tells
+    **gone** (refused: discard the credentials, go home with a notice) from **unreachable** (no
+    ack: keep them, the next reconnect retries) via `NO_RESPONSE` — before this, a slow server on
+    load also threw the stored seat away. `reconnect.integration.test.ts` is the client's first
+    test against a real server (`@hf/server` is a client devDependency for it), because only a real
+    server can say whether the new socket is actually seated.
+  - The container must exec the server **directly** (`tsx src/main.ts`), not via `pnpm start`. The
+    pnpm wrapper does not forward SIGTERM, so through it the process is killed outright (exit 143)
+    and the graceful shutdown never runs — verified both ways locally.
 - **Bot milestone — the RL agent.** The point of the whole project. Design not yet written; the
   section in `DESIGN.md` is a placeholder. Observation = `PlayerView` (by construction the agent
   cannot see more than a human), reward is end-of-round. The evaluation baseline is **not**

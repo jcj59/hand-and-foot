@@ -200,6 +200,15 @@ deal the player count is fixed, so the seat stays and is treated as a disconnect
 already run out: the server plays it at once instead of stalling the table for a player who has
 said they are not coming back.
 
+A dropped connection is recovered by the client rather than the transport. Socket.io reconnects on
+its own, but to the server the result is a new socket carrying no seat, so the client presents its
+seat token again on every reconnect, not only when the page loads. This matters more than it first
+appears: every deploy of the server restarts it, which reconnects every open tab at once, and a tab
+that did not reclaim its seat would show a live table whose every move is refused while the server,
+seeing the seat empty, plays it on the player's behalf. The client distinguishes a refused reclaim,
+which means the table is gone and sends the player home, from an unanswered one, which says only
+that the network is poor and keeps the seat for the next attempt.
+
 Pacing timers are part of the rule configuration, since they change how the game plays. The
 reconnect grace and the abandoned-room threshold are not: they are operational settings on the
 server, because how long to wait for a dropped socket is not a rule of Hand and Foot. That division

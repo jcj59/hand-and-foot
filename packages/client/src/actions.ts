@@ -63,29 +63,76 @@ export async function joinTable(
 }
 
 /**
- * Reclaim a stored seat, which is what makes a reload — or a phone that locked
- * itself — recoverable rather than a lost place at the table.
+ * Ask for a seat back, and say which of three things happened.
  *
- * A refusal here is expected rather than exceptional: the round may have finished,
- * the room may have been reaped, or the token may be from an older session. So the
- * credentials are discarded instead of being retried forever, and deliberately no
- * notice is raised — the player did not ask for this, and telling them a seat they
- * had forgotten about is gone would be noise.
+ * This is what makes a reload — or a phone that locked itself — recoverable
+ * rather than a lost place at the table, and what keeps the seat across a dropped
+ * connection.
+ *
+ * "gone" and "unreachable" are kept apart because they call for opposite
+ * responses. A refusal means the seat no longer exists — the round finished, the
+ * room was reaped, or the token predates a server that lost its tables — so the
+ * credentials are dead and are discarded. No answer at all means only that the
+ * connection is bad, and discarding the credentials then would turn a slow network
+ * into a lost game.
  */
-export async function resumeStoredSeat(
+export async function reclaimSeat(
   socket: HfClientSocket,
   credentials: SeatCredentials,
-  sink: ActionSink,
-): Promise<boolean> {
+  sink: Pick<ActionSink, "seat">,
+): Promise<"reclaimed" | "gone" | "unreachable"> {
   const result = await wire.resumeSeat(socket, credentials);
   if (result.ok) {
     // The server's seat, not the stored one: seats close up when someone ahead
     // leaves the lobby, so the number saved at join time may no longer be ours.
     sink.seat(result.data);
-    return true;
+    return "reclaimed";
   }
+  if (result.error === wire.NO_RESPONSE) return "unreachable";
   clearCredentials();
-  return false;
+  return "gone";
+}
+
+/** What `reclaimOnReconnect` needs from the store. */
+export interface ReconnectSink extends ActionSink {
+  /** Read at the moment of reconnecting, not when the listener was attached. */
+  credentials(): SeatCredentials | null;
+  leave(): void;
+}
+
+/** Shown when a table this tab was sitting at did not survive the reconnect. */
+export const TABLE_GONE = "that table is no longer available";
+
+/**
+ * Hold on to the seat across a dropped connection.
+ *
+ * A new transport connection is a new socket to the server, and a seat belongs to
+ * a socket only once it has presented the token. Without this, a network blip —
+ * or every deploy of the server, which restarts it — leaves the tab showing a
+ * connected table whose every move is refused as "not seated", while the server,
+ * seeing the seat empty, starts playing it on the player's behalf.
+ *
+ * The first connection is left alone: a fresh load has no seat in the store yet,
+ * and reclaiming the stored one is `ResumeSeat`'s job. Returns a teardown, for the
+ * same reason `attachSession` does.
+ */
+export function reclaimOnReconnect(socket: HfClientSocket, sink: ReconnectSink): () => void {
+  const onConnect = (): void => {
+    const credentials = sink.credentials();
+    if (!credentials) return;
+    void reclaimSeat(socket, credentials, sink).then((outcome) => {
+      // Unreachable keeps the seat: the next reconnect tries again.
+      if (outcome !== "gone") return;
+      // Unlike a fresh load, the player was at this table a moment ago, so its
+      // disappearing is worth saying out loud rather than silently going home.
+      sink.leave();
+      sink.setNotice(TABLE_GONE);
+    });
+  };
+  socket.on("connect", onConnect);
+  return () => {
+    socket.off("connect", onConnect);
+  };
 }
 
 /**

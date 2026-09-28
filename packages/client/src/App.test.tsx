@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { EAST_COAST, type Ack, type RoomInfo, type ViewUpdate } from "@hf/shared";
@@ -6,7 +6,7 @@ import { App } from "./App";
 import { CREDENTIALS_KEY, loadCredentials, saveCredentials } from "./credentials";
 import { createServerClock } from "./serverTime";
 import { useSession } from "./session";
-import type { HfClientSocket } from "./socket";
+import { ACK_TIMEOUT_MS, type HfClientSocket } from "./socket";
 
 /**
  * A transport the test drives by hand, with both halves the shell uses: listeners
@@ -16,30 +16,34 @@ import type { HfClientSocket } from "./socket";
  * React — straight into the zustand store — and without `act` the resulting render
  * is not flushed before the assertion reads the DOM.
  */
-function fakeSocket(answers: Ack<unknown>[] = []): {
+function fakeSocket(answers: (Ack<unknown> | "silent")[] = []): {
   socket: HfClientSocket;
   fire(event: string, payload?: unknown): void;
   readonly sent: { event: string; args: unknown[] }[];
   readonly removed: string[];
 } {
-  const handlers = new Map<string, (payload?: unknown) => void>();
+  // Several listeners per event, as on a real socket: the shell attaches two to
+  // `connect`, and a map of one would let the second silently replace the first.
+  const handlers = new Map<string, Set<(payload?: unknown) => void>>();
   const sent: { event: string; args: unknown[] }[] = [];
   const removed: string[] = [];
   const queue = [...answers];
   const socket = {
     on: (event: string, handler: (payload?: unknown) => void) => {
-      handlers.set(event, handler);
+      handlers.set(event, (handlers.get(event) ?? new Set()).add(handler));
       return socket;
     },
-    off: (event: string) => {
+    off: (event: string, handler: (payload?: unknown) => void) => {
       removed.push(event);
-      handlers.delete(event);
+      handlers.get(event)?.delete(handler);
       return socket;
     },
     emit: (event: string, ...args: unknown[]) => {
       const ack = args[args.length - 1] as (result: Ack<unknown>) => void;
       sent.push({ event, args: args.slice(0, -1) });
-      ack(queue.shift() ?? { ok: true, data: undefined });
+      // "silent" is a request the server never answers, as over a dropped link.
+      const answer = queue.shift() ?? { ok: true, data: undefined };
+      if (answer !== "silent") ack(answer);
       return socket;
     },
   } as unknown as HfClientSocket;
@@ -49,7 +53,7 @@ function fakeSocket(answers: Ack<unknown>[] = []): {
     removed,
     fire: (event, payload) => {
       act(() => {
-        handlers.get(event)?.(payload);
+        for (const handler of handlers.get(event) ?? []) handler(payload);
       });
     },
   };
@@ -263,27 +267,92 @@ describe("moving up a seat", () => {
     expect(useSession.getState().notice).toBeNull();
   });
 
-  it("tries only once, however many times the socket reconnects", async () => {
-    // A refusal means the seat is genuinely gone and the credentials are discarded,
-    // so a retry could only fail again.
-    saveCredentials({ roomId: "ABC234", seat: 1, token: "tok" });
-    const socket = fakeSocket([{ ok: true, data: undefined }]);
+  it("does not repeat the load-time reclaim when the socket reconnects", async () => {
+    // Once the seat is back in this tab, a reconnect is the reconnect path's job;
+    // the load-time reclaim running again as well would ask twice.
+    const held = { roomId: "ABC234", seat: 1, token: "tok" };
+    saveCredentials(held);
+    const socket = fakeSocket([
+      { ok: true, data: held },
+      { ok: true, data: held },
+    ]);
     mount(socket.socket);
     socket.fire("connect");
-    await waitFor(() => expect(socket.sent).toHaveLength(1));
+    await waitFor(() => expect(useSession.getState().credentials).toEqual(held));
     socket.fire("disconnect");
     socket.fire("connect");
-    await waitFor(() => expect(socket.sent).toHaveLength(1));
+    await waitFor(() => expect(socket.sent).toHaveLength(2));
+    expect(socket.sent.map((s) => s.event)).toEqual(["resumeSeat", "resumeSeat"]);
   });
 
-  it("leaves a seat already held in this tab alone", () => {
-    // Reclaiming is for a fresh load; a live seat needs nothing.
-    saveCredentials({ roomId: "ABC234", seat: 1, token: "tok" });
-    useSession.setState({ credentials: { roomId: "ABC234", seat: 1, token: "tok" } });
-    const socket = fakeSocket();
+  it("asks again on the next connection when the stored seat got no answer", async () => {
+    // The link dropped while the load-time reclaim was waiting. The seat never
+    // reached the store, so the reconnect path has nothing to ask for; giving up
+    // here would leave the server playing the seat until the player reloaded.
+    vi.useFakeTimers();
+    try {
+      const stored = { roomId: "ABC234", seat: 1, token: "tok" };
+      saveCredentials(stored);
+      const socket = fakeSocket(["silent", { ok: true, data: stored }]);
+      mount(socket.socket);
+      socket.fire("connect");
+      expect(socket.sent).toHaveLength(1);
+      await act(() => vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS));
+      expect(loadCredentials()).toEqual(stored);
+      expect(useSession.getState().credentials).toBeNull();
+
+      socket.fire("disconnect");
+      socket.fire("connect");
+      await act(() => vi.advanceTimersByTimeAsync(0));
+      expect(socket.sent).toEqual([
+        { event: "resumeSeat", args: [stored] },
+        { event: "resumeSeat", args: [stored] },
+      ]);
+      expect(useSession.getState().credentials).toEqual(stored);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("gives up the load-time reclaim once a stored seat is refused", async () => {
+    // A refusal means the seat is genuinely gone and the credentials are discarded,
+    // so there is nothing left for a reconnect to ask for.
+    saveCredentials({ roomId: "ABC234", seat: 1, token: "stale" });
+    const socket = fakeSocket([{ ok: false, error: "that seat is not yours" }]);
     mount(socket.socket);
     socket.fire("connect");
-    expect(socket.sent).toEqual([]);
+    await waitFor(() => expect(loadCredentials()).toBeNull());
+    socket.fire("disconnect");
+    socket.fire("connect");
+    expect(socket.sent).toHaveLength(1);
+  });
+});
+
+describe("reclaiming the seat after a reconnect", () => {
+  // A new transport connection is a new socket to the server, and a seat belongs
+  // to a socket only once it has shown the token. Every server deploy reconnects
+  // every open tab, so without this each one silently loses its seat.
+  const held = { roomId: "ABC234", seat: 1, token: "tok" };
+
+  it("asks for the seat held in this tab back", async () => {
+    useSession.setState({ credentials: held, status: "disconnected" });
+    const socket = fakeSocket([{ ok: true, data: held }]);
+    mount(socket.socket, "/room/ABC234");
+    socket.fire("connect");
+    await waitFor(() => expect(socket.sent).toEqual([{ event: "resumeSeat", args: [held] }]));
+    expect(useSession.getState().credentials).toEqual(held);
+  });
+
+  it("goes home and says so when the table did not survive", async () => {
+    useSession.setState({ credentials: held, room: roomInfo(), status: "disconnected" });
+    const socket = fakeSocket([{ ok: false, error: "no room with that code" }]);
+    mount(socket.socket, "/room/ABC234");
+    socket.fire("connect");
+    await waitFor(() => expect(useSession.getState().credentials).toBeNull());
+    // Pinned as a literal: the store's copy of the constant would move with it.
+    expect(useSession.getState().notice).toBe("that table is no longer available");
+    expect(loadCredentials()).toBeNull();
+    expect(screen.getByText("that table is no longer available")).toBeInTheDocument();
   });
 });
 
@@ -295,7 +364,8 @@ describe("listener lifecycle", () => {
     const { unmount } = mount(socket.socket);
     unmount();
     expect(socket.removed.sort()).toEqual(
-      ["connect", "disconnect", "room", "roundEnded", "seat", "view"].sort(),
+      // `connect` twice: once for the connection status, once to reclaim the seat.
+      ["connect", "connect", "disconnect", "room", "roundEnded", "seat", "view"].sort(),
     );
   });
 
