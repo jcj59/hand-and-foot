@@ -1174,28 +1174,16 @@ describe("the controls added from play-testing", () => {
     });
   });
 
-  it("asks before auto-adding would shed the last card of the foot", async () => {
+  it("plays the last card of the foot straight away, with nothing to confirm", async () => {
     const { socket, sent } = fakeSocket();
-    const foot = [card("9", "hearts")];
-    mount(socket, down([], { inFoot: true, foot, hand: [] }));
-    fireEvent.click(screen.getByRole("button", { name: /add 1 to my melds/i }));
-    expect(sent).toEqual([]);
-    const confirm = screen.getByRole("group", { name: /confirm/i });
-    expect(confirm).toHaveTextContent(/last card without the books/i);
-    fireEvent.click(within(confirm).getByRole("button", { name: /keep it/i }));
-    expect(screen.queryByRole("group", { name: /confirm/i })).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: /add 1 to my melds/i }));
-    fireEvent.click(screen.getByRole("button", { name: /play it anyway/i }));
-    await waitFor(() => expect(sent).toHaveLength(1));
-  });
-
-  it("does not ask when the player has the books to go out", async () => {
-    const { socket, sent } = fakeSocket();
-    const foot = [card("9", "hearts")];
-    mount(socket, down([], { inFoot: true, foot, hand: [] }, { canGoOut: true }));
+    mount(socket, down([], { inFoot: true, foot: [card("9", "hearts")], hand: [] }));
     fireEvent.click(screen.getByRole("button", { name: /add 1 to my melds/i }));
     await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0].args[0]).toEqual({
+      type: "playMelds",
+      melds: [{ rank: "9", cardIds: ["9-hearts"] }],
+    });
+    expect(screen.queryByRole("button", { name: /keep it/i })).toBeNull();
   });
 
   it("shows the auto-add for a single card of a melded rank in the hand", () => {

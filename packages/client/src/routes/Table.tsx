@@ -70,9 +70,6 @@ export function Table({ socket }: TableProps): React.ReactElement {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  // The auto-add is waiting on a second yes, because it would shed the last card.
-  const [confirmLayOff, setConfirmLayOff] = useState(false);
-
   const turnOpen =
     update !== null && update.hints.seatToAct === update.view.seat && result === null;
   useEffect(() => {
@@ -159,8 +156,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
   /**
    * Cards that can go straight onto a meld already down: naturals of a melded rank,
    * never wilds — where a wild goes is a choice, and this is the button for not
-   * having to make choices. Playing the last card from the foot without the books
-   * to go out is legal but rarely meant, so that one asks first (`shedsLast`).
+   * having to make choices.
    */
   const layOffs = (() => {
     if (!canMeld || !view.isDown) return [];
@@ -170,8 +166,6 @@ export function Table({ socket }: TableProps): React.ReactElement {
     );
     return fits;
   })();
-  const shedsLast =
-    view.inFoot && layOffs.length > 0 && layOffs.length === zone.length && !hints.canGoOut;
 
   function layOffAll(): void {
     const byRank = new Map<Rank, string[]>();
@@ -471,39 +465,15 @@ export function Table({ socket }: TableProps): React.ReactElement {
                     Play melds
                   </button>
                 )}
-                {layOffs.length > 0 && !building && !confirmLayOff && (
+                {layOffs.length > 0 && !building && (
                   <button
                     type="button"
                     disabled={busy}
-                    onClick={() => (shedsLast ? setConfirmLayOff(true) : layOffAll())}
+                    onClick={layOffAll}
                     className="rounded border border-emerald-300/60 px-3 py-1.5 text-sm text-emerald-100 disabled:opacity-40"
                   >
                     Add {layOffs.length} to my melds
                   </button>
-                )}
-                {confirmLayOff && (
-                  <span role="group" aria-label="Confirm" className="flex items-center gap-2">
-                    <span className="text-sm text-amber-100">
-                      That plays your last card without the books to go out.
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setConfirmLayOff(false);
-                        layOffAll();
-                      }}
-                      className="rounded bg-amber-300 px-3 py-1.5 text-sm font-medium text-black"
-                    >
-                      Play it anyway
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setConfirmLayOff(false)}
-                      className="rounded border border-white/25 px-3 py-1.5 text-sm"
-                    >
-                      Keep it
-                    </button>
-                  </span>
                 )}
                 <span className="text-sm text-white/60">{guidance()}</span>
               </>
