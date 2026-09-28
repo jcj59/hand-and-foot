@@ -30,8 +30,8 @@ pnpm --filter @hf/server start    # or `dev` to restart on change
 
 `PORT` defaults to 3000. The operational settings are `HF_CORS_ORIGINS`, `HF_RECONNECT_GRACE_MS`,
 and `HF_ABANDONED_ROOM_MS`, plus `DATABASE_URL` to keep rooms in Postgres across restarts (without
-it they live in memory only); see [`packages/server/src/env.ts`](packages/server/src/env.ts) for their
-defaults and formats. A value the server cannot parse stops it at startup.
+it they live in memory only); see [`packages/server/src/env.ts`](packages/server/src/env.ts) for
+their defaults and formats. A value the server cannot parse stops it at startup.
 
 With the server running, start the client in a second terminal:
 

@@ -27,8 +27,8 @@ the libraries buildless — nothing imports them as bundles.
 
 Running the server from source therefore needs a TypeScript runtime: `@hf/server` carries `tsx` as a
 **runtime dependency** (production runs it too) and its `start`/`dev` scripts go through it. Node's
-own `--experimental-strip-types` will not do — `moduleResolution: "Bundler"` means imports are extensionless, which Node's ESM
-resolver does not accept.
+own `--experimental-strip-types` will not do — `moduleResolution: "Bundler"` means imports are
+extensionless, which Node's ESM resolver does not accept.
 
 ## Commands
 
@@ -169,7 +169,8 @@ rather than assumed to have travelled.
 
 ### Server testing (M2b, M2c, M2d)
 
-`@hf/server` is also at **100%** (176 tests). The load-bearing tests are the ones in
+`@hf/server` is also at **100%** (266 tests, with the database tests running; M4b's 20 mutants
+were all killed). The load-bearing tests are the ones in
 `socket.integration.test.ts` that drive *real* Socket.io clients against a real server on an
 ephemeral port: `project()` being clean says nothing about whether the transport routes the right
 payload to the right socket, and that is what actually leaks a hand. Mutation tested the same way as
@@ -398,10 +399,11 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
     itself gets SIGTERM), `fly.toml` (one machine, `rolling`, never bluegreen — two servers would
     write the same rooms), `vercel.json`, `.github/workflows/deploy.yml` (Fly on green `main`, a
     no-op until `FLY_API_TOKEN` exists; the `workflow_run` path also requires a `push` event from
-    this repository, because `branches: [main]` matches a fork PR's branch named `main` too). CI gained a Postgres service, the client build, and an
-    image job that smoke-tests `/healthz` and a clean SIGTERM exit. No Docker on this machine, so
-    the image was verified by replaying its steps in a scratch dir and running that tree as a real
-    process through a SIGTERM restart against Postgres.
+    this repository, because `branches: [main]` matches a fork PR's branch named `main` too). CI
+    gained a Postgres service, the client build, and an image job that smoke-tests `/healthz` and a
+    clean SIGTERM exit. No Docker on this machine, so the image was verified by replaying its steps
+    in a scratch dir and running that tree as a real process through a SIGTERM restart against
+    Postgres.
   - `pnpm start` does not forward SIGTERM (exit 143, no graceful shutdown) — never use it as a
     container command.
 - **Bot milestone — the RL agent.** The point of the whole project. Design not yet written; the
