@@ -88,6 +88,14 @@ export async function migrate(sql: postgres.Sql): Promise<number> {
 export const DEFAULT_RETRY_DELAYS_MS: readonly number[] = [100, 500, 2_000, 5_000];
 
 /**
+ * How long a shutdown waits for queued writes before giving up on them. It has to
+ * fall well inside the host's kill timeout (`kill_timeout` in `fly.toml`, 30s),
+ * leaving room to end the connection pool: a process killed mid-flush loses the
+ * same writes, and says nothing about which.
+ */
+export const DEFAULT_SHUTDOWN_DEADLINE_MS = 20_000;
+
+/**
  * Run writes one at a time, in the order they were issued.
  *
  * Order is the point. A room's record must land before its first action, whose
@@ -97,6 +105,14 @@ export const DEFAULT_RETRY_DELAYS_MS: readonly number[] = [100, 500, 2_000, 5_00
  */
 export class WriteBehind {
   private tail: Promise<void> = Promise.resolve();
+  /** Everything enqueued and not yet finished with, oldest first. */
+  private readonly pending = new Set<{ readonly label: string }>();
+  private closing: Promise<void> | undefined;
+  private abandoned = false;
+  private interrupt!: () => void;
+  private readonly interrupted = new Promise<void>((resolve) => {
+    this.interrupt = resolve;
+  });
 
   constructor(
     private readonly logger: StoreLogger,
@@ -106,12 +122,50 @@ export class WriteBehind {
   ) {}
 
   enqueue(label: string, write: () => Promise<unknown>): void {
-    this.tail = this.tail.then(() => this.attempt(label, write));
+    const entry = { label };
+    this.pending.add(entry);
+    this.tail = this.tail.then(async () => {
+      if (!this.abandoned) await this.attempt(label, write);
+      this.pending.delete(entry);
+    });
   }
 
   /** Resolves once everything enqueued so far has either landed or been given up on. */
   flush(): Promise<void> {
     return this.tail;
+  }
+
+  /**
+   * Stop taking the queue's time, for a process on its way out.
+   *
+   * Retrying is for riding out an outage the game will outlive; a process being
+   * stopped will not, so a write that fails from here on is given up on at once,
+   * and one waiting out a back-off stops waiting. The queue then gets until the
+   * deadline to drain. Whatever is still left is abandoned — never started, and
+   * not reported one by one — under a single line naming each write, so the
+   * rooms a restart will find behind or refuse are on record.
+   *
+   * Safe to call twice; the second call waits on the first.
+   */
+  close(deadlineMs: number): Promise<void> {
+    this.closing ??= this.drain(deadlineMs);
+    return this.closing;
+  }
+
+  private async drain(deadlineMs: number): Promise<void> {
+    this.interrupt();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expired = new Promise<true>((resolve) => {
+      timer = setTimeout(() => resolve(true), deadlineMs);
+    });
+    const timedOut = await Promise.race([this.tail.then(() => false), expired]);
+    clearTimeout(timer);
+    if (!timedOut) return;
+    this.abandoned = true;
+    const labels = [...this.pending].map((entry) => entry.label);
+    this.logger.error(
+      `store: shut down after ${deadlineMs}ms with ${labels.length} writes abandoned: ${labels.join(", ")}`,
+    );
   }
 
   private async attempt(label: string, write: () => Promise<unknown>): Promise<void> {
@@ -120,14 +174,16 @@ export class WriteBehind {
         await write();
         return;
       } catch (error) {
+        if (this.abandoned) return;
         const delay = this.retryDelaysMs[retry];
-        if (delay === undefined) {
-          // Never rethrown: the game has long since moved on, and nothing is left
-          // waiting on this write to tell. Saying so is all that can be done.
-          this.logger.error(`store: gave up on ${label}: ${messageOf(error)}`);
-          return;
+        if (delay !== undefined && !this.closing) {
+          await Promise.race([this.sleep(delay), this.interrupted]);
+          if (!this.closing) continue;
         }
-        await this.sleep(delay);
+        // Never rethrown: the game has long since moved on, and nothing is left
+        // waiting on this write to tell. Saying so is all that can be done.
+        this.logger.error(`store: gave up on ${label}: ${messageOf(error)}`);
+        return;
       }
     }
   }
@@ -140,16 +196,19 @@ function messageOf(error: unknown): string {
 export interface PostgresStoreOptions {
   readonly logger?: StoreLogger;
   readonly retryDelaysMs?: readonly number[];
+  readonly shutdownDeadlineMs?: number;
 }
 
 export class PostgresRoomStore implements RoomStore {
   private readonly writes: WriteBehind;
+  private readonly shutdownDeadlineMs: number;
 
   constructor(
     private readonly sql: postgres.Sql,
     options: PostgresStoreOptions = {},
   ) {
     this.writes = new WriteBehind(options.logger ?? console, options.retryDelaysMs);
+    this.shutdownDeadlineMs = options.shutdownDeadlineMs ?? DEFAULT_SHUTDOWN_DEADLINE_MS;
   }
 
   saveRoom(room: RoomRecord): void {
@@ -233,7 +292,7 @@ export class PostgresRoomStore implements RoomStore {
   }
 
   async close(): Promise<void> {
-    await this.flush();
+    await this.writes.close(this.shutdownDeadlineMs);
     await this.sql.end({ timeout: 5 });
   }
 }

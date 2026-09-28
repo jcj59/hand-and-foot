@@ -265,6 +265,23 @@ describe("startFromEnv with a database", () => {
     expect(log.errors).toEqual(["could not open the database: timeout"]);
   });
 
+  it("refuses to start when the rooms cannot be loaded, and lets go of the database", async () => {
+    // Starting without them would host fresh tables over rooms the next boot restores.
+    const log = recorder();
+    const store = new InMemoryRoomStore();
+    let closed = 0;
+    store.loadOpen = () => Promise.reject(new Error('relation "rooms" does not exist'));
+    store.close = async () => {
+      closed++;
+    };
+    expect(await startFromEnv({ PORT: "0", DATABASE_URL: URL }, log, opener(store))).toBeNull();
+    expect(log.errors).toEqual([
+      'could not load rooms from the database: relation "rooms" does not exist',
+    ]);
+    expect(log.logs).toEqual([]);
+    expect(closed).toBe(1);
+  });
+
   it("does not touch a database when none is configured", async () => {
     const open = opener(new InMemoryRoomStore());
     const started = await startFromEnv({ PORT: "0" }, recorder(), open);

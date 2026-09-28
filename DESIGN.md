@@ -267,6 +267,15 @@ starting the new one: the old one hears SIGTERM, stops its clocks and writes out
 the database, and the new one restores every open room before it accepts a connection. Running the
 two side by side, as a blue-green deploy would, would have both writing the same rooms.
 
+Writing out what it owes is bounded in time. The host kills a process that has not exited within its
+kill timeout (30 seconds on Fly), and a flush against a database that has stopped answering would
+otherwise retry each write for most of a minute. So once shutdown begins, a failing write is not
+retried, and the queue gets twenty seconds to drain; whatever remains is abandoned under a single
+log line naming each write, and the process exits on its own. The cost of a database outage during
+a deploy is therefore that the affected rooms come back a few moves behind or, where the gap falls
+mid-log, are refused on restore — and that it is on record which ones, rather than lost to a kill
+signal that says nothing.
+
 ## Testing
 
 The rules engine is the component where correctness matters most, and it receives the majority of

@@ -389,11 +389,16 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
     rebuilding a different game; `RoomManager.restore` closes and reports those. Rooms are keyed by
     `uid`, not code (codes recur). `remove`/`sweep` close a room in the store; `disposeAll` (a
     shutdown) deliberately does not. `startFromEnv` opens `DATABASE_URL`, restores before
-    listening, and **refuses to boot** if a configured database is unreachable. `/healthz` for Fly.
+    listening, and **refuses to boot** if a configured database is unreachable or its rooms cannot
+    be loaded. Shutdown is bounded: `WriteBehind.close` stops retrying, waits at most
+    `DEFAULT_SHUTDOWN_DEADLINE_MS` (20s, pinned as a literal — it must stay under `kill_timeout`
+    30s in `fly.toml`), then abandons the rest with one log line naming every abandoned write, so a
+    DB outage mid-deploy rolls those rooms back a few moves on record. `/healthz` for Fly.
     Deploy files: `Dockerfile` (prod-only install; `node --import tsx src/main.ts` so the server
     itself gets SIGTERM), `fly.toml` (one machine, `rolling`, never bluegreen — two servers would
     write the same rooms), `vercel.json`, `.github/workflows/deploy.yml` (Fly on green `main`, a
-    no-op until `FLY_API_TOKEN` exists). CI gained a Postgres service, the client build, and an
+    no-op until `FLY_API_TOKEN` exists; the `workflow_run` path also requires a `push` event from
+    this repository, because `branches: [main]` matches a fork PR's branch named `main` too). CI gained a Postgres service, the client build, and an
     image job that smoke-tests `/healthz` and a clean SIGTERM exit. No Docker on this machine, so
     the image was verified by replaying its steps in a scratch dir and running that tree as a real
     process through a SIGTERM restart against Postgres.

@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import { parseServerEnv, type Environment } from "./env";
 import { createServer, type HandAndFootServer } from "./index";
 import { openPostgresStore } from "./postgres";
-import type { RoomStore } from "./store";
+import type { RoomStore, StoredRoom } from "./store";
 
 /** Just enough of `console` to report through. */
 export interface Logger {
@@ -68,14 +68,20 @@ export async function startFromEnv(
 
   const { port: requested, options, databaseUrl } = parsed.value;
   let store: RoomStore | undefined;
+  let stored: readonly StoredRoom[] = [];
   if (databaseUrl !== undefined) {
     try {
       store = await openStore(databaseUrl, logger);
     } catch (error) {
       // The driver's message names the host and the failure, never the password.
-      logger.error(
-        `could not open the database: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      logger.error(`could not open the database: ${messageOf(error)}`);
+      return null;
+    }
+    try {
+      stored = await store.loadOpen();
+    } catch (error) {
+      logger.error(`could not load rooms from the database: ${messageOf(error)}`);
+      await store.close();
       return null;
     }
   }
@@ -85,7 +91,6 @@ export async function startFromEnv(
   // memory is the misconfiguration most worth noticing on the first deploy.
   let rooms = "rooms: in memory only, lost on restart";
   if (store) {
-    const stored = await store.loadOpen();
     const failures = server.manager.restore(stored);
     for (const failure of failures) logger.error(`could not restore ${failure.error}`);
     rooms = `rooms: in the database, ${stored.length - failures.length} of ${stored.length} restored`;
@@ -96,6 +101,10 @@ export async function startFromEnv(
     `hand-and-foot server listening on :${port} (origins: ${origins ? origins.join(", ") : "any"}; ${rooms})`,
   );
   return { server, port };
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 /**
