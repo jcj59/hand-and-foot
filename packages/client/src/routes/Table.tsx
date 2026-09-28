@@ -20,10 +20,10 @@
  * they already have) asks once more before it goes.
  */
 import { useEffect, useMemo, useState } from "react";
-import { isWild, type Card, type Rank } from "@hf/shared";
+import { isBlackThree, isWild, type Card, type Rank } from "@hf/shared";
 import { useNavigate } from "react-router-dom";
 import { leaveTable, pauseTable, play, playAgain, stageDraft } from "../actions";
-import { isDeadWeight } from "../cards/handOrder";
+import { isUnplayable, type PlayContext } from "../cards/handOrder";
 import { FaceDownPile, PlayingCard } from "../cards/PlayingCard";
 import { useSession } from "../session";
 import type { HfClientSocket } from "../socket";
@@ -148,6 +148,12 @@ export function Table({ socket }: TableProps): React.ReactElement {
   const canDiscard = myTurn && hints.phase === "play" && !obligationOpen && zone.length > 0;
   const staged = stagedIds(staging);
   const meldRanks = new Set<Rank>(view.melds.map((meld) => meld.rank));
+  const playContext: PlayContext = {
+    inFoot: view.inFoot,
+    blackThreesHeld: zone.filter(isBlackThree).length,
+    hasBlackThreeMeld: meldRanks.has("3"),
+  };
+  const outOfPlay = (card: Card): boolean => isUnplayable(card, playContext);
   const building = canMeld && (melding || stagedCount(staging) > 0);
 
   /**
@@ -160,11 +166,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
     if (!canMeld || !view.isDown) return [];
     const fits = zone.filter(
       (card) =>
-        !isWild(card.rank) &&
-        !isDeadWeight(card) &&
-        card.rank !== "3" &&
-        meldRanks.has(card.rank) &&
-        !staged.has(card.id),
+        !isWild(card.rank) && !outOfPlay(card) && meldRanks.has(card.rank) && !staged.has(card.id),
     );
     return fits;
   })();
@@ -198,7 +200,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
     if (building) {
       closeMenu();
       if (staged.has(card.id)) setStaging((current) => unstageCard(current, card.id));
-      else if (!isDeadWeight(card)) setStaging((current) => stageCard(current, card));
+      else if (!outOfPlay(card)) setStaging((current) => stageCard(current, card));
       return;
     }
     setConfirming(false);
@@ -231,7 +233,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
     <CardMenu
       card={chosen}
       staged={staged.has(chosen.id)}
-      canMeld={canMeld && !isDeadWeight(chosen)}
+      canMeld={canMeld && !outOfPlay(chosen)}
       // A natural of a rank already down goes straight onto that meld: one click,
       // not a lay-down to build and commit.
       layOffTo={
@@ -518,6 +520,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
               stagedIds={staged}
               owedIds={owed}
               meldRanks={meldRanks}
+              playContext={playContext}
               onSelect={onCardSelect}
               chosenId={chosenId}
               menu={menu}

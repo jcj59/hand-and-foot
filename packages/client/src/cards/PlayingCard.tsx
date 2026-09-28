@@ -25,6 +25,11 @@ export interface PlayingCardProps {
   /** Omit to render a plain, non-interactive card. */
   readonly onSelect?: (card: Card) => void;
   readonly disabled?: boolean;
+  /**
+   * Drawn dimmed, as a card out of play. Defaults to a red three, the one card that
+   * never plays anywhere; the player's own cards pass their own answer.
+   */
+  readonly dimmed?: boolean;
 }
 
 const DIMENSIONS: Readonly<Record<CardSize, { readonly w: number; readonly h: number }>> = {
@@ -85,6 +90,7 @@ export function PlayingCard({
   selected = false,
   onSelect,
   disabled = false,
+  dimmed = isDeadWeight(card),
 }: PlayingCardProps): React.ReactElement {
   const { w, h } = DIMENSIONS[size];
   const label = cardLabel(card);
@@ -112,7 +118,7 @@ export function PlayingCard({
       <span
         role="img"
         aria-label={label}
-        className={isDeadWeight(card) ? "opacity-60" : undefined}
+        className={dimmed ? "opacity-60" : undefined}
         data-card-id={card.id}
       >
         {face}
@@ -129,7 +135,7 @@ export function PlayingCard({
       data-card-id={card.id}
       onClick={() => onSelect(card)}
       className={`rounded transition-transform ${selected ? "-translate-y-2" : ""} ${
-        isDeadWeight(card) ? "opacity-60" : ""
+        dimmed ? "opacity-60" : ""
       } disabled:cursor-not-allowed disabled:opacity-40`}
     >
       {face}

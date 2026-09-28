@@ -1314,6 +1314,74 @@ describe("the controls added from play-testing", () => {
     expect(ink(/dirty book of Ks/)).toBe("#0f172a");
   });
 
+  it("darkens black threes in the hand, and offers no meld for them", () => {
+    mount(
+      fakeSocket().socket,
+      update({
+        view: { hand: [card("3", "clubs"), card("K", "spades")], phase: "play" },
+        hints: { phase: "play", canDraw: false },
+      }),
+    );
+    const three = handCard("Three of clubs, blocks the pile");
+    expect(three.className).toMatch(/opacity-60/);
+    expect(handCard("King of spades").className).not.toMatch(/opacity-60/);
+    fireEvent.click(three);
+    expect(screen.queryByRole("menuitem", { name: /meld/i })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: "Discard" })).toBeInTheDocument();
+  });
+
+  it("lights black threes up in the foot once there are seven to book", () => {
+    const threes = Array.from({ length: 7 }, (_, i) => ({
+      id: `b3-${i}`,
+      rank: "3" as Rank,
+      suit: "spades" as Suit,
+    }));
+    mount(
+      fakeSocket().socket,
+      update({
+        view: { hand: [], inFoot: true, foot: threes, phase: "play" },
+        hints: { phase: "play", canDraw: false },
+      }),
+    );
+    const buttons = within(screen.getByRole("region", { name: /your foot/i })).getAllByRole(
+      "button",
+    );
+    expect(buttons.every((b) => !/opacity-60/.test(b.className))).toBe(true);
+    fireEvent.click(buttons[0]!);
+    expect(screen.getByRole("menuitem", { name: "Meld" })).toBeInTheDocument();
+  });
+
+  it("lights up a black three in the foot that can join the black-three book already down", async () => {
+    const book = Array.from({ length: 7 }, (_, i) => ({
+      id: `m3-${i}`,
+      rank: "3" as Rank,
+      suit: "clubs" as Suit,
+    }));
+    const { socket, sent } = fakeSocket();
+    mount(
+      socket,
+      update({
+        view: {
+          hand: [],
+          inFoot: true,
+          isDown: true,
+          foot: [card("3", "spades"), card("K", "spades")],
+          melds: [{ rank: "3", cards: book }],
+          phase: "play",
+        },
+        hints: { phase: "play", canDraw: false },
+      }),
+    );
+    expect(handCard("Three of spades, blocks the pile").className).not.toMatch(/opacity-60/);
+    // And the auto-add picks it up with the rest.
+    fireEvent.click(screen.getByRole("button", { name: /add 1 to my melds/i }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0].args[0]).toEqual({
+      type: "playMelds",
+      melds: [{ rank: "3", cardIds: ["3-spades"] }],
+    });
+  });
+
   it("keeps the unpicked foot beside the hand", () => {
     mount(fakeSocket().socket);
     const footer = screen.getByRole("contentinfo");

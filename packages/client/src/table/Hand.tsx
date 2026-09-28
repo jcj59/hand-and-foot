@@ -16,7 +16,7 @@
  */
 import { isWild, type Card, type Rank } from "@hf/shared";
 import { PlayingCard } from "../cards/PlayingCard";
-import { sortForDisplay } from "../cards/handOrder";
+import { isUnplayable, sortForDisplay, type PlayContext } from "../cards/handOrder";
 
 export interface HandProps {
   readonly cards: readonly Card[];
@@ -28,6 +28,8 @@ export interface HandProps {
   readonly owedIds: ReadonlySet<string>;
   /** Ranks the player already has a meld of on the table. */
   readonly meldRanks: ReadonlySet<Rank>;
+  /** Whether black threes can be played from these cards; see `isUnplayable`. */
+  readonly playContext: PlayContext;
   readonly onSelect: (card: Card) => void;
   /** The card whose menu is open, and the menu itself. */
   readonly chosenId: string | null;
@@ -41,6 +43,7 @@ export function Hand({
   stagedIds,
   owedIds,
   meldRanks,
+  playContext,
   onSelect,
   chosenId,
   menu,
@@ -90,6 +93,7 @@ export function Hand({
                 <PlayingCard
                   card={card}
                   selected={stagedIds.has(card.id) || chosenId === card.id}
+                  dimmed={isUnplayable(card, playContext)}
                   onSelect={interactive ? onSelect : undefined}
                 />
               </span>
