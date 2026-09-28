@@ -67,7 +67,8 @@ export function Hand({
             collect, so the count is worth stating next to the total. */}
         {wildCount > 0 && <span className="ml-2 font-normal text-white/50">{wildCount} wild</span>}
       </h2>
-      <div className="flex flex-wrap gap-1 pb-1">
+      {/* Overlapped, so a full hand stays one row at the bottom of the table. */}
+      <div className="flex flex-wrap -space-x-2 pt-2 sm:-space-x-1">
         {sortForDisplay(cards).map((card) => {
           const owed = owedIds.has(card.id);
           const melded = !isWild(card.rank) && meldRanks.has(card.rank);
@@ -97,7 +98,10 @@ export function Hand({
                 className={`h-1 w-8 rounded ${melded ? "bg-emerald-400" : "bg-transparent"}`}
               />
               {chosenId === card.id && menu && (
-                <div className="absolute top-full left-1/2 z-10 mt-1 -translate-x-1/2">{menu}</div>
+                // Upward: the hand sits at the bottom of the window.
+                <div className="absolute bottom-full left-1/2 z-20 mb-1 -translate-x-1/2">
+                  {menu}
+                </div>
               )}
             </span>
           );

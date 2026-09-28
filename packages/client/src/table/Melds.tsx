@@ -2,15 +2,16 @@
  * A player's melds, one row per rank.
  *
  * A meld still being built is fanned out, with its size stated, because six means
- * one more card completes it. A completed book collapses to a single stacked card,
- * red when clean and black when dirty: it is one scoring unit now, and the colour
- * says which bonus it earned. `classifyBook` comes from the engine so the display
+ * one more card completes it. A completed book collapses to a single card, drawn
+ * like any other but stacked and bordered — red when clean, black when dirty: it
+ * is one scoring unit now, and the border says which bonus it earned. Every meld
+ * states its size underneath. `classifyBook` comes from the engine so the display
  * cannot disagree with what scoring will say.
  *
  * With `onSelect`, a meld can be clicked to aim the player's next cards at it —
  * which is the only way to add a wild to a meld already on the table.
  */
-import { type Meld, type Rank, type RulesConfig } from "@hf/shared";
+import { isWild, type Meld, type Rank, type RulesConfig } from "@hf/shared";
 import { classifyBook, meldPoints } from "@hf/engine";
 import { BookCard, PlayingCard } from "../cards/PlayingCard";
 import { sortForDisplay } from "../cards/handOrder";
@@ -51,11 +52,17 @@ export function Melds({
               ))}
             </div>
           ) : (
-            <BookCard rank={meld.rank} kind={kind} count={meld.cards.length} size={size} />
+            <BookCard
+              // A natural on top, so the rank is what shows, not a wild.
+              top={sortForDisplay(meld.cards).find((card) => !isWild(card.rank)) ?? meld.cards[0]!}
+              kind={kind}
+              count={meld.cards.length}
+              size={size}
+            />
           );
         const caption = (
           <span className="text-xs whitespace-nowrap text-white/60">
-            {kind === "incomplete" ? `${meld.cards.length} cards` : `${kind} book`}
+            {meld.cards.length} cards{kind === "incomplete" ? "" : ` · ${kind}`}
             {!compact && ` · ${meldPoints(meld, config)}`}
           </span>
         );

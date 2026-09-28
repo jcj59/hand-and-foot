@@ -37,7 +37,27 @@ export function StagingPanel({
   // A group with no cards yet is only a target — a meld already on the table picked
   // to receive a wild — and is shown there, highlighted, rather than here.
   const groups = staging.groups.filter((group) => group.cardIds.length > 0);
-  if (groups.length === 0) return null;
+  if (groups.length === 0) {
+    // Meld mode with nothing picked yet: say how it works, and how to leave.
+    return (
+      <section
+        aria-label="Lay-down being built"
+        className="flex flex-col gap-2 rounded border border-white/15 bg-black/25 p-3 text-sm"
+      >
+        <h2 className="font-medium text-white/80">Building a lay-down</h2>
+        <p className="text-white/60">
+          Click cards in your hand to add them. Click a meld to send wilds to it.
+        </p>
+        <button
+          type="button"
+          onClick={onClear}
+          className="self-start rounded border border-white/25 px-3 py-1.5 text-sm"
+        >
+          Stop melding
+        </button>
+      </section>
+    );
+  }
   const byId = new Map(zone.map((card) => [card.id, card]));
 
   return (

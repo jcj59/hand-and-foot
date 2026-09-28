@@ -3,13 +3,16 @@
  *
  * Counts rather than cards, because counts are all the server sends — every hidden
  * zone is reduced to a number before it leaves, which is the anti-cheat boundary.
- * There is nothing here to leak even if the component were careless.
+ * There is nothing here to leak even if the component were careless. The counts
+ * are drawn as card backs — a fanned hand, and the foot as a stack until it is
+ * picked up — because how much someone holds is read faster than it is counted.
  *
  * Whose turn it is and who has dropped are both marked, and the second matters as
  * much as the first: a disconnected seat has its turns played for it once the
  * reconnect grace elapses, so the table should say why moves are happening.
  */
 import type { OpponentView, RoomInfo, RulesConfig } from "@hf/shared";
+import { FaceDownPile, HiddenHand } from "../cards/PlayingCard";
 import { Melds } from "./Melds";
 
 export interface SeatsProps {
@@ -21,7 +24,7 @@ export interface SeatsProps {
 
 export function Seats({ opponents, room, config, seatToAct }: SeatsProps): React.ReactElement {
   return (
-    <ul className="flex flex-wrap gap-3">
+    <ul className="flex gap-3 overflow-x-auto">
       {opponents.map((opponent) => {
         const info = room.players.find((p) => p.seat === opponent.seat);
         const onTurn = opponent.seat === seatToAct;
@@ -29,7 +32,7 @@ export function Seats({ opponents, room, config, seatToAct }: SeatsProps): React
           <li
             key={opponent.seat}
             aria-label={seatLabel(opponent, info?.name ?? `Seat ${opponent.seat}`, onTurn)}
-            className={`flex min-w-44 flex-col gap-2 rounded border p-3 ${
+            className={`flex min-w-44 flex-col gap-2 rounded border p-2 ${
               onTurn ? "border-amber-300 bg-amber-300/10" : "border-white/10 bg-black/20"
             }`}
           >
@@ -46,18 +49,18 @@ export function Seats({ opponents, room, config, seatToAct }: SeatsProps): React
               {onTurn && <span className="ml-auto text-xs text-amber-200">to play</span>}
             </div>
 
-            <dl className="flex gap-3 text-xs text-white/60">
-              <div>
-                <dt className="inline">Hand </dt>
-                <dd className="inline font-medium text-white/80">{opponent.handCount}</dd>
-              </div>
-              <div>
-                {/* Named for where they are in the game, not just counted: a player
-                    who is into their foot has no hand left to come back from. */}
-                <dt className="inline">{opponent.inFoot ? "Foot (in) " : "Foot "}</dt>
-                <dd className="inline font-medium text-white/80">{opponent.footCount}</dd>
-              </div>
-            </dl>
+            <div className="flex items-end gap-3">
+              {/* Once in the foot the hand is gone and the foot is what they hold,
+                  so it is drawn as the hand; before that it waits as a stack. */}
+              <HiddenHand
+                count={opponent.inFoot ? opponent.footCount : opponent.handCount}
+                label={opponent.inFoot ? "Foot, in hand" : "Hand"}
+              />
+              {!opponent.inFoot && (
+                <FaceDownPile count={opponent.footCount} label="Foot" size="small" />
+              )}
+              {opponent.inFoot && <span className="text-xs text-white/60">Foot (in)</span>}
+            </div>
 
             <Melds melds={opponent.melds} config={config} compact />
           </li>

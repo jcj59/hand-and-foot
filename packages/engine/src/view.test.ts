@@ -168,6 +168,28 @@ describe("project from any seat", () => {
     expect(v.stockCount).toBe(4);
     expect(v.discard).toEqual(s.discard);
   });
+
+  it("tells every seat who went out and how much of the final lap is left", () => {
+    // Public facts: the go-out happens in front of the whole table, and each
+    // remaining player has to know that this turn is their last.
+    const s: GameState = {
+      ...table([player(), player(), player()]),
+      wentOutSeat: 2,
+      finalLapRemaining: 2,
+    };
+    for (const seat of [0, 1, 2]) {
+      expect(project(s, seat).wentOutSeat).toBe(2);
+      expect(project(s, seat).finalLapRemaining).toBe(2);
+    }
+  });
+
+  it("says plainly when nobody has gone out and no final lap is running", () => {
+    const s = table([player(), player()]);
+    expect(project(s, 0).wentOutSeat).toBeNull();
+    expect(project(s, 0).finalLapRemaining).toBeNull();
+    // A lap run down to zero is over, not running.
+    expect(project({ ...s, finalLapRemaining: 0 }, 0).finalLapRemaining).toBeNull();
+  });
 });
 
 describe("the take-pile obligation in a view", () => {

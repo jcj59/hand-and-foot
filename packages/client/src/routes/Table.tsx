@@ -56,6 +56,8 @@ export function Table({ socket }: TableProps): React.ReactElement {
   const seat = useSession((s) => s.seat);
   const result = useSession((s) => s.result);
   const [staging, setStaging] = useState<Staging>(EMPTY_STAGING);
+  // Meld mode: clicks in the hand add to the lay-down instead of opening a menu.
+  const [melding, setMelding] = useState(false);
   // The card whose menu is open, and whether its discard is awaiting a second yes.
   const [chosenId, setChosenId] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -68,6 +70,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
       setChosenId(null);
       setConfirming(false);
       setStaging(EMPTY_STAGING);
+      setMelding(false);
     }
   }, [turnOpen]);
 
@@ -98,6 +101,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
   const zone = view.inFoot ? (view.foot ?? []) : view.hand;
   const owed = new Set(view.pickedUp);
   const obligationOpen = view.pickedUp.length > 0;
+  const nameOf = (s: number): string => room.players.find((p) => p.seat === s)?.name ?? `Seat ${s}`;
 
   const preview = previewLayDown({
     staging,
@@ -127,19 +131,44 @@ export function Table({ socket }: TableProps): React.ReactElement {
   const canDiscard = myTurn && hints.phase === "play" && !obligationOpen && zone.length > 0;
   const staged = stagedIds(staging);
   const meldRanks = new Set<Rank>(view.melds.map((meld) => meld.rank));
+  const building = canMeld && (melding || stagedCount(staging) > 0);
+
+  /**
+   * Cards that can go straight onto a meld already down: naturals of a melded rank,
+   * never wilds — where a wild goes is a choice, and this is the button for not
+   * having to make choices. In the foot one card is kept back unless the player can
+   * go out, so the button cannot shed the last card by accident.
+   */
+  const layOffs = (() => {
+    if (!canMeld || !view.isDown) return [];
+    const fits = zone.filter(
+      (card) =>
+        !isWild(card.rank) &&
+        !isDeadWeight(card) &&
+        card.rank !== "3" &&
+        meldRanks.has(card.rank) &&
+        !staged.has(card.id),
+    );
+    if (view.inFoot && fits.length === zone.length && !hints.canGoOut) return fits.slice(1);
+    return fits;
+  })();
 
   function closeMenu(): void {
     setChosenId(null);
     setConfirming(false);
   }
 
+  function stopBuilding(): void {
+    setStaging(EMPTY_STAGING);
+    setMelding(false);
+  }
+
   function onCardSelect(card: Card): void {
     if (busy) return;
-    // Once a lay-down is being built, a click adds a card to it or takes it back:
-    // the player has already said they are melding, and asking again for every
-    // card would be a menu per card. A red three can never join a meld, so it does
-    // nothing here.
-    if (canMeld && stagedCount(staging) > 0) {
+    // In meld mode a click adds a card to the lay-down or takes it back: the player
+    // has already said they are melding, and asking again for every card would be a
+    // menu per card. A red three can never join a meld, so it does nothing here.
+    if (building) {
       closeMenu();
       if (staged.has(card.id)) setStaging((current) => unstageCard(current, card.id));
       else if (!isDeadWeight(card)) setStaging((current) => stageCard(current, card));
@@ -151,6 +180,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
 
   function meld(card: Card): void {
     setStaging((current) => stageCard(current, card));
+    setMelding(true);
     closeMenu();
   }
 
@@ -158,7 +188,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
     // The discard ends the turn, so it goes straight off rather than being staged.
     void send({ type: "discard", cardId: card.id }, () => {
       closeMenu();
-      setStaging(EMPTY_STAGING);
+      stopBuilding();
     });
   }
 
@@ -175,6 +205,13 @@ export function Table({ socket }: TableProps): React.ReactElement {
       card={chosen}
       staged={staged.has(chosen.id)}
       canMeld={canMeld && !isDeadWeight(chosen)}
+      // A natural of a rank already down goes straight onto that meld: one click,
+      // not a lay-down to build and commit.
+      layOffTo={
+        canMeld && view.isDown && !isWild(chosen.rank) && meldRanks.has(chosen.rank)
+          ? chosen.rank
+          : null
+      }
       // A wild has no rank of its own: it goes to the selected meld, named here so
       // the player sees where before it lands.
       wildTarget={isWild(chosen.rank) ? staging.focusedRank : null}
@@ -185,6 +222,12 @@ export function Table({ socket }: TableProps): React.ReactElement {
       warning={confirming ? discardWarning(chosen) : null}
       busy={busy}
       onMeld={() => meld(chosen)}
+      onLayOff={() => {
+        void send(
+          { type: "playMelds", melds: [{ rank: chosen.rank, cardIds: [chosen.id] }] },
+          closeMenu,
+        );
+      }}
       onUnstage={() => {
         setStaging((current) => unstageCard(current, chosen.id));
         closeMenu();
@@ -200,11 +243,18 @@ export function Table({ socket }: TableProps): React.ReactElement {
     />
   );
 
+  const canDraw = myTurn && hints.canDraw && !busy;
+  // Whether the pile can be taken is decided by a solver over the whole state, so
+  // this is the server's answer, not a guess made here.
+  const canTake = myTurn && hints.canTakePile && !busy;
+  const top = view.discard[view.discard.length - 1];
+  const lastLap = view.finalLapRemaining !== null && view.wentOutSeat !== null;
+
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-col gap-5 p-4">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Table {room.roomId}</h1>
+    <main className="flex h-full flex-col gap-2 overflow-hidden p-2 sm:p-3">
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-baseline gap-x-3">
+          <h1 className="text-lg font-semibold">Table {room.roomId}</h1>
           <p className="text-sm text-white/60">
             Round {view.roundNumber} · minimum{" "}
             {room.config.layDownMinimums[view.roundNumber - 1] ?? "—"}
@@ -214,7 +264,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
         {/* Once the round is over no turn is live, so there is no clock to show even
             if a deadline still arrives. */}
         {!result && (
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <TurnClock clock={clock} />
             {room.config.pauseEnabled && (
               <button
@@ -233,128 +283,192 @@ export function Table({ socket }: TableProps): React.ReactElement {
         )}
       </header>
 
-      {result && <RoundResult result={result} room={room} config={room.config} />}
-
-      <Seats
-        opponents={view.opponents}
-        room={room}
-        config={room.config}
-        seatToAct={hints.seatToAct}
-      />
-
-      <section className="flex flex-wrap items-end gap-6" aria-label="Piles">
-        <FaceDownPile count={view.stockCount} label="Stock" />
-        <div className="flex flex-col items-center gap-1">
-          <span className="text-xs text-white/60">Discard ({view.discard.length})</span>
-          {view.discard.length === 0 ? (
-            <p className="text-xs text-white/40">empty</p>
-          ) : (
-            <PlayingCard card={view.discard[view.discard.length - 1]} />
-          )}
-        </div>
-        {!view.inFoot && <FaceDownPile count={view.footCount} label="Your foot" />}
-      </section>
-
-      <section className="flex flex-col gap-2" aria-label="Your melds">
-        <h2 className="text-sm font-medium text-white/80">Your melds</h2>
-        <Melds
-          melds={view.melds}
+      <div className="shrink-0">
+        <Seats
+          opponents={view.opponents}
+          room={room}
           config={room.config}
-          // Clicking a meld on the table aims the next cards at it — the only way to
-          // add a wild to a meld already down.
-          onSelect={
-            canMeld ? (rank) => setStaging((current) => focusGroup(current, rank)) : undefined
-          }
-          selectedRank={canMeld ? staging.focusedRank : null}
+          seatToAct={hints.seatToAct}
         />
-      </section>
+      </div>
 
-      {obligationOpen && myTurn && (
-        <p role="status" className="rounded bg-sky-500/15 px-3 py-2 text-sm text-sky-100">
-          You took the pile. Play at least one of the ringed cards before discarding.
+      {lastLap && !result && (
+        // Loud on purpose: a player who misses this plays their last turn as if the
+        // round went on.
+        <p
+          role="status"
+          className="shrink-0 rounded border border-amber-300 bg-amber-300/20 px-3 py-2 text-center font-semibold text-amber-100"
+        >
+          {nameOf(view.wentOutSeat!)} went out!{" "}
+          {myTurn ? "This is your last turn." : "Everyone else gets one last turn."}
         </p>
       )}
 
-      {hints.canGoOut && myTurn && (
-        <p role="status" className="rounded bg-emerald-500/15 px-3 py-2 text-sm text-emerald-100">
-          You have the books to go out — shed your last card to end the round.
-        </p>
-      )}
+      <div className="flex min-h-0 flex-1 flex-col gap-2 md:flex-row">
+        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
+          <section className="flex flex-wrap items-end gap-6" aria-label="Piles">
+            <div className="flex flex-col items-center gap-1">
+              <span className="text-xs text-white/60">Stock</span>
+              <FaceDownPile
+                count={view.stockCount}
+                label="Stock"
+                onClick={canDraw ? () => void send({ type: "draw" }) : undefined}
+                actionLabel="Draw a card"
+              />
+            </div>
+            <div className="flex flex-col items-center gap-1">
+              <span className="text-xs text-white/60">Discard ({view.discard.length})</span>
+              {!top ? (
+                <p className="text-xs text-white/40">empty</p>
+              ) : canTake ? (
+                <button
+                  type="button"
+                  aria-label={`Take the pile (${view.discard.length} cards)`}
+                  onClick={() => void send({ type: "takePile" })}
+                  className="rounded p-1 ring-2 ring-amber-300 transition hover:bg-white/10"
+                >
+                  <PlayingCard card={top} />
+                </button>
+              ) : (
+                <div className="p-1">
+                  <PlayingCard card={top} />
+                </div>
+              )}
+            </div>
+          </section>
 
-      <StagingPanel
-        staging={staging}
-        preview={preview}
-        zone={zone}
-        isDown={view.isDown}
-        busy={busy}
-        onUnstage={(id) => setStaging((current) => unstageCard(current, id))}
-        onFocus={(rank) => setStaging((current) => focusGroup(current, rank))}
-        onCommit={() =>
-          void send({ type: "playMelds", melds: toMeldPlays(staging) }, () =>
-            setStaging(EMPTY_STAGING),
-          )
-        }
-        onClear={() => setStaging(EMPTY_STAGING)}
-      />
+          {obligationOpen && myTurn && (
+            <p role="status" className="rounded bg-sky-500/15 px-3 py-2 text-sm text-sky-100">
+              You took the pile. Play at least one of the ringed cards before discarding.
+            </p>
+          )}
 
-      <Hand
-        cards={zone}
-        interactive={canMeld || canDiscard}
-        stagedIds={staged}
-        owedIds={owed}
-        meldRanks={meldRanks}
-        onSelect={onCardSelect}
-        chosenId={chosenId}
-        menu={menu}
-        title={view.inFoot ? "Your foot" : "Your hand"}
-      />
+          {hints.canGoOut && myTurn && (
+            <p
+              role="status"
+              className="rounded bg-emerald-500/15 px-3 py-2 text-sm text-emerald-100"
+            >
+              You have the books to go out — shed your last card to end the round.
+            </p>
+          )}
+
+          <section className="flex flex-col gap-2" aria-label="Your melds">
+            <h2 className="text-sm font-medium text-white/80">Your melds</h2>
+            <Melds
+              melds={view.melds}
+              config={room.config}
+              // Clicking a meld on the table aims the next cards at it — the only way
+              // to add a wild to a meld already down.
+              onSelect={
+                canMeld ? (rank) => setStaging((current) => focusGroup(current, rank)) : undefined
+              }
+              selectedRank={canMeld ? staging.focusedRank : null}
+            />
+          </section>
+        </div>
+
+        {building && (
+          // A column beside the table rather than a section inside it, so opening it
+          // moves nothing the player is looking at.
+          <aside className="max-h-[45%] shrink-0 overflow-y-auto md:max-h-none md:w-80">
+            <StagingPanel
+              staging={staging}
+              preview={preview}
+              zone={zone}
+              isDown={view.isDown}
+              busy={busy}
+              onUnstage={(id) => setStaging((current) => unstageCard(current, id))}
+              onFocus={(rank) => setStaging((current) => focusGroup(current, rank))}
+              onCommit={() =>
+                void send({ type: "playMelds", melds: toMeldPlays(staging) }, stopBuilding)
+              }
+              onClear={stopBuilding}
+            />
+          </aside>
+        )}
+      </div>
 
       {notice && (
-        <p role="alert" className="rounded bg-red-600/20 px-3 py-2 text-sm text-red-200">
+        <p role="alert" className="shrink-0 rounded bg-red-600/20 px-3 py-2 text-sm text-red-200">
           {notice}
         </p>
       )}
 
-      {!result && (
-        <section className="flex flex-wrap items-center gap-3" aria-label="Your turn">
-          {myTurn ? (
-            <>
-              <button
-                type="button"
-                disabled={busy || !hints.canDraw}
-                onClick={() => void send({ type: "draw" })}
-                className="rounded bg-white px-4 py-2 font-medium text-felt-900 disabled:opacity-40"
-              >
-                Draw
-              </button>
-              <button
-                type="button"
-                // Whether the pile can be taken is decided by a solver over the whole
-                // state, so this is the server's answer, not a guess made here.
-                disabled={busy || !hints.canTakePile}
-                onClick={() => void send({ type: "takePile" })}
-                className="rounded border border-white/30 px-4 py-2 font-medium disabled:opacity-40"
-              >
-                Take the pile
-              </button>
-              <span className="text-sm text-white/60">{guidance()}</span>
-            </>
-          ) : (
-            <span className="text-sm text-white/60">
-              Waiting for{" "}
-              {room.players.find((p) => p.seat === hints.seatToAct)?.name ??
-                `seat ${hints.seatToAct}`}
-              .
-            </span>
+      <footer className="flex shrink-0 flex-col gap-2 border-t border-white/10 pt-2">
+        {!result && (
+          <section className="flex flex-wrap items-center gap-2" aria-label="Your turn">
+            {myTurn ? (
+              <>
+                {canMeld && (
+                  <button
+                    type="button"
+                    aria-pressed={building}
+                    onClick={() => (building ? stopBuilding() : setMelding(true))}
+                    className={`rounded px-3 py-1.5 text-sm font-medium ${
+                      building ? "bg-amber-300 text-black" : "border border-white/30"
+                    }`}
+                  >
+                    {building ? "Stop melding" : "Meld"}
+                  </button>
+                )}
+                {layOffs.length > 0 && !building && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      const byRank = new Map<Rank, string[]>();
+                      for (const card of layOffs) {
+                        byRank.set(card.rank, [...(byRank.get(card.rank) ?? []), card.id]);
+                      }
+                      void send({
+                        type: "playMelds",
+                        melds: [...byRank].map(([rank, cardIds]) => ({ rank, cardIds })),
+                      });
+                    }}
+                    className="rounded border border-emerald-300/60 px-3 py-1.5 text-sm text-emerald-100 disabled:opacity-40"
+                  >
+                    Add {layOffs.length} to my melds
+                  </button>
+                )}
+                <span className="text-sm text-white/60">{guidance()}</span>
+              </>
+            ) : (
+              <span className="text-sm text-white/60">Waiting for {nameOf(hints.seatToAct)}.</span>
+            )}
+          </section>
+        )}
+        <div className="flex items-end gap-3">
+          <div className="min-w-0 flex-1">
+            <Hand
+              cards={zone}
+              interactive={canMeld || canDiscard}
+              stagedIds={staged}
+              owedIds={owed}
+              meldRanks={meldRanks}
+              onSelect={onCardSelect}
+              chosenId={chosenId}
+              menu={menu}
+              title={view.inFoot ? "Your foot" : "Your hand"}
+            />
+          </div>
+          {/* The foot waits beside the hand it will replace. */}
+          {!view.inFoot && (
+            <div className="flex shrink-0 flex-col items-center gap-1">
+              <span className="text-xs text-white/60">Your foot</span>
+              <FaceDownPile count={view.footCount} label="Your foot" />
+            </div>
           )}
-        </section>
-      )}
+        </div>
+      </footer>
+
+      {result && <RoundResult result={result} room={room} config={room.config} />}
     </main>
   );
 
   /** One line saying what the table is waiting for, in the order the rules impose. */
   function guidance(): string {
-    if (hints.phase === "draw") return "Draw, or take the pile.";
+    if (hints.phase === "draw") return "Click the stock to draw, or the pile to take it.";
+    if (building) return "Click cards to add them; click a meld to aim wilds at it.";
     if (stagedCount(staging) > 0) return "Play or take back your melds, then discard.";
     if (obligationOpen) return "Play a card from the pile before you can discard.";
     if (clock.inDiscardGrace) return "Time is up — only a discard will be accepted.";
@@ -367,6 +481,8 @@ interface CardMenuProps {
   readonly card: Card;
   readonly staged: boolean;
   readonly canMeld: boolean;
+  /** A melded rank this natural can go straight onto, or null. */
+  readonly layOffTo: Rank | null;
   readonly wildTarget: Rank | null;
   readonly canDiscard: boolean;
   readonly discardBlocked: boolean;
@@ -374,6 +490,7 @@ interface CardMenuProps {
   readonly warning: string | null;
   readonly busy: boolean;
   readonly onMeld: () => void;
+  readonly onLayOff: () => void;
   readonly onUnstage: () => void;
   readonly onDiscard: () => void;
   readonly onCancel: () => void;
@@ -384,12 +501,14 @@ function CardMenu({
   card,
   staged,
   canMeld,
+  layOffTo,
   wildTarget,
   canDiscard,
   discardBlocked,
   warning,
   busy,
   onMeld,
+  onLayOff,
   onUnstage,
   onDiscard,
   onCancel,
@@ -434,6 +553,16 @@ function CardMenu({
           className={`${item} hover:bg-white/10`}
         >
           Take back
+        </button>
+      ) : layOffTo ? (
+        <button
+          type="button"
+          role="menuitem"
+          disabled={busy}
+          onClick={onLayOff}
+          className={`${item} hover:bg-white/10`}
+        >
+          Add to {layOffTo}s meld
         </button>
       ) : (
         canMeld && (

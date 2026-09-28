@@ -51,15 +51,19 @@ export function App({ socket }: AppProps): React.ReactElement {
   );
 
   return (
-    <div className="flex min-h-full flex-col bg-felt-900 text-white">
+    // The window is the frame: the table fits inside it rather than growing a page
+    // to scroll, and the other screens scroll within it when they need to.
+    <div className="flex h-dvh flex-col bg-felt-900 text-white">
       <ConnectionBanner />
       <ResumeSeat socket={socket} />
-      <Routes>
-        <Route path="/" element={<Home socket={socket} />} />
-        <Route path="/room/:roomId" element={<RoomRoute socket={socket} />} />
-        {/* Anything else is a mistyped or stale URL; the home screen is recoverable. */}
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <Routes>
+          <Route path="/" element={<Home socket={socket} />} />
+          <Route path="/room/:roomId" element={<RoomRoute socket={socket} />} />
+          {/* Anything else is a mistyped or stale URL; the home screen is recoverable. */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </div>
     </div>
   );
 }

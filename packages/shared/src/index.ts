@@ -247,6 +247,17 @@ export interface PlayerView {
    * hand would settle it.
    */
   readonly pickedUp: readonly string[];
+  /**
+   * Who went out, once someone has. Public: every seat sees the go-out as it
+   * happens, and the table has to be able to say so.
+   */
+  readonly wentOutSeat: number | null;
+  /**
+   * Turns left in the final lap a without-discard go-out starts, or null when no
+   * final lap is running. Public for the same reason: each remaining player needs
+   * to know this turn is their last.
+   */
+  readonly finalLapRemaining: number | null;
 }
 
 /** One meld a player lays or extends: the cards to add and the rank they form. */

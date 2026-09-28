@@ -39,5 +39,8 @@ export function project(state: GameState, seat: number): PlayerView {
     // The viewer's own obligation, and only ever theirs: `OpponentView` has no such
     // field, so another seat's is not merely omitted here but unrepresentable.
     pickedUp: self.pickedUp ?? [],
+    wentOutSeat: state.wentOutSeat ?? null,
+    // Zero means the lap is over, which the round having ended already says.
+    finalLapRemaining: state.finalLapRemaining ? state.finalLapRemaining : null,
   };
 }
