@@ -203,6 +203,15 @@ export function attachSocketServer(io: HfServer, manager: RoomManager): void {
       broadcastResult(session.room);
     });
 
+    socket.on("stageMelds", (payload, ack) => {
+      const session = sessionOf(socket);
+      if (!session) return ack({ ok: false, error: "you are not seated in a room" });
+      // Normalized rather than trusted: this arrives as untyped JSON, and a draft
+      // that is not a list of groups is simply no draft.
+      const melds = Array.isArray(payload?.melds) ? payload.melds : [];
+      ack(ackOf(session.room.stageMelds(session.seat, melds)));
+    });
+
     socket.on("setPaused", (payload, ack) => {
       const session = sessionOf(socket);
       if (!session) return ack({ ok: false, error: "you are not seated in a room" });

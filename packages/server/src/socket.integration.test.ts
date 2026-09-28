@@ -911,3 +911,37 @@ describe("a whole round, end to end", () => {
     expect(strayEndings).toEqual([]);
   }, 30_000);
 });
+
+describe("stageMelds over the wire", () => {
+  function stage(socket: Client, payload: unknown): Promise<Ack<undefined>> {
+    return new Promise((resolve) => socket.emit("stageMelds", payload as never, resolve));
+  }
+
+  it("refuses a socket that holds no seat", async () => {
+    const { port } = await boot();
+    const stranger = await connect(port);
+    expect(await stage(stranger, { melds: [] })).toEqual({
+      ok: false,
+      error: "you are not seated in a room",
+    });
+  });
+
+  it("reaches the sender's own room, and treats a malformed payload as no draft", async () => {
+    const { server, port } = await boot();
+    const [a, b] = [await connect(port), await connect(port)];
+    const created = await createRoom(a, "ana");
+    if (!created.ok) throw new Error(created.error);
+    await joinRoom(b, created.data.roomId, "ben");
+    await startGame(a);
+    const room = server.manager.get(created.data.roomId)!;
+    const onTurn = room.gameState!.currentSeat === 0 ? a : b;
+    // Before drawing the room refuses any draft, which shows the call got there.
+    expect(await stage(onTurn, { melds: [] })).toEqual({
+      ok: false,
+      error: "melds can only be staged after drawing",
+    });
+    expect((await submit(onTurn, { type: "draw" })).ok).toBe(true);
+    expect(await stage(onTurn, { melds: "nonsense" })).toEqual({ ok: true, data: undefined });
+    expect(await stage(onTurn, null)).toEqual({ ok: true, data: undefined });
+  });
+});

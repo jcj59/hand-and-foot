@@ -4,6 +4,16 @@ import { clearCredentials, loadCredentials } from "./credentials";
 import { createServerClock } from "./serverTime";
 import { attachSession, useSession, type SessionSink, type SessionSocket } from "./session";
 
+const NO_BREAKDOWN = {
+  cleanBooks: 0,
+  dirtyBooks: 0,
+  bookBonus: 0,
+  meldedCards: 100,
+  goOutBonus: 0,
+  heldCount: 0,
+  heldPenalty: 0,
+};
+
 function roomInfo(overrides: Partial<RoomInfo> = {}): RoomInfo {
   return {
     roomId: "ABC123",
@@ -149,7 +159,10 @@ describe("applying updates", () => {
 
   it("keeps the scoreboard up while the round is still the same one", () => {
     useSession.getState().applyUpdate(viewUpdate({ roundNumber: 1 }));
-    const result: RoundEnded = { scores: [{ seat: 0, score: 100 }], wentOutSeat: 0 };
+    const result: RoundEnded = {
+      scores: [{ seat: 0, score: 100, breakdown: NO_BREAKDOWN }],
+      wentOutSeat: 0,
+    };
     useSession.getState().applyResult(result);
     useSession.getState().applyUpdate(viewUpdate({ roundNumber: 1, serverNow: 101_000 }));
     expect(useSession.getState().result).toEqual(result);
@@ -158,7 +171,9 @@ describe("applying updates", () => {
   it("clears the scoreboard when a new round is dealt", () => {
     // Otherwise the previous round's scores hang over the new deal.
     useSession.getState().applyUpdate(viewUpdate({ roundNumber: 1 }));
-    useSession.getState().applyResult({ scores: [{ seat: 0, score: 100 }] });
+    useSession
+      .getState()
+      .applyResult({ scores: [{ seat: 0, score: 100, breakdown: NO_BREAKDOWN }] });
     useSession.getState().applyUpdate(viewUpdate({ roundNumber: 2 }));
     expect(useSession.getState().result).toBeNull();
   });

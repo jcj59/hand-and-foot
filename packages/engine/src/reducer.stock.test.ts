@@ -168,9 +168,9 @@ describe("stock exhaustion", () => {
     expect(scoreRound(r.state).map((s) => s.score)).toEqual([505, -500]);
   });
 
-  // The foot-pending check runs before the stock check, so a player who emptied
-  // their hand exactly as the stock ran out still gets their foot instead of having
-  // the round end under them.
+  // The foot is picked up as the turn passes, before any draw is attempted, so a
+  // player who emptied their hand exactly as the stock ran out still gets their
+  // foot instead of having the round end under them.
   it("still picks up a pending foot when the stock and the pile are both empty", () => {
     const foot = cards("K", 14);
     const pending: PlayerState = {
@@ -181,18 +181,25 @@ describe("stock exhaustion", () => {
       inFoot: false,
       footPending: true,
     };
+    const leaving = card("6");
     const other: PlayerState = {
-      hand: [card("6")],
+      hand: [leaving, card("7")],
       foot: [],
       melds: [],
       isDown: false,
       inFoot: false,
       footPending: false,
     };
-    const r = applyAction(emptyStock([], EAST_COAST, [pending, other]), { type: "draw" });
+    const onTurn: GameState = {
+      ...emptyStock([], EAST_COAST, [pending, other]),
+      currentSeat: 1,
+      phase: "play",
+    };
+    const r = applyAction(onTurn, { type: "discard", cardId: leaving.id });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.state.roundEnded ?? false).toBe(false);
+    expect(r.state.currentSeat).toBe(0);
     expect(r.state.players[0].inFoot).toBe(true);
     expect(r.state.players[0].footPending).toBe(false);
     expect(r.state.players[0].foot).toHaveLength(14);

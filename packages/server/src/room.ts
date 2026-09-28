@@ -5,6 +5,7 @@ import {
   type ActionSource,
   type ClockState,
   type GameState,
+  type MeldPlay,
   type RoomInfo,
   type RoundEnded,
   type RulesConfig,
@@ -27,6 +28,13 @@ export { MAX_PLAYERS, MIN_PLAYERS };
  * rather than a loop that pins a core.
  */
 const MAX_FORCED_MOVES_PER_TURN = 12;
+
+/**
+ * Ceiling on how many staged groups the timeout will search combinations of. A
+ * lay-down has one group per rank, so real play stays far below this; the cap only
+ * bounds the search against a payload built to be large.
+ */
+const MAX_DRAFT_GROUPS = 10;
 
 export interface RoomPlayer {
   /**
@@ -114,6 +122,13 @@ export class Room {
   private readonly players: RoomPlayer[] = [];
   private state: GameState | null = null;
   private pausedSeat: number | undefined;
+  /**
+   * The lay-down the seat on turn is building but has not played; see
+   * `stageMelds`. Only ever the current turn's, so it is dropped when the turn
+   * moves on and never outlives the process — a restart loses nothing a player
+   * committed to.
+   */
+  private draft: { readonly seat: number; readonly melds: readonly MeldPlay[] } | null = null;
 
   // --- turn clock ---
   /** When the turn on the clock began, already shifted forward by any pause. */
@@ -409,6 +424,22 @@ export class Room {
   }
 
   /**
+   * Record the lay-down a player is building, so that if their clock runs out it
+   * can be played for them rather than lost. Accepted only from the seat on turn,
+   * in the play phase, while melding is still open; anything else is refused and
+   * nothing is kept.
+   */
+  stageMelds(seat: number, melds: readonly MeldPlay[]): RoomResult<undefined> {
+    const state = this.state;
+    if (!state || state.roundEnded) return fail("there is no hand in play");
+    if (seat !== state.currentSeat) return fail("it is not your turn");
+    if (state.phase !== "play") return fail("melds can only be staged after drawing");
+    if (this.graceUntil !== null) return fail("your turn is out of time: you can only discard");
+    this.draft = melds.length > 0 ? { seat, melds } : null;
+    return succeed(undefined);
+  }
+
+  /**
    * Validate and apply one action. A rule violation comes back as a rejection
    * rather than an exception, because it is an ordinary outcome the client has
    * to render, not a failure of the server.
@@ -467,6 +498,7 @@ export class Room {
   }
 
   private beginTurn(seat: number): void {
+    this.draft = null;
     this.clockSeat = seat;
     this.turnStartedAt = this.deps.clock.now();
     this.accruedMs = 0;
@@ -557,10 +589,13 @@ export class Room {
     if (!state || state.roundEnded) return;
 
     if (this.graceUntil === null) {
-      // The main clock is gone. Bring the turn to the point where only a discard
-      // is left — drawing, and settling any pile obligation, are not choices the
-      // player still gets to make — then open the discard-only window so they
-      // still pick their own card instead of having one picked for them.
+      // The main clock is gone. First, whatever the player had staged and not yet
+      // played: they meant to play it, and losing it to the clock would be the
+      // harshest reading of a timeout. Then bring the turn to the point where only
+      // a discard is left — drawing, and settling any pile obligation, are not
+      // choices the player still gets to make — and open the discard-only window
+      // so they still pick their own card instead of having one picked for them.
+      this.playDraft();
       this.playForcedUntilDiscardable("timeout");
       if (this.state?.roundEnded || this.state?.currentSeat !== state.currentSeat) {
         this.notify();
@@ -574,6 +609,37 @@ export class Room {
 
     // The grace is gone too: play the discard for them.
     this.forceTurn("timeout");
+  }
+
+  /**
+   * Play as much of the staged lay-down as the rules allow.
+   *
+   * The whole draft is tried first. If the engine refuses it — a group still two
+   * cards short, a total below the minimum — the largest part it will accept is
+   * played instead, trying every combination of whole groups from the most cards
+   * down. A lay-down is at most a handful of groups, so that is a few dozen
+   * attempts at the reducer, and it finds, say, the two finished groups of three
+   * even when a third was still a pair. If nothing is acceptable, nothing is played.
+   */
+  private playDraft(): void {
+    const state = this.state;
+    const draft = this.draft;
+    this.draft = null;
+    if (!state || !draft || draft.seat !== state.currentSeat || state.phase !== "play") return;
+    const groups = draft.melds.slice(0, MAX_DRAFT_GROUPS);
+    const subsets: (readonly MeldPlay[])[] = [];
+    for (let mask = (1 << groups.length) - 1; mask > 0; mask--) {
+      subsets.push(groups.filter((_, i) => mask & (1 << i)));
+    }
+    const size = (melds: readonly MeldPlay[]): number =>
+      melds.reduce((n, meld) => n + meld.cardIds.length, 0);
+    subsets.sort((a, b) => size(b) - size(a));
+    for (const melds of subsets) {
+      if (applyAction(state, { type: "playMelds", melds }).ok) {
+        this.apply(state.currentSeat, { type: "playMelds", melds }, "timeout");
+        return;
+      }
+    }
   }
 
   /**

@@ -7,6 +7,7 @@ import {
   type Rank,
   type Suit,
 } from "@hf/shared";
+import { advanceTurn } from "./core";
 import { applyAction } from "./reducer";
 import { canTakePile } from "./feasibility";
 import { legalHints } from "./legal";
@@ -141,7 +142,7 @@ describe("takePile", () => {
     expect(second.error).toMatch(/draw phase/);
   });
 
-  it("is refused on the turn a pending foot must be picked up", () => {
+  it("is never on offer to a player whose foot is pending: their turn opens in the foot", () => {
     // Discarding the last hand card leaves the foot pending for next turn.
     const last = card("5");
     const s = state({ isDown: true, hand: [last], foot: cards("A", 14) }, [card("K"), card("9")], {
@@ -152,21 +153,20 @@ describe("takePile", () => {
     if (!discarded.ok) return;
     expect(discarded.state.players[0].footPending).toBe(true);
 
-    // Back to this seat: the pile is takeable on paper, but the foot comes first.
-    const back: GameState = { ...discarded.state, currentSeat: 0, phase: "draw" };
+    // When the turn comes back the foot is already in hand and the draw phase is
+    // over, so the pile — takeable on paper — is not offered and not accepted.
+    const pass = discarded.state.players.length - 1;
+    let back = discarded.state;
+    for (let i = 0; i < pass; i++) back = advanceTurn(back, back.currentSeat);
+    expect(back.currentSeat).toBe(0);
+    expect(back.players[0].inFoot).toBe(true);
+    expect(back.phase).toBe("play");
     expect(legalHints(back, 0).canTakePile).toBe(false);
     const take = applyAction(back, { type: "takePile" });
     expect(take.ok).toBe(false);
     if (take.ok) return;
-    expect(take.error).toMatch(/pick up your foot/);
-
-    // Drawing picks up the foot and leaves the pile untouched for everyone else.
-    const drew = applyAction(back, { type: "draw" });
-    expect(drew.ok).toBe(true);
-    if (!drew.ok) return;
-    expect(drew.state.players[0].inFoot).toBe(true);
-    expect(drew.state.players[0].footPending).toBe(false);
-    expect(drew.state.discard).toHaveLength(3);
+    expect(take.error).toMatch(/draw phase/);
+    expect(back.discard).toHaveLength(3);
   });
 
   it("keeps the obligation when the melds played come only from the hand", () => {

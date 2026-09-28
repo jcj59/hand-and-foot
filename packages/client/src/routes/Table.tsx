@@ -10,17 +10,26 @@
  * A turn is a short sequence of separate actions rather than one submission: draw or
  * take the pile, then optionally play melds, then discard. Only the melds are staged
  * locally, because the per-round minimum is checked across a whole lay-down at once
- * and a player has to be able to watch the total before committing to it.
+ * and a player has to be able to watch the total before committing to it. The
+ * staged lay-down is also sent to the server as it changes, so that if the turn
+ * clock runs out the server plays it rather than it being lost.
+ *
+ * Clicking a card opens a menu of what it can do right now — meld it, discard it,
+ * take it back — rather than one click meaning different things by mode. A discard
+ * that looks like a mistake (a wild, or a card the player could lay off on a meld
+ * they already have) asks once more before it goes.
  */
 import { useEffect, useState } from "react";
-import type { Card, Rank } from "@hf/shared";
-import { pauseTable, play } from "../actions";
+import { isWild, type Card, type Rank } from "@hf/shared";
+import { pauseTable, play, stageDraft } from "../actions";
+import { isDeadWeight } from "../cards/handOrder";
 import { FaceDownPile, PlayingCard } from "../cards/PlayingCard";
 import { useSession } from "../session";
 import type { HfClientSocket } from "../socket";
-import { Hand, type HandMode } from "../table/Hand";
+import { Hand } from "../table/Hand";
 import { Melds } from "../table/Melds";
 import { Seats } from "../table/Seats";
+import { RoundResult } from "../table/RoundResult";
 import { StagingPanel } from "../table/StagingPanel";
 import { TurnClock } from "../table/TurnClock";
 import {
@@ -29,6 +38,7 @@ import {
   previewLayDown,
   retainCards,
   stageCard,
+  stagedCount,
   stagedIds,
   toMeldPlays,
   unstageCard,
@@ -46,17 +56,28 @@ export function Table({ socket }: TableProps): React.ReactElement {
   const seat = useSession((s) => s.seat);
   const result = useSession((s) => s.result);
   const [staging, setStaging] = useState<Staging>(EMPTY_STAGING);
-  const [discarding, setDiscarding] = useState(false);
+  // The card whose menu is open, and whether its discard is awaiting a second yes.
+  const [chosenId, setChosenId] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const turnOpen =
     update !== null && update.hints.seatToAct === update.view.seat && result === null;
   useEffect(() => {
     if (!turnOpen) {
-      setDiscarding(false);
+      setChosenId(null);
+      setConfirming(false);
       setStaging(EMPTY_STAGING);
     }
   }, [turnOpen]);
+
+  // Keep the server's copy of the lay-down current while melding is open, so a
+  // clock that runs out plays it. Sent only from the play phase: the server refuses
+  // a draft at any other time.
+  const draftOpen = turnOpen && update.hints.phase === "play" && !update.clock.inDiscardGrace;
+  useEffect(() => {
+    if (draftOpen) void stageDraft(socket, toMeldPlays(staging));
+  }, [draftOpen, staging, socket]);
 
   const liveZone = update && (update.view.inFoot ? update.view.foot : update.view.hand);
   useEffect(() => {
@@ -98,28 +119,76 @@ export function Table({ socket }: TableProps): React.ReactElement {
     }
   }
 
-  function onCardSelect(card: Card): void {
-    if (busy) return;
-    if (discarding) {
-      // The discard ends the turn, so it goes straight off rather than being staged.
-      void send({ type: "discard", cardId: card.id }, () => {
-        setDiscarding(false);
-        setStaging(EMPTY_STAGING);
-      });
-      return;
-    }
-    setStaging((current) =>
-      stagedIds(current).has(card.id) ? unstageCard(current, card.id) : stageCard(current, card),
-    );
-  }
-
   // Melding is closed during the discard-only grace, so staging then would only build
   // something the server is certain to refuse.
   const canMeld = myTurn && hints.phase === "play" && !clock.inDiscardGrace;
   // The discard ends the play phase rather than being a phase of its own. What makes
   // it available is the play phase with the take-pile obligation settled.
   const canDiscard = myTurn && hints.phase === "play" && !obligationOpen && zone.length > 0;
-  const mode: HandMode = discarding ? "discard" : canMeld ? "meld" : "idle";
+  const staged = stagedIds(staging);
+  const meldRanks = new Set<Rank>(view.melds.map((meld) => meld.rank));
+
+  function closeMenu(): void {
+    setChosenId(null);
+    setConfirming(false);
+  }
+
+  function onCardSelect(card: Card): void {
+    if (busy) return;
+    setConfirming(false);
+    setChosenId((current) => (current === card.id ? null : card.id));
+  }
+
+  function meld(card: Card): void {
+    setStaging((current) => stageCard(current, card));
+    closeMenu();
+  }
+
+  function discard(card: Card): void {
+    // The discard ends the turn, so it goes straight off rather than being staged.
+    void send({ type: "discard", cardId: card.id }, () => {
+      closeMenu();
+      setStaging(EMPTY_STAGING);
+    });
+  }
+
+  /** Why throwing this card away is probably a mistake, if it is. */
+  function discardWarning(card: Card): string | null {
+    if (isWild(card.rank)) return "That is a wild card.";
+    if (meldRanks.has(card.rank)) return `You have a meld of ${card.rank}s it could go on.`;
+    return null;
+  }
+
+  const chosen = zone.find((card) => card.id === chosenId) ?? null;
+  const menu = chosen && (
+    <CardMenu
+      card={chosen}
+      staged={staged.has(chosen.id)}
+      canMeld={canMeld && !isDeadWeight(chosen)}
+      // A wild has no rank of its own: it goes to the selected meld, named here so
+      // the player sees where before it lands.
+      wildTarget={isWild(chosen.rank) ? staging.focusedRank : null}
+      canDiscard={canDiscard}
+      // Discarding would silently throw the staged lay-down away, so the melds have
+      // to be played or taken back first.
+      discardBlocked={stagedCount(staging) > 0}
+      warning={confirming ? discardWarning(chosen) : null}
+      busy={busy}
+      onMeld={() => meld(chosen)}
+      onUnstage={() => {
+        setStaging((current) => unstageCard(current, chosen.id));
+        closeMenu();
+      }}
+      onDiscard={() => {
+        if (!confirming && discardWarning(chosen)) {
+          setConfirming(true);
+          return;
+        }
+        discard(chosen);
+      }}
+      onCancel={closeMenu}
+    />
+  );
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-col gap-5 p-4">
@@ -154,25 +223,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
         )}
       </header>
 
-      {result && (
-        <section
-          aria-label="Round result"
-          className="rounded border border-amber-300/40 bg-amber-300/10 p-3"
-        >
-          <h2 className="text-sm font-medium">Round over</h2>
-          <ul className="mt-1 flex flex-wrap gap-3 text-sm">
-            {result.scores.map((score) => (
-              <li key={score.seat}>
-                {room.players.find((p) => p.seat === score.seat)?.name ?? `Seat ${score.seat}`}:{" "}
-                <span className="font-medium">{score.score}</span>
-                {result.wentOutSeat === score.seat && (
-                  <span className="text-amber-200"> · went out</span>
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      {result && <RoundResult result={result} room={room} config={room.config} />}
 
       <Seats
         opponents={view.opponents}
@@ -196,23 +247,16 @@ export function Table({ socket }: TableProps): React.ReactElement {
 
       <section className="flex flex-col gap-2" aria-label="Your melds">
         <h2 className="text-sm font-medium text-white/80">Your melds</h2>
-        <Melds melds={view.melds} config={room.config} />
-        {canMeld && view.melds.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {/* Aiming a wild at a book already on the table: with no natural of that
-                rank left to open a group, focusing the rank is the only way in. */}
-            {view.melds.map((meld) => (
-              <button
-                key={meld.rank}
-                type="button"
-                onClick={() => setStaging((current) => focusGroup(current, meld.rank as Rank))}
-                className="rounded border border-white/25 px-2 py-0.5 text-xs text-white/70"
-              >
-                Add to {meld.rank}s
-              </button>
-            ))}
-          </div>
-        )}
+        <Melds
+          melds={view.melds}
+          config={room.config}
+          // Clicking a meld on the table aims the next cards at it — the only way to
+          // add a wild to a meld already down.
+          onSelect={
+            canMeld ? (rank) => setStaging((current) => focusGroup(current, rank)) : undefined
+          }
+          selectedRank={canMeld ? staging.focusedRank : null}
+        />
       </section>
 
       {obligationOpen && myTurn && (
@@ -245,10 +289,13 @@ export function Table({ socket }: TableProps): React.ReactElement {
 
       <Hand
         cards={zone}
-        mode={mode}
-        stagedIds={stagedIds(staging)}
+        interactive={canMeld || canDiscard}
+        stagedIds={staged}
         owedIds={owed}
+        meldRanks={meldRanks}
         onSelect={onCardSelect}
+        chosenId={chosenId}
+        menu={menu}
         title={view.inFoot ? "Your foot" : "Your hand"}
       />
 
@@ -280,17 +327,6 @@ export function Table({ socket }: TableProps): React.ReactElement {
               >
                 Take the pile
               </button>
-              <button
-                type="button"
-                // Blocked while melds are staged: playing them is a separate action, and
-                // discarding first would silently throw the staged lay-down away.
-                disabled={busy || !canDiscard || staging.groups.length > 0}
-                aria-pressed={discarding}
-                onClick={() => setDiscarding((on) => !on)}
-                className="rounded border border-white/30 px-4 py-2 font-medium disabled:opacity-40"
-              >
-                {discarding ? "Cancel discard" : "Discard"}
-              </button>
               <span className="text-sm text-white/60">{guidance()}</span>
             </>
           ) : (
@@ -309,10 +345,119 @@ export function Table({ socket }: TableProps): React.ReactElement {
   /** One line saying what the table is waiting for, in the order the rules impose. */
   function guidance(): string {
     if (hints.phase === "draw") return "Draw, or take the pile.";
-    if (staging.groups.length > 0) return "Play or take back your melds, then discard.";
+    if (stagedCount(staging) > 0) return "Play or take back your melds, then discard.";
     if (obligationOpen) return "Play a card from the pile before you can discard.";
     if (clock.inDiscardGrace) return "Time is up — only a discard will be accepted.";
     if (zone.length === 0) return "No cards left; your turn ends itself.";
-    return discarding ? "Pick the card to discard." : "Meld if you like, then discard.";
+    return "Click a card to meld or discard it.";
   }
+}
+
+interface CardMenuProps {
+  readonly card: Card;
+  readonly staged: boolean;
+  readonly canMeld: boolean;
+  readonly wildTarget: Rank | null;
+  readonly canDiscard: boolean;
+  readonly discardBlocked: boolean;
+  /** Set once a risky discard has been asked for, to ask again. */
+  readonly warning: string | null;
+  readonly busy: boolean;
+  readonly onMeld: () => void;
+  readonly onUnstage: () => void;
+  readonly onDiscard: () => void;
+  readonly onCancel: () => void;
+}
+
+/** What one card can do right now, offered under the card that was clicked. */
+function CardMenu({
+  card,
+  staged,
+  canMeld,
+  wildTarget,
+  canDiscard,
+  discardBlocked,
+  warning,
+  busy,
+  onMeld,
+  onUnstage,
+  onDiscard,
+  onCancel,
+}: CardMenuProps): React.ReactElement {
+  const wild = isWild(card.rank);
+  const item = "rounded px-3 py-1 text-left text-sm whitespace-nowrap disabled:opacity-40";
+  if (warning) {
+    return (
+      <div
+        role="dialog"
+        aria-label="Confirm discard"
+        className="flex w-56 flex-col gap-2 rounded border border-amber-300/50 bg-felt-900 p-2 shadow-lg"
+      >
+        <p className="text-sm text-amber-100">{warning} Discard it anyway?</p>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onDiscard}
+            className={`${item} bg-red-600 text-white`}
+          >
+            Discard anyway
+          </button>
+          <button type="button" onClick={onCancel} className={`${item} border border-white/25`}>
+            Keep it
+          </button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div
+      role="menu"
+      aria-label="Card actions"
+      className="flex flex-col rounded border border-white/20 bg-felt-900 p-1 shadow-lg"
+    >
+      {staged ? (
+        <button
+          type="button"
+          role="menuitem"
+          onClick={onUnstage}
+          className={`${item} hover:bg-white/10`}
+        >
+          Take back
+        </button>
+      ) : (
+        canMeld && (
+          <button
+            type="button"
+            role="menuitem"
+            disabled={wild && wildTarget === null}
+            onClick={onMeld}
+            className={`${item} hover:bg-white/10`}
+          >
+            {wild ? (wildTarget ? `Add to ${wildTarget}s` : "Select a meld for it first") : "Meld"}
+          </button>
+        )
+      )}
+      {canDiscard && !staged && (
+        <button
+          type="button"
+          role="menuitem"
+          disabled={busy || discardBlocked}
+          title={discardBlocked ? "play or take back your staged melds first" : undefined}
+          onClick={onDiscard}
+          className={`${item} hover:bg-white/10`}
+        >
+          Discard
+        </button>
+      )}
+      <button
+        type="button"
+        role="menuitem"
+        onClick={onCancel}
+        className={`${item} text-white/60 hover:bg-white/10`}
+      >
+        Cancel
+      </button>
+    </div>
+  );
 }

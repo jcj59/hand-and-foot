@@ -3,8 +3,8 @@ import { type ApplyResult, activeCards, fail, ok, setActiveCards, updatePlayer }
 import { prng, shuffle } from "./rng";
 
 /**
- * The draw phase. If the player has a pending foot, the foot is picked up in
- * place of a draw. Otherwise a single card is drawn from the top of the stock. If
+ * The draw phase. A single card is drawn from the top of the stock. (A pending
+ * foot never reaches here: `advanceTurn` picks it up in place of the draw.) If
  * the stock is empty, the configured stock-exhaustion behavior applies: by
  * default the discard pile (below its top card) is reshuffled into a new stock
  * and the draw proceeds; alternatively the round ends. The reshuffle uses a seed
@@ -15,17 +15,6 @@ export function applyDraw(state: GameState): ApplyResult {
     return fail("a card can only be drawn during the draw phase");
   }
   const seat = state.currentSeat;
-  const player = state.players[seat];
-
-  if (player.footPending) {
-    return ok(
-      updatePlayer({ ...state, phase: "play" }, seat, (p) => ({
-        ...p,
-        inFoot: true,
-        footPending: false,
-      })),
-    );
-  }
 
   let source = state;
   if (source.stock.length === 0) {

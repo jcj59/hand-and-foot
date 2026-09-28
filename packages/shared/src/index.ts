@@ -265,7 +265,30 @@ export type Action =
 /** One player's score for a completed round. */
 export interface RoundScore {
   readonly seat: number;
+  /** The sum of the breakdown, so nothing has to add it up to show a total. */
   readonly score: number;
+  readonly breakdown: ScoreBreakdown;
+}
+
+/**
+ * How a round score is made up, so a scoreboard can show the arithmetic rather than
+ * only the total. Every field is already signed: the parts add up to `score`.
+ */
+export interface ScoreBreakdown {
+  /** Completed books with no wild. */
+  readonly cleanBooks: number;
+  /** Completed books with at least one wild. */
+  readonly dirtyBooks: number;
+  /** `cleanBooks` and `dirtyBooks` at the table's bonus for each. */
+  readonly bookBonus: number;
+  /** Face value of every card melded, books and open melds alike. */
+  readonly meldedCards: number;
+  /** The go-out bonus, for the one player who went out; otherwise 0. */
+  readonly goOutBonus: number;
+  /** Cards still held in hand and foot when the round ended. */
+  readonly heldCount: number;
+  /** Their face value, as a negative number. */
+  readonly heldPenalty: number;
 }
 
 /**

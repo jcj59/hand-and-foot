@@ -11,6 +11,7 @@ import type {
   Ack,
   Action,
   ClientToServerEvents,
+  MeldPlay,
   RoomOptions,
   SeatCredentials,
   ServerToClientEvents,
@@ -122,6 +123,13 @@ export function startGame(socket: HfClientSocket): Promise<Ack<undefined>> {
 
 export function submitAction(socket: HfClientSocket, action: Action): Promise<Ack<undefined>> {
   return ask((ack) => socket.emit("submitAction", action, ack));
+}
+
+export function stageMelds(
+  socket: HfClientSocket,
+  melds: readonly MeldPlay[],
+): Promise<Ack<undefined>> {
+  return ask((ack) => socket.emit("stageMelds", { melds }, ack));
 }
 
 export function setPaused(socket: HfClientSocket, paused: boolean): Promise<Ack<undefined>> {

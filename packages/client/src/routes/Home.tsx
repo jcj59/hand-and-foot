@@ -132,8 +132,8 @@ export function Home({ socket }: HomeProps): React.ReactElement {
               value={mode}
               onChange={(e) => setMode(e.target.value as GameMode)}
             >
-              <option value="family">Family — anyone can pause</option>
-              <option value="competitive">Competitive — no pausing</option>
+              <option value="family">Family</option>
+              <option value="competitive">Competitive</option>
             </select>
           </label>
         </fieldset>

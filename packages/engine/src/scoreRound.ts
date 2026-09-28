@@ -18,17 +18,29 @@ export type { RoundScore };
 export function scoreRound(state: GameState): readonly RoundScore[] {
   const s = state.config.scoring;
   return state.players.map((player, seat) => {
-    let score = 0;
+    let cleanBooks = 0;
+    let dirtyBooks = 0;
+    let meldedCards = 0;
     for (const meld of player.melds) {
-      for (const c of meld.cards) score += cardValue(c, state.config);
+      for (const c of meld.cards) meldedCards += cardValue(c, state.config);
       const kind = classifyBook(meld);
-      if (kind === "clean") score += s.cleanBookBonus;
-      else if (kind === "dirty") score += s.dirtyBookBonus;
+      if (kind === "clean") cleanBooks++;
+      else if (kind === "dirty") dirtyBooks++;
     }
-    for (const c of [...player.hand, ...player.foot]) {
-      score -= Math.abs(cardValue(c, state.config));
-    }
-    if (seat === state.wentOutSeat) score += s.goOutBonus;
-    return { seat, score };
+    const held = [...player.hand, ...player.foot];
+    let heldPenalty = 0;
+    for (const c of held) heldPenalty -= Math.abs(cardValue(c, state.config));
+    const breakdown = {
+      cleanBooks,
+      dirtyBooks,
+      bookBonus: cleanBooks * s.cleanBookBonus + dirtyBooks * s.dirtyBookBonus,
+      meldedCards,
+      goOutBonus: seat === state.wentOutSeat ? s.goOutBonus : 0,
+      heldCount: held.length,
+      heldPenalty,
+    };
+    const score =
+      breakdown.bookBonus + breakdown.meldedCards + breakdown.goOutBonus + breakdown.heldPenalty;
+    return { seat, score, breakdown };
   });
 }

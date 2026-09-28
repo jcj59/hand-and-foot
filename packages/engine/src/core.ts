@@ -32,10 +32,16 @@ export function updatePlayer(
 }
 
 /**
- * End the current player's turn: pass to the next seat in the draw phase and
- * decrement a running final lap (started by a without-discard go-out), ending the
- * round once it reaches zero. A turn normally ends with a discard, but a player
- * who has shed every card ends it without one, so both paths share this.
+ * End the current player's turn: pass to the next seat and decrement a running
+ * final lap (started by a without-discard go-out), ending the round once it
+ * reaches zero. A turn normally ends with a discard, but a player who has shed
+ * every card ends it without one, so both paths share this.
+ *
+ * The next turn normally opens in the draw phase. A player whose foot is pending —
+ * they emptied their hand with a discard — picks the foot up *in place of* drawing,
+ * and taking the pile is not open to them either, so there is no choice to make:
+ * their turn opens already holding the foot, in the play phase. Doing it here rather
+ * than as an action the player must submit is what makes the pickup automatic.
  */
 export function advanceTurn(state: GameState, seat: number): GameState {
   let finalLap = state.finalLapRemaining;
@@ -44,11 +50,18 @@ export function advanceTurn(state: GameState, seat: number): GameState {
     finalLap -= 1;
     if (finalLap === 0) roundEnded = true;
   }
-  return {
+  const next = (seat + 1) % state.players.length;
+  const passed: GameState = {
     ...state,
-    currentSeat: (seat + 1) % state.players.length,
+    currentSeat: next,
     phase: "draw",
     finalLapRemaining: finalLap,
     roundEnded,
   };
+  if (roundEnded || !state.players[next].footPending) return passed;
+  return updatePlayer({ ...passed, phase: "play" }, next, (p) => ({
+    ...p,
+    inFoot: true,
+    footPending: false,
+  }));
 }

@@ -1,14 +1,18 @@
 /**
  * A player's melds, one row per rank.
  *
- * A book's size is the thing a player reads off the table — six means one more
- * card completes it, seven means it is closed and worth a bonus — so the count and
- * the kind are stated rather than left to be counted off the cards. `classifyBook`
- * comes from the engine so the label cannot disagree with what scoring will say.
+ * A meld still being built is fanned out, with its size stated, because six means
+ * one more card completes it. A completed book collapses to a single stacked card,
+ * red when clean and black when dirty: it is one scoring unit now, and the colour
+ * says which bonus it earned. `classifyBook` comes from the engine so the display
+ * cannot disagree with what scoring will say.
+ *
+ * With `onSelect`, a meld can be clicked to aim the player's next cards at it —
+ * which is the only way to add a wild to a meld already on the table.
  */
-import { type Meld, type RulesConfig } from "@hf/shared";
+import { type Meld, type Rank, type RulesConfig } from "@hf/shared";
 import { classifyBook, meldPoints } from "@hf/engine";
-import { PlayingCard } from "../cards/PlayingCard";
+import { BookCard, PlayingCard } from "../cards/PlayingCard";
 import { sortForDisplay } from "../cards/handOrder";
 
 export interface MeldsProps {
@@ -16,28 +20,66 @@ export interface MeldsProps {
   readonly config: RulesConfig;
   /** Smaller rows for an opponent's side of the table. */
   readonly compact?: boolean;
+  /** Makes each meld selectable, as the target for the next cards staged. */
+  readonly onSelect?: (rank: Rank) => void;
+  /** The meld currently selected, drawn highlighted. */
+  readonly selectedRank?: Rank | null;
 }
 
-export function Melds({ melds, config, compact = false }: MeldsProps): React.ReactElement {
+export function Melds({
+  melds,
+  config,
+  compact = false,
+  onSelect,
+  selectedRank = null,
+}: MeldsProps): React.ReactElement {
   if (melds.length === 0) {
     return <p className="text-xs text-white/40">Not down yet.</p>;
   }
 
   return (
-    <ul className="flex flex-col gap-1">
+    <ul className="flex flex-wrap gap-3">
       {melds.map((meld) => {
         const kind = classifyBook(meld);
-        return (
-          <li key={meld.rank} className="flex items-center gap-2" aria-label={meldLabel(meld)}>
+        const size = compact ? "small" : "normal";
+        const selected = selectedRank === meld.rank;
+        const face =
+          kind === "incomplete" ? (
             <div className="flex -space-x-4">
               {sortForDisplay(meld.cards).map((card) => (
-                <PlayingCard key={card.id} card={card} size={compact ? "small" : "normal"} />
+                <PlayingCard key={card.id} card={card} size={size} />
               ))}
             </div>
-            <span className="text-xs whitespace-nowrap text-white/60">
-              {kind === "incomplete" ? `${meld.cards.length} cards` : `${kind} book`}
-              {!compact && ` · ${meldPoints(meld, config)}`}
-            </span>
+          ) : (
+            <BookCard rank={meld.rank} kind={kind} count={meld.cards.length} size={size} />
+          );
+        const caption = (
+          <span className="text-xs whitespace-nowrap text-white/60">
+            {kind === "incomplete" ? `${meld.cards.length} cards` : `${kind} book`}
+            {!compact && ` · ${meldPoints(meld, config)}`}
+          </span>
+        );
+        return (
+          <li key={meld.rank} aria-label={meldLabel(meld)}>
+            {onSelect ? (
+              <button
+                type="button"
+                aria-pressed={selected}
+                aria-label={`Select ${meldLabel(meld)}`}
+                onClick={() => onSelect(meld.rank)}
+                className={`flex flex-col items-start gap-1 rounded p-1 ${
+                  selected ? "ring-2 ring-amber-300" : "hover:bg-white/5"
+                }`}
+              >
+                {face}
+                {caption}
+              </button>
+            ) : (
+              <div className="flex flex-col items-start gap-1 p-1">
+                {face}
+                {caption}
+              </div>
+            )}
           </li>
         );
       })}

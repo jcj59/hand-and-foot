@@ -58,7 +58,7 @@ export function legalHints(state: GameState, seat: number): LegalHints {
       seatToAct: seat,
       phase: "draw",
       canDraw: true,
-      canTakePile: !player.footPending && canTakePile(state, seat).feasible,
+      canTakePile: canTakePile(state, seat).feasible,
       meldableRanks: [],
       canGoOut: false,
     };

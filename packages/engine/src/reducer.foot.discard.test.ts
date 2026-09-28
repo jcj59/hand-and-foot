@@ -57,15 +57,35 @@ describe("foot transition with a discard", () => {
     expect(r.state.players[0].inFoot).toBe(false);
   });
 
-  it("consumes the foot as the next draw and does not touch the stock", () => {
-    const s = seat0({ footPending: true, foot: cards("K", 14) }, "draw");
-    const r = applyAction(s, { type: "draw" });
-    expect(r.ok).toBe(true);
-    if (!r.ok) return;
-    expect(r.state.players[0].inFoot).toBe(true);
-    expect(r.state.players[0].footPending).toBe(false);
-    expect(r.state.stock).toHaveLength(5);
-    expect(r.state.phase).toBe("play");
+  it("picks the foot up by itself when the turn comes back, in place of the draw", () => {
+    // Nothing to click: the foot replaces the draw and the pile is not open to
+    // them, so the turn simply opens holding the foot.
+    const last = card("5");
+    const base = seat0({ hand: [last], foot: cards("K", 14) }, "play");
+    const s: GameState = {
+      ...base,
+      players: [base.players[0], { ...base.players[1], hand: [card("6"), card("7")] }],
+    };
+    const discarded = applyAction(s, { type: "discard", cardId: last.id });
+    expect(discarded.ok).toBe(true);
+    if (!discarded.ok) return;
+    // Still pending through the other player's turn.
+    expect(discarded.state.players[0].footPending).toBe(true);
+    expect(discarded.state.players[0].inFoot).toBe(false);
+
+    const drew = applyAction(discarded.state, { type: "draw" });
+    expect(drew.ok).toBe(true);
+    if (!drew.ok) return;
+    const other = drew.state.players[1].hand[0];
+    const back = applyAction(drew.state, { type: "discard", cardId: other.id });
+    expect(back.ok).toBe(true);
+    if (!back.ok) return;
+    expect(back.state.currentSeat).toBe(0);
+    expect(back.state.phase).toBe("play");
+    expect(back.state.players[0].inFoot).toBe(true);
+    expect(back.state.players[0].footPending).toBe(false);
+    // Only the other player's draw came off the stock.
+    expect(back.state.stock).toHaveLength(4);
   });
 
   it("does not set footPending for a discard that leaves cards in hand", () => {

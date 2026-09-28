@@ -11,7 +11,7 @@
  * refused request as a value. A rejection is put on the store as a notice for the
  * interface to surface, and the caller learns whether it worked.
  */
-import type { Action, RoomOptions, SeatCredentials } from "@hf/shared";
+import type { Action, MeldPlay, RoomOptions, SeatCredentials } from "@hf/shared";
 import { clearCredentials } from "./credentials";
 import { normalizeRoomCode } from "./roomCode";
 import * as wire from "./socket";
@@ -187,4 +187,17 @@ export async function pauseTable(
   }
   sink.setNotice(null);
   return true;
+}
+
+/**
+ * Keep the server's copy of the lay-down being built, so that a turn clock running
+ * out plays it rather than losing it. Nothing is reported either way: the player
+ * did not ask for this, and a draft that did not arrive only means the timeout
+ * falls back to what it did before.
+ */
+export async function stageDraft(
+  socket: HfClientSocket,
+  melds: readonly MeldPlay[],
+): Promise<void> {
+  await wire.stageMelds(socket, melds);
 }

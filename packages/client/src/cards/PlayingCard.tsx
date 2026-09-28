@@ -134,3 +134,95 @@ export function FaceDownPile({
     </div>
   );
 }
+
+/**
+ * A completed book, collapsed to one card with the rest stacked beneath it.
+ *
+ * A finished book is a single scoring unit, and seven fanned cards say that far
+ * less clearly than one card that is visibly a pile. The face is drawn red for a
+ * clean book and black for a dirty one, so which bonus it earned reads at a glance
+ * across the table without counting wilds.
+ */
+export function BookCard({
+  rank,
+  kind,
+  count,
+  size = "normal",
+  selected = false,
+}: {
+  readonly rank: Card["rank"];
+  readonly kind: "clean" | "dirty";
+  readonly count: number;
+  readonly size?: CardSize;
+  readonly selected?: boolean;
+}): React.ReactElement {
+  const { w, h } = DIMENSIONS[size];
+  // Room for the stack peeking out below and to the right.
+  const offset = 3;
+  const colour = kind === "clean" ? "#dc2626" : "#0f172a";
+  return (
+    <span role="img" aria-label={`${kind} book of ${rankLabel(rank)}s, ${count} cards`}>
+      <svg
+        width={w + offset * 2}
+        height={h + offset * 2}
+        viewBox={`0 0 ${56 + offset * 2} ${80 + offset * 2}`}
+        aria-hidden="true"
+        className="block"
+      >
+        {[2, 1].map((layer) => (
+          <rect
+            key={layer}
+            x={1 + layer * offset}
+            y={1 + layer * offset}
+            width="54"
+            height="78"
+            rx="5"
+            fill="white"
+            stroke="#94a3b8"
+          />
+        ))}
+        <rect
+          x="1"
+          y="1"
+          width="54"
+          height="78"
+          rx="5"
+          fill="white"
+          stroke={selected ? "#fbbf24" : colour}
+          strokeWidth={selected ? 3 : 2}
+        />
+        <text
+          x="6"
+          y="18"
+          fontSize="15"
+          fontWeight="700"
+          fill={colour}
+          fontFamily="ui-sans-serif, system-ui, sans-serif"
+        >
+          {rankLabel(rank)}
+        </text>
+        <text
+          x="28"
+          y="52"
+          fontSize="24"
+          fontWeight="800"
+          textAnchor="middle"
+          fill={colour}
+          fontFamily="ui-sans-serif, system-ui, sans-serif"
+        >
+          {rankLabel(rank)}
+        </text>
+        <text
+          x="28"
+          y="70"
+          fontSize="9"
+          textAnchor="middle"
+          fill={colour}
+          fontFamily="ui-sans-serif, system-ui, sans-serif"
+        >
+          {count} · {kind}
+        </text>
+      </svg>
+    </span>
+  );
+}

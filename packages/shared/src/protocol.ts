@@ -8,7 +8,15 @@
 // file: the server sends a `PlayerView` produced by the engine's projection,
 // which is the anti-cheat boundary, and these types only wrap it.
 
-import type { Action, GameMode, LegalHints, PlayerView, RoundScore, RulesConfig } from "./index";
+import type {
+  MeldPlay,
+  Action,
+  GameMode,
+  LegalHints,
+  PlayerView,
+  RoundScore,
+  RulesConfig,
+} from "./index";
 
 /** Where an action in the log came from. */
 export type ActionSource = "player" | "timeout" | "disconnect";
@@ -173,6 +181,19 @@ export interface ClientToServerEvents {
   leaveRoom: (ack: (result: Ack) => void) => void;
   startGame: (ack: (result: Ack) => void) => void;
   submitAction: (action: Action, ack: (result: Ack) => void) => void;
+  /**
+   * The lay-down this seat is building but has not played, sent as it changes.
+   *
+   * Only so the server can play it for them if the turn clock runs out first: the
+   * staging lives in the browser, and a timeout is exactly when the browser cannot
+   * be relied on — backgrounded, asleep, or gone. It goes only to the server, is
+   * forgotten when the turn ends, and is never shown to another seat. Ignored
+   * outside the sender's own play phase.
+   */
+  stageMelds: (
+    payload: { readonly melds: readonly MeldPlay[] },
+    ack: (result: Ack) => void,
+  ) => void;
   setPaused: (payload: { readonly paused: boolean }, ack: (result: Ack) => void) => void;
 }
 
