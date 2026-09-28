@@ -417,3 +417,20 @@ describe("projection and results", () => {
     expect(log.length).toBe(1);
   });
 });
+
+describe("moving on to the next game", () => {
+  it("is refused before the round is over, and for a token that is not here", () => {
+    const room = newRoom();
+    seated(room, ["ana", "ben"]);
+    expect(room.moveOn("token-0")).toEqual({ ok: false, error: "the round is not over yet" });
+    room.start(0);
+    const state = room.gameState!;
+    Object.assign(room as unknown as { state: typeof state }, {
+      state: { ...state, roundEnded: true },
+    });
+    expect(room.moveOn("nobody").ok).toBe(false);
+    expect(room.info().playAgain).toEqual([]);
+    expect(room.moveOn("token-1").ok).toBe(true);
+    expect(room.info().playAgain).toEqual([1]);
+  });
+});

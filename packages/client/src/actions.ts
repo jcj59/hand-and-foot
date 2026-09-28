@@ -202,12 +202,22 @@ export async function stageDraft(
   await wire.stageMelds(socket, melds);
 }
 
-/** Ask for another game at this table once the round is over. A refusal is a notice. */
-export async function askToPlayAgain(socket: HfClientSocket, sink: ActionSink): Promise<boolean> {
+/**
+ * Leave a finished table for the next game's waiting room. The seat there replaces
+ * the one here — everything about the old table is forgotten — and the caller gets
+ * the new room's id to go to. A refusal (the next game started without them) is a
+ * notice, and the player stays where they are.
+ */
+export async function playAgain(
+  socket: HfClientSocket,
+  sink: ActionSink & { leave(): void },
+): Promise<string | null> {
   const result = await wire.playAgain(socket);
   if (!result.ok) {
     sink.setNotice(result.error);
-    return false;
+    return null;
   }
-  return true;
+  sink.leave();
+  sink.seat(result.data);
+  return result.data.roomId;
 }

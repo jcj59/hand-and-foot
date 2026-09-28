@@ -13,7 +13,7 @@ import {
   type ViewUpdate,
 } from "@hf/shared";
 import { defaultAction } from "@hf/engine";
-import { createServer, FakeClock, type HandAndFootServer } from "./index";
+import { createServer, FakeClock, MAX_PLAYERS, type HandAndFootServer } from "./index";
 
 type Client = ClientSocket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -948,42 +948,114 @@ describe("stageMelds over the wire", () => {
 });
 
 describe("playing again over the wire", () => {
-  it("shows each vote to the table and deals the next game to everyone when all agree", async () => {
+  /** A dealt table whose round the server has just finished. */
+  async function finished(names: readonly string[]): Promise<{
+    server: HandAndFootServer;
+    port: number;
+    sockets: Client[];
+    roomId: string;
+  }> {
     const { server, port } = await boot();
-    const [a, b] = [await connect(port), await connect(port)];
+    const sockets: Client[] = [];
+    for (let i = 0; i < names.length; i++) sockets.push(await connect(port));
+    const created = await createRoom(sockets[0]!, names[0]!);
+    if (!created.ok) throw new Error(created.error);
+    for (let i = 1; i < names.length; i++)
+      await joinRoom(sockets[i]!, created.data.roomId, names[i]!);
+    await startGame(sockets[0]!);
+    // End the round directly: how a round ends is the engine's business, and what
+    // is under test here is what the transport does afterwards.
+    const room = server.manager.get(created.data.roomId)!;
+    const state = room.gameState!;
+    Object.assign(room as unknown as { state: typeof state }, {
+      state: { ...state, roundEnded: true },
+    });
+    return { server, port, sockets, roomId: created.data.roomId };
+  }
+
+  const again = (socket: Client): Promise<Ack<SeatCredentials>> =>
+    new Promise((resolve) => socket.emit("playAgain", resolve));
+
+  it("opens a waiting room for the first to ask, and brings the others into the same one", async () => {
+    const { server, sockets, roomId } = await finished(["ana", "ben", "cy"]);
+    const [a, b] = sockets as [Client, Client, Client];
+
+    const seen = waitForRoom(b, (info) => info.roomId === roomId && info.playAgain.length === 1);
+    const first = await again(a);
+    if (!first.ok) throw new Error(first.error);
+    expect(first.data.roomId).not.toBe(roomId);
+    expect(first.data.seat).toBe(0);
+    // The table left behind shows who has gone on.
+    expect((await seen).playAgain).toEqual([0]);
+
+    const second = await again(b);
+    expect(second).toMatchObject({ ok: true, data: { roomId: first.data.roomId, seat: 1 } });
+    const next = server.manager.get(first.data.roomId)!;
+    expect(next.started).toBe(false);
+    expect(next.seats().map((p) => p.name)).toEqual(["ana", "ben"]);
+    expect(next.config).toEqual(server.manager.get(roomId)!.config);
+
+    // The first to go hosts, and deals when they choose — here without cy.
+    expect((await startGame(a)).ok).toBe(true);
+    expect(next.gameState!.players).toHaveLength(2);
+  });
+
+  it("tells a player who asks too late that the next game started without them", async () => {
+    const { sockets } = await finished(["ana", "ben", "cy"]);
+    const [a, b, c] = sockets as [Client, Client, Client];
+    await again(a);
+    await again(b);
+    await startGame(a);
+    expect(await again(c)).toEqual({
+      ok: false,
+      error: "the next game has already started without you",
+    });
+  });
+
+  it("is refused before the round is over, and to a socket with no seat", async () => {
+    const { port } = await boot();
+    const [a, b, stranger] = [await connect(port), await connect(port), await connect(port)];
     const created = await createRoom(a, "ana");
     if (!created.ok) throw new Error(created.error);
     await joinRoom(b, created.data.roomId, "ben");
     await startGame(a);
-    const room = server.manager.get(created.data.roomId)!;
-    // Finish the round on the server: the transport is what is under test here.
-    const state = room.gameState!;
-    const shortened = { ...state, roundEnded: true };
-    Object.assign(room as unknown as { state: typeof state }, { state: shortened });
-
-    const ask = (socket: Client): Promise<Ack<boolean>> =>
-      new Promise((resolve) => socket.emit("playAgain", resolve));
-
-    const seen = waitForRoom(b, (info) => info.playAgain.length === 1);
-    expect(await ask(a)).toEqual({ ok: true, data: false });
-    expect((await seen).playAgain).toEqual([0]);
-
-    const dealtA = next(a, "view");
-    const dealtB = next(b, "view");
-    expect(await ask(b)).toEqual({ ok: true, data: true });
-    const [viewA, viewB] = await Promise.all([dealtA, dealtB]);
-    expect(viewA.room.gameNumber).toBe(2);
-    expect(viewB.room.gameNumber).toBe(2);
-    expect(viewA.view.hand.length).toBeGreaterThan(0);
+    expect(await again(a)).toEqual({ ok: false, error: "the round is not over yet" });
+    expect(await again(stranger)).toEqual({ ok: false, error: "you are not seated in a room" });
   });
 
-  it("refuses a socket with no seat", async () => {
-    const { port } = await boot();
-    const stranger = await connect(port);
-    const answer = await new Promise<Ack<boolean>>((resolve) =>
-      stranger.emit("playAgain", resolve),
-    );
-    expect(answer).toEqual({ ok: false, error: "you are not seated in a room" });
+  it("says so when the waiting room has filled up", async () => {
+    // Strangers can join the waiting room by its code like any lobby.
+    const { port, sockets } = await finished(["ana", "ben"]);
+    const [a, b] = sockets as [Client, Client];
+    const first = await again(a);
+    if (!first.ok) throw new Error(first.error);
+    for (let i = 0; i < MAX_PLAYERS - 1; i++) {
+      const stranger = await connect(port);
+      expect((await joinRoom(stranger, first.data.roomId, `guest${i}`)).ok).toBe(true);
+    }
+    expect(await again(b)).toEqual({ ok: false, error: `a table seats at most ${MAX_PLAYERS}` });
+  });
+
+  it("lets go of an older connection still speaking for the old seat", async () => {
+    // The same player reconnected on a second socket before the first was noticed
+    // gone: once they move on, neither may act for the old seat.
+    const { port, sockets, server, roomId } = await finished(["ana", "ben"]);
+    const [, b] = sockets as [Client, Client];
+    const creds = server.manager.get(roomId)!.seats()[1]!;
+    const again2 = await connect(port);
+    expect((await resumeSeat(again2, { roomId, seat: 1, token: creds.token })).ok).toBe(true);
+    expect((await again(again2)).ok).toBe(true);
+    expect(await again(b)).toEqual({ ok: false, error: "you are not seated in a room" });
+  });
+
+  it("speaks for the new seat from then on, not the old one", async () => {
+    const { server, sockets, roomId } = await finished(["ana", "ben"]);
+    const [a] = sockets as [Client, Client];
+    const moved = await again(a);
+    if (!moved.ok) throw new Error(moved.error);
+    // The old seat is let go; this socket's requests now go to the waiting room.
+    expect(server.manager.get(roomId)!.seats()[0]!.left).toBe(true);
+    expect(await startGame(a)).toEqual({ ok: false, error: "a game needs at least 2 players" });
   });
 });
 

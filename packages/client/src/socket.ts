@@ -125,7 +125,7 @@ export function submitAction(socket: HfClientSocket, action: Action): Promise<Ac
   return ask((ack) => socket.emit("submitAction", action, ack));
 }
 
-export function playAgain(socket: HfClientSocket): Promise<Ack<boolean>> {
+export function playAgain(socket: HfClientSocket): Promise<Ack<SeatCredentials>> {
   return ask((ack) => socket.emit("playAgain", ack));
 }
 

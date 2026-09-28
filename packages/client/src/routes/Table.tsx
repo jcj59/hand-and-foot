@@ -22,7 +22,7 @@
 import { useEffect, useState } from "react";
 import { isWild, type Card, type Rank } from "@hf/shared";
 import { useNavigate } from "react-router-dom";
-import { askToPlayAgain, leaveTable, pauseTable, play, stageDraft } from "../actions";
+import { leaveTable, pauseTable, play, playAgain, stageDraft } from "../actions";
 import { isDeadWeight } from "../cards/handOrder";
 import { FaceDownPile, PlayingCard } from "../cards/PlayingCard";
 import { useSession } from "../session";
@@ -57,7 +57,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
   const seat = useSession((s) => s.seat);
   const result = useSession((s) => s.result);
   // The room on its own, not only as it came with the last view: who is connected,
-  // and who has asked to play again, arrive as room broadcasts with no new view.
+  // and who has gone on to the next game, arrive as room broadcasts with no new view.
   const latestRoom = useSession((s) => s.room);
   const leave = useSession((s) => s.leave);
   const navigate = useNavigate();
@@ -476,8 +476,12 @@ export function Table({ socket }: TableProps): React.ReactElement {
           // A real leave, not just forgetting the seat: the server then knows the
           // table is empty and lets it go.
           onLeave={() => void leaveTable(socket, { leave }).then(() => navigate("/"))}
-          onPlayAgain={() => void askToPlayAgain(socket, sink)}
-          seat={view.seat}
+          onPlayAgain={() =>
+            void playAgain(socket, { ...sink, leave }).then((roomId) => {
+              if (roomId) navigate(`/room/${roomId}`);
+            })
+          }
+          notice={notice}
         />
       )}
     </main>

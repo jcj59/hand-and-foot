@@ -115,8 +115,6 @@ export class RoomManager {
       reconnectGraceMs: this.reconnectGraceMs,
       store: this.store,
       uid: this.newUid(),
-      newSeed: () => Math.floor(this.random() * 2 ** 31),
-      newUid: this.newUid,
     });
     this.rooms.set(id, room);
     // Recorded as soon as it exists, so the log's first row always has a room to
@@ -144,8 +142,6 @@ export class RoomManager {
             newToken: () => randomString(ROOM_CODE_ALPHABET, 24, this.random),
             reconnectGraceMs: this.reconnectGraceMs,
             store: this.store,
-            newSeed: () => Math.floor(this.random() * 2 ** 31),
-            newUid: this.newUid,
           });
       if (!restored.ok) {
         failures.push({ uid, id, error: restored.error });

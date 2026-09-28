@@ -67,7 +67,6 @@ function roomInfo(overrides: Partial<RoomInfo> = {}): RoomInfo {
       { seat: 1, name: "ben", connected: true },
     ],
     hostSeat: 0,
-    gameNumber: 1,
     playAgain: [],
     started: false,
     config: EAST_COAST,

@@ -124,21 +124,6 @@ export function attachSocketServer(io: HfServer, manager: RoomManager): void {
     return session;
   }
 
-  /**
-   * Tell every socket at the table whose seat number changed what it is now. The
-   * seats close up when someone leaves a lobby, and again when a table plays on
-   * without someone who left.
-   */
-  function tellMoved(room: Room, before: ReadonlyMap<string, number>): void {
-    for (const [socketId, other] of sessions) {
-      if (other.roomId !== room.id) continue;
-      const player = room.seatOf(other.token);
-      if (player && player.seat !== before.get(other.token)) {
-        io.to(socketId).emit("seat", player.seat);
-      }
-    }
-  }
-
   /** Unseat this socket, marking its seat disconnected only if it still owned it. */
   function release(socketId: string): void {
     const session = unseat(socketId);
@@ -237,6 +222,45 @@ export function attachSocketServer(io: HfServer, manager: RoomManager): void {
       broadcastViews(session.room);
     });
 
+    socket.on("playAgain", (ack) => {
+      const session = sessions.get(socket.id);
+      const room = session && manager.get(session.roomId);
+      const player = session && room?.seatOf(session.token);
+      if (!session || !room || !player) {
+        return ack({ ok: false, error: "you are not seated in a room" });
+      }
+      if (!room.gameState?.roundEnded)
+        return ack({ ok: false, error: "the round is not over yet" });
+
+      // Everyone after the first goes to the same waiting room — unless it has been
+      // dealt without them, or reaped, in which case a player who asks now gets a
+      // fresh one, or is told why not.
+      let next = room.nextRoomId === null ? undefined : manager.get(room.nextRoomId);
+      if (next?.started) {
+        return ack({ ok: false, error: "the next game has already started without you" });
+      }
+      if (!next) {
+        next = wire(manager.create(room.config));
+        room.nextRoomId = next.id;
+      }
+      const joined = next.join(player.name);
+      if (!joined.ok) return ack({ ok: false, error: joined.error });
+
+      // Off the old table, as a leave: this socket no longer speaks for that seat.
+      unseat(socket.id);
+      for (const [socketId, other] of sessions) {
+        if (other.roomId === room.id && other.token === session.token) sessions.delete(socketId);
+      }
+      room.moveOn(session.token);
+      claim(socket.id, next.id, joined.value.token);
+      ack({
+        ok: true,
+        data: { roomId: next.id, seat: joined.value.seat, token: joined.value.token },
+      });
+      broadcastRoom(room);
+      broadcastRoom(next);
+    });
+
     socket.on("leaveRoom", (ack) => {
       // Only the seat's current owner speaks for it: a socket superseded by a
       // resume elsewhere must not be able to give away a seat still in use.
@@ -255,22 +279,15 @@ export function attachSocketServer(io: HfServer, manager: RoomManager): void {
         if (other.roomId === room.id && other.token === session.token) sessions.delete(socketId);
       }
       ack({ ok: true, data: undefined });
-      tellMoved(room, before);
+      for (const [socketId, other] of sessions) {
+        if (other.roomId !== room.id) continue;
+        const player = room.seatOf(other.token);
+        if (player && player.seat !== before.get(other.token)) {
+          io.to(socketId).emit("seat", player.seat);
+        }
+      }
       broadcastRoom(room);
       broadcastViews(room);
-    });
-
-    socket.on("playAgain", (ack) => {
-      const session = sessionOf(socket);
-      if (!session) return ack({ ok: false, error: "you are not seated in a room" });
-      const { room } = session;
-      const before = new Map(room.seats().map((p) => [p.token, p.seat]));
-      const asked = room.playAgain(session.seat);
-      if (!asked.ok) return ack(asked);
-      ack({ ok: true, data: asked.value });
-      if (asked.value) tellMoved(room, before);
-      broadcastRoom(room);
-      if (asked.value) broadcastViews(room);
     });
 
     socket.on("disconnect", () => release(socket.id));

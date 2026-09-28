@@ -99,7 +99,6 @@ function roomInfo(overrides: Partial<RoomInfo> = {}): RoomInfo {
       { seat: 1, name: "ben", connected: true },
     ],
     hostSeat: 0,
-    gameNumber: 1,
     playAgain: [],
     started: true,
     config: EAST_COAST,
@@ -1257,9 +1256,34 @@ describe("the controls added from play-testing", () => {
     expect(useSession.getState().credentials).toBeNull();
   });
 
-  it("asks to play again, and shows who else has", async () => {
-    const { socket, sent } = fakeSocket([{ ok: true, data: false }]);
+  it("goes to the next game's waiting room, forgetting the old table", async () => {
+    const next = { roomId: "NEXT23", seat: 0, token: "t-next" };
+    const { socket, sent } = fakeSocket([{ ok: true, data: next }]);
     mount(socket);
+    act(() => useSession.setState({ result: scored([[0, 10]], 0) }));
+    fireEvent.click(screen.getByRole("button", { name: /^play again$/i }));
+    await waitFor(() => expect(useSession.getState().credentials).toEqual(next));
+    expect(sent).toEqual([{ event: "playAgain", args: [] }]);
+    expect(useSession.getState().result).toBeNull();
+    expect(useSession.getState().update).toBeNull();
+  });
+
+  it("stays put and says why when the next game started without them", async () => {
+    const { socket } = fakeSocket([
+      { ok: false, error: "the next game has already started without you" },
+    ]);
+    mount(socket);
+    act(() => useSession.setState({ result: scored([[0, 10]], 0) }));
+    fireEvent.click(screen.getByRole("button", { name: /^play again$/i }));
+    const dialog = screen.getByRole("dialog", { name: /round result/i });
+    await waitFor(() =>
+      expect(within(dialog).getByRole("alert")).toHaveTextContent(/started without you/),
+    );
+    expect(useSession.getState().credentials?.roomId).toBe("ABC234");
+  });
+
+  it("shows who is already waiting in the next game", () => {
+    mount(fakeSocket().socket);
     act(() =>
       useSession.setState({
         result: scored(
@@ -1271,24 +1295,10 @@ describe("the controls added from play-testing", () => {
         ),
       }),
     );
-    fireEvent.click(screen.getByRole("button", { name: /^play again$/i }));
-    await waitFor(() => expect(sent).toEqual([{ event: "playAgain", args: [] }]));
-
-    // The server's broadcast is what records the vote; the table shows it.
-    act(() => useSession.getState().applyRoom(roomInfo({ playAgain: [0] })));
-    const dialog = screen.getByRole("dialog", { name: /round result/i });
-    expect(within(dialog).getByRole("status")).toHaveTextContent("Play again: 1 of 2 ready (ana)");
-    expect(within(dialog).getByRole("button", { name: /waiting for the others/i })).toBeDisabled();
-  });
-
-  it("clears the finished round when the next game is dealt", () => {
-    mount(fakeSocket().socket);
-    act(() => useSession.setState({ result: scored([[0, 10]], 0) }));
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-    // Same round number — a new game starts at round one again — but a new game.
-    act(() => useSession.getState().applyUpdate(update({ room: { gameNumber: 2 } })));
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(useSession.getState().result).toBeNull();
+    act(() => useSession.getState().applyRoom(roomInfo({ playAgain: [1] })));
+    expect(within(screen.getByRole("dialog")).getByRole("status")).toHaveTextContent(
+      "Waiting in the next game: ben (1 of 2)",
+    );
   });
 
   it("says when the stock ran out rather than naming anyone", () => {

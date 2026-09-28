@@ -77,9 +77,7 @@ export interface RoomInfo {
   /** Seat that paused the table, when paused. */
   readonly pausedBy?: number;
   readonly config: RulesConfig;
-  /** Which game this is at the table, from 1; it goes up each time they play again. */
-  readonly gameNumber: number;
-  /** Seats that have asked to play again after the round ended. */
+  /** Seats that have gone on from this finished table to a new game's waiting room. */
   readonly playAgain: readonly number[];
 }
 
@@ -186,6 +184,13 @@ export interface ClientToServerEvents {
   startGame: (ack: (result: Ack) => void) => void;
   submitAction: (action: Action, ack: (result: Ack) => void) => void;
   /**
+   * Once the round is over, get up from this table and into a waiting room for a
+   * new game with the same rules. The first to ask opens it and hosts it; everyone
+   * after joins the same one. The ack carries the seat in the new room, as a join
+   * does.
+   */
+  playAgain: (ack: (result: Ack<SeatCredentials>) => void) => void;
+  /**
    * The lay-down this seat is building but has not played, sent as it changes.
    *
    * Only so the server can play it for them if the turn clock runs out first: the
@@ -194,12 +199,6 @@ export interface ClientToServerEvents {
    * forgotten when the turn ends, and is never shown to another seat. Ignored
    * outside the sender's own play phase.
    */
-  /**
-   * Ask to play another game at this table once the round is over. The next game
-   * is dealt when everyone still at the table has asked; the ack says whether this
-   * request was the one that dealt it.
-   */
-  playAgain: (ack: (result: Ack<boolean>) => void) => void;
   stageMelds: (
     payload: { readonly melds: readonly MeldPlay[] },
     ack: (result: Ack) => void,
