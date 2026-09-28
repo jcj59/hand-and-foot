@@ -126,6 +126,12 @@ export class Room {
   private readonly deps: RoomDeps;
   private readonly reconnectGraceMs: number;
   private readonly players: RoomPlayer[] = [];
+  /**
+   * Who hosts, by token rather than seat: the host is a person, and handing the
+   * table to someone else should not move anyone's seat. Null only for a room
+   * nobody has joined.
+   */
+  private hostToken: string | null = null;
   /** Tokens of the players who went on to the next game's waiting room. */
   private readonly wentOn = new Set<string>();
   private state: GameState | null = null;
@@ -221,6 +227,9 @@ export class Room {
     for (const seat of record.players) {
       room.players.push({ ...seat, connected: false, disconnectedAt: now });
     }
+    // Rooms saved before hosting could be handed on have no host recorded; the
+    // first seat hosted them.
+    room.hostToken = record.hostToken ?? record.players[0]?.token ?? null;
     if (record.pausedSeat !== null) {
       room.pausedSeat = record.pausedSeat;
       room.pausedAt = now;
@@ -246,6 +255,7 @@ export class Room {
       })),
       started: this.started,
       pausedSeat: this.pausedSeat ?? null,
+      hostToken: this.hostToken,
     };
   }
 
@@ -309,6 +319,8 @@ export class Room {
       left: false,
     };
     this.players.push(player);
+    // Whoever opens the table hosts it until they hand it on.
+    this.hostToken ??= player.token;
     this.save();
     return succeed(player);
   }
@@ -337,6 +349,8 @@ export class Room {
       // nobody else is holding it.
       if (pauser === player) this.unpause();
       else if (pauser) this.pausedSeat = pauser.seat;
+      // A departing host hands the table to whoever is now first in line.
+      if (this.hostToken === player.token) this.hostToken = this.players[0]?.token ?? null;
       this.save();
       return succeed(player);
     }
@@ -394,11 +408,25 @@ export class Room {
   }
 
   /**
-   * The first seat hosts. A host who leaves the lobby passes it on without any
-   * bookkeeping, because the seats behind them close up and the next becomes 0.
+   * The seat allowed to deal. The first player to join hosts until they hand it
+   * on; a host who leaves the lobby passes it to the first seat.
    */
   get hostSeat(): number {
-    return 0;
+    return this.players.find((p) => p.token === this.hostToken)?.seat ?? 0;
+  }
+
+  /**
+   * Hand hosting to another player. Only the host may, and only before the deal:
+   * dealing is the one thing a host does, so afterwards there is nothing to hand on.
+   */
+  setHost(bySeat: number, toSeat: number): RoomResult<undefined> {
+    if (this.started) return fail("the host can only be changed before the deal");
+    if (bySeat !== this.hostSeat) return fail("only the host can hand hosting to someone else");
+    const target = this.players[toSeat];
+    if (!target) return fail("no such seat");
+    this.hostToken = target.token;
+    this.save();
+    return succeed(undefined);
   }
 
   setPaused(seat: number, paused: boolean): RoomResult<undefined> {

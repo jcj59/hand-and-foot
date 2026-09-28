@@ -222,6 +222,14 @@ export function attachSocketServer(io: HfServer, manager: RoomManager): void {
       broadcastViews(session.room);
     });
 
+    socket.on("setHost", (payload, ack) => {
+      const session = sessionOf(socket);
+      if (!session) return ack({ ok: false, error: "you are not seated in a room" });
+      const changed = session.room.setHost(session.seat, Number(payload?.seat));
+      ack(ackOf(changed));
+      if (changed.ok) broadcastRoom(session.room);
+    });
+
     socket.on("playAgain", (ack) => {
       const session = sessions.get(socket.id);
       const room = session && manager.get(session.roomId);

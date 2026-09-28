@@ -409,3 +409,27 @@ describe("refusing a stored room that does not add up", () => {
     );
   });
 });
+
+describe("restoring who hosts", () => {
+  it("keeps a handed-on host across a restart", async () => {
+    const store = new InMemoryRoomStore();
+    const room = openRoom(store);
+    seat(room, ["ana", "ben", "cy"]);
+    room.setHost(0, 2);
+    const restored = restore(await onlyRoom(store), new FakeClock(), store);
+    expect(restored.hostSeat).toBe(2);
+  });
+
+  it("falls back to the first seat for a room saved before hosting could move", async () => {
+    const store = new InMemoryRoomStore();
+    const room = openRoom(store);
+    seat(room, ["ana", "ben"]);
+    const entry = await onlyRoom(store);
+    const older = { ...entry.room };
+    delete older.hostToken;
+    const restored = restore({ ...entry, room: older }, new FakeClock(), store);
+    expect(restored.hostSeat).toBe(0);
+    expect(restored.join("cy").ok).toBe(true);
+    expect(restored.hostSeat).toBe(0);
+  });
+});

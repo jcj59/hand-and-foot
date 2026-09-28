@@ -182,6 +182,8 @@ export interface ClientToServerEvents {
    */
   leaveRoom: (ack: (result: Ack) => void) => void;
   startGame: (ack: (result: Ack) => void) => void;
+  /** Hand hosting to the player in `seat`. Only the host may, and only before the deal. */
+  setHost: (payload: { readonly seat: number }, ack: (result: Ack) => void) => void;
   submitAction: (action: Action, ack: (result: Ack) => void) => void;
   /**
    * Once the round is over, get up from this table and into a waiting room for a

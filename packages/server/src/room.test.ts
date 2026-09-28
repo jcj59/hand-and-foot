@@ -434,3 +434,59 @@ describe("moving on to the next game", () => {
     expect(room.info().playAgain).toEqual([1]);
   });
 });
+
+describe("handing hosting on", () => {
+  it("lets the host give the deal to another player, without moving any seat", () => {
+    const room = newRoom();
+    seated(room, ["ana", "ben", "cy"]);
+    expect(room.setHost(0, 2)).toEqual({ ok: true, value: undefined });
+    expect(room.hostSeat).toBe(2);
+    expect(room.info().hostSeat).toBe(2);
+    expect(room.seats().map((p) => p.name)).toEqual(["ana", "ben", "cy"]);
+    // And the new host is the one who may deal.
+    expect(room.start(0).ok).toBe(false);
+    expect(room.start(2).ok).toBe(true);
+  });
+
+  it("is only the host's to give, only to someone seated, and only before the deal", () => {
+    const room = newRoom();
+    seated(room, ["ana", "ben"]);
+    expect(room.setHost(1, 1)).toEqual({
+      ok: false,
+      error: "only the host can hand hosting to someone else",
+    });
+    expect(room.setHost(0, 5)).toEqual({ ok: false, error: "no such seat" });
+    room.start(0);
+    expect(room.setHost(0, 1)).toEqual({
+      ok: false,
+      error: "the host can only be changed before the deal",
+    });
+  });
+
+  it("follows the host when others ahead of them leave the lobby", () => {
+    const room = newRoom();
+    seated(room, ["ana", "ben", "cy"]);
+    room.setHost(0, 2);
+    room.leave("token-0");
+    // cy moved from seat 2 to 1, and still hosts.
+    expect(room.hostSeat).toBe(1);
+    expect(room.seats()[1]!.name).toBe("cy");
+  });
+
+  it("names seat 0 while nobody has sat down, and after the last one leaves", () => {
+    const room = newRoom();
+    expect(room.hostSeat).toBe(0);
+    seated(room, ["ana"]);
+    room.leave("token-0");
+    expect(room.hostSeat).toBe(0);
+  });
+
+  it("passes to the first seat when the host leaves the lobby", () => {
+    const room = newRoom();
+    seated(room, ["ana", "ben", "cy"]);
+    room.setHost(0, 1);
+    room.leave("token-1");
+    expect(room.hostSeat).toBe(0);
+    expect(room.seats()[0]!.name).toBe("ana");
+  });
+});

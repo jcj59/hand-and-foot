@@ -9,7 +9,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { MAX_PLAYERS, MIN_PLAYERS } from "@hf/shared";
-import { leaveTable, startTable } from "../actions";
+import { leaveTable, makeHost, startTable } from "../actions";
 import { roomLink } from "../roomCode";
 import { useSession } from "../session";
 import type { HfClientSocket } from "../socket";
@@ -103,6 +103,24 @@ export function Lobby({ socket }: LobbyProps): React.ReactElement {
               />
               <span className="flex-1">{player.name}</span>
               {player.seat === room.hostSeat && <span className="text-xs text-white/40">host</span>}
+              {/* The host can hand the deal to someone else — the person who will
+                  actually be at the keyboard when everyone is ready, say. */}
+              {isHost && player.seat !== room.hostSeat && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    setBusy(true);
+                    void makeHost(socket, player.seat, { seat, setNotice }).finally(() =>
+                      setBusy(false),
+                    );
+                  }}
+                  aria-label={`Make ${player.name} the host`}
+                  className="rounded border border-white/25 px-2 py-0.5 text-xs text-white/70 disabled:opacity-40"
+                >
+                  Make host
+                </button>
+              )}
               {player.seat === credentials?.seat && (
                 <span className="text-xs text-white/40">you</span>
               )}

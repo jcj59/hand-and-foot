@@ -1070,3 +1070,30 @@ function waitForRoom(socket: Client, ok: (info: RoomInfo) => boolean): Promise<R
     socket.on("room", onRoom);
   });
 }
+
+describe("handing hosting on over the wire", () => {
+  it("tells the table who hosts now, and lets only the host do it", async () => {
+    const { port } = await boot();
+    const [a, b] = [await connect(port), await connect(port)];
+    const created = await createRoom(a, "ana");
+    if (!created.ok) throw new Error(created.error);
+    await joinRoom(b, created.data.roomId, "ben");
+    const setHost = (socket: Client, seat: unknown): Promise<Ack<undefined>> =>
+      new Promise((resolve) => socket.emit("setHost", { seat } as never, resolve));
+
+    expect(await setHost(b, 1)).toEqual({
+      ok: false,
+      error: "only the host can hand hosting to someone else",
+    });
+    const told = waitForRoom(b, (info) => info.hostSeat === 1);
+    expect(await setHost(a, 1)).toEqual({ ok: true, data: undefined });
+    expect((await told).hostSeat).toBe(1);
+    // Nonsense arrives as untyped JSON and is refused, not trusted.
+    expect(await setHost(b, "zero")).toEqual({ ok: false, error: "no such seat" });
+    const stranger = await connect(port);
+    expect(await setHost(stranger, 0)).toEqual({
+      ok: false,
+      error: "you are not seated in a room",
+    });
+  });
+});

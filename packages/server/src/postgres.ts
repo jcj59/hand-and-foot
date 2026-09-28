@@ -55,6 +55,8 @@ export const MIGRATIONS: readonly string[] = [
      at bigint not null,
      primary key (room_uid, seq)
    );`,
+  // Hosting can be handed on, so who hosts is no longer implied by seat 0.
+  `alter table rooms add column host_token text;`,
 ];
 
 /**
@@ -216,13 +218,15 @@ export class PostgresRoomStore implements RoomStore {
     this.writes.enqueue(`room ${room.id}`, () => {
       const players = sql.json(room.players as unknown as postgres.JSONValue);
       return sql`
-        insert into rooms (uid, code, config, seed, created_at, players, started, paused_seat)
+        insert into rooms (uid, code, config, seed, created_at, players, started, paused_seat, host_token)
         values (${room.uid}, ${room.id}, ${sql.json(room.config as unknown as postgres.JSONValue)},
-                ${room.seed}, ${room.createdAt}, ${players}, ${room.started}, ${room.pausedSeat})
+                ${room.seed}, ${room.createdAt}, ${players}, ${room.started}, ${room.pausedSeat},
+                ${room.hostToken ?? null})
         on conflict (uid) do update set
           players = excluded.players,
           started = excluded.started,
-          paused_seat = excluded.paused_seat`;
+          paused_seat = excluded.paused_seat,
+          host_token = excluded.host_token`;
     });
   }
 
@@ -249,7 +253,7 @@ export class PostgresRoomStore implements RoomStore {
   async loadOpen(): Promise<readonly StoredRoom[]> {
     const { sql } = this;
     const rooms = await sql`
-      select uid, code, config, seed, created_at, players, started, paused_seat
+      select uid, code, config, seed, created_at, players, started, paused_seat, host_token
       from rooms where closed_at is null order by created_at`;
     if (rooms.length === 0) return [];
     const actions = await sql`
@@ -282,6 +286,7 @@ export class PostgresRoomStore implements RoomStore {
         players: row.players as SeatRecord[],
         started: row.started,
         pausedSeat: row.paused_seat,
+        hostToken: row.host_token,
       },
       actions: logs.get(row.uid) ?? [],
     }));

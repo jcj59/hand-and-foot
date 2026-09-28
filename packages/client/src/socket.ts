@@ -136,6 +136,10 @@ export function stageMelds(
   return ask((ack) => socket.emit("stageMelds", { melds }, ack));
 }
 
+export function setHost(socket: HfClientSocket, seat: number): Promise<Ack<undefined>> {
+  return ask((ack) => socket.emit("setHost", { seat }, ack));
+}
+
 export function setPaused(socket: HfClientSocket, paused: boolean): Promise<Ack<undefined>> {
   return ask((ack) => socket.emit("setPaused", { paused }, ack));
 }

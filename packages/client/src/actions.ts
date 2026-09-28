@@ -148,6 +148,21 @@ export async function leaveTable(socket: HfClientSocket, sink: { leave(): void }
   sink.leave();
 }
 
+/** Hand hosting to another player in the lobby. Only the host's client offers this. */
+export async function makeHost(
+  socket: HfClientSocket,
+  seat: number,
+  sink: ActionSink,
+): Promise<boolean> {
+  const result = await wire.setHost(socket, seat);
+  if (!result.ok) {
+    sink.setNotice(result.error);
+    return false;
+  }
+  sink.setNotice(null);
+  return true;
+}
+
 /** Deal the first round. Only the host's client offers this. */
 export async function startTable(socket: HfClientSocket, sink: ActionSink): Promise<boolean> {
   const result = await wire.startGame(socket);
