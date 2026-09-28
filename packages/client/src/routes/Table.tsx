@@ -283,15 +283,6 @@ export function Table({ socket }: TableProps): React.ReactElement {
         {/* Once the round is over no turn is live, so there is no clock to show even
             if a deadline still arrives. */}
         <div className="flex items-center gap-3">
-          {/* Away from the table without giving up the seat: the main screen offers
-              the way back. The clock keeps running meanwhile. */}
-          <button
-            type="button"
-            onClick={() => navigate("/")}
-            className="rounded border border-white/25 px-3 py-1 text-sm"
-          >
-            Main menu
-          </button>
           {!result && (
             <div className="flex items-center gap-3">
               <TurnClock clock={clock} />
@@ -310,6 +301,15 @@ export function Table({ socket }: TableProps): React.ReactElement {
               )}
             </div>
           )}
+          {/* Away from the table without giving up the seat: the main screen offers
+              the way back. The clock keeps running meanwhile. */}
+          <button
+            type="button"
+            onClick={() => navigate("/")}
+            className="rounded border border-white/25 px-3 py-1 text-sm"
+          >
+            Main menu
+          </button>
         </div>
       </header>
 

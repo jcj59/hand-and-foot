@@ -251,3 +251,57 @@ describe("spending wilds to take the pile", () => {
     expect(backward).toEqual(forward);
   });
 });
+
+describe("a wild on the pile", () => {
+  // From a real game: the pile was a lone 2, and the player held 7 7 7 and J J J
+  // (45) and a 2 of their own. The pile's 2 on either meld makes 65, over 60 —
+  // but the solver only knew how to bring in a pile card that was a natural, and
+  // spent the player's own 2 instead of the pile's.
+  it("is brought in by placing the pile's wild on a meld", () => {
+    // The player's own two is made first, so it sorts ahead of the pile's: the
+    // order the real game dealt them in, which is what exposed the bug.
+    const handTwo = card("2", "hearts");
+    const pileTwo = card("2", "hearts");
+    const hand = [
+      ...cards("7", 3),
+      ...cards("J", 3),
+      handTwo,
+      card("10"),
+      card("4"),
+      card("4"),
+      card("9"),
+      card("K"),
+      card("Q"),
+      card("3", "hearts"),
+    ];
+    const s = state({ hand }, [pileTwo]);
+    const f = canTakePile(s, 0);
+    expect(f.feasible).toBe(true);
+    const played = f.plan!.flatMap((play) => play.cardIds);
+    expect(played).toContain(pileTwo.id);
+    // Only as many wilds as needed: the pile's two is enough, the player's is kept.
+    expect(played).not.toContain(handTwo.id);
+    const took = applyAction(s, { type: "takePile" });
+    expect(took.ok).toBe(true);
+    if (!took.ok) return;
+    expect(applyAction(took.state, { type: "playMelds", melds: f.plan! }).ok).toBe(true);
+  });
+
+  it("still refuses when the pile's wild has no meld to go on", () => {
+    // Already down and holding no melds' worth of anything: a lone wild cannot
+    // start a meld.
+    const s = state({ isDown: true, hand: [card("5"), card("9")] }, [card("JOKER")]);
+    expect(canTakePile(s, 0).feasible).toBe(false);
+  });
+
+  it("goes onto a meld already down when that is the only place for it", () => {
+    const joker = card("JOKER");
+    const s = state(
+      { isDown: true, hand: [card("5")], melds: [{ rank: "K", cards: cards("K", 3) }] },
+      [joker],
+    );
+    const f = canTakePile(s, 0);
+    expect(f.feasible).toBe(true);
+    expect(f.plan).toEqual([{ rank: "K", cardIds: [joker.id] }]);
+  });
+});

@@ -82,7 +82,8 @@ export function greedyLayDown(
     }
     naturalsByRank.set(c.rank, [...(naturalsByRank.get(c.rank) ?? []), c]);
   }
-  // Most valuable first, so the fewest wilds reach a total.
+  // Most valuable first, so the fewest wilds reach a total. (A wild that came off
+  // the pile is placed by its own step below, before any other is spent.)
   wilds.sort((a, b) => cardValue(b, config) - cardValue(a, config) || byRankThenId(a, b));
   const existing = new Map(melds.map((m) => [m.rank, m.cards] as const));
 
@@ -115,6 +116,22 @@ export function greedyLayDown(
   };
   const usesRequired = (): boolean =>
     groups.some((g) => [...g.naturals, ...g.wilds].some((c) => requiredIds.has(c.id)));
+  /**
+   * Every meld a wild could join: those in the plan, and those already down that
+   * the plan adds nothing to yet — a wild can go on a book with no natural of its
+   * rank left in hand.
+   */
+  const targets = (): Group[] => [
+    ...groups,
+    ...[...existing]
+      .filter(([rank]) => !groups.some((g) => g.rank === rank))
+      .map(([rank, cards]): Group => ({ rank, existing: cards, naturals: [], wilds: [] })),
+  ];
+  /** Put a wild on a target, bringing a meld already down into the plan if need be. */
+  const place = (g: Group, wild: Card): void => {
+    if (!groups.includes(g)) groups.push(g);
+    g.wilds.push(wild);
+  };
   const accepts = (g: Group, extraWild: Card, extraNaturals: readonly Card[] = []): boolean =>
     validateMeld([...g.existing, ...g.naturals, ...extraNaturals, ...g.wilds, extraWild], config)
       .valid;
@@ -133,11 +150,50 @@ export function greedyLayDown(
     }
   }
 
+  // Step 2a, the other way in: the required card is itself a wild — the pile's
+  // top is a two or a joker. It goes wherever it adds the most: onto a meld in the
+  // plan or already down, or with a natural pair to make a new one.
+  const requiredWild = wilds.find((c) => requiredIds.has(c.id));
+  if (!usesRequired() && requiredWild) {
+    const before = valueOf();
+    let best: { gain: number; apply: () => void } | null = null;
+    for (const g of targets()) {
+      if (!accepts(g, requiredWild)) continue;
+      const added = !groups.includes(g);
+      place(g, requiredWild);
+      const gain = valueOf() - before;
+      g.wilds.pop();
+      if (added) groups.pop();
+      if (!best || gain > best.gain) best = { gain, apply: () => place(g, requiredWild) };
+    }
+    for (const [rank, pair] of pairs) {
+      const group: Group = { rank, existing: [], naturals: [...pair], wilds: [requiredWild] };
+      groups.push(group);
+      const gain = valueOf() - before;
+      groups.pop();
+      if (!best || gain > best.gain) {
+        best = {
+          gain,
+          apply: () => {
+            groups.push(group);
+            pairs.delete(rank);
+          },
+        };
+      }
+    }
+    if (best) {
+      best.apply();
+      wilds.splice(wilds.indexOf(requiredWild), 1);
+    }
+  }
+
   // Step 2b: spend wilds while the total is short, on the best single move.
   while (valueOf() < minimum && wilds.length > 0) {
     const wild = wilds[0];
     const before = valueOf();
     let best: { gain: number; apply: () => void } | null = null;
+    // Only the melds in the plan: this runs only short of a minimum, which only a
+    // player not yet down has, and a player not yet down has no melds on the table.
     for (const g of groups) {
       if (!accepts(g, wild)) continue;
       g.wilds.push(wild);
