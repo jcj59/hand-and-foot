@@ -68,6 +68,8 @@ export function Table({ socket }: TableProps): React.ReactElement {
   const [chosenId, setChosenId] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
+  // The auto-add is waiting on a second yes, because it would shed the last card.
+  const [confirmLayOff, setConfirmLayOff] = useState(false);
 
   const turnOpen =
     update !== null && update.hints.seatToAct === update.view.seat && result === null;
@@ -143,8 +145,8 @@ export function Table({ socket }: TableProps): React.ReactElement {
   /**
    * Cards that can go straight onto a meld already down: naturals of a melded rank,
    * never wilds — where a wild goes is a choice, and this is the button for not
-   * having to make choices. In the foot one card is kept back unless the player can
-   * go out, so the button cannot shed the last card by accident.
+   * having to make choices. Playing the last card from the foot without the books
+   * to go out is legal but rarely meant, so that one asks first (`shedsLast`).
    */
   const layOffs = (() => {
     if (!canMeld || !view.isDown) return [];
@@ -156,9 +158,19 @@ export function Table({ socket }: TableProps): React.ReactElement {
         meldRanks.has(card.rank) &&
         !staged.has(card.id),
     );
-    if (view.inFoot && fits.length === zone.length && !hints.canGoOut) return fits.slice(1);
     return fits;
   })();
+  const shedsLast =
+    view.inFoot && layOffs.length > 0 && layOffs.length === zone.length && !hints.canGoOut;
+
+  function layOffAll(): void {
+    const byRank = new Map<Rank, string[]>();
+    for (const card of layOffs) byRank.set(card.rank, [...(byRank.get(card.rank) ?? []), card.id]);
+    void send({
+      type: "playMelds",
+      melds: [...byRank].map(([rank, cardIds]) => ({ rank, cardIds })),
+    });
+  }
 
   function closeMenu(): void {
     setChosenId(null);
@@ -270,24 +282,35 @@ export function Table({ socket }: TableProps): React.ReactElement {
         </div>
         {/* Once the round is over no turn is live, so there is no clock to show even
             if a deadline still arrives. */}
-        {!result && (
-          <div className="flex items-center gap-3">
-            <TurnClock clock={clock} />
-            {room.config.pauseEnabled && (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => {
-                  setBusy(true);
-                  void pauseTable(socket, !clock.paused, sink).finally(() => setBusy(false));
-                }}
-                className="rounded border border-white/25 px-3 py-1 text-sm disabled:opacity-40"
-              >
-                {clock.paused ? "Resume" : "Pause"}
-              </button>
-            )}
-          </div>
-        )}
+        <div className="flex items-center gap-3">
+          {/* Away from the table without giving up the seat: the main screen offers
+              the way back. The clock keeps running meanwhile. */}
+          <button
+            type="button"
+            onClick={() => navigate("/")}
+            className="rounded border border-white/25 px-3 py-1 text-sm"
+          >
+            Main menu
+          </button>
+          {!result && (
+            <div className="flex items-center gap-3">
+              <TurnClock clock={clock} />
+              {room.config.pauseEnabled && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    setBusy(true);
+                    void pauseTable(socket, !clock.paused, sink).finally(() => setBusy(false));
+                  }}
+                  className="rounded border border-white/25 px-3 py-1 text-sm disabled:opacity-40"
+                >
+                  {clock.paused ? "Resume" : "Pause"}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       </header>
 
       <div className="shrink-0">
@@ -313,7 +336,9 @@ export function Table({ socket }: TableProps): React.ReactElement {
 
       <div className="flex min-h-0 flex-1 flex-col gap-2 md:flex-row">
         <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
-          <section className="flex flex-wrap items-end gap-6" aria-label="Piles">
+          {/* Padded so the glow around a pile that can be taken is never cut off
+              by the edge of the scrolling area. */}
+          <section className="flex flex-wrap items-end gap-6 p-2" aria-label="Piles">
             <div className="flex flex-col items-center gap-1">
               <span className="text-xs text-white/60">Stock</span>
               <FaceDownPile
@@ -322,6 +347,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
                 onClick={canDraw ? () => void send({ type: "draw" }) : undefined}
                 actionLabel="Draw a card"
               />
+              {canDraw && <PilePrompt>Draw a card</PilePrompt>}
             </div>
             <div className="flex flex-col items-center gap-1">
               <span className="text-xs text-white/60">Discard ({view.discard.length})</span>
@@ -332,7 +358,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
                   type="button"
                   aria-label={`Take the pile (${view.discard.length} cards)`}
                   onClick={() => void send({ type: "takePile" })}
-                  className="rounded p-1 ring-2 ring-amber-300 transition hover:bg-white/10"
+                  className="pile-prompt rounded p-1 ring-2 ring-amber-300 transition hover:bg-white/10"
                 >
                   <PlayingCard card={top} />
                 </button>
@@ -341,6 +367,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
                   <PlayingCard card={top} />
                 </div>
               )}
+              {canTake && <PilePrompt>Pick up the pile</PilePrompt>}
             </div>
           </section>
 
@@ -418,24 +445,53 @@ export function Table({ socket }: TableProps): React.ReactElement {
                     {building ? "Stop melding" : "Meld"}
                   </button>
                 )}
-                {layOffs.length > 0 && !building && (
+                {building && (
+                  // Right above the cards being chosen, so committing is where the
+                  // player is already looking.
+                  <button
+                    type="button"
+                    disabled={busy || !preview.ok || stagedCount(staging) === 0}
+                    onClick={() =>
+                      void send({ type: "playMelds", melds: toMeldPlays(staging) }, stopBuilding)
+                    }
+                    className="rounded bg-white px-3 py-1.5 text-sm font-medium text-felt-900 disabled:opacity-40"
+                  >
+                    Play melds
+                  </button>
+                )}
+                {layOffs.length > 0 && !building && !confirmLayOff && (
                   <button
                     type="button"
                     disabled={busy}
-                    onClick={() => {
-                      const byRank = new Map<Rank, string[]>();
-                      for (const card of layOffs) {
-                        byRank.set(card.rank, [...(byRank.get(card.rank) ?? []), card.id]);
-                      }
-                      void send({
-                        type: "playMelds",
-                        melds: [...byRank].map(([rank, cardIds]) => ({ rank, cardIds })),
-                      });
-                    }}
+                    onClick={() => (shedsLast ? setConfirmLayOff(true) : layOffAll())}
                     className="rounded border border-emerald-300/60 px-3 py-1.5 text-sm text-emerald-100 disabled:opacity-40"
                   >
                     Add {layOffs.length} to my melds
                   </button>
+                )}
+                {confirmLayOff && (
+                  <span role="group" aria-label="Confirm" className="flex items-center gap-2">
+                    <span className="text-sm text-amber-100">
+                      That plays your last card without the books to go out.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setConfirmLayOff(false);
+                        layOffAll();
+                      }}
+                      className="rounded bg-amber-300 px-3 py-1.5 text-sm font-medium text-black"
+                    >
+                      Play it anyway
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmLayOff(false)}
+                      className="rounded border border-white/25 px-3 py-1.5 text-sm"
+                    >
+                      Keep it
+                    </button>
+                  </span>
                 )}
                 <span className="text-sm text-white/60">{guidance()}</span>
               </>
@@ -620,5 +676,14 @@ function CardMenu({
         Cancel
       </button>
     </div>
+  );
+}
+
+/** The word under a pile that is waiting to be clicked, pulsing with it. */
+function PilePrompt({ children }: { readonly children: React.ReactNode }): React.ReactElement {
+  return (
+    <span className="animate-pulse rounded bg-amber-300 px-2 py-0.5 text-xs font-semibold text-black">
+      {children}
+    </span>
   );
 }

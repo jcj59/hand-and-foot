@@ -11,10 +11,10 @@
  * With `onSelect`, a meld can be clicked to aim the player's next cards at it —
  * which is the only way to add a wild to a meld already on the table.
  */
-import { isWild, type Meld, type Rank, type RulesConfig } from "@hf/shared";
+import { isWild, type Card, type Meld, type Rank, type RulesConfig } from "@hf/shared";
 import { classifyBook, meldPoints } from "@hf/engine";
 import { BookCard, PlayingCard } from "../cards/PlayingCard";
-import { sortForDisplay } from "../cards/handOrder";
+import { isRedCard, sortForDisplay } from "../cards/handOrder";
 
 export interface MeldsProps {
   readonly melds: readonly Meld[];
@@ -54,7 +54,9 @@ export function Melds({
           ) : (
             <BookCard
               // A natural on top, so the rank is what shows, not a wild.
-              top={sortForDisplay(meld.cards).find((card) => !isWild(card.rank)) ?? meld.cards[0]!}
+              // A natural on top, so the rank is what shows, of the book's colour
+              // where there is one: red for clean, black for dirty.
+              top={bookTop(meld.cards, kind)}
               kind={kind}
               count={meld.cards.length}
               size={size}
@@ -105,4 +107,15 @@ function meldLabel(meld: Meld): string {
   return kind === "incomplete"
     ? `Meld of ${meld.rank}s, ${size}`
     : `${kind} book of ${meld.rank}s, ${size}`;
+}
+
+/**
+ * The card to show on top of a book: a natural, so the rank reads, and one whose
+ * suit matches the book's colour when the book has one — a red card on a clean
+ * book, a black one on a dirty book.
+ */
+function bookTop(cards: readonly Card[], kind: "clean" | "dirty"): Card {
+  const naturals = sortForDisplay(cards).filter((card) => !isWild(card.rank));
+  const wantRed = kind === "clean";
+  return naturals.find((card) => isRedCard(card) === wantRed) ?? naturals[0] ?? cards[0]!;
 }

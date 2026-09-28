@@ -69,7 +69,7 @@ export function Hand({
       </h2>
       {/* Overlapped, so a full hand stays one row at the bottom of the table. */}
       <div className="flex flex-wrap -space-x-2 pt-2 sm:-space-x-1">
-        {sortForDisplay(cards).map((card) => {
+        {sortForDisplay(cards).map((card, index, sorted) => {
           const owed = owedIds.has(card.id);
           const melded = !isWild(card.rank) && meldRanks.has(card.rank);
           return (
@@ -99,7 +99,13 @@ export function Hand({
               />
               {chosenId === card.id && menu && (
                 // Upward: the hand sits at the bottom of the window.
-                <div className="absolute bottom-full left-1/2 z-20 mb-1 -translate-x-1/2">
+                <div
+                  // Opens away from the nearer edge, so a card at either end of the
+                  // hand never has its menu pushed off the screen.
+                  className={`absolute bottom-full z-20 mb-1 ${
+                    index < sorted.length / 2 ? "left-0" : "right-0"
+                  }`}
+                >
                   {menu}
                 </div>
               )}

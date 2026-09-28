@@ -37,14 +37,17 @@ function CardFace({
   strokeWidth,
   x = 0,
   y = 0,
+  tint,
 }: {
   readonly card: Card;
   readonly stroke: string;
   readonly strokeWidth: number;
   readonly x?: number;
   readonly y?: number;
+  /** Ink to draw the rank and suit in, instead of the suit's own colour. */
+  readonly tint?: string;
 }): React.ReactElement {
-  const colour = isRedCard(card) ? "#dc2626" : "#0f172a";
+  const colour = tint ?? (isRedCard(card) ? "#dc2626" : "#0f172a");
   return (
     <g transform={`translate(${x} ${y})`}>
       <rect
@@ -178,7 +181,9 @@ export function BookCard({
             strokeWidth="2"
           />
         ))}
-        <CardFace card={top} stroke={border} strokeWidth={4} />
+        {/* The top card is inked in the book's colour too — red for clean, black
+            for dirty — so it agrees with its border whatever suit is on top. */}
+        <CardFace card={top} stroke={border} strokeWidth={4} tint={border} />
       </svg>
     </span>
   );
@@ -301,7 +306,7 @@ export function FaceDownPile({
         type="button"
         onClick={onClick}
         aria-label={`${actionLabel ?? label} (${count} left)`}
-        className="flex flex-col items-center gap-1 rounded p-1 ring-2 ring-amber-300 transition hover:bg-white/10"
+        className="pile-prompt flex flex-col items-center gap-1 rounded p-1 ring-2 ring-amber-300 transition hover:bg-white/10"
       >
         {body}
       </button>

@@ -12,7 +12,7 @@
  * round is the biggest thing that happens in it and a line of text among the
  * cards is easy to miss. It can be hidden to look back at the table.
  */
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { RoomInfo, RoundEnded, RulesConfig } from "@hf/shared";
 
 export interface RoundResultProps {
@@ -42,6 +42,9 @@ export function RoundResult({
 }: RoundResultProps): React.ReactElement {
   const { scoring } = config;
   const [hidden, setHidden] = useState(false);
+  // Where the panel has been dragged to, as an offset from where it opens.
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const drag = useRef<{ x: number; y: number } | null>(null);
   const ranked = [...result.scores].sort((a, b) => b.score - a.score);
   const nameOf = (seat: number): string =>
     room.players.find((p) => p.seat === seat)?.name ?? `Seat ${seat}`;
@@ -49,110 +52,155 @@ export function RoundResult({
     result.wentOutSeat !== undefined
       ? `${nameOf(result.wentOutSeat)} went out!`
       : "The stock ran out.";
-  if (hidden) {
-    return (
+  // What to do next stays on screen whether or not the scores are.
+  const choices = (
+    <>
       <button
         type="button"
-        onClick={() => setHidden(false)}
-        className="fixed right-4 bottom-4 z-30 rounded bg-amber-300 px-4 py-2 font-medium text-black shadow-lg"
+        onClick={onPlayAgain}
+        className="rounded bg-amber-300 px-3 py-1.5 text-sm font-medium text-black"
       >
-        Show the scores
+        Play again
       </button>
-    );
-  }
-  return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/60 p-4">
-      <section
-        role="dialog"
-        aria-label="Round result"
-        className="max-h-full w-full max-w-3xl overflow-y-auto rounded-lg border border-amber-300/60 bg-felt-900 p-4 shadow-2xl"
+      <button
+        type="button"
+        onClick={onLeave}
+        className="rounded bg-white px-3 py-1.5 text-sm font-medium text-felt-900"
       >
-        <p className="text-2xl font-bold text-amber-200">{headline}</p>
-        <h2 className="mt-1 text-sm font-medium text-white/70">Round over</h2>
-        <div className="mt-2 overflow-x-auto">
-          <table className="w-full min-w-[32rem] text-sm">
-            <thead>
-              <tr className="text-left text-xs text-white/60">
-                <th className="py-1 pr-3 font-normal">Player</th>
-                <th className="py-1 pr-3 font-normal">Clean books</th>
-                <th className="py-1 pr-3 font-normal">Dirty books</th>
-                <th className="py-1 pr-3 font-normal">Cards melded</th>
-                <th className="py-1 pr-3 font-normal">Went out</th>
-                <th className="py-1 pr-3 font-normal">Cards left</th>
-                <th className="py-1 font-normal">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ranked.map(({ seat, score, breakdown: b }) => {
-                const name = room.players.find((p) => p.seat === seat)?.name ?? `Seat ${seat}`;
-                return (
-                  <tr
-                    key={seat}
-                    aria-label={`${name}: ${score}`}
-                    className="border-t border-white/10"
-                  >
-                    <th scope="row" className="py-1 pr-3 text-left font-medium">
-                      {name}
-                    </th>
-                    <td className="py-1 pr-3">
-                      {b.cleanBooks} × {scoring.cleanBookBonus} ={" "}
-                      {signed(b.cleanBooks * scoring.cleanBookBonus)}
-                    </td>
-                    <td className="py-1 pr-3">
-                      {b.dirtyBooks} × {scoring.dirtyBookBonus} ={" "}
-                      {signed(b.dirtyBooks * scoring.dirtyBookBonus)}
-                    </td>
-                    <td className="py-1 pr-3">{signed(b.meldedCards)}</td>
-                    <td className="py-1 pr-3">
-                      {result.wentOutSeat === seat ? signed(b.goOutBonus) : "—"}
-                    </td>
-                    <td className="py-1 pr-3">
-                      {b.heldCount === 0
-                        ? "none"
-                        : `${b.heldCount} card${b.heldCount === 1 ? "" : "s"}: ${signed(b.heldPenalty)}`}
-                    </td>
-                    <td className="py-1 font-semibold">{score}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        {room.playAgain.length > 0 && (
-          // Who is already waiting for the next game, so a player can see whether
-          // anyone is there to play with.
-          <p role="status" className="mt-3 text-sm text-amber-100">
-            Waiting in the next game: {room.playAgain.map(nameOf).join(", ")} (
-            {room.playAgain.length} of {room.players.length})
-          </p>
-        )}
+        Back to the main screen
+      </button>
+    </>
+  );
+  if (hidden) {
+    return (
+      <div
+        role="region"
+        aria-label="Round over"
+        className="fixed right-4 bottom-4 z-30 flex flex-wrap items-center gap-2 rounded-lg border border-amber-300/60 bg-felt-900 p-2 shadow-lg"
+      >
         {notice && (
-          <p role="alert" className="mt-3 rounded bg-red-600/20 px-3 py-2 text-sm text-red-200">
+          <p role="alert" className="w-full text-sm text-red-200">
             {notice}
           </p>
         )}
-        <div className="mt-3 flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={onPlayAgain}
-            className="rounded bg-amber-300 px-3 py-1.5 text-sm font-medium text-black"
-          >
-            Play again
-          </button>
-          <button
-            type="button"
-            onClick={onLeave}
-            className="rounded bg-white px-3 py-1.5 text-sm font-medium text-felt-900"
-          >
-            Back to the main screen
-          </button>
-          <button
-            type="button"
-            onClick={() => setHidden(true)}
-            className="rounded border border-white/25 px-3 py-1.5 text-sm"
-          >
-            Look at the table
-          </button>
+        <span className="px-1 text-sm font-medium text-amber-200">{headline}</span>
+        {choices}
+        <button
+          type="button"
+          onClick={() => setHidden(false)}
+          className="rounded border border-white/25 px-3 py-1.5 text-sm"
+        >
+          Show the scores
+        </button>
+      </div>
+    );
+  }
+  return (
+    // No backdrop: the table stays visible and usable around the panel, which can
+    // be dragged by its title bar to wherever it covers least.
+    <div className="pointer-events-none fixed inset-0 z-30 flex items-center justify-center p-4">
+      <section
+        role="dialog"
+        aria-label="Round result"
+        style={{ transform: `translate(${offset.x}px, ${offset.y}px)` }}
+        className="pointer-events-auto max-h-full w-full max-w-3xl overflow-y-auto rounded-lg border border-amber-300/60 bg-felt-900 shadow-2xl"
+      >
+        <div
+          // The handle. Pointer capture keeps the drag going when the pointer
+          // outruns the panel.
+          aria-label="Drag to move the scores"
+          onPointerDown={(event) => {
+            drag.current = { x: event.clientX - offset.x, y: event.clientY - offset.y };
+            event.currentTarget.setPointerCapture?.(event.pointerId);
+          }}
+          onPointerMove={(event) => {
+            if (!drag.current) return;
+            setOffset({ x: event.clientX - drag.current.x, y: event.clientY - drag.current.y });
+          }}
+          onPointerUp={() => {
+            drag.current = null;
+          }}
+          className="flex cursor-move touch-none items-center justify-between gap-2 rounded-t-lg bg-amber-300/15 px-4 py-2 select-none"
+        >
+          <p className="text-2xl font-bold text-amber-200">{headline}</p>
+          <span aria-hidden="true" className="text-white/40">
+            ⠿ drag
+          </span>
+        </div>
+        <div className="p-4 pt-2">
+          <h2 className="mt-1 text-sm font-medium text-white/70">Round over</h2>
+          <div className="mt-2 overflow-x-auto">
+            <table className="w-full min-w-[32rem] text-sm">
+              <thead>
+                <tr className="text-left text-xs text-white/60">
+                  <th className="py-1 pr-3 font-normal">Player</th>
+                  <th className="py-1 pr-3 font-normal">Clean books</th>
+                  <th className="py-1 pr-3 font-normal">Dirty books</th>
+                  <th className="py-1 pr-3 font-normal">Cards melded</th>
+                  <th className="py-1 pr-3 font-normal">Went out</th>
+                  <th className="py-1 pr-3 font-normal">Cards left</th>
+                  <th className="py-1 font-normal">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ranked.map(({ seat, score, breakdown: b }) => {
+                  const name = room.players.find((p) => p.seat === seat)?.name ?? `Seat ${seat}`;
+                  return (
+                    <tr
+                      key={seat}
+                      aria-label={`${name}: ${score}`}
+                      className="border-t border-white/10"
+                    >
+                      <th scope="row" className="py-1 pr-3 text-left font-medium">
+                        {name}
+                      </th>
+                      <td className="py-1 pr-3">
+                        {b.cleanBooks} × {scoring.cleanBookBonus} ={" "}
+                        {signed(b.cleanBooks * scoring.cleanBookBonus)}
+                      </td>
+                      <td className="py-1 pr-3">
+                        {b.dirtyBooks} × {scoring.dirtyBookBonus} ={" "}
+                        {signed(b.dirtyBooks * scoring.dirtyBookBonus)}
+                      </td>
+                      <td className="py-1 pr-3">{signed(b.meldedCards)}</td>
+                      <td className="py-1 pr-3">
+                        {result.wentOutSeat === seat ? signed(b.goOutBonus) : "—"}
+                      </td>
+                      <td className="py-1 pr-3">
+                        {b.heldCount === 0
+                          ? "none"
+                          : `${b.heldCount} card${b.heldCount === 1 ? "" : "s"}: ${signed(b.heldPenalty)}`}
+                      </td>
+                      <td className="py-1 font-semibold">{score}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {room.playAgain.length > 0 && (
+            // Who is already waiting for the next game, so a player can see whether
+            // anyone is there to play with.
+            <p role="status" className="mt-3 text-sm text-amber-100">
+              Waiting in the next game: {room.playAgain.map(nameOf).join(", ")} (
+              {room.playAgain.length} of {room.players.length})
+            </p>
+          )}
+          {notice && (
+            <p role="alert" className="mt-3 rounded bg-red-600/20 px-3 py-2 text-sm text-red-200">
+              {notice}
+            </p>
+          )}
+          <div className="mt-3 flex flex-wrap gap-2">
+            {choices}
+            <button
+              type="button"
+              onClick={() => setHidden(true)}
+              className="rounded border border-white/25 px-3 py-1.5 text-sm"
+            >
+              Look at the table
+            </button>
+          </div>
         </div>
       </section>
     </div>

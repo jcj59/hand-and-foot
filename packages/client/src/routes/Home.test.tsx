@@ -194,3 +194,35 @@ describe("joining a table", () => {
     expect(useSession.getState().credentials?.seat).toBe(1);
   });
 });
+
+describe("a seat this tab still holds", () => {
+  it("offers the way back to it", () => {
+    useSession.setState({ credentials: { roomId: "ABC234", seat: 0, token: "t" } });
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="/" element={<Home socket={fakeHomeSocket()} />} />
+          <Route path="/room/:roomId" element={<p>at the table</p>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(screen.getByLabelText(/your table/i)).toHaveTextContent("table ABC234");
+    fireEvent.click(screen.getByRole("button", { name: /rejoin/i }));
+    expect(screen.getByText("at the table")).toBeInTheDocument();
+  });
+
+  it("says nothing when there is no seat", () => {
+    useSession.setState({ credentials: null });
+    render(
+      <MemoryRouter>
+        <Home socket={fakeHomeSocket()} />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByLabelText(/your table/i)).toBeNull();
+  });
+});
+
+function fakeHomeSocket(): HfClientSocket {
+  const socket = { emit: () => socket } as unknown as HfClientSocket;
+  return socket;
+}
