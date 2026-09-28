@@ -55,6 +55,11 @@ function playRich(room: Room, steps: number, seed = 5): void {
     } else if (plan) {
       action = { type: "playMelds", melds: plan };
       plan = null;
+    } else if ((actor.pickedUp ?? []).length > 0) {
+      // Picked up where a restart left off: a pile taken, its obligation still
+      // owed, and no plan in hand. The policy settles it the way it would for an
+      // absent player.
+      action = defaultAction(state)!;
     } else {
       // The cards a player can act with: the hand, or the foot once in it.
       const zone = actor.inFoot ? actor.foot : actor.hand;

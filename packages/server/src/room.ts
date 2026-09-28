@@ -595,7 +595,7 @@ export class Room {
       // a discard is left — drawing, and settling any pile obligation, are not
       // choices the player still gets to make — and open the discard-only window
       // so they still pick their own card instead of having one picked for them.
-      this.playDraft();
+      this.playDraft("timeout");
       this.playForcedUntilDiscardable("timeout");
       if (this.state?.roundEnded || this.state?.currentSeat !== state.currentSeat) {
         this.notify();
@@ -621,7 +621,7 @@ export class Room {
    * attempts at the reducer, and it finds, say, the two finished groups of three
    * even when a third was still a pair. If nothing is acceptable, nothing is played.
    */
-  private playDraft(): void {
+  private playDraft(source: ActionSource): void {
     const state = this.state;
     const draft = this.draft;
     this.draft = null;
@@ -636,7 +636,7 @@ export class Room {
     subsets.sort((a, b) => size(b) - size(a));
     for (const melds of subsets) {
       if (applyAction(state, { type: "playMelds", melds }).ok) {
-        this.apply(state.currentSeat, { type: "playMelds", melds }, "timeout");
+        this.apply(state.currentSeat, { type: "playMelds", melds }, source);
         return;
       }
     }
@@ -678,6 +678,9 @@ export class Room {
    */
   private forceTurn(source: ActionSource): void {
     const startedSeat = this.state?.currentSeat;
+    // A player whose turn is taken from them — gone past their grace, or out of
+    // time — keeps what they had staged, exactly as at the main clock's expiry.
+    this.playDraft(source);
     for (let i = 0; i < MAX_FORCED_MOVES_PER_TURN; i++) {
       const state = this.state;
       /* v8 ignore next */

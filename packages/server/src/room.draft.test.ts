@@ -15,7 +15,7 @@ import {
   type RulesConfig,
 } from "@hf/shared";
 import { FakeClock } from "./clock";
-import { Room } from "./room";
+import { DEFAULT_RECONNECT_GRACE_MS, Room } from "./room";
 
 const NO_MINIMUM: RulesConfig = {
   ...EAST_COAST,
@@ -197,6 +197,22 @@ describe("a staged lay-down when the clock runs out", () => {
         .slice(logged)
         .filter((row) => row.action.type === "playMelds"),
     ).toEqual([]);
+  });
+});
+
+describe("a staged lay-down when the player drops", () => {
+  it("is played when the server takes the turn over, before the rest of it", () => {
+    // What a player who lost their connection mid-turn would have wanted: the
+    // melds they had ready go down, then the turn is finished for them.
+    const { room, clock, seat, melds } = tableWithTwoMelds();
+    room.stageMelds(seat, melds);
+    room.setConnected(seat, false);
+    // Keep the other seat present, or the table is abandoned and goes quiet.
+    clock.advance(DEFAULT_RECONNECT_GRACE_MS);
+    const forced = room.log.entries().filter((row) => row.source === "disconnect");
+    expect(forced[0]?.action).toEqual({ type: "playMelds", melds });
+    expect(forced.at(-1)?.action.type).toBe("discard");
+    expect(room.gameState!.currentSeat).not.toBe(seat);
   });
 });
 

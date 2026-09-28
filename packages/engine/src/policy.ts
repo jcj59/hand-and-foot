@@ -1,5 +1,6 @@
 import { type Action, type Card, type GameState, isRedThree, isWild } from "@hf/shared";
 import { activeCards } from "./core";
+import { layDownMinimum } from "./feasibility";
 import { greedyLayDown } from "./plan";
 import { cardValue } from "./scoring";
 
@@ -98,7 +99,16 @@ export function defaultAction(state: GameState): Action | null {
 
   const owed = player.pickedUp ?? [];
   if (owed.length > 0) {
-    const plan = greedyLayDown(activeCards(player), player.melds, new Set(owed), state.config);
+    // The same search, over the same cards, with the same minimum as the take was
+    // authorized under — so it finds the plan that authorized it.
+    const minimum = layDownMinimum(state, seat);
+    const plan = greedyLayDown(
+      activeCards(player),
+      player.melds,
+      new Set(owed),
+      state.config,
+      minimum,
+    );
     // Unreachable: taking the pile required a plan over these same cards, and a
     // lay-down that skipped the obligation can only have consumed naturals of a
     // rank it then melded — which leaves that rank extendable by the one pile

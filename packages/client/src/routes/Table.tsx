@@ -135,6 +135,16 @@ export function Table({ socket }: TableProps): React.ReactElement {
 
   function onCardSelect(card: Card): void {
     if (busy) return;
+    // Once a lay-down is being built, a click adds a card to it or takes it back:
+    // the player has already said they are melding, and asking again for every
+    // card would be a menu per card. A red three can never join a meld, so it does
+    // nothing here.
+    if (canMeld && stagedCount(staging) > 0) {
+      closeMenu();
+      if (staged.has(card.id)) setStaging((current) => unstageCard(current, card.id));
+      else if (!isDeadWeight(card)) setStaging((current) => stageCard(current, card));
+      return;
+    }
     setConfirming(false);
     setChosenId((current) => (current === card.id ? null : card.id));
   }

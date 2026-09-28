@@ -430,9 +430,15 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
 - **`config.rounds` is reserved and unenforced.** Nothing reads it and nothing advances `roundNumber`
   past 1. `layDownMinimums` *is* honored per round, so escalating minimums work the moment rounds
   advance. Wire both up in roadmap item 1, not before.
-- **`canTakePile` is deliberately conservative.** It is sound (a reported plan is always completable)
-  but does not optimize wild allocation across ranks, so it can refuse a legal take in wild-heavy
-  positions. Improving it is bot-milestone work; preserve soundness.
+- **`canTakePile` spends wilds, but only as needed, and stays sound.** It used to meld naturals
+  only, which refused plainly legal takes (two queens and a joker could not take a queen) — found in
+  a real game. `greedyLayDown` now melds naturals, then spends wilds highest-value first only while
+  the goal is unmet: a pile card's pair made a meld with a wild, then the single best-gain move
+  under the table's wild ratio. It is still sound rather than optimal: every group passes
+  `validateMeld` with the meld it joins. It takes the round `minimum` (`layDownMinimum`) and sorts
+  its input, because the policy discharging a take must find the plan that authorized it — the
+  property test now checks that after every take. Exotic lay-downs can still be missed; smarter
+  search is bot-milestone work.
 - **Shedding every card is not going out.** A player may legally play or discard their last foot card
   without the go-out books; they keep no cards, the round continues, and they draw one card per turn
   until the books are complete. So `player.hand.length + player.foot.length === 0` does **not** mean

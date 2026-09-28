@@ -61,9 +61,13 @@ function choose(name: string, item: RegExp): void {
   fireEvent.click(screen.getByRole("menuitem", { name: item }));
 }
 
-/** Stage a card into a meld, the way a player does: the card, then "Meld". */
+/**
+ * Stage a card into a meld, the way a player does: the first through the card's
+ * menu, and every one after with a plain click, once a lay-down is under way.
+ */
 function meld(name: string): void {
-  choose(name, /^(meld|add to .*)$/i);
+  if (screen.queryByLabelText(/lay-down being built/i)) fireEvent.click(handCard(name));
+  else choose(name, /^(meld|add to .*)$/i);
 }
 
 /** A round result with a breakdown whose parts add up to each score. */
@@ -605,6 +609,23 @@ describe("staging a lay-down", () => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
+  it("adds further cards with a plain click once a lay-down is under way", () => {
+    // The player has already chosen to meld; a menu for every card would be noise.
+    mount(fakeSocket().socket, inPlay(meldable()));
+    meld("King of clubs");
+    fireEvent.click(handCard("King of hearts"));
+    fireEvent.click(handCard("Two of clubs, wild"));
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(screen.getByLabelText(/worth 40 of 60 needed/i)).toBeInTheDocument();
+    // And a plain click on a staged card takes it back.
+    fireEvent.click(handCard("King of hearts"));
+    expect(screen.getByLabelText(/worth 30 of 60 needed/i)).toBeInTheDocument();
+    // A red three can never be melded, so clicking one changes nothing.
+    fireEvent.click(handCard("Three of hearts, penalty"));
+    expect(screen.getByLabelText(/worth 30 of 60 needed/i)).toBeInTheDocument();
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
   it("keeps the server's copy of the lay-down current as it is built", () => {
     // So the server can play it if the clock runs out before the player does.
     const { socket, drafts } = fakeSocket();
@@ -676,8 +697,7 @@ describe("staging a lay-down", () => {
     mount(fakeSocket().socket, inPlay(meldable()));
     meld("King of clubs");
     meld("King of hearts");
-    fireEvent.click(handCard("Two of clubs, wild"));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Add to Ks" }));
+    meld("Two of clubs, wild");
     const panel = screen.getByLabelText(/lay-down being built/i);
     expect(within(panel).getByRole("button", { name: "Two of clubs, wild" })).toBeInTheDocument();
     // 10 + 10 + 20 for the two.
@@ -698,10 +718,10 @@ describe("staging a lay-down", () => {
     expect(screen.getByRole("menuitem", { name: "Discard" })).toBeInTheDocument();
   });
 
-  it("takes a card back from the hand's menu, or straight from the panel", () => {
+  it("takes a card back from the hand, or straight from the panel", () => {
     mount(fakeSocket().socket, inPlay(meldable()));
     meld("King of clubs");
-    choose("King of clubs", /take back/i);
+    fireEvent.click(handCard("King of clubs"));
     expect(screen.queryByLabelText(/lay-down being built/i)).toBeNull();
 
     meld("King of clubs");
@@ -843,8 +863,9 @@ describe("discarding", () => {
     // lay-down away without saying so.
     mount(fakeSocket().socket, readyToDiscard());
     meld("King of spades");
+    // With a lay-down under way a click stages, so no discard is on offer at all.
     fireEvent.click(handCard("Nine of hearts"));
-    expect(screen.getByRole("menuitem", { name: "Discard" })).toBeDisabled();
+    expect(screen.queryByRole("menuitem", { name: "Discard" })).toBeNull();
     expect(screen.getByText(/play or take back your melds/i)).toBeInTheDocument();
   });
 

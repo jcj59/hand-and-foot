@@ -9,6 +9,16 @@ export interface Feasibility {
 }
 
 /**
+ * The points a lay-down by this seat must reach this round: the round's minimum
+ * until the player is down, and nothing after. A round the config sets no minimum
+ * for has none.
+ */
+export function layDownMinimum(state: GameState, seat: number): number {
+  if (state.players[seat].isDown) return 0;
+  return state.config.layDownMinimums[state.roundNumber - 1] ?? 0;
+}
+
+/**
  * Whether the current player may take the entire discard pile: there must be a
  * lay-down that plays at least one pile card, and, if the player is not yet
  * down, reaches the round minimum using pile cards together with the hand.
@@ -24,21 +34,20 @@ export function canTakePile(state: GameState, seat: number): Feasibility {
     return { feasible: false };
   }
   const player = state.players[seat];
+  const minimum = layDownMinimum(state, seat);
   const plan = greedyLayDown(
     [...activeCards(player), ...pile],
     player.melds,
     new Set(pile.map((c) => c.id)),
     state.config,
+    minimum,
   );
 
   if (!plan.usesRequired) {
     return { feasible: false };
   }
-  if (!player.isDown) {
-    const minimum = state.config.layDownMinimums[state.roundNumber - 1] ?? 0;
-    if (plan.value < minimum) {
-      return { feasible: false };
-    }
+  if (plan.value < minimum) {
+    return { feasible: false };
   }
   return { feasible: true, plan: plan.plays };
 }
