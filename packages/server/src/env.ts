@@ -18,6 +18,8 @@ export const DEFAULT_PORT = 3000;
 export interface ServerEnv {
   readonly port: number;
   readonly options: ServerOptions;
+  /** Where rooms are persisted. Unset keeps them in memory, lost on restart. */
+  readonly databaseUrl: string | undefined;
 }
 
 /** Mirrors `RoomResult`: a bad environment is reported, never thrown. */
@@ -76,11 +78,36 @@ function corsOrigins(raw: string | undefined): readonly string[] | undefined {
 }
 
 /**
+ * The connection string, checked for shape only; whether it connects is found out
+ * at boot. Blank is unset, as for the durations. The error never repeats the
+ * value, because it carries the database password and error messages end up in
+ * logs.
+ */
+function databaseUrl(
+  raw: string | undefined,
+): { ok: true; value: string | undefined } | { ok: false; error: string } {
+  if (raw === undefined || raw.trim() === "") return { ok: true, value: undefined };
+  const trimmed = raw.trim();
+  let protocol: string;
+  try {
+    protocol = new URL(trimmed).protocol;
+  } catch {
+    protocol = "";
+  }
+  if (protocol !== "postgres:" && protocol !== "postgresql:") {
+    return { ok: false, error: "DATABASE_URL must be a postgres:// or postgresql:// URL" };
+  }
+  return { ok: true, value: trimmed };
+}
+
+/**
  * Turn the environment into the arguments `createServer` and `listen` take.
  *
  * `PORT` is unprefixed because every host that injects one — Fly, Render,
  * Heroku — calls it that. The server's own settings are `HF_`-prefixed so they
- * cannot collide with anything else in a container's environment. Note that
+ * cannot collide with anything else in a container's environment, except
+ * `DATABASE_URL`, which is the name Fly, Neon and nearly every host already use
+ * for exactly this. Note that
  * these are operational settings only: the pacing timers that change how the
  * game plays belong to the room's `RulesConfig`, not here.
  */
@@ -99,6 +126,8 @@ export function parseServerEnv(env: Environment): ServerEnvResult {
   if (!reconnectGraceMs.ok) return reconnectGraceMs;
   const abandonedRoomMs = optionalMs(env, "HF_ABANDONED_ROOM_MS");
   if (!abandonedRoomMs.ok) return abandonedRoomMs;
+  const database = databaseUrl(env.DATABASE_URL);
+  if (!database.ok) return database;
 
   return {
     ok: true,
@@ -109,6 +138,7 @@ export function parseServerEnv(env: Environment): ServerEnvResult {
         abandonedRoomMs: abandonedRoomMs.value,
         cors: corsOrigins(env.HF_CORS_ORIGINS),
       },
+      databaseUrl: database.value,
     },
   };
 }

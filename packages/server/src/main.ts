@@ -12,6 +12,8 @@
 import { fileURLToPath } from "node:url";
 import { parseServerEnv, type Environment } from "./env";
 import { createServer, type HandAndFootServer } from "./index";
+import { openPostgresStore } from "./postgres";
+import type { RoomStore, StoredRoom } from "./store";
 
 /** Just enough of `console` to report through. */
 export interface Logger {
@@ -29,6 +31,11 @@ export interface Started {
   readonly port: number;
 }
 
+/** Connects to the database named by `DATABASE_URL`. Injected so the suite need not have one. */
+export type OpenStore = (url: string, logger: Logger) => Promise<RoomStore>;
+
+const openPostgres: OpenStore = (url, logger) => openPostgresStore(url, { logger });
+
 /** The signals a host uses to stop a server: Fly sends the first, Ctrl-C the second. */
 const SHUTDOWN_SIGNALS = ["SIGTERM", "SIGINT"] as const;
 
@@ -39,10 +46,19 @@ const SHUTDOWN_SIGNALS = ["SIGTERM", "SIGINT"] as const;
  * caller is the process itself, and the only sensible response to configuration
  * it cannot parse is to stop with a non-zero status rather than to start on
  * settings nobody asked for.
+ *
+ * A database that is configured but cannot be reached is the same case. Starting
+ * anyway would run tables that the next deploy silently throws away, which is the
+ * one thing configuring a database was meant to prevent; stopping lets the host
+ * retry the boot until it is back.
+ *
+ * Rooms are restored before the port opens, so no player can reach a table that
+ * is still being rebuilt.
  */
 export async function startFromEnv(
   env: Environment,
   logger: Logger = console,
+  openStore: OpenStore = openPostgres,
 ): Promise<Started | null> {
   const parsed = parseServerEnv(env);
   if (!parsed.ok) {
@@ -50,18 +66,50 @@ export async function startFromEnv(
     return null;
   }
 
-  const { port: requested, options } = parsed.value;
-  const server = createServer(options);
+  const { port: requested, options, databaseUrl } = parsed.value;
+  let store: RoomStore | undefined;
+  let stored: readonly StoredRoom[] = [];
+  if (databaseUrl !== undefined) {
+    try {
+      store = await openStore(databaseUrl, logger);
+    } catch (error) {
+      // The driver's message names the host and the failure, never the password.
+      logger.error(`could not open the database: ${messageOf(error)}`);
+      return null;
+    }
+    try {
+      stored = await store.loadOpen();
+    } catch (error) {
+      logger.error(`could not load rooms from the database: ${messageOf(error)}`);
+      await store.close();
+      return null;
+    }
+  }
+
+  const server = createServer({ ...options, store });
+  // Said on the startup line either way: a server quietly keeping its tables in
+  // memory is the misconfiguration most worth noticing on the first deploy.
+  let rooms = "rooms: in memory only, lost on restart";
+  if (store) {
+    const failures = server.manager.restore(stored);
+    for (const failure of failures) logger.error(`could not restore ${failure.error}`);
+    rooms = `rooms: in the database, ${stored.length - failures.length} of ${stored.length} restored`;
+  }
   const port = await server.listen(requested);
   const origins = options.cors;
   logger.log(
-    `hand-and-foot server listening on :${port} (origins: ${origins ? origins.join(", ") : "any"})`,
+    `hand-and-foot server listening on :${port} (origins: ${origins ? origins.join(", ") : "any"}; ${rooms})`,
   );
   return { server, port };
 }
 
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 /**
- * Close the rooms down when the host asks the process to stop.
+ * Close the rooms down when the host asks the process to stop, writing out
+ * whatever the store still has queued.
  *
  * This is not just politeness. `close` runs `disposeAll`, and every room holds a
  * live turn-clock timer; a process torn down without releasing them is the same

@@ -172,3 +172,31 @@ describe("the whole environment", () => {
     expect(rejected({ PORT: "nope", HF_RECONNECT_GRACE_MS: "also-nope" })).toContain("PORT");
   });
 });
+
+describe("DATABASE_URL", () => {
+  it("is optional: unset or blank keeps rooms in memory", () => {
+    expect(parsed({}).databaseUrl).toBeUndefined();
+    expect(parsed({ DATABASE_URL: "  " }).databaseUrl).toBeUndefined();
+  });
+
+  it("takes a postgres URL in either spelling, trimmed", () => {
+    const neon = "postgresql://hf:secret@ep-quiet-sky.us-east-2.aws.neon.tech/hf?sslmode=require";
+    expect(parsed({ DATABASE_URL: ` ${neon} ` }).databaseUrl).toBe(neon);
+    expect(parsed({ DATABASE_URL: "postgres://localhost/hf" }).databaseUrl).toBe(
+      "postgres://localhost/hf",
+    );
+  });
+
+  it("refuses anything that is not a postgres URL", () => {
+    for (const bad of ["mysql://localhost/hf", "localhost:5432/hf", "not a url"]) {
+      expect(rejected({ DATABASE_URL: bad })).toBe(
+        "DATABASE_URL must be a postgres:// or postgresql:// URL",
+      );
+    }
+  });
+
+  it("never repeats the value in its complaint, since it carries the password", () => {
+    const error = rejected({ DATABASE_URL: "mysql://hf:hunter2@db/hf" });
+    expect(error).not.toContain("hunter2");
+  });
+});

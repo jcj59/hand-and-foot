@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { FakeClock } from "./clock";
 import { createServer } from "./index";
+import { InMemoryRoomStore } from "./store";
 
 describe("createServer", () => {
   it("allows any origin by default and locks to the given list when asked", async () => {
@@ -41,5 +42,37 @@ describe("createServer", () => {
     const server = createServer();
     expect(server.manager.size).toBe(0);
     await server.close();
+  });
+
+  it("answers a health check with the number of rooms, for the host to poll", async () => {
+    const server = createServer();
+    const port = await server.listen(0);
+    server.manager.create();
+    const response = await fetch(`http://localhost:${port}/healthz`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("application/json");
+    expect(await response.json()).toEqual({ ok: true, rooms: 1 });
+    await server.close();
+  });
+
+  it("answers anything else that is not the socket with a 404", async () => {
+    const server = createServer();
+    const port = await server.listen(0);
+    expect((await fetch(`http://localhost:${port}/`)).status).toBe(404);
+    expect((await fetch(`http://localhost:${port}/healthz`, { method: "POST" })).status).toBe(404);
+    await server.close();
+  });
+
+  it("keeps its rooms in the store it is given, and closes that store on the way down", async () => {
+    const store = new InMemoryRoomStore();
+    let closed = false;
+    store.close = async () => {
+      closed = true;
+    };
+    const server = createServer({ store });
+    const room = server.manager.create();
+    expect((await store.loadOpen()).map((r) => r.room.uid)).toEqual([room.uid]);
+    await server.close();
+    expect(closed).toBe(true);
   });
 });

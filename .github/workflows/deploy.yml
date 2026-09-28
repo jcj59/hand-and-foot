@@ -1,0 +1,40 @@
+name: Deploy server
+
+# The server deploys to Fly.io once CI has passed on main. The client needs no
+# workflow: Vercel's Git integration builds it from vercel.json on every push.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  # One deploy at a time, and never cancelled halfway: two overlapping deploys
+  # would be two servers writing the same rooms.
+  group: deploy-server
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+    steps:
+      - name: Skip until Fly is set up
+        if: env.FLY_API_TOKEN == ''
+        run: echo "::notice::FLY_API_TOKEN is not set, so there is nothing to deploy to yet."
+      - uses: actions/checkout@v4
+        if: env.FLY_API_TOKEN != ''
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+        if: env.FLY_API_TOKEN != ''
+      - run: flyctl deploy --remote-only --ha=false
+        if: env.FLY_API_TOKEN != ''

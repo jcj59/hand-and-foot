@@ -1,0 +1,46 @@
+# The Hand and Foot server on Fly.io. See the Deploying section of README.md.
+#
+# Exactly one machine, always on. Every room lives in that one process's memory,
+# so a second machine would be a second, disjoint set of tables with no way for a
+# player on one to reach a room on the other; and a stopped machine would drop
+# every open socket. Deploy with `fly deploy --ha=false`, which keeps it at one.
+
+app = "hand-and-foot"
+primary_region = "iad"
+
+# The server stops its turn clocks and flushes the database queue on SIGTERM,
+# which takes milliseconds; the timeout is only a ceiling for a slow database.
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[deploy]
+  # Stop the old machine, then start the new one. A strategy that runs both at
+  # once (bluegreen, canary) would have two servers writing the same rooms, and
+  # the new one would restore a log the old one is still appending to.
+  strategy = "rolling"
+
+[env]
+  PORT = "8080"
+  # HF_CORS_ORIGINS is the client's origin, and DATABASE_URL is a secret; both
+  # are set with `fly secrets set`, not here.
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/healthz"
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "20s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

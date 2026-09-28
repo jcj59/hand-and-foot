@@ -6,9 +6,11 @@ import {
   type RoomOptions,
   type RulesConfig,
 } from "@hf/shared";
+import { randomUUID } from "node:crypto";
 import { defaultConfig } from "@hf/engine";
 import { type Clock, systemClock } from "./clock";
 import { Room, type RoomResult } from "./room";
+import type { RoomStore, StoredRoom } from "./store";
 
 /**
  * Turn the creator's choices into the rules the table will actually play by.
@@ -49,6 +51,17 @@ export interface ManagerOptions {
   /** How long a room with nobody in it is kept before being reaped. */
   readonly abandonedRoomMs?: number;
   readonly sweepIntervalMs?: number;
+  /** Where rooms are kept so a restart can bring them back. None keeps them in memory only. */
+  readonly store?: RoomStore;
+  /** Storage identity for a new room; see `RoomRecord.uid`. Injected for deterministic tests. */
+  readonly newUid?: () => string;
+}
+
+/** A stored room that could not be brought back, and why. */
+export interface RestoreFailure {
+  readonly uid: string;
+  readonly id: string;
+  readonly error: string;
 }
 
 function randomString(alphabet: string, length: number, random: () => number): string {
@@ -67,6 +80,8 @@ export class RoomManager {
   private readonly reconnectGraceMs: number | undefined;
   private readonly abandonedRoomMs: number;
   private readonly sweepIntervalMs: number;
+  private readonly store: RoomStore | undefined;
+  private readonly newUid: () => string;
   private cancelSweep: (() => void) | null = null;
 
   constructor(options: ManagerOptions = {}) {
@@ -75,6 +90,8 @@ export class RoomManager {
     this.reconnectGraceMs = options.reconnectGraceMs;
     this.abandonedRoomMs = options.abandonedRoomMs ?? DEFAULT_ABANDONED_ROOM_MS;
     this.sweepIntervalMs = options.sweepIntervalMs ?? DEFAULT_SWEEP_INTERVAL_MS;
+    this.store = options.store;
+    this.newUid = options.newUid ?? randomUUID;
   }
 
   get size(): number {
@@ -96,9 +113,44 @@ export class RoomManager {
       seed: Math.floor(this.random() * 2 ** 31),
       newToken: () => randomString(ROOM_CODE_ALPHABET, 24, this.random),
       reconnectGraceMs: this.reconnectGraceMs,
+      store: this.store,
+      uid: this.newUid(),
     });
     this.rooms.set(id, room);
+    // Recorded as soon as it exists, so the log's first row always has a room to
+    // belong to, even for a table that is dealt before anyone else joins.
+    this.store?.saveRoom(room.record());
     return room;
+  }
+
+  /**
+   * Bring back the rooms a previous process left open.
+   *
+   * A room that will not replay is closed rather than retried on every boot, and
+   * reported so the operator hears about it. Its rows stay in the store, which is
+   * what makes such a failure debuggable: the seed and the log are exactly the
+   * reproduction.
+   */
+  restore(stored: readonly StoredRoom[]): readonly RestoreFailure[] {
+    const failures: RestoreFailure[] = [];
+    for (const entry of stored) {
+      const { uid, id } = entry.room;
+      const restored = this.rooms.has(id.toUpperCase())
+        ? { ok: false as const, error: `room ${id}: that code is already in use` }
+        : Room.restore(entry, {
+            clock: this.clock,
+            newToken: () => randomString(ROOM_CODE_ALPHABET, 24, this.random),
+            reconnectGraceMs: this.reconnectGraceMs,
+            store: this.store,
+          });
+      if (!restored.ok) {
+        failures.push({ uid, id, error: restored.error });
+        this.store?.closeRoom(uid, this.clock.now());
+        continue;
+      }
+      this.rooms.set(id.toUpperCase(), restored.value);
+    }
+    return failures;
   }
 
   /** Room codes are matched case-insensitively; nobody types a link exactly. */
@@ -115,6 +167,9 @@ export class RoomManager {
     // Dropping the reference is not enough: a room holds a live timer, and one
     // left armed would keep firing against a table nobody can see.
     room?.dispose();
+    // Closed in the store too, or the next boot would bring back a room that was
+    // deliberately let go.
+    if (room) this.store?.closeRoom(room.uid, this.clock.now());
     return this.rooms.delete(roomId.toUpperCase());
   }
 
@@ -155,7 +210,12 @@ export class RoomManager {
     this.cancelSweep = null;
   }
 
-  /** Release every room's timer. Used when the process is shutting down. */
+  /**
+   * Release every room's timer. Used when the process is shutting down.
+   *
+   * Unlike `remove`, this leaves the rooms open in the store: a shutdown is the
+   * restart persistence exists to survive, not the end of the games.
+   */
   disposeAll(): void {
     this.stopSweeping();
     for (const room of this.rooms.values()) room.dispose();
