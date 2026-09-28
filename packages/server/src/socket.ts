@@ -124,6 +124,21 @@ export function attachSocketServer(io: HfServer, manager: RoomManager): void {
     return session;
   }
 
+  /**
+   * Tell every socket at the table whose seat number changed what it is now. The
+   * seats close up when someone leaves a lobby, and again when a table plays on
+   * without someone who left.
+   */
+  function tellMoved(room: Room, before: ReadonlyMap<string, number>): void {
+    for (const [socketId, other] of sessions) {
+      if (other.roomId !== room.id) continue;
+      const player = room.seatOf(other.token);
+      if (player && player.seat !== before.get(other.token)) {
+        io.to(socketId).emit("seat", player.seat);
+      }
+    }
+  }
+
   /** Unseat this socket, marking its seat disconnected only if it still owned it. */
   function release(socketId: string): void {
     const session = unseat(socketId);
@@ -240,15 +255,22 @@ export function attachSocketServer(io: HfServer, manager: RoomManager): void {
         if (other.roomId === room.id && other.token === session.token) sessions.delete(socketId);
       }
       ack({ ok: true, data: undefined });
-      for (const [socketId, other] of sessions) {
-        if (other.roomId !== room.id) continue;
-        const player = room.seatOf(other.token);
-        if (player && player.seat !== before.get(other.token)) {
-          io.to(socketId).emit("seat", player.seat);
-        }
-      }
+      tellMoved(room, before);
       broadcastRoom(room);
       broadcastViews(room);
+    });
+
+    socket.on("playAgain", (ack) => {
+      const session = sessionOf(socket);
+      if (!session) return ack({ ok: false, error: "you are not seated in a room" });
+      const { room } = session;
+      const before = new Map(room.seats().map((p) => [p.token, p.seat]));
+      const asked = room.playAgain(session.seat);
+      if (!asked.ok) return ack(asked);
+      ack({ ok: true, data: asked.value });
+      if (asked.value) tellMoved(room, before);
+      broadcastRoom(room);
+      if (asked.value) broadcastViews(room);
     });
 
     socket.on("disconnect", () => release(socket.id));

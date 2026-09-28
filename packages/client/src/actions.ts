@@ -201,3 +201,13 @@ export async function stageDraft(
 ): Promise<void> {
   await wire.stageMelds(socket, melds);
 }
+
+/** Ask for another game at this table once the round is over. A refusal is a notice. */
+export async function askToPlayAgain(socket: HfClientSocket, sink: ActionSink): Promise<boolean> {
+  const result = await wire.playAgain(socket);
+  if (!result.ok) {
+    sink.setNotice(result.error);
+    return false;
+  }
+  return true;
+}

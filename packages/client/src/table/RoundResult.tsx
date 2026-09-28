@@ -21,6 +21,10 @@ export interface RoundResultProps {
   readonly config: RulesConfig;
   /** Get up from the table and go back to the main screen. */
   readonly onLeave: () => void;
+  /** Ask for another game with the same players. */
+  readonly onPlayAgain: () => void;
+  /** This viewer's seat, to know whether they have asked already. */
+  readonly seat: number;
 }
 
 /** A signed number the way a scoreboard writes one. */
@@ -33,6 +37,8 @@ export function RoundResult({
   room,
   config,
   onLeave,
+  onPlayAgain,
+  seat,
 }: RoundResultProps): React.ReactElement {
   const { scoring } = config;
   const [hidden, setHidden] = useState(false);
@@ -112,7 +118,16 @@ export function RoundResult({
             </tbody>
           </table>
         </div>
+        <PlayAgainTally room={room} nameOf={nameOf} />
         <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={room.playAgain.includes(seat)}
+            onClick={onPlayAgain}
+            className="rounded bg-amber-300 px-3 py-1.5 text-sm font-medium text-black disabled:opacity-60"
+          >
+            {room.playAgain.includes(seat) ? "Waiting for the others…" : "Play again"}
+          </button>
           <button
             type="button"
             onClick={onLeave}
@@ -130,5 +145,25 @@ export function RoundResult({
         </div>
       </section>
     </div>
+  );
+}
+
+/**
+ * Who has asked to play again, out of everyone still at the table, so a player
+ * can see what the next game is waiting on.
+ */
+function PlayAgainTally({
+  room,
+  nameOf,
+}: {
+  readonly room: RoomInfo;
+  readonly nameOf: (seat: number) => string;
+}): React.ReactElement | null {
+  if (room.playAgain.length === 0) return null;
+  return (
+    <p role="status" className="mt-3 text-sm text-amber-100">
+      Play again: {room.playAgain.length} of {room.players.length} ready (
+      {room.playAgain.map(nameOf).join(", ")})
+    </p>
   );
 }

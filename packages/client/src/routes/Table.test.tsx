@@ -99,6 +99,8 @@ function roomInfo(overrides: Partial<RoomInfo> = {}): RoomInfo {
       { seat: 1, name: "ben", connected: true },
     ],
     hostSeat: 0,
+    gameNumber: 1,
+    playAgain: [],
     started: true,
     config: EAST_COAST,
     ...overrides,
@@ -1253,6 +1255,40 @@ describe("the controls added from play-testing", () => {
     await waitFor(() => expect(screen.getByText("main screen")).toBeInTheDocument());
     expect(sent).toEqual([{ event: "leaveRoom", args: [] }]);
     expect(useSession.getState().credentials).toBeNull();
+  });
+
+  it("asks to play again, and shows who else has", async () => {
+    const { socket, sent } = fakeSocket([{ ok: true, data: false }]);
+    mount(socket);
+    act(() =>
+      useSession.setState({
+        result: scored(
+          [
+            [0, 10],
+            [1, 5],
+          ],
+          0,
+        ),
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^play again$/i }));
+    await waitFor(() => expect(sent).toEqual([{ event: "playAgain", args: [] }]));
+
+    // The server's broadcast is what records the vote; the table shows it.
+    act(() => useSession.getState().applyRoom(roomInfo({ playAgain: [0] })));
+    const dialog = screen.getByRole("dialog", { name: /round result/i });
+    expect(within(dialog).getByRole("status")).toHaveTextContent("Play again: 1 of 2 ready (ana)");
+    expect(within(dialog).getByRole("button", { name: /waiting for the others/i })).toBeDisabled();
+  });
+
+  it("clears the finished round when the next game is dealt", () => {
+    mount(fakeSocket().socket);
+    act(() => useSession.setState({ result: scored([[0, 10]], 0) }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    // Same round number — a new game starts at round one again — but a new game.
+    act(() => useSession.getState().applyUpdate(update({ room: { gameNumber: 2 } })));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(useSession.getState().result).toBeNull();
   });
 
   it("says when the stock ran out rather than naming anyone", () => {

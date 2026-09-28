@@ -22,7 +22,7 @@
 import { useEffect, useState } from "react";
 import { isWild, type Card, type Rank } from "@hf/shared";
 import { useNavigate } from "react-router-dom";
-import { leaveTable, pauseTable, play, stageDraft } from "../actions";
+import { askToPlayAgain, leaveTable, pauseTable, play, stageDraft } from "../actions";
 import { isDeadWeight } from "../cards/handOrder";
 import { FaceDownPile, PlayingCard } from "../cards/PlayingCard";
 import { useSession } from "../session";
@@ -56,6 +56,9 @@ export function Table({ socket }: TableProps): React.ReactElement {
   const setNotice = useSession((s) => s.setNotice);
   const seat = useSession((s) => s.seat);
   const result = useSession((s) => s.result);
+  // The room on its own, not only as it came with the last view: who is connected,
+  // and who has asked to play again, arrive as room broadcasts with no new view.
+  const latestRoom = useSession((s) => s.room);
   const leave = useSession((s) => s.leave);
   const navigate = useNavigate();
   const [staging, setStaging] = useState<Staging>(EMPTY_STAGING);
@@ -96,7 +99,8 @@ export function Table({ socket }: TableProps): React.ReactElement {
     return <main className="p-6 text-white/60">Dealing&hellip;</main>;
   }
 
-  const { view, room, hints, clock } = update;
+  const { view, hints, clock } = update;
+  const room = latestRoom ?? update.room;
   const myTurn = turnOpen;
   const sink = { seat, setNotice };
   // The foot is revealed only once picked up; before that the server sends a count
@@ -472,6 +476,8 @@ export function Table({ socket }: TableProps): React.ReactElement {
           // A real leave, not just forgetting the seat: the server then knows the
           // table is empty and lets it go.
           onLeave={() => void leaveTable(socket, { leave }).then(() => navigate("/"))}
+          onPlayAgain={() => void askToPlayAgain(socket, sink)}
+          seat={view.seat}
         />
       )}
     </main>

@@ -77,6 +77,10 @@ export interface RoomInfo {
   /** Seat that paused the table, when paused. */
   readonly pausedBy?: number;
   readonly config: RulesConfig;
+  /** Which game this is at the table, from 1; it goes up each time they play again. */
+  readonly gameNumber: number;
+  /** Seats that have asked to play again after the round ended. */
+  readonly playAgain: readonly number[];
 }
 
 /** The per-player broadcast: one of these goes to each socket after every accepted action. */
@@ -190,6 +194,12 @@ export interface ClientToServerEvents {
    * forgotten when the turn ends, and is never shown to another seat. Ignored
    * outside the sender's own play phase.
    */
+  /**
+   * Ask to play another game at this table once the round is over. The next game
+   * is dealt when everyone still at the table has asked; the ack says whether this
+   * request was the one that dealt it.
+   */
+  playAgain: (ack: (result: Ack<boolean>) => void) => void;
   stageMelds: (
     payload: { readonly melds: readonly MeldPlay[] },
     ack: (result: Ack) => void,

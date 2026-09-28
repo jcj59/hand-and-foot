@@ -85,6 +85,10 @@ export interface RoomDeps {
   readonly uid?: string;
   /** When it was opened. Given only when restoring a room opened before a restart. */
   readonly createdAt?: number;
+  /** Seed for each game after the first, when the table plays again. */
+  readonly newSeed?: () => number;
+  /** Storage identity for each game after the first; see `RoomRecord.uid`. */
+  readonly newUid?: () => string;
 }
 
 export const DEFAULT_RECONNECT_GRACE_MS = 30_000;
@@ -108,9 +112,7 @@ export const DEFAULT_RECONNECT_GRACE_MS = 30_000;
  */
 export class Room {
   readonly id: string;
-  readonly uid: string;
   readonly config: RulesConfig;
-  readonly log: ActionLog;
   /** When the room was opened, so one nobody ever joined can still be reaped. */
   readonly createdAt: number;
 
@@ -119,6 +121,15 @@ export class Room {
 
   private readonly deps: RoomDeps;
   private readonly reconnectGraceMs: number;
+  // A table that plays again starts a new game in the same room: a new seed, a
+  // new log, and a new identity in storage, so each game replays on its own.
+  private currentUid: string;
+  private currentLog: ActionLog;
+  private seed: number;
+  /** Which game this is at the table, from 1. */
+  private games = 1;
+  /** Tokens of the players who have asked to play again after the round ended. */
+  private readonly again = new Set<string>();
   private readonly players: RoomPlayer[] = [];
   private state: GameState | null = null;
   private pausedSeat: number | undefined;
@@ -144,12 +155,12 @@ export class Room {
 
   constructor(id: string, config: RulesConfig, deps: RoomDeps) {
     this.id = id;
-    this.uid = deps.uid ?? id;
+    this.currentUid = deps.uid ?? id;
     this.config = config;
     this.deps = deps;
+    this.seed = deps.seed;
     this.reconnectGraceMs = deps.reconnectGraceMs ?? DEFAULT_RECONNECT_GRACE_MS;
-    const log = deps.log ?? new InMemoryActionLog();
-    this.log = deps.store ? new StoredActionLog(log, deps.store, this.uid) : log;
+    this.currentLog = this.logFor(deps.log ?? new InMemoryActionLog());
     this.createdAt = deps.createdAt ?? deps.clock.now();
   }
 
@@ -222,13 +233,27 @@ export class Room {
     return succeed(room);
   }
 
+  /** The storage identity of the game being played; see `RoomRecord.uid`. */
+  get uid(): string {
+    return this.currentUid;
+  }
+
+  /** The current game's log. */
+  get log(): ActionLog {
+    return this.currentLog;
+  }
+
+  private logFor(inner: ActionLog): ActionLog {
+    return this.deps.store ? new StoredActionLog(inner, this.deps.store, this.currentUid) : inner;
+  }
+
   /** The part of the room a restart needs besides its log. */
   record(): RoomRecord {
     return {
       uid: this.uid,
       id: this.id,
       config: this.config,
-      seed: this.deps.seed,
+      seed: this.seed,
       createdAt: this.createdAt,
       players: this.players.map((p) => ({
         seat: p.seat,
@@ -333,8 +358,11 @@ export class Room {
       return succeed(player);
     }
     player.left = true;
+    this.again.delete(player.token);
     this.setConnected(player.seat, false);
     this.save();
+    // Everyone still at a finished table may have been waiting on this player.
+    this.playAgainIfAgreed();
     return succeed(player);
   }
 
@@ -367,7 +395,7 @@ export class Room {
     if (this.players.length < MIN_PLAYERS) {
       return fail(`a game needs at least ${MIN_PLAYERS} players`);
     }
-    this.state = deal(this.players.length, this.config, this.deps.seed);
+    this.state = deal(this.players.length, this.config, this.seed);
     this.save();
     this.beginTurn(this.state.currentSeat);
     return succeed(this.state);
@@ -421,6 +449,52 @@ export class Room {
     this.pausedSeat = undefined;
     this.pausedAt = null;
     this.rearm();
+  }
+
+  /**
+   * Ask to play another game at this table, once the round is over.
+   *
+   * The new game is dealt the moment everyone still at the table has asked, with
+   * the same players — anyone who left is dropped and the rest close up — and at
+   * least the two a game needs. Until then the table shows who has asked. Returns
+   * whether this request was the one that started it.
+   */
+  playAgain(seat: number): RoomResult<boolean> {
+    if (!this.state?.roundEnded) return fail("the round is not over yet");
+    const player = this.players[seat];
+    /* v8 ignore next -- the transport only ever passes a seat it assigned */
+    if (!player) return fail("no such seat");
+    this.again.add(player.token);
+    return succeed(this.playAgainIfAgreed());
+  }
+
+  /** Deal the next game if everyone still here has asked for it. */
+  private playAgainIfAgreed(): boolean {
+    if (!this.state?.roundEnded) return false;
+    const staying = this.players.filter((p) => !p.left);
+    if (staying.length < MIN_PLAYERS) return false;
+    if (!staying.every((p) => this.again.has(p.token))) return false;
+
+    // The finished game stays in storage, closed, as its own record; the next is new.
+    this.deps.store?.closeRoom(this.currentUid, this.deps.clock.now());
+    this.dispose();
+    this.players.splice(0, this.players.length, ...staying);
+    this.players.forEach((p, index) => {
+      p.seat = index;
+    });
+    this.again.clear();
+    this.games++;
+    this.seed = this.deps.newSeed?.() ?? this.seed + 1;
+    this.currentUid = this.deps.newUid?.() ?? `${this.id}#${this.games}`;
+    this.currentLog = this.logFor(new InMemoryActionLog());
+    this.pausedSeat = undefined;
+    this.pausedAt = null;
+    this.draft = null;
+    this.clockSeat = null;
+    this.state = deal(this.players.length, this.config, this.seed);
+    this.save();
+    this.beginTurn(this.state.currentSeat);
+    return true;
   }
 
   /**
@@ -747,6 +821,8 @@ export class Room {
       started: this.started,
       pausedBy: this.pausedSeat,
       config: this.config,
+      gameNumber: this.games,
+      playAgain: this.players.filter((p) => this.again.has(p.token)).map((p) => p.seat),
     };
   }
 

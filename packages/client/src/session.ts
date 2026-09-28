@@ -87,8 +87,13 @@ export const useSession = create<SessionState>((set, get) => ({
     set({
       update,
       room: update.room,
-      // A fresh deal ends the previous round's scoreboard.
-      result: update.view.roundNumber !== get().update?.view.roundNumber ? null : get().result,
+      // A fresh deal ends the previous round's scoreboard — a new round, or a new
+      // game at the same table, which starts at round one again.
+      result:
+        update.view.roundNumber !== get().update?.view.roundNumber ||
+        update.room.gameNumber !== get().update?.room.gameNumber
+          ? null
+          : get().result,
     });
   },
 
