@@ -1,8 +1,12 @@
 import { describe, it, expect } from "vitest";
+import postgres from "postgres";
+import { InMemoryRoomStore } from "./store";
+import { ownDatabase } from "./testDatabase";
 import {
   shutdownOnSignals,
   startFromEnv,
   type Logger,
+  type OpenStore,
   type SignalSource,
   type Started,
 } from "./main";
@@ -71,7 +75,7 @@ describe("startFromEnv", () => {
     expect(started!.port).toBeGreaterThan(0);
     expect(started!.server.http.listening).toBe(true);
     expect(log.logs).toEqual([
-      `hand-and-foot server listening on :${started!.port} (origins: any)`,
+      `hand-and-foot server listening on :${started!.port} (origins: any; rooms: in memory only, lost on restart)`,
     ]);
     expect(log.errors).toEqual([]);
     await started!.server.close();
@@ -176,5 +180,120 @@ describe("shutdownOnSignals", () => {
 
     expect(log.logs).toEqual(["SIGINT received, closing rooms", "SIGTERM received, closing rooms"]);
     expect(started.server.http.listening).toBe(false);
+  });
+});
+
+describe("startFromEnv with a database", () => {
+  const URL = "postgres://hf:secret@db.example/hf";
+
+  /** A store opener that hands back a given store and remembers what it was asked for. */
+  function opener(store: InMemoryRoomStore): OpenStore & { readonly urls: string[] } {
+    const urls: string[] = [];
+    return Object.assign(
+      async (url: string) => {
+        urls.push(url);
+        return store;
+      },
+      { urls },
+    );
+  }
+
+  /** A store holding one dealt two-seat table, as a previous process would have left it. */
+  async function storeWithATable(): Promise<{ store: InMemoryRoomStore; code: string }> {
+    const store = new InMemoryRoomStore();
+    const before = await startFromEnv({ PORT: "0", DATABASE_URL: URL }, recorder(), opener(store));
+    const room = before!.server.manager.create();
+    room.join("ana");
+    room.join("ben");
+    room.start(0);
+    await before!.server.close();
+    return { store, code: room.id };
+  }
+
+  it("opens the named database and brings its open rooms back before taking players", async () => {
+    const { store, code } = await storeWithATable();
+    const log = recorder();
+    const open = opener(store);
+    const started = await startFromEnv({ PORT: "0", DATABASE_URL: URL }, log, open);
+    expect(open.urls).toEqual([URL]);
+    expect(started!.server.manager.get(code)?.started).toBe(true);
+    expect(log.logs).toEqual([
+      `hand-and-foot server listening on :${started!.port} (origins: any; rooms: in the database, 1 of 1 restored)`,
+    ]);
+    expect(log.errors).toEqual([]);
+    await started!.server.close();
+  });
+
+  it("names each room it could not bring back, and starts without it", async () => {
+    const { store } = await storeWithATable();
+    const [stored] = await store.loadOpen();
+    const broken = new InMemoryRoomStore();
+    broken.saveRoom({ ...stored!.room, started: false });
+    broken.appendAction(stored!.room.uid, {
+      seq: 0,
+      seat: 0,
+      action: { type: "draw" },
+      source: "player",
+      at: 0,
+    });
+    const log = recorder();
+    const started = await startFromEnv({ PORT: "0", DATABASE_URL: URL }, log, opener(broken));
+    expect(started).not.toBeNull();
+    expect(started!.server.manager.size).toBe(0);
+    expect(log.errors).toEqual([
+      `could not restore room ${stored!.room.id}: actions recorded for a table that never dealt`,
+    ]);
+    expect(log.logs[0]).toContain("rooms: in the database, 0 of 1 restored");
+    await started!.server.close();
+  });
+
+  it("refuses to start when the database cannot be opened, rather than run without it", async () => {
+    // Running anyway would host tables the next deploy silently throws away.
+    const log = recorder();
+    const failing: OpenStore = async () => {
+      throw new Error("connect ECONNREFUSED 10.0.0.5:5432");
+    };
+    expect(await startFromEnv({ PORT: "0", DATABASE_URL: URL }, log, failing)).toBeNull();
+    expect(log.errors).toEqual(["could not open the database: connect ECONNREFUSED 10.0.0.5:5432"]);
+    expect(log.logs).toEqual([]);
+  });
+
+  it("reports a failure that is not an Error as it came", async () => {
+    const log = recorder();
+    const failing: OpenStore = () => Promise.reject("timeout");
+    expect(await startFromEnv({ PORT: "0", DATABASE_URL: URL }, log, failing)).toBeNull();
+    expect(log.errors).toEqual(["could not open the database: timeout"]);
+  });
+
+  it("does not touch a database when none is configured", async () => {
+    const open = opener(new InMemoryRoomStore());
+    const started = await startFromEnv({ PORT: "0" }, recorder(), open);
+    expect(open.urls).toEqual([]);
+    await started!.server.close();
+  });
+});
+
+describe.skipIf(process.env.HF_TEST_DATABASE_URL === undefined)("startFromEnv on Postgres", () => {
+  it("connects with nothing injected, keeps rooms across a restart, and says so", async () => {
+    const url = await ownDatabase(process.env.HF_TEST_DATABASE_URL!, "hf_test_main");
+    const admin = postgres(url, { max: 1, onnotice: () => {} });
+    await admin`drop table if exists actions, rooms, schema_migrations`;
+    await admin.end();
+
+    const first = await startFromEnv({ PORT: "0", DATABASE_URL: url }, recorder());
+    const room = first!.server.manager.create();
+    room.join("ana");
+    await first!.server.close();
+
+    const log = recorder();
+    const second = await startFromEnv({ PORT: "0", DATABASE_URL: url }, log);
+    expect(
+      second!.server.manager
+        .get(room.id)
+        ?.seats()
+        .map((p) => p.name),
+    ).toEqual(["ana"]);
+    expect(log.logs[0]).toContain("rooms: in the database, 1 of 1 restored");
+    await second!.server.close();
   });
 });

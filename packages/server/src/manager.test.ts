@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { EAST_COAST, WEST_COAST } from "@hf/shared";
 import { FakeClock } from "./clock";
-import { configFor, RoomManager } from "./manager";
+import { configFor, DEFAULT_ABANDONED_ROOM_MS, RoomManager } from "./manager";
+import { InMemoryRoomStore } from "./store";
 
 /** A deterministic stand-in for Math.random, cycling a fixed sequence. */
 function sequence(values: number[]): () => number {
@@ -255,5 +256,130 @@ describe("seeds and isolation", () => {
   it("takes a config override when one is given", () => {
     const competitive = { ...EAST_COAST, mode: "competitive" as const, pauseEnabled: false };
     expect(newManager().create(competitive).config.pauseEnabled).toBe(false);
+  });
+});
+
+describe("keeping rooms in a store", () => {
+  function withStore(): { manager: RoomManager; store: InMemoryRoomStore; clock: FakeClock } {
+    const store = new InMemoryRoomStore();
+    const clock = new FakeClock();
+    let uid = 0;
+    const manager = new RoomManager({ clock, store, newUid: () => `uid-${uid++}` });
+    return { manager, store, clock };
+  }
+
+  it("records a room the moment it is opened, before anyone sits down", async () => {
+    // A table dealt before anyone else joins still writes its log against a room
+    // that exists.
+    const { manager, store } = withStore();
+    const room = manager.create();
+    const [stored] = await store.loadOpen();
+    expect(stored?.room).toEqual(room.record());
+    expect(stored?.room.uid).toBe("uid-0");
+    expect(stored?.room.players).toEqual([]);
+  });
+
+  it("gives every room its own storage identity, whatever its code", () => {
+    const { manager } = withStore();
+    expect(manager.create().uid).toBe("uid-0");
+    expect(manager.create().uid).toBe("uid-1");
+  });
+
+  it("falls back to a random uuid when none is injected", () => {
+    const room = new RoomManager({ clock: new FakeClock() }).create();
+    expect(room.uid).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it("closes a room in the store when it is removed or reaped", () => {
+    const { manager, store, clock } = withStore();
+    const removed = manager.create();
+    const reaped = manager.create();
+    manager.remove(removed.id);
+    expect(store.closedAt("uid-0")).toBe(clock.now());
+
+    clock.advance(DEFAULT_ABANDONED_ROOM_MS);
+    manager.sweep();
+    expect(store.closedAt(reaped.uid)).toBe(clock.now());
+  });
+
+  it("leaves rooms open in the store when the process shuts down", () => {
+    // A shutdown is the restart persistence exists to survive, not the end of
+    // the games.
+    const { manager, store } = withStore();
+    const room = manager.create();
+    manager.disposeAll();
+    expect(store.closedAt(room.uid)).toBeNull();
+  });
+
+  it("brings stored rooms back under their own codes", async () => {
+    const before = withStore();
+    const room = before.manager.create();
+    room.join("ana");
+    room.join("ben");
+    room.start(0);
+
+    const after = new RoomManager({ clock: new FakeClock(), store: before.store });
+    expect(after.restore(await before.store.loadOpen())).toEqual([]);
+    expect(after.size).toBe(1);
+    const restored = after.get(room.id.toLowerCase());
+    expect(restored?.gameState).toEqual(room.gameState);
+    expect(restored?.uid).toBe(room.uid);
+  });
+
+  it("reports a room that will not replay, and closes it so the next boot does not retry it", async () => {
+    const { manager, store } = withStore();
+    const room = manager.create();
+    room.join("ana");
+    room.join("ben");
+    room.start(0);
+    const [stored] = await store.loadOpen();
+    const broken = {
+      ...stored!,
+      actions: [
+        {
+          seq: 0,
+          seat: 0,
+          action: { type: "discard" as const, cardId: "nope" },
+          source: "player" as const,
+          at: 0,
+        },
+      ],
+    };
+
+    const after = new RoomManager({ clock: new FakeClock(), store });
+    const failures = after.restore([broken]);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({ uid: room.uid, id: room.id });
+    expect(failures[0]?.error).toMatch(/action 0/);
+    expect(after.size).toBe(0);
+    expect(store.closedAt(room.uid)).not.toBeNull();
+  });
+
+  it("refuses to restore two rooms under one code", async () => {
+    const { manager, store } = withStore();
+    const room = manager.create();
+    const [stored] = await store.loadOpen();
+    const twin = { ...stored!, room: { ...stored!.room, uid: "uid-twin" } };
+    const failures = manager.restore([twin]);
+    expect(failures).toEqual([
+      { uid: "uid-twin", id: room.id, error: `room ${room.id}: that code is already in use` },
+    ]);
+    expect(manager.get(room.id)).toBe(room);
+  });
+
+  it("never issues a new room the code of a restored one", async () => {
+    // Both managers draw all-zero first, so the new one's first code is exactly
+    // the restored room's; it must draw again rather than hand out a live table.
+    const store = new InMemoryRoomStore();
+    const before = new RoomManager({ clock: new FakeClock(), random: () => 0, store });
+    const room = before.create();
+    let calls = 0;
+    const random = (): number => (++calls <= 6 ? 0 : 0.5);
+    const after = new RoomManager({ clock: new FakeClock(), random, store });
+    after.restore(await store.loadOpen());
+    expect(after.get(room.id)).toBeDefined();
+    const fresh = after.create();
+    expect(calls).toBeGreaterThan(6);
+    expect(fresh.id).not.toBe(room.id);
   });
 });

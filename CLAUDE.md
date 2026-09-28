@@ -16,7 +16,7 @@ pnpm + Turborepo monorepo, TypeScript everywhere, four workspace packages:
 | --- | --- | --- |
 | `packages/shared` | `@hf/shared` | Domain types, rules config, presets, client/server contract. Done for M1. |
 | `packages/engine` | `@hf/engine` | Pure rules engine `(state, action) => newState`. **Complete (M1).** |
-| `packages/server` | `@hf/server` | Authoritative Socket.io server: rooms, seats, per-seat broadcast, turn clock, action log, runnable entrypoint. **Complete (M2).** Postgres persistence = M4. |
+| `packages/server` | `@hf/server` | Authoritative Socket.io server: rooms, seats, per-seat broadcast, turn clock, action log, runnable entrypoint, Postgres persistence with restore-on-boot. **Complete (M2, M4).** |
 | `packages/client` | `@hf/client` | React + Vite + Tailwind + Zustand app: lobby, table, SVG cards, meld staging. **Complete (M3).** |
 
 The three **libraries** are consumed **from source** — each `package.json` points
@@ -26,8 +26,8 @@ application, not a library, so it has no `exports` at all and `pnpm build` now r
 the libraries buildless — nothing imports them as bundles.
 
 Running the server from source therefore needs a TypeScript runtime: `@hf/server` carries `tsx` as a
-devDependency and its `start`/`dev` scripts go through it. Node's own `--experimental-strip-types`
-will not do — `moduleResolution: "Bundler"` means imports are extensionless, which Node's ESM
+**runtime dependency** (production runs it too) and its `start`/`dev` scripts go through it. Node's
+own `--experimental-strip-types` will not do — `moduleResolution: "Bundler"` means imports are extensionless, which Node's ESM
 resolver does not accept.
 
 ## Commands
@@ -43,6 +43,17 @@ pnpm format:check     # prettier --check .
 pnpm format           # prettier --write . (use this rather than hand-formatting)
 ```
 
+The server's database tests (store contract, migrations, restart over real sockets, the real
+opener in `main.ts`) run only when `HF_TEST_DATABASE_URL` is set, and skip otherwise. Each such
+test file makes **its own database** beside that one (`testDatabase.ts`), because vitest runs files
+in parallel and two files wiping one database fail in ways that look like the store's fault. A
+local Postgres needs no root: `conda create -n pg -c conda-forge postgresql`, `initdb`, `pg_ctl
+start` — this machine has one in `~/.local/share/hf-pg` on port 54329:
+`HF_TEST_DATABASE_URL=postgres://postgres@localhost:54329/hf_test`. **Turbo drops environment
+variables it has not been told about**, so `HF_TEST_DATABASE_URL` is declared on the `test` task in
+`turbo.json` — without that, CI would skip every database test and still report green. Server
+coverage is 100% only with the database tests running.
+
 Turbo caches aggressively — a second `pnpm test` prints `FULL TURBO` and runs nothing. To force a
 real re-run use `pnpm exec turbo run test --force`; `pnpm test -- --force` does **not** forward the
 flag and exits non-zero. To run one engine test file:
@@ -56,9 +67,9 @@ pnpm --filter @hf/server start     # tsx src/main.ts
 pnpm --filter @hf/server dev       # same, restarting on change
 ```
 
-`PORT` (default 3000) and the `HF_`-prefixed operational settings — `HF_CORS_ORIGINS`,
-`HF_RECONNECT_GRACE_MS`, `HF_ABANDONED_ROOM_MS` — configure it; see `env.ts`. A value it cannot parse
-stops the process with a message rather than falling back to a default.
+`PORT` (default 3000), the `HF_`-prefixed operational settings — `HF_CORS_ORIGINS`,
+`HF_RECONNECT_GRACE_MS`, `HF_ABANDONED_ROOM_MS` — and `DATABASE_URL` configure it; see `env.ts`. A
+value it cannot parse stops the process with a message rather than falling back to a default.
 
 And the client, which needs the server running to be useful:
 
@@ -358,10 +369,10 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   computing them for `currentSeat` instead of the recipient both misleads that client and tells it
   something about another hand. Pinned in `room.test.ts` and over the wire in
   `socket.integration.test.ts`, and both wrong-seat mutants were confirmed killed.
-- **M4 — deploy.** In progress: server on Fly.io, client on Vercel, Postgres on Neon.
-  - **M4a — keeping a seat across a reconnect.** A new transport connection is a new socket to the
-    server, and a seat belongs to a socket only once it has presented the token — but the client
-    used to reclaim its seat only on page load. So any network blip, and *every server deploy*,
+- **M4 — deploy.** Server on Fly.io, client on Vercel, Postgres on Neon.
+  - **M4a — keeping a seat across a reconnect (PR #12).** A new transport connection is a new
+    socket to the server, and a seat belongs to a socket only once it has presented the token — but
+    the client used to reclaim its seat only on page load. So any network blip, and *every server deploy*,
     left the tab showing a connected table whose moves were all refused as "not seated" while the
     server played the seat after the grace. `reclaimOnReconnect` (in `actions.ts`, wired in `App`)
     re-sends `resumeSeat` on every reconnect while the store holds a seat. `reclaimSeat` tells
@@ -370,9 +381,24 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
     load also threw the stored seat away. `reconnect.integration.test.ts` is the client's first
     test against a real server (`@hf/server` is a client devDependency for it), because only a real
     server can say whether the new socket is actually seated.
-  - The container must exec the server **directly** (`tsx src/main.ts`), not via `pnpm start`. The
-    pnpm wrapper does not forward SIGTERM, so through it the process is killed outright (exit 143)
-    and the graceful shutdown never runs — verified both ways locally.
+  - **M4b — persistence and deployment.** `store.ts` defines `RoomStore` (a `RoomRecord` per room —
+    seating, dealt, paused — plus its `LoggedAction` log) with `InMemoryRoomStore` for tests and
+    `PostgresRoomStore` (`postgres.ts`) for production: versioned `MIGRATIONS` under an advisory
+    lock, and `WriteBehind`, an ordered queue that retries then logs and drops. `Room.restore`
+    replays the log over a fresh deal and **refuses** a room that does not add up rather than
+    rebuilding a different game; `RoomManager.restore` closes and reports those. Rooms are keyed by
+    `uid`, not code (codes recur). `remove`/`sweep` close a room in the store; `disposeAll` (a
+    shutdown) deliberately does not. `startFromEnv` opens `DATABASE_URL`, restores before
+    listening, and **refuses to boot** if a configured database is unreachable. `/healthz` for Fly.
+    Deploy files: `Dockerfile` (prod-only install; `node --import tsx src/main.ts` so the server
+    itself gets SIGTERM), `fly.toml` (one machine, `rolling`, never bluegreen — two servers would
+    write the same rooms), `vercel.json`, `.github/workflows/deploy.yml` (Fly on green `main`, a
+    no-op until `FLY_API_TOKEN` exists). CI gained a Postgres service, the client build, and an
+    image job that smoke-tests `/healthz` and a clean SIGTERM exit. No Docker on this machine, so
+    the image was verified by replaying its steps in a scratch dir and running that tree as a real
+    process through a SIGTERM restart against Postgres.
+  - `pnpm start` does not forward SIGTERM (exit 143, no graceful shutdown) — never use it as a
+    container command.
 - **Bot milestone — the RL agent.** The point of the whole project. Design not yet written; the
   section in `DESIGN.md` is a placeholder. Observation = `PlayerView` (by construction the agent
   cannot see more than a human), reward is end-of-round. The evaluation baseline is **not**

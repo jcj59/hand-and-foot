@@ -12,7 +12,8 @@ import {
 } from "@hf/shared";
 import { applyAction, deal, defaultAction, legalHints, project, scoreRound } from "@hf/engine";
 import type { Clock } from "./clock";
-import { type ActionLog, InMemoryActionLog } from "./log";
+import { type ActionLog, InMemoryActionLog, StoredActionLog } from "./log";
+import type { RoomRecord, RoomStore, StoredRoom } from "./store";
 
 /** The engine will deal any number of seats; a game of Hand and Foot will not. */
 // Defined in `@hf/shared` so the client can say "a table seats at most eight"
@@ -70,6 +71,12 @@ export interface RoomDeps {
    * for them. Not a rule of the game, so it is not in `RulesConfig`.
    */
   readonly reconnectGraceMs?: number;
+  /** Where the room's record and log are kept so a restart can bring it back. */
+  readonly store?: RoomStore;
+  /** The room's identity in the store; see `RoomRecord.uid`. Defaults to its code. */
+  readonly uid?: string;
+  /** When it was opened. Given only when restoring a room opened before a restart. */
+  readonly createdAt?: number;
 }
 
 export const DEFAULT_RECONNECT_GRACE_MS = 30_000;
@@ -93,6 +100,7 @@ export const DEFAULT_RECONNECT_GRACE_MS = 30_000;
  */
 export class Room {
   readonly id: string;
+  readonly uid: string;
   readonly config: RulesConfig;
   readonly log: ActionLog;
   /** When the room was opened, so one nobody ever joined can still be reaped. */
@@ -121,11 +129,106 @@ export class Room {
 
   constructor(id: string, config: RulesConfig, deps: RoomDeps) {
     this.id = id;
+    this.uid = deps.uid ?? id;
     this.config = config;
     this.deps = deps;
     this.reconnectGraceMs = deps.reconnectGraceMs ?? DEFAULT_RECONNECT_GRACE_MS;
-    this.log = deps.log ?? new InMemoryActionLog();
-    this.createdAt = deps.clock.now();
+    const log = deps.log ?? new InMemoryActionLog();
+    this.log = deps.store ? new StoredActionLog(log, deps.store, this.uid) : log;
+    this.createdAt = deps.createdAt ?? deps.clock.now();
+  }
+
+  /**
+   * Bring back a room saved before a restart, by replaying its log over a fresh
+   * deal from the same seed.
+   *
+   * Everything the record and the log claim is checked rather than trusted, and a
+   * room that does not add up is refused whole: a game rebuilt from a log with a
+   * gap in it, or one the current engine no longer accepts, would be a different
+   * game from the one its players were in, and dealing them into it would be worse
+   * than telling them it is gone.
+   *
+   * What cannot come back is anything about time or connections. Every seat
+   * returns disconnected, because no socket survived, with its reconnect grace
+   * starting now; and the turn on the clock starts afresh, since how much of it
+   * was used before the restart died with the process. A paused table stays
+   * paused. Until someone resumes a seat the room is abandoned, so it runs no
+   * clock, and the reaper takes it if nobody comes back.
+   */
+  static restore(
+    stored: StoredRoom,
+    deps: Omit<RoomDeps, "seed" | "uid" | "createdAt" | "log">,
+  ): RoomResult<Room> {
+    const { room: record, actions } = stored;
+    if (record.players.some((p, index) => p.seat !== index)) {
+      return fail(`room ${record.id}: seats are not numbered 0..n-1`);
+    }
+    if (actions.some((row, index) => row.seq !== index)) {
+      return fail(`room ${record.id}: the action log has a gap or is out of order`);
+    }
+    if (!record.started && actions.length > 0) {
+      return fail(`room ${record.id}: actions recorded for a table that never dealt`);
+    }
+    if (record.pausedSeat !== null && !record.players[record.pausedSeat]) {
+      return fail(`room ${record.id}: paused by a seat that does not exist`);
+    }
+
+    let state: GameState | null = null;
+    if (record.started) {
+      state = deal(record.players.length, record.config, record.seed);
+      for (const row of actions) {
+        if (row.seat !== state.currentSeat) {
+          return fail(`room ${record.id}: action ${row.seq} is out of turn`);
+        }
+        const result = applyAction(state, row.action);
+        if (!result.ok)
+          return fail(`room ${record.id}: action ${row.seq} replays as refused: ${result.error}`);
+        state = result.state;
+      }
+    }
+
+    const room = new Room(record.id, record.config, {
+      ...deps,
+      seed: record.seed,
+      uid: record.uid,
+      createdAt: record.createdAt,
+      log: new InMemoryActionLog(actions),
+    });
+    const now = deps.clock.now();
+    for (const seat of record.players) {
+      room.players.push({ ...seat, connected: false, disconnectedAt: now });
+    }
+    if (record.pausedSeat !== null) {
+      room.pausedSeat = record.pausedSeat;
+      room.pausedAt = now;
+    }
+    room.state = state;
+    if (state && !state.roundEnded) room.beginTurn(state.currentSeat);
+    return succeed(room);
+  }
+
+  /** The part of the room a restart needs besides its log. */
+  record(): RoomRecord {
+    return {
+      uid: this.uid,
+      id: this.id,
+      config: this.config,
+      seed: this.deps.seed,
+      createdAt: this.createdAt,
+      players: this.players.map((p) => ({
+        seat: p.seat,
+        name: p.name,
+        token: p.token,
+        left: p.left,
+      })),
+      started: this.started,
+      pausedSeat: this.pausedSeat ?? null,
+    };
+  }
+
+  /** Write the record behind the game; see `RoomStore`. */
+  private save(): void {
+    this.deps.store?.saveRoom(this.record());
   }
 
   get started(): boolean {
@@ -183,6 +286,7 @@ export class Room {
       left: false,
     };
     this.players.push(player);
+    this.save();
     return succeed(player);
   }
 
@@ -210,10 +314,12 @@ export class Room {
       // nobody else is holding it.
       if (pauser === player) this.unpause();
       else if (pauser) this.pausedSeat = pauser.seat;
+      this.save();
       return succeed(player);
     }
     player.left = true;
     this.setConnected(player.seat, false);
+    this.save();
     return succeed(player);
   }
 
@@ -221,8 +327,11 @@ export class Room {
   resume(token: string): RoomResult<RoomPlayer> {
     const player = this.seatOf(token);
     if (!player) return fail("that seat token does not belong to this room");
+    const cameBack = player.left;
     player.left = false;
     this.setConnected(player.seat, true);
+    // Only `left` is recorded; a plain reconnect changes nothing a restart keeps.
+    if (cameBack) this.save();
     return succeed(player);
   }
 
@@ -244,6 +353,7 @@ export class Room {
       return fail(`a game needs at least ${MIN_PLAYERS} players`);
     }
     this.state = deal(this.players.length, this.config, this.deps.seed);
+    this.save();
     this.beginTurn(this.state.currentSeat);
     return succeed(this.state);
   }
@@ -271,6 +381,7 @@ export class Room {
     } else {
       this.unpause();
     }
+    this.save();
     return succeed(undefined);
   }
 

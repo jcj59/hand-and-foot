@@ -8,6 +8,19 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # A real Postgres, so the store's contract, the migrations and the restart
+    # tests run against the database they are for rather than being skipped.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      HF_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -20,3 +33,26 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
       - run: pnpm format:check
+      # What Vercel runs, so a client that will not build is caught here first.
+      - run: pnpm --filter @hf/client build
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t hand-and-foot-server .
+      # Boot the image as Fly would, check it answers, and check it stops cleanly
+      # on SIGTERM — which it only does if the server itself is PID 1's process.
+      - name: Smoke test
+        run: |
+          docker run -d --name hf -p 8080:8080 hand-and-foot-server
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:8080/healthz && break
+            sleep 1
+          done
+          curl -fsS http://localhost:8080/healthz
+          docker stop --time 10 hf
+          code=$(docker inspect hf --format '{{.State.ExitCode}}')
+          docker logs hf
+          docker logs hf 2>&1 | grep -q "SIGTERM received, closing rooms"
+          test "$code" = "0"

@@ -233,10 +233,39 @@ playing forever.
 ### Persistence
 
 A single server process holds each room's game in memory, which is sufficient for the intended
-scale but means a restart would otherwise drop in-progress games. Because the action log already
-exists, persistence is inexpensive: the log is written to Postgres and replayed to reconstruct
-active games on restart, rather than serializing the full game-state graph. The database is a
-durability backstop, not a coordinator; authoritative state remains in the single process.
+scale but means a restart would otherwise drop in-progress games — and every deploy is a restart.
+Because the action log already exists, persistence is inexpensive: the log is written to Postgres
+and replayed to reconstruct active games on restart, rather than serializing the full game-state
+graph. The database is a durability backstop, not a coordinator; authoritative state remains in the
+single process.
+
+The log cannot carry what happens around the game rather than in it — who is seated, whether the
+table has dealt, who paused it — so each room also keeps a small record of those, rewritten when
+they change. Rooms are keyed in storage by an identifier of their own rather than by their code,
+because six-character codes are short enough to come round again, and a new table must never
+inherit an old one's history. Nothing is deleted: a room that is reaped is only marked closed, since
+a finished game reproduces a defect exactly, can become a regression test, and is a training example
+for the agent.
+
+Writes are issued behind the game in the order they happened and are never awaited by it, so a slow
+database costs recoverability rather than a player's turn. A write that fails is retried through a
+short outage and then abandoned with a log line. An abandoned write leaves a gap, and restoring
+checks for exactly that: a room whose record and log do not add up — a missing or misordered entry,
+a move out of turn, a move the current engine refuses — is closed and reported rather than rebuilt,
+because dealing players back into a game that differs from the one they left is worse than telling
+them it is gone.
+
+What a restart cannot restore is anything about time or connections. Every seat comes back
+disconnected with its reconnect grace starting afresh, and the turn on the clock restarts, since
+how much of it had been used died with the process. A paused table stays paused. Until a player
+returns, a restored room is abandoned and runs no clock, so a restart never has the server playing
+turns for tables nobody has come back to.
+
+The deployment follows from holding rooms in one process. The server runs as exactly one machine,
+because a second would be a second, disjoint set of tables. Deploys stop the old process before
+starting the new one: the old one hears SIGTERM, stops its clocks and writes out what it still owes
+the database, and the new one restores every open room before it accepts a connection. Running the
+two side by side, as a blue-green deploy would, would have both writing the same rooms.
 
 ## Testing
 
@@ -266,7 +295,8 @@ the test effort.
   request.
 - The server is containerized and deployed to Fly.io as a single always-on instance; the client is
   built statically and served from Vercel; game state is persisted to a managed Postgres database
-  (Neon).
+  (Neon). CI also builds the server image and checks that it answers its health check and shuts
+  down cleanly on SIGTERM, and a passing build on `main` deploys the server.
 
 ## Reinforcement-learning agent (design in progress)
 
