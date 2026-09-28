@@ -21,7 +21,8 @@
  */
 import { useEffect, useState } from "react";
 import { isWild, type Card, type Rank } from "@hf/shared";
-import { pauseTable, play, stageDraft } from "../actions";
+import { useNavigate } from "react-router-dom";
+import { leaveTable, pauseTable, play, stageDraft } from "../actions";
 import { isDeadWeight } from "../cards/handOrder";
 import { FaceDownPile, PlayingCard } from "../cards/PlayingCard";
 import { useSession } from "../session";
@@ -55,6 +56,8 @@ export function Table({ socket }: TableProps): React.ReactElement {
   const setNotice = useSession((s) => s.setNotice);
   const seat = useSession((s) => s.seat);
   const result = useSession((s) => s.result);
+  const leave = useSession((s) => s.leave);
+  const navigate = useNavigate();
   const [staging, setStaging] = useState<Staging>(EMPTY_STAGING);
   // Meld mode: clicks in the hand add to the lay-down instead of opening a menu.
   const [melding, setMelding] = useState(false);
@@ -461,7 +464,16 @@ export function Table({ socket }: TableProps): React.ReactElement {
         </div>
       </footer>
 
-      {result && <RoundResult result={result} room={room} config={room.config} />}
+      {result && (
+        <RoundResult
+          result={result}
+          room={room}
+          config={room.config}
+          // A real leave, not just forgetting the seat: the server then knows the
+          // table is empty and lets it go.
+          onLeave={() => void leaveTable(socket, { leave }).then(() => navigate("/"))}
+        />
+      )}
     </main>
   );
 

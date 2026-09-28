@@ -12,6 +12,7 @@ import {
   type Suit,
   type ViewUpdate,
 } from "@hf/shared";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { createServerClock } from "../serverTime";
 import { useSession } from "../session";
 import type { HfClientSocket } from "../socket";
@@ -155,7 +156,14 @@ function update(
 
 function mount(socket: HfClientSocket, payload: ViewUpdate | null = update()): void {
   if (payload) useSession.getState().applyUpdate(payload);
-  render(<Table socket={socket} />);
+  render(
+    <MemoryRouter initialEntries={["/room/ABC234"]}>
+      <Routes>
+        <Route path="/room/:roomId" element={<Table socket={socket} />} />
+        <Route path="/" element={<p>main screen</p>} />
+      </Routes>
+    </MemoryRouter>,
+  );
 }
 
 beforeEach(() => {
@@ -1235,6 +1243,16 @@ describe("the controls added from play-testing", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /show the scores/i }));
     expect(screen.getByRole("dialog", { name: /round result/i })).toBeInTheDocument();
+  });
+
+  it("lets a player leave the finished table for the main screen", async () => {
+    const { socket, sent } = fakeSocket();
+    mount(socket);
+    act(() => useSession.setState({ result: scored([[0, 10]], 0) }));
+    fireEvent.click(screen.getByRole("button", { name: /back to the main screen/i }));
+    await waitFor(() => expect(screen.getByText("main screen")).toBeInTheDocument());
+    expect(sent).toEqual([{ event: "leaveRoom", args: [] }]);
+    expect(useSession.getState().credentials).toBeNull();
   });
 
   it("says when the stock ran out rather than naming anyone", () => {

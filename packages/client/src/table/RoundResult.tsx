@@ -19,6 +19,8 @@ export interface RoundResultProps {
   readonly result: RoundEnded;
   readonly room: RoomInfo;
   readonly config: RulesConfig;
+  /** Get up from the table and go back to the main screen. */
+  readonly onLeave: () => void;
 }
 
 /** A signed number the way a scoreboard writes one. */
@@ -26,7 +28,12 @@ function signed(n: number): string {
   return n > 0 ? `+${n}` : `${n}`;
 }
 
-export function RoundResult({ result, room, config }: RoundResultProps): React.ReactElement {
+export function RoundResult({
+  result,
+  room,
+  config,
+  onLeave,
+}: RoundResultProps): React.ReactElement {
   const { scoring } = config;
   const [hidden, setHidden] = useState(false);
   const ranked = [...result.scores].sort((a, b) => b.score - a.score);
@@ -105,13 +112,22 @@ export function RoundResult({ result, room, config }: RoundResultProps): React.R
             </tbody>
           </table>
         </div>
-        <button
-          type="button"
-          onClick={() => setHidden(true)}
-          className="mt-3 rounded border border-white/25 px-3 py-1.5 text-sm"
-        >
-          Look at the table
-        </button>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={onLeave}
+            className="rounded bg-white px-3 py-1.5 text-sm font-medium text-felt-900"
+          >
+            Back to the main screen
+          </button>
+          <button
+            type="button"
+            onClick={() => setHidden(true)}
+            className="rounded border border-white/25 px-3 py-1.5 text-sm"
+          >
+            Look at the table
+          </button>
+        </div>
       </section>
     </div>
   );
