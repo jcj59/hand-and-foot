@@ -20,9 +20,10 @@ body,
   height: 100%;
 }
 
-/* A pile the player can click right now: a soft glow that breathes, so the choice
-   between drawing and taking the pile is hard to miss. Off for anyone who has
-   asked their system for less motion. */
+/* Whatever the player can click right now to take their turn — the piles, and the
+   words under them: a soft glow that breathes, all on one rhythm (see pulse.ts,
+   which puts each one in phase), so the choice between drawing and taking the pile
+   is hard to miss. Off for anyone who has asked their system for less motion. */
 @keyframes pile-glow {
   0%,
   100% {
@@ -32,11 +33,25 @@ body,
     box-shadow: 0 0 0 8px rgb(252 211 77 / 0);
   }
 }
+@keyframes prompt-fade {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
 .pile-prompt {
-  animation: pile-glow 1.4s ease-in-out infinite;
+  /* Must match PULSE_PERIOD_MS in pulse.ts. */
+  animation: pile-glow 1400ms ease-in-out infinite;
+}
+.pile-prompt-label {
+  animation: prompt-fade 1400ms ease-in-out infinite;
 }
 @media (prefers-reduced-motion: reduce) {
-  .pile-prompt {
+  .pile-prompt,
+  .pile-prompt-label {
     animation: none;
   }
 }

@@ -9,8 +9,10 @@
  * theirs to move when it is not, and would put every opponent's meld in the tab
  * order for no reason.
  */
+import { useMemo } from "react";
 import type { Card } from "@hf/shared";
 import { cardLabel, rankLabel, suitSymbol } from "./cardText";
+import { pulseStyle } from "../table/pulse";
 import { isDeadWeight, isRedCard } from "./handOrder";
 
 export type CardSize = "normal" | "small";
@@ -294,6 +296,10 @@ export function FaceDownPile({
   readonly actionLabel?: string;
 }): React.ReactElement {
   const { w } = DIMENSIONS[size];
+  // In phase with every other pulse on the table. The glow starts when the pile
+  // becomes clickable, not when it first appears, so that is when the phase is set.
+  const clickable = onClick !== undefined;
+  const pulse = useMemo(() => (clickable ? pulseStyle() : undefined), [clickable]);
   const body = (
     <>
       <Stack count={count} width={w} />
@@ -305,6 +311,7 @@ export function FaceDownPile({
       <button
         type="button"
         onClick={onClick}
+        style={pulse}
         aria-label={`${actionLabel ?? label} (${count} left)`}
         className="pile-prompt flex flex-col items-center gap-1 rounded p-1 ring-2 ring-amber-300 transition hover:bg-white/10"
       >

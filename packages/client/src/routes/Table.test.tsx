@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import {
   EAST_COAST,
@@ -1242,6 +1242,41 @@ describe("the controls added from play-testing", () => {
     mount(fakeSocket().socket, update({ hints: { canTakePile: true } }));
     expect(screen.getByText("Draw a card")).toBeInTheDocument();
     expect(screen.getByText("Pick up the pile")).toBeInTheDocument();
+  });
+
+  it("pulses the piles and their labels in step", () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(10_250);
+    try {
+      mount(fakeSocket().socket, update({ hints: { canTakePile: true } }));
+      // 10 250 ms is 450 ms into a 1 400 ms cycle, so each starts 450 ms in.
+      const delays = [
+        screen.getByRole("button", { name: /draw a card/i }),
+        screen.getByRole("button", { name: /take the pile/i }),
+        screen.getByText("Draw a card"),
+        screen.getByText("Pick up the pile"),
+      ].map((el) => el.style.animationDelay);
+      expect(delays).toEqual(["-450ms", "-450ms", "-450ms", "-450ms"]);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it("sets a pile's phase when it becomes clickable, not when it first appeared", () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(10_250);
+    try {
+      mount(fakeSocket().socket, update({ hints: { canDraw: false, phase: "play" } }));
+      now.mockReturnValue(11_000);
+      act(() => useSession.getState().applyUpdate(update({ hints: { canTakePile: true } })));
+      // 11 000 is 1 200 ms into the cycle: in step with a pulse started at any time.
+      expect(screen.getByRole("button", { name: /take the pile/i }).style.animationDelay).toBe(
+        "-1200ms",
+      );
+      expect(screen.getByRole("button", { name: /draw a card/i }).style.animationDelay).toBe(
+        "-1200ms",
+      );
+    } finally {
+      now.mockRestore();
+    }
   });
 
   it("drops the labels once the draw is done", () => {

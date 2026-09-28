@@ -19,7 +19,7 @@
  * that looks like a mistake (a wild, or a card the player could lay off on a meld
  * they already have) asks once more before it goes.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { isWild, type Card, type Rank } from "@hf/shared";
 import { useNavigate } from "react-router-dom";
 import { leaveTable, pauseTable, play, playAgain, stageDraft } from "../actions";
@@ -28,6 +28,7 @@ import { FaceDownPile, PlayingCard } from "../cards/PlayingCard";
 import { useSession } from "../session";
 import type { HfClientSocket } from "../socket";
 import { Hand } from "../table/Hand";
+import { pulseStyle } from "../table/pulse";
 import { Melds } from "../table/Melds";
 import { Seats } from "../table/Seats";
 import { RoundResult } from "../table/RoundResult";
@@ -68,6 +69,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
   const [chosenId, setChosenId] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
+
   // The auto-add is waiting on a second yes, because it would shed the last card.
   const [confirmLayOff, setConfirmLayOff] = useState(false);
 
@@ -89,6 +91,12 @@ export function Table({ socket }: TableProps): React.ReactElement {
   useEffect(() => {
     if (draftOpen) void stageDraft(socket, toMeldPlays(staging));
   }, [draftOpen, staging, socket]);
+
+  // The discard pile's glow starts when it becomes takeable, so its phase is set
+  // then, to agree with the stock's and the labels'. Worked out before the early
+  // return below, as a hook has to be.
+  const takeable = turnOpen && update.hints.canTakePile && !busy;
+  const pilePulse = useMemo(() => (takeable ? pulseStyle() : undefined), [takeable]);
 
   const liveZone = update && (update.view.inFoot ? update.view.foot : update.view.hand);
   useEffect(() => {
@@ -267,6 +275,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
   // this is the server's answer, not a guess made here.
   const canTake = myTurn && hints.canTakePile && !busy;
   const top = view.discard[view.discard.length - 1];
+
   const lastLap = view.finalLapRemaining !== null && view.wentOutSeat !== null;
 
   return (
@@ -358,6 +367,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
                   type="button"
                   aria-label={`Take the pile (${view.discard.length} cards)`}
                   onClick={() => void send({ type: "takePile" })}
+                  style={pilePulse}
                   className="pile-prompt rounded p-1 ring-2 ring-amber-300 transition hover:bg-white/10"
                 >
                   <PlayingCard card={top} />
@@ -681,8 +691,13 @@ function CardMenu({
 
 /** The word under a pile that is waiting to be clicked, pulsing with it. */
 function PilePrompt({ children }: { readonly children: React.ReactNode }): React.ReactElement {
+  // Fixed at first render: re-reading the clock on every render would jump the phase.
+  const [style] = useState(() => pulseStyle());
   return (
-    <span className="animate-pulse rounded bg-amber-300 px-2 py-0.5 text-xs font-semibold text-black">
+    <span
+      style={style}
+      className="pile-prompt-label rounded bg-amber-300 px-2 py-0.5 text-xs font-semibold text-black"
+    >
       {children}
     </span>
   );
