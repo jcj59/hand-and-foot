@@ -427,6 +427,11 @@ export class Room {
     return left;
   }
 
+  /** Whether this player has already left for the next game's table. */
+  hasGoneOn(token: string): boolean {
+    return this.wentOn.has(token);
+  }
+
   /**
    * Say this player is ready for the next round. It is dealt the moment everyone
    * still at the table is — no one is dealt in while still reading the scores — and

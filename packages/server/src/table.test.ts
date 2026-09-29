@@ -120,3 +120,57 @@ describe("a table rebuilt around connections that stayed open", () => {
     expect(p.frames[0]).toMatchObject({ result: { ok: false } });
   });
 });
+
+describe("going on to the next game", () => {
+  function finishedTable() {
+    const { room, store } = table(["ana", "ben"]);
+    room.start(0);
+    const internal = room as unknown as { state: object };
+    internal.state = { ...room.gameState!, roundEnded: true, roundNumber: room.config.rounds };
+    let calls = 0;
+    let open: () => void = () => undefined;
+    const channel = new TableChannel(room, {
+      nextTable: async () => {
+        calls++;
+        await new Promise<void>((resolve) => (open = resolve));
+        return { ok: true, value: { roomId: "NXT234", seat: calls - 1, token: `next-${calls}` } };
+      },
+    });
+    return { room, store, channel, calls: () => calls, open: () => open() };
+  }
+
+  it("seats a player who asks twice at once only once, and answers both alike", async () => {
+    const { channel, calls, open } = finishedTable();
+    const p = peer();
+    const conn = channel.connect(p);
+    await ask(channel, conn, "resumeSeat", { roomId: "TBL234", token: "tok-0" });
+    const first = ask(channel, conn, "playAgain");
+    const second = ask(channel, conn, "playAgain");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    open();
+    await Promise.all([first, second]);
+    expect(calls()).toBe(1);
+    const answers = p.frames.filter((f) => "ack" in f).slice(1);
+    const expected = { ok: true, data: { roomId: "NXT234", seat: 0, token: "next-1" } };
+    expect(answers.map((f) => ("ack" in f ? f.result : null))).toEqual([expected, expected]);
+  });
+
+  it("refuses a player who has gone on and then comes back to ask again", async () => {
+    const { channel, calls, open } = finishedTable();
+    const p = peer();
+    const conn = channel.connect(p);
+    await ask(channel, conn, "resumeSeat", { roomId: "TBL234", token: "tok-0" });
+    const moved = ask(channel, conn, "playAgain");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    open();
+    await moved;
+    const q = peer();
+    const again = channel.connect(q);
+    await ask(channel, again, "resumeSeat", { roomId: "TBL234", token: "tok-0" });
+    await ask(channel, again, "playAgain");
+    expect(q.frames.find((f) => "ack" in f && f.ack === frameId - 1)).toMatchObject({
+      result: { ok: false, error: "you have already gone on to the next game" },
+    });
+    expect(calls()).toBe(1);
+  });
+});

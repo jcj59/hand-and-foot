@@ -432,8 +432,38 @@ describe("a table", () => {
     if (!benNext.ok) throw new Error(benNext.error);
     expect(benNext.data.roomId).toBe(anaNext.data.roomId);
     expect([anaNext.data.seat, benNext.data.seat].sort()).toEqual([0, 1]);
-    expect(await insideTable(anaSeat.roomId, (room) => room.nextRoomId)).toBe(
-      anaNext.data.roomId,
+    expect(await insideTable(anaSeat.roomId, (room) => room.nextRoomId)).toBe(anaNext.data.roomId);
+  });
+
+  it("seats a player who clicks play again twice only once at the next table", async () => {
+    const { anaSeat } = await dealtTable();
+    await insideTable(anaSeat.roomId, (room) => {
+      const internal = room as unknown as { state: object };
+      internal.state = { ...room.gameState!, roundEnded: true, roundNumber: room.config.rounds };
+    });
+    // A raw socket, so both answers are seen: the client transport moves tables on
+    // the first and stops listening here.
+    const response = await SELF.fetch(`${BASE}/api/rooms/${anaSeat.roomId}/socket`, {
+      headers: { upgrade: "websocket" },
+    });
+    const ws = response.webSocket!;
+    ws.accept();
+    const acks = new Map<number, Ack<SeatCredentials>>();
+    ws.addEventListener("message", (event) => {
+      const frame = JSON.parse(String(event.data)) as { ack?: number; result?: unknown };
+      if (frame.ack !== undefined) acks.set(frame.ack, frame.result as Ack<SeatCredentials>);
+    });
+    ws.send(JSON.stringify({ id: 1, event: "resumeSeat", payload: anaSeat }));
+    await until(() => acks.has(1));
+    ws.send(JSON.stringify({ id: 2, event: "playAgain" }));
+    ws.send(JSON.stringify({ id: 3, event: "playAgain" }));
+    await until(() => acks.has(2) && acks.has(3));
+    ws.close();
+    const first = acks.get(2)!;
+    if (!first.ok) throw new Error(first.error);
+    expect(acks.get(3)).toEqual(first);
+    expect(await insideTable(first.data.roomId, (room) => room.seats().map((p) => p.name))).toEqual(
+      ["ana"],
     );
   });
 

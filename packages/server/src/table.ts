@@ -60,6 +60,8 @@ export class TableChannel {
   private readonly sessions = new Map<number, string>();
   /** The one connection that currently speaks for each token. */
   private readonly owners = new Map<string, number>();
+  /** Seats on their way to the next game, so a second click waits for the first. */
+  private readonly moving = new Map<string, Promise<Ack<SeatCredentials>>>();
   private nextConnection = 1;
   private retired = false;
 
@@ -206,14 +208,18 @@ export class TableChannel {
         const player = token === undefined ? undefined : this.room.seatOf(token);
         if (token === undefined || !player) return reply({ ok: false, error: NOT_SEATED });
         if (!this.room.matchOver) return reply({ ok: false, error: "the match is not over yet" });
-        const moved = await this.hooks.nextTable(this.room, player);
-        if (!moved.ok) return reply({ ok: false, error: moved.error });
-        // Off this table, as a leave: this connection no longer speaks for the seat.
-        this.letGo(token);
-        this.room.moveOn(token);
-        reply({ ok: true, data: moved.value });
-        this.broadcastRoom();
-        return;
+        const pending = this.moving.get(token);
+        if (pending) return reply(await pending);
+        if (this.room.hasGoneOn(token)) {
+          return reply({ ok: false, error: "you have already gone on to the next game" });
+        }
+        const moving = this.moveOn(token, player);
+        this.moving.set(token, moving);
+        try {
+          return reply(await moving);
+        } finally {
+          this.moving.delete(token);
+        }
       }
       case "leaveRoom": {
         const token = this.sessions.get(connection);
@@ -238,6 +244,16 @@ export class TableChannel {
       default:
         return reply({ ok: false, error: `unknown request: ${frame.event}` });
     }
+  }
+
+  private async moveOn(token: string, player: RoomPlayer): Promise<Ack<SeatCredentials>> {
+    const moved = await this.hooks.nextTable(this.room, player);
+    if (!moved.ok) return { ok: false, error: moved.error };
+    // Off this table, as a leave: this connection no longer speaks for the seat.
+    this.letGo(token);
+    this.room.moveOn(token);
+    this.broadcastRoom();
+    return { ok: true, data: moved.value };
   }
 
   /** Tell everyone at the table where things stand, as a newly wired room does. */
