@@ -35,10 +35,12 @@ import { isUnplayable, type PlayContext } from "../cards/handOrder";
 import { FaceDownPile, PlayingCard } from "../cards/PlayingCard";
 import { useSession } from "../session";
 import type { HfClientSocket } from "../socket";
+import { usePhone } from "../usePhone";
 import { Hand } from "../table/Hand";
 import { pulseStyle } from "../table/pulse";
 import { Melds } from "../table/Melds";
 import { PauseBar } from "../table/PauseBar";
+import { OpponentStrip } from "../table/OpponentStrip";
 import { Seats } from "../table/Seats";
 import { RoundResult } from "../table/RoundResult";
 import { StagingPanel } from "../table/StagingPanel";
@@ -78,6 +80,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
   const [chosenId, setChosenId] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
+  const phone = usePhone();
 
   const turnOpen =
     update !== null && update.hints.seatToAct === update.view.seat && result === null;
@@ -285,18 +288,33 @@ export function Table({ socket }: TableProps): React.ReactElement {
 
   return (
     <main className="flex h-full flex-col gap-2 overflow-hidden p-2 sm:p-3">
-      <header className="flex shrink-0 flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-baseline gap-x-3">
-          <h1 className="text-lg font-semibold">Table {room.roomId}</h1>
-          <p className="text-sm text-white/60">
-            Round {view.roundNumber} of {room.config.rounds} · minimum{" "}
-            {room.config.layDownMinimums[view.roundNumber - 1] ?? "—"}
-            {view.isDown ? " · you are down" : " · not down"}
-          </p>
+      <header
+        className={`flex shrink-0 items-center justify-between gap-2 ${phone ? "" : "flex-wrap"}`}
+      >
+        <div className={`flex min-w-0 flex-wrap items-baseline gap-x-3 ${phone ? "flex-1" : ""}`}>
+          {/* On a phone the header is one line: the table's code is in the link,
+              and the space is worth more to the cards. */}
+          <h1 className={phone ? "sr-only" : "text-lg font-semibold"}>Table {room.roomId}</h1>
+          {phone ? (
+            <p className="truncate text-xs text-white/70">
+              Round {view.roundNumber}/{room.config.rounds} · min{" "}
+              {room.config.layDownMinimums[view.roundNumber - 1] ?? "—"}
+              {view.isDown ? " · down" : " · not down"}
+            </p>
+          ) : (
+            <p className="text-sm text-white/60">
+              Round {view.roundNumber} of {room.config.rounds} · minimum{" "}
+              {room.config.layDownMinimums[view.roundNumber - 1] ?? "—"}
+              {view.isDown ? " · you are down" : " · not down"}
+            </p>
+          )}
           {/* The match so far, once there is one: it is what every later round is
               being played for. */}
           {view.roundNumber > 1 && (
-            <p aria-label="Scores so far" className="text-sm text-white/60">
+            <p
+              aria-label="Scores so far"
+              className={phone ? "w-full truncate text-xs text-white/60" : "text-sm text-white/60"}
+            >
               Scores:{" "}
               {view.scoresSoFar.map((total, seat) => `${nameOf(seat)} ${total}`).join(" · ")}
             </p>
@@ -304,9 +322,9 @@ export function Table({ socket }: TableProps): React.ReactElement {
         </div>
         {/* Once the round is over no turn is live, so there is no clock to show even
             if a deadline still arrives. */}
-        <div className="flex items-center gap-3">
+        <div className={`flex shrink-0 items-center ${phone ? "gap-2" : "gap-3"}`}>
           {!result && (
-            <div className="flex items-center gap-3">
+            <div className={`flex items-center ${phone ? "gap-2" : "gap-3"}`}>
               <TurnClock clock={clock} />
               {/* Resuming is the pause bar's, beside what the pause means. */}
               {room.config.pauseEnabled && !clock.paused && (
@@ -317,9 +335,18 @@ export function Table({ socket }: TableProps): React.ReactElement {
                     setBusy(true);
                     void pauseTable(socket, true, sink).finally(() => setBusy(false));
                   }}
+                  aria-label="Pause"
                   className="rounded border border-white/25 px-3 py-1 text-sm disabled:opacity-40"
                 >
-                  Pause
+                  {phone ? (
+                    // Drawn, not a glyph: not every phone's font has the pause sign.
+                    <svg aria-hidden="true" viewBox="0 0 10 12" className="h-3.5 w-3 fill-current">
+                      <rect x="0" y="0" width="3.5" height="12" rx="0.5" />
+                      <rect x="6.5" y="0" width="3.5" height="12" rx="0.5" />
+                    </svg>
+                  ) : (
+                    "Pause"
+                  )}
                 </button>
               )}
             </div>
@@ -329,20 +356,30 @@ export function Table({ socket }: TableProps): React.ReactElement {
           <button
             type="button"
             onClick={() => navigate("/")}
+            aria-label="Main menu"
             className="rounded border border-white/25 px-3 py-1 text-sm"
           >
-            Main menu
+            {phone ? "☰" : "Main menu"}
           </button>
         </div>
       </header>
 
       <div className="shrink-0">
-        <Seats
-          opponents={view.opponents}
-          room={room}
-          config={room.config}
-          seatToAct={hints.seatToAct}
-        />
+        {phone ? (
+          <OpponentStrip
+            opponents={view.opponents}
+            room={room}
+            config={room.config}
+            seatToAct={hints.seatToAct}
+          />
+        ) : (
+          <Seats
+            opponents={view.opponents}
+            room={room}
+            config={room.config}
+            seatToAct={hints.seatToAct}
+          />
+        )}
       </div>
 
       <PauseBar
@@ -375,12 +412,16 @@ export function Table({ socket }: TableProps): React.ReactElement {
         <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
           {/* Padded so the glow around a pile that can be taken is never cut off
               by the edge of the scrolling area. */}
-          <section className="flex flex-wrap items-end gap-6 p-2" aria-label="Piles">
+          <section
+            className={`flex flex-wrap items-end p-2 ${phone ? "justify-center gap-8" : "gap-6"}`}
+            aria-label="Piles"
+          >
             <div className="flex flex-col items-center gap-1">
               <span className="text-xs text-white/60">Stock</span>
               <FaceDownPile
                 count={view.stockCount}
                 label="Stock"
+                size={phone ? "small" : "normal"}
                 onClick={canDraw ? () => void send({ type: "draw" }) : undefined}
                 actionLabel="Draw a card"
               />
@@ -398,11 +439,11 @@ export function Table({ socket }: TableProps): React.ReactElement {
                   style={pilePulse}
                   className="pile-prompt rounded p-1 ring-2 ring-amber-300 transition hover:bg-white/10"
                 >
-                  <PlayingCard card={top} />
+                  <PlayingCard card={top} size={phone ? "small" : "normal"} />
                 </button>
               ) : (
                 <div className="p-1">
-                  <PlayingCard card={top} />
+                  <PlayingCard card={top} size={phone ? "small" : "normal"} />
                 </div>
               )}
               {canTake && <PilePrompt>Pick up the pile</PilePrompt>}
@@ -435,6 +476,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
                 canMeld ? (rank) => setStaging((current) => focusGroup(current, rank)) : undefined
               }
               selectedRank={canMeld ? staging.focusedRank : null}
+              chips={phone}
             />
           </section>
         </div>
@@ -527,13 +569,18 @@ export function Table({ socket }: TableProps): React.ReactElement {
               chosenId={chosenId}
               menu={menu}
               title={view.inFoot ? "Your foot" : "Your hand"}
+              fan={phone}
             />
           </div>
           {/* The foot waits beside the hand it will replace. */}
           {!view.inFoot && (
             <div className="flex shrink-0 flex-col items-center gap-1">
-              <span className="text-xs text-white/60">Your foot</span>
-              <FaceDownPile count={view.footCount} label="Your foot" />
+              <span className="text-xs text-white/60">{phone ? "Foot" : "Your foot"}</span>
+              <FaceDownPile
+                count={view.footCount}
+                label="Your foot"
+                size={phone ? "small" : "normal"}
+              />
             </div>
           )}
         </div>
@@ -562,13 +609,14 @@ export function Table({ socket }: TableProps): React.ReactElement {
 
   /** One line saying what the table is waiting for, in the order the rules impose. */
   function guidance(): string {
-    if (hints.phase === "draw") return "Click the stock to draw, or the pile to take it.";
-    if (building) return "Click cards to add them; click a meld to aim wilds at it.";
+    const click = phone ? "Tap" : "Click";
+    if (hints.phase === "draw") return `${click} the stock to draw, or the pile to take it.`;
+    if (building) return `${click} cards to add them, or a meld to aim wilds at it.`;
     if (stagedCount(staging) > 0) return "Play or take back your melds, then discard.";
     if (obligationOpen) return "Play a card from the pile before you can discard.";
     if (clock.inDiscardGrace) return "Time is up. Only a discard will be accepted.";
     if (zone.length === 0) return "No cards left; your turn ends itself.";
-    return "Click a card to meld or discard it.";
+    return `${click} a card to meld or discard it.`;
   }
 }
 

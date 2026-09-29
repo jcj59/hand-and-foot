@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { afterEach, describe, it, expect, beforeEach, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import {
   EAST_COAST,
@@ -16,6 +16,8 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { createServerClock } from "../serverTime";
 import { useSession } from "../session";
 import type { HfClientSocket } from "../socket";
+import { FAN_ROW_MAX, fanRows } from "../table/Hand";
+import { PHONE_QUERY } from "../usePhone";
 import { Table } from "./Table";
 
 const card = (rank: Rank, suit: Suit | null): Card => ({ id: `${rank}-${suit}`, rank, suit });
@@ -1702,5 +1704,105 @@ describe("a match of several rounds", () => {
     );
     act(() => useSession.getState().applyUpdate(update({ view: { roundNumber: 2 } })));
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("on a phone", () => {
+  /** Answer the phone query as a phone would, for the length of one test. */
+  function asPhone(): void {
+    const listeners = new Set<() => void>();
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: (query: string) => ({
+        matches: query === PHONE_QUERY,
+        addEventListener: (_: string, fn: () => void) => listeners.add(fn),
+        removeEventListener: (_: string, fn: () => void) => listeners.delete(fn),
+      }),
+    });
+  }
+
+  afterEach(() => {
+    delete (window as { matchMedia?: unknown }).matchMedia;
+  });
+
+  const kings = {
+    rank: "K" as const,
+    cards: ["hearts", "spades", "diamonds", "clubs", "hearts", "spades", "diamonds"].map(
+      (s, i) => ({
+        id: `K-${s}-${i}`,
+        rank: "K" as const,
+        suit: s as Suit,
+      }),
+    ),
+  };
+
+  it("shows each opponent as a chip, with their melds a tap away", () => {
+    asPhone();
+    mount(
+      fakeSocket().socket,
+      update({
+        view: {
+          opponents: [
+            { seat: 1, handCount: 0, footCount: 9, melds: [kings], isDown: true, inFoot: true },
+          ],
+        },
+      }),
+    );
+    const chip = screen.getByRole("button", {
+      name: "ben, 9 in foot, playing from it, 1 book, 1 clean",
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(chip);
+    const sheet = screen.getByRole("dialog", { name: "ben's melds" });
+    expect(sheet.textContent).toMatch(/Playing from the foot, 9 cards left\./);
+    expect(
+      within(sheet).getByRole("listitem", { name: "clean book of Ks, 7 cards" }),
+    ).toBeInTheDocument();
+    fireEvent.click(within(sheet).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("says who has not gone down, and who is on turn", () => {
+    asPhone();
+    mount(fakeSocket().socket, update({ hints: { seatToAct: 1 }, view: { currentSeat: 1 } }));
+    expect(
+      screen.getByRole("button", { name: "ben, 11 in hand, not down, to play" }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the player's melds as chips that still aim a wild", () => {
+    asPhone();
+    const { socket } = fakeSocket();
+    mount(
+      socket,
+      update({
+        view: { melds: [kings], isDown: true, phase: "play", hand: [card("2", "clubs")] },
+        hints: { phase: "play", canDraw: false },
+      }),
+    );
+    const chip = screen.getByRole("button", { name: "Select clean book of Ks, 7 cards" });
+    expect(chip.textContent).toBe("K×7");
+    fireEvent.click(chip);
+    expect(chip).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("keeps the header's buttons named for what they do, drawn as icons", () => {
+    asPhone();
+    mount(fakeSocket().socket);
+    expect(screen.getByRole("button", { name: "Pause" }).textContent).toBe("");
+    expect(screen.getByRole("button", { name: "Main menu" }).textContent).toBe("☰");
+    expect(screen.getByText(/Tap the stock to draw/)).toBeInTheDocument();
+  });
+});
+
+describe("fanning a hand into rows", () => {
+  it("keeps up to nine cards in one row, and splits evenly past that", () => {
+    const sizes = (n: number) => fanRows([...Array(n).keys()]).map((row) => row.length);
+    expect(FAN_ROW_MAX).toBe(9);
+    expect(sizes(0)).toEqual([]);
+    expect(sizes(9)).toEqual([9]);
+    expect(sizes(10)).toEqual([5, 5]);
+    expect(sizes(15)).toEqual([8, 7]);
+    expect(sizes(19)).toEqual([7, 7, 5]);
   });
 });

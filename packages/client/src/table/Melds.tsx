@@ -25,6 +25,11 @@ export interface MeldsProps {
   readonly onSelect?: (rank: Rank) => void;
   /** The meld currently selected, drawn highlighted. */
   readonly selectedRank?: Rank | null;
+  /**
+   * One small chip per meld — rank, size, and a clean or dirty border — instead of
+   * cards. For a phone, where a row of fanned melds would take the whole screen.
+   */
+  readonly chips?: boolean;
 }
 
 export function Melds({
@@ -33,10 +38,12 @@ export function Melds({
   compact = false,
   onSelect,
   selectedRank = null,
+  chips = false,
 }: MeldsProps): React.ReactElement {
   if (melds.length === 0) {
     return <p className="text-xs text-white/40">Not down yet.</p>;
   }
+  if (chips) return <MeldChips melds={melds} onSelect={onSelect} selectedRank={selectedRank} />;
 
   return (
     <ul className="flex flex-wrap gap-3">
@@ -88,6 +95,55 @@ export function Melds({
                 {face}
                 {caption}
               </div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function MeldChips({
+  melds,
+  onSelect,
+  selectedRank,
+}: Pick<MeldsProps, "melds" | "onSelect" | "selectedRank">): React.ReactElement {
+  return (
+    <ul className="flex flex-wrap gap-1.5">
+      {melds.map((meld) => {
+        const kind = classifyBook(meld);
+        const selected = selectedRank === meld.rank;
+        const wilds = meld.cards.filter((card) => isWild(card.rank)).length;
+        const look =
+          kind === "clean"
+            ? "border-red-400 bg-red-500/20"
+            : kind === "dirty"
+              ? "border-white/70 bg-black/50"
+              : "border-white/20 bg-white/5";
+        const face = (
+          <>
+            <span className="text-base font-semibold">{meld.rank}</span>
+            <span className="text-xs text-white/70">×{meld.cards.length}</span>
+            {wilds > 0 && <span className="text-[10px] text-white/50">{wilds}w</span>}
+          </>
+        );
+        const shape = `flex items-baseline gap-1 rounded border px-2 py-0.5 ${look} ${
+          selected ? "ring-2 ring-amber-300" : ""
+        }`;
+        return (
+          <li key={meld.rank} aria-label={meldLabel(meld)}>
+            {onSelect ? (
+              <button
+                type="button"
+                aria-pressed={selected}
+                aria-label={`Select ${meldLabel(meld)}`}
+                onClick={() => onSelect(meld.rank)}
+                className={shape}
+              >
+                {face}
+              </button>
+            ) : (
+              <span className={shape}>{face}</span>
             )}
           </li>
         );
