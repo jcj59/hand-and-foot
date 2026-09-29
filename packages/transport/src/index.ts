@@ -19,6 +19,8 @@
 import {
   isAckFrame,
   joinPath,
+  PING,
+  PONG,
   ROOMS_PATH,
   socketPath,
   type Ack,
@@ -43,10 +45,39 @@ export const NOT_SEATED = "you are not seated in a room";
 /** Back-off between attempts to reopen a dropped socket; the last repeats. */
 export const DEFAULT_RETRY_DELAYS_MS: readonly number[] = [250, 500, 1_000, 2_000, 5_000];
 
+/**
+ * How often an open socket says it is still there. Under Cloudflare's ~100s idle
+ * cut-off with room to spare, and it doubles as this end's check on the server:
+ * a whole interval with nothing heard back means the connection is dead, however
+ * open the browser thinks it is, and it is dropped and reopened.
+ */
+export const DEFAULT_KEEP_ALIVE_MS = 25_000;
+
+/**
+ * The part of a WebSocket this uses. A browser's, Node's and a Cloudflare Worker's
+ * all have it, though their type declarations differ elsewhere — so this names
+ * only what is used, and any of them, or a test's fake, fits.
+ */
+export interface SocketLike {
+  readonly readyState: number;
+  send(data: string): void;
+  close(): void;
+  onopen: (() => void) | null;
+  onmessage: ((message: { data: unknown }) => void) | null;
+  onclose: (() => void) | null;
+  onerror: (() => void) | null;
+}
+
+export type SocketConstructor = new (url: string) => SocketLike;
+
+/** `WebSocket.OPEN`, the same in every implementation. */
+const OPEN = 1;
+
 export interface TransportOptions {
   readonly retryDelaysMs?: readonly number[];
+  readonly keepAliveMs?: number;
   /** Injected for tests; the global by default. */
-  readonly WebSocket?: typeof WebSocket;
+  readonly WebSocket?: SocketConstructor;
   readonly fetch?: typeof fetch;
 }
 
@@ -65,16 +96,20 @@ export class TableSocket {
   private readonly listeners = new Map<string, Set<Listener>>();
   private readonly pending = new Map<number, (result: Ack<unknown>) => void>();
   private readonly retryDelaysMs: readonly number[];
-  private readonly WebSocketImpl: typeof WebSocket;
+  private readonly keepAliveMs: number;
+  private readonly WebSocketImpl: SocketConstructor;
   private readonly fetchImpl: typeof fetch;
   private nextId = 1;
   /** The table this client is at, if any. */
   private roomId: string | null = null;
-  private ws: WebSocket | null = null;
+  private ws: SocketLike | null = null;
   /** Frames waiting for the socket to open. */
   private queue: string[] = [];
   private retries = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private keepAlive: ReturnType<typeof setInterval> | null = null;
+  /** Whether anything has arrived since the last keep-alive went out. */
+  private heard = true;
   private closed = false;
 
   constructor(
@@ -82,7 +117,9 @@ export class TableSocket {
     options: TransportOptions,
   ) {
     this.retryDelaysMs = options.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
-    this.WebSocketImpl = options.WebSocket ?? globalThis.WebSocket;
+    this.keepAliveMs = options.keepAliveMs ?? DEFAULT_KEEP_ALIVE_MS;
+    this.WebSocketImpl =
+      options.WebSocket ?? (globalThis.WebSocket as unknown as SocketConstructor);
     this.fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
     // As Socket.io did: say "connected" once, after whoever built this has had the
     // chance to listen for it.
@@ -219,7 +256,7 @@ export class TableSocket {
     return new Promise((resolve) => {
       this.pending.set(id, resolve);
       const text = JSON.stringify(frame);
-      if (this.ws?.readyState === this.WebSocketImpl.OPEN) this.ws.send(text);
+      if (this.ws?.readyState === OPEN) this.ws.send(text);
       else this.queue.push(text);
     });
   }
@@ -240,6 +277,7 @@ export class TableSocket {
     this.queue = [];
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.retryTimer = null;
+    this.stopKeepAlive();
     const ws = this.ws;
     this.ws = null;
     if (ws) {
@@ -260,14 +298,40 @@ export class TableSocket {
     this.ws = ws;
     ws.onopen = () => {
       this.retries = 0;
+      this.startKeepAlive(ws);
       for (const text of this.queue.splice(0)) ws.send(text);
       if (!this.connected) {
         this.connected = true;
         this.fire("connect");
       }
     };
-    ws.onmessage = (message) => this.receive(String(message.data));
+    ws.onmessage = (message) => {
+      this.heard = true;
+      this.receive(String(message.data));
+    };
     ws.onclose = () => this.dropped();
+  }
+
+  private startKeepAlive(ws: SocketLike): void {
+    this.heard = true;
+    this.keepAlive = setInterval(() => {
+      if (this.heard) {
+        this.heard = false;
+        ws.send(PING);
+        return;
+      }
+      // Silent for a whole interval: gone, whatever the socket says. Let go of
+      // it without waiting for a close that may never come, and reconnect.
+      ws.onclose = null;
+      ws.onmessage = null;
+      ws.close();
+      this.dropped();
+    }, this.keepAliveMs);
+  }
+
+  private stopKeepAlive(): void {
+    if (this.keepAlive) clearInterval(this.keepAlive);
+    this.keepAlive = null;
   }
 
   /** The socket went away without being asked to: say so, and try again. */
@@ -275,6 +339,7 @@ export class TableSocket {
     // Only the live socket can get here: one let go of on purpose has its
     // handlers removed first, so its closing says nothing.
     this.ws = null;
+    this.stopKeepAlive();
     if (this.connected) {
       this.connected = false;
       this.fire("disconnect");
@@ -290,6 +355,7 @@ export class TableSocket {
   }
 
   private receive(text: string): void {
+    if (text === PONG) return;
     let frame: ServerFrame;
     try {
       frame = JSON.parse(text) as ServerFrame;

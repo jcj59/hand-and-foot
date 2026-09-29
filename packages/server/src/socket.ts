@@ -11,6 +11,8 @@ import { WebSocketServer, type WebSocket } from "ws";
 import {
   HEALTH_PATH,
   parseRoomPath,
+  PING,
+  PONG,
   ROOMS_PATH,
   type Ack,
   type ClientFrame,
@@ -130,6 +132,10 @@ export function attachTables(
     sockets.handleUpgrade(request, socket, head, (ws) => {
       alive.set(ws, true);
       ws.on("pong", () => alive.set(ws, true));
+      // The client's own keep-alive, which it uses to notice a dead connection.
+      ws.on("message", (data) => {
+        if (String(data) === PING) ws.send(PONG);
+      });
       // A code with no table behind it still gets a socket, so that what is asked
       // of it is answered — "no room with that code" sends a client home — rather
       // than left to time out while the client keeps trying to connect.

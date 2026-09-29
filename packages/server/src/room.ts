@@ -148,9 +148,19 @@ export class Room {
 
   /**
    * The waiting room for the next game, once someone at this finished table has
-   * asked to play again. Everyone after them joins the same one.
+   * asked to play again. Everyone after them joins the same one. Saved with the
+   * record, so a table that restarts or sleeps still sends them to the same one.
    */
-  nextRoomId: string | null = null;
+  get nextRoomId(): string | null {
+    return this.next;
+  }
+
+  set nextRoomId(roomId: string | null) {
+    this.next = roomId;
+    this.save();
+  }
+
+  private next: string | null = null;
 
   private readonly deps: RoomDeps;
   private readonly reconnectGraceMs: number;
@@ -261,6 +271,9 @@ export class Room {
     // Rooms saved before hosting could be handed on have no host recorded; the
     // first seat hosted them.
     room.hostToken = record.hostToken ?? record.players[0]?.token ?? null;
+    for (const token of record.nextRoundReady ?? []) room.ready.add(token);
+    for (const token of record.wentOn ?? []) room.wentOn.add(token);
+    room.next = record.nextRoomId ?? null;
     if (record.pausedSeat !== null) {
       room.pausedSeat = record.pausedSeat;
       room.pausedAt = now;
@@ -287,6 +300,11 @@ export class Room {
       started: this.started,
       pausedSeat: this.pausedSeat ?? null,
       hostToken: this.hostToken,
+      // What the table is waiting on between rounds and after the match, so a
+      // restart — or a Durable Object waking — does not forget who said what.
+      nextRoundReady: [...this.ready],
+      wentOn: [...this.wentOn],
+      nextRoomId: this.next,
     };
   }
 
@@ -402,7 +420,10 @@ export class Room {
   moveOn(token: string): RoomResult<RoomPlayer> {
     if (!this.matchOver) return fail("the match is not over yet");
     const left = this.leave(token);
-    if (left.ok) this.wentOn.add(token);
+    if (left.ok) {
+      this.wentOn.add(token);
+      this.save();
+    }
     return left;
   }
 
@@ -419,6 +440,7 @@ export class Room {
     /* v8 ignore next -- the transport only ever passes a seat it assigned */
     if (!player) return fail("no such seat");
     this.ready.add(player.token);
+    this.save();
     return succeed(this.dealNextRoundIfReady());
   }
 
@@ -434,6 +456,7 @@ export class Room {
     if (!dealt.ok) return false;
     this.log.append(state.currentSeat, { type: "nextRound" }, "player", this.deps.clock.now());
     this.ready.clear();
+    this.save();
     this.draft = null;
     this.state = dealt.state;
     this.beginTurn(dealt.state.currentSeat);

@@ -5,8 +5,8 @@
  * the server's integration suites, which drive this same client.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Ack, SeatCredentials } from "@hf/shared";
-import { connect, NOT_SEATED, type TableSocket } from "./index";
+import { PING, PONG, type Ack, type SeatCredentials } from "@hf/shared";
+import { connect, DEFAULT_KEEP_ALIVE_MS, NOT_SEATED, type TableSocket } from "./index";
 
 /** A WebSocket the test drives: it opens, delivers and closes when told to. */
 class FakeSocket {
@@ -14,9 +14,11 @@ class FakeSocket {
   static readonly all: FakeSocket[] = [];
   readyState = 0;
   readonly sent: { id: number; event: string; payload?: unknown }[] = [];
+  /** Keep-alives, which are plain text rather than frames. */
+  pings = 0;
   closed = false;
   onopen: (() => void) | null = null;
-  onmessage: ((message: { data: string }) => void) | null = null;
+  onmessage: ((message: { data: unknown }) => void) | null = null;
   onclose: (() => void) | null = null;
   onerror: (() => void) | null = null;
 
@@ -25,6 +27,7 @@ class FakeSocket {
   }
 
   send(text: string): void {
+    if (text === PING) return void this.pings++;
     this.sent.push(JSON.parse(text) as { id: number; event: string; payload?: unknown });
   }
 
@@ -70,7 +73,7 @@ function fakeFetch(answer: Ack<SeatCredentials> | Error): typeof fetch & {
 
 function make(fetchImpl: typeof fetch = fakeFetch({ ok: true, data: seat })): TableSocket {
   return connect("http://game.example", {
-    WebSocket: FakeSocket as unknown as typeof WebSocket,
+    WebSocket: FakeSocket,
     fetch: fetchImpl,
     retryDelaysMs: [10, 20],
   });
@@ -338,7 +341,7 @@ describe("a dropped socket", () => {
   it("waits a second between tries when given no back-off at all", async () => {
     vi.useFakeTimers();
     const socket = connect("http://game.example", {
-      WebSocket: FakeSocket as unknown as typeof WebSocket,
+      WebSocket: FakeSocket,
       fetch: fakeFetch({ ok: true, data: seat }),
       retryDelaysMs: [],
     });
@@ -363,7 +366,7 @@ describe("where it connects", () => {
     vi.stubGlobal("location", { origin: "https://table.example" });
     try {
       const socket = connect("", {
-        WebSocket: FakeSocket as unknown as typeof WebSocket,
+        WebSocket: FakeSocket,
         fetch: fakeFetch({ ok: true, data: seat }),
       });
       void emit(socket, "resumeSeat", seat);
@@ -375,7 +378,7 @@ describe("where it connects", () => {
 
   it("falls back to a path on the current host where there is no page", async () => {
     const socket = connect("", {
-      WebSocket: FakeSocket as unknown as typeof WebSocket,
+      WebSocket: FakeSocket,
       fetch: fakeFetch({ ok: true, data: seat }),
     });
     void emit(socket, "resumeSeat", seat);
@@ -386,5 +389,73 @@ describe("where it connects", () => {
     const socket = connect("http://game.example");
     expect(socket.connected).toBe(true);
     socket.close();
+  });
+});
+
+describe("keeping the socket alive", () => {
+  async function alive(keepAliveMs?: number) {
+    vi.useFakeTimers();
+    const socket = connect("http://game.example", {
+      WebSocket: FakeSocket,
+      fetch: fakeFetch({ ok: true, data: seat }),
+      retryDelaysMs: [10],
+      keepAliveMs,
+    });
+    const resumed = emit(socket, "resumeSeat", seat);
+    const ws = FakeSocket.all[0]!;
+    ws.accept();
+    ws.reply(ws.last().id, { ok: true, data: seat });
+    await resumed;
+    // Past the initial "connect", so a test hears only what follows.
+    await vi.advanceTimersByTimeAsync(0);
+    return { socket, ws };
+  }
+
+  it("pings every 25 seconds, under Cloudflare's idle cut-off, while it hears back", async () => {
+    // A literal: the Worker's hosting closes a socket idle for about 100 seconds.
+    expect(DEFAULT_KEEP_ALIVE_MS).toBe(25_000);
+    const { socket, ws } = await alive();
+    const events: string[] = [];
+    socket.on("disconnect", () => events.push("disconnect"));
+    await vi.advanceTimersByTimeAsync(24_999);
+    expect(ws.pings).toBe(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(ws.pings).toBe(1);
+    // The answer is the transport's own business: no listener hears it.
+    ws.onmessage?.({ data: PONG });
+    await vi.advanceTimersByTimeAsync(25_000);
+    expect(ws.pings).toBe(2);
+    // Any message counts as hearing back, not only the answer.
+    ws.push("room", {});
+    await vi.advanceTimersByTimeAsync(25_000);
+    expect(ws.pings).toBe(3);
+    expect(events).toEqual([]);
+  });
+
+  it("drops and reopens a socket that has gone silent, however open it looks", async () => {
+    const { socket, ws } = await alive(100);
+    const events: string[] = [];
+    socket.on("disconnect", () => events.push("disconnect"));
+    socket.on("connect", () => events.push("connect"));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(ws.pings).toBe(1);
+    // Nothing back for a whole interval.
+    await vi.advanceTimersByTimeAsync(100);
+    expect(ws.closed).toBe(true);
+    expect(events).toEqual(["disconnect"]);
+    await vi.advanceTimersByTimeAsync(10);
+    const back = FakeSocket.all[1]!;
+    back.accept();
+    expect(events).toEqual(["disconnect", "connect"]);
+    // The old socket's timer went with it: only the new one pings.
+    await vi.advanceTimersByTimeAsync(100);
+    expect([ws.pings, back.pings]).toEqual([1, 1]);
+  });
+
+  it("stops once the table is left", async () => {
+    const { socket, ws } = await alive(100);
+    socket.close();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(ws.pings).toBe(0);
   });
 });

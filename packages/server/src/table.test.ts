@@ -1,0 +1,122 @@
+/**
+ * The parts of `TableChannel` only a transport whose table can sleep uses: telling
+ * it which seat each connection holds, and seating connections again when the
+ * table is rebuilt around sockets that stayed open. Everything else the channel
+ * does is exercised over real sockets in the integration suites.
+ */
+import { describe, it, expect } from "vitest";
+import { EAST_COAST, type ServerFrame } from "@hf/shared";
+import { FakeClock } from "./clock";
+import { Room } from "./room";
+import { InMemoryRoomStore } from "./store";
+import { TableChannel, type Peer } from "./table";
+
+const noNextTable = {
+  nextTable: () => Promise.resolve({ ok: false as const, error: "no" }),
+};
+
+/** A peer that remembers what it was sent and which seat it was told it holds. */
+function peer(): Peer & { frames: ServerFrame[]; held: (string | null)[] } {
+  const frames: ServerFrame[] = [];
+  const held: (string | null)[] = [];
+  return { frames, held, send: (f) => frames.push(f), seated: (t) => held.push(t) };
+}
+
+function table(names: readonly string[], store = new InMemoryRoomStore()) {
+  let n = 0;
+  const room = new Room("TBL234", EAST_COAST, {
+    clock: new FakeClock(),
+    seed: 3,
+    newToken: () => `tok-${n++}`,
+    store,
+  });
+  store.saveRoom(room.record());
+  for (const name of names) room.join(name);
+  return { room, store, channel: new TableChannel(room, noNextTable) };
+}
+
+let frameId = 1;
+function ask(channel: TableChannel, conn: number, event: string, payload?: unknown) {
+  return channel.handle(conn, { id: frameId++, event, payload });
+}
+
+describe("telling the transport which seat a connection holds", () => {
+  it("on claiming a seat, moving to another, and leaving", async () => {
+    const { channel } = table(["ana", "ben"]);
+    const p = peer();
+    const conn = channel.connect(p);
+    await ask(channel, conn, "resumeSeat", { roomId: "TBL234", token: "tok-0" });
+    await ask(channel, conn, "resumeSeat", { roomId: "TBL234", token: "tok-1" });
+    // Presenting the same token again changes nothing, so says nothing.
+    await ask(channel, conn, "resumeSeat", { roomId: "TBL234", token: "tok-1" });
+    await ask(channel, conn, "leaveRoom");
+    expect(p.held).toEqual(["tok-0", null, "tok-1", null]);
+  });
+
+  it("when another connection takes the seat over, and when the table retires", async () => {
+    const { channel } = table(["ana"]);
+    const [first, second] = [peer(), peer()];
+    const a = channel.connect(first);
+    const b = channel.connect(second);
+    await ask(channel, a, "resumeSeat", { roomId: "TBL234", token: "tok-0" });
+    await ask(channel, b, "resumeSeat", { roomId: "TBL234", token: "tok-0" });
+    // The superseded connection still thinks it holds the seat until it tries to
+    // leave, which is refused and forgets it.
+    await ask(channel, a, "leaveRoom");
+    expect(first.held).toEqual(["tok-0", null]);
+    channel.retire();
+    expect(second.held).toEqual(["tok-0", null]);
+  });
+
+  it("is optional: a transport that never sleeps need not listen", async () => {
+    const { channel } = table(["ana"]);
+    const frames: ServerFrame[] = [];
+    const conn = channel.connect({ send: (f) => frames.push(f) });
+    await ask(channel, conn, "resumeSeat", { roomId: "TBL234", token: "tok-0" });
+    expect(frames[0]).toMatchObject({ result: { ok: true } });
+  });
+});
+
+describe("a table rebuilt around connections that stayed open", () => {
+  async function rebuilt(store: InMemoryRoomStore): Promise<TableChannel> {
+    const [stored] = await store.loadOpen();
+    const restored = Room.restore(stored!, { clock: new FakeClock(), newToken: () => "x", store });
+    return new TableChannel((restored as { value: Room }).value, noNextTable);
+  }
+
+  it("seats each connection again, silently, and numbers new ones past them", async () => {
+    const { store, room } = table(["ana", "ben"]);
+    room.start(0);
+    const channel = await rebuilt(store);
+    expect(channel.room.seats().every((p) => !p.connected)).toBe(true);
+
+    const [ana, ben] = [peer(), peer()];
+    channel.connect(ana, 7);
+    channel.connect(ben, 3);
+    expect(channel.adoptSeat(7, "tok-0")).toBe(true);
+    expect(channel.adoptSeat(3, "tok-1")).toBe(true);
+    expect(channel.room.seats().map((p) => p.connected)).toEqual([true, true]);
+    // Nobody is told: as far as the clients know, nothing happened.
+    expect([...ana.frames, ...ben.frames]).toEqual([]);
+
+    // They are seated for real: a move goes through, and each sees only its own hand.
+    const newcomer = channel.connect(peer());
+    expect(newcomer).toBe(8);
+    await ask(channel, 7, "submitAction", { type: "draw" });
+    expect(ana.frames[0]).toMatchObject({ result: { ok: true } });
+    const views = (frames: ServerFrame[]) =>
+      frames.flatMap((f) => ("event" in f && f.event === "view" ? [f.payload] : []));
+    expect(views(ana.frames).at(-1)).toMatchObject({ view: { seat: 0 } });
+    expect(views(ben.frames).at(-1)).toMatchObject({ view: { seat: 1 } });
+  });
+
+  it("refuses a token that no longer holds a seat here", async () => {
+    const { store } = table(["ana"]);
+    const channel = await rebuilt(store);
+    const p = peer();
+    channel.connect(p, 1);
+    expect(channel.adoptSeat(1, "tok-9")).toBe(false);
+    await ask(channel, 1, "startGame");
+    expect(p.frames[0]).toMatchObject({ result: { ok: false } });
+  });
+});

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isAckFrame, joinPath, parseRoomPath, socketPath } from "./wire";
+import { isAckFrame, joinPath, parseRoomPath, PING, PONG, socketPath } from "./wire";
 
 describe("table paths", () => {
   it("round-trips a code through the join and socket paths", () => {
@@ -32,5 +32,13 @@ describe("frames", () => {
   it("tells a reply from a push", () => {
     expect(isAckFrame({ ack: 3, result: { ok: true, data: undefined } })).toBe(true);
     expect(isAckFrame({ event: "room", payload: {} })).toBe(false);
+  });
+});
+
+describe("the keep-alive", () => {
+  it("is plain text a runtime can match exactly, and never parses as a frame", () => {
+    // Pinned as literals: a Durable Object's auto-response matches these bytes.
+    expect([PING, PONG]).toEqual(["ping", "pong"]);
+    expect(() => JSON.parse(PING)).toThrow();
   });
 });

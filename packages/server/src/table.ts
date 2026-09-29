@@ -22,6 +22,13 @@ import { isDraft, type Room, type RoomPlayer, type RoomResult } from "./room";
 /** One connection to the table, as the transport sees it. */
 export interface Peer {
   send(frame: ServerFrame): void;
+  /**
+   * The seat this connection speaks for changed: the token it now holds, or null.
+   * A transport whose table can sleep with its sockets still open — a hibernating
+   * Durable Object — records it on the socket, so that on waking it can say which
+   * connection held which seat through `adoptSeat`.
+   */
+  seated?(token: string | null): void;
 }
 
 export interface TableHooks {
@@ -69,11 +76,26 @@ export class TableChannel {
     };
   }
 
-  /** A new connection, holding no seat until it presents a token. */
-  connect(peer: Peer): number {
-    const id = this.nextConnection++;
+  /**
+   * A new connection, holding no seat until it presents a token. A transport
+   * bringing back connections that outlived the table's memory passes the id each
+   * had before, so later ones are numbered past them.
+   */
+  connect(peer: Peer, id: number = this.nextConnection): number {
+    this.nextConnection = Math.max(this.nextConnection, id + 1);
     this.peers.set(id, peer);
     return id;
+  }
+
+  /**
+   * Seat a connection that held this token before the table was rebuilt, as a
+   * `resumeSeat` would but with nobody to answer: the client does not know
+   * anything happened. False if the token no longer holds a seat here.
+   */
+  adoptSeat(connection: number, token: string): boolean {
+    if (!this.room.resume(token).ok) return false;
+    this.claim(connection, token);
+    return true;
   }
 
   /** The connection closed. If it held a seat, the player is gone for now. */
@@ -95,7 +117,7 @@ export class TableChannel {
    */
   retire(): void {
     this.retired = true;
-    this.sessions.clear();
+    for (const [connection] of this.sessions) this.hold(connection, null);
     this.owners.clear();
     this.room.onChange = null;
   }
@@ -198,7 +220,7 @@ export class TableChannel {
         // Only the seat's current owner speaks for it: a connection superseded by a
         // resume elsewhere must not be able to give away a seat still in use.
         if (token === undefined || this.owners.get(token) !== connection) {
-          this.sessions.delete(connection);
+          this.hold(connection, null);
           return reply({ ok: false, error: NOT_SEATED });
         }
         // Where everyone else sits now, so the ones who move up can be told.
@@ -242,8 +264,16 @@ export class TableChannel {
   private claim(connection: number, token: string): void {
     const prior = this.sessions.get(connection);
     if (prior !== undefined && prior !== token) this.disconnectSeat(connection);
-    this.sessions.set(connection, token);
+    this.hold(connection, token);
     this.owners.set(token, connection);
+  }
+
+  /** The one place a connection's seat changes, so the transport always hears. */
+  private hold(connection: number, token: string | null): void {
+    if ((this.sessions.get(connection) ?? null) === token) return;
+    if (token === null) this.sessions.delete(connection);
+    else this.sessions.set(connection, token);
+    this.peers.get(connection)?.seated?.(token);
   }
 
   /**
@@ -253,7 +283,7 @@ export class TableChannel {
    */
   private unseat(connection: number): string | null {
     const token = this.sessions.get(connection);
-    this.sessions.delete(connection);
+    this.hold(connection, null);
     if (token === undefined || this.owners.get(token) !== connection) return null;
     this.owners.delete(token);
     return token;
@@ -270,7 +300,7 @@ export class TableChannel {
   private letGo(token: string): void {
     this.owners.delete(token);
     for (const [connection, held] of this.sessions) {
-      if (held === token) this.sessions.delete(connection);
+      if (held === token) this.hold(connection, null);
     }
   }
 

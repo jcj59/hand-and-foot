@@ -6,7 +6,6 @@ import {
   type RoomOptions,
   type RulesConfig,
 } from "@hf/shared";
-import { randomUUID } from "node:crypto";
 import { defaultConfig } from "@hf/engine";
 import { type Clock, systemClock } from "./clock";
 import { Room, type RoomResult } from "./room";
@@ -94,7 +93,8 @@ export class RoomManager {
     this.abandonedRoomMs = options.abandonedRoomMs ?? DEFAULT_ABANDONED_ROOM_MS;
     this.sweepIntervalMs = options.sweepIntervalMs ?? DEFAULT_SWEEP_INTERVAL_MS;
     this.store = options.store;
-    this.newUid = options.newUid ?? randomUUID;
+    // The global rather than node:crypto: this module also runs in a Cloudflare Worker.
+    this.newUid = options.newUid ?? (() => crypto.randomUUID());
   }
 
   get size(): number {

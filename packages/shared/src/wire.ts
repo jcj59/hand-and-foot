@@ -49,6 +49,16 @@ export function socketPath(roomId: string): string {
 export const HEALTH_PATH = "/api/healthz";
 
 /**
+ * The client's keep-alive on a table socket, and the server's answer. Plain text
+ * rather than a JSON frame, so a Durable Object can have the runtime answer it
+ * without waking; and needed at all because Cloudflare closes a socket that
+ * carries nothing for about 100 seconds, and a browser cannot send a protocol
+ * ping of its own.
+ */
+export const PING = "ping";
+export const PONG = "pong";
+
+/**
  * Read a table code out of a request path, for the router on either server.
  * Returns the code and what is being asked of it, or null for anything else.
  */

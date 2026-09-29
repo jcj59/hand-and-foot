@@ -5,7 +5,7 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocket as WsClient } from "ws";
-import type { Ack, SeatCredentials, ServerFrame } from "@hf/shared";
+import { PING, PONG, type Ack, type SeatCredentials, type ServerFrame } from "@hf/shared";
 import { createServer, type HandAndFootServer } from "./index";
 
 const servers: HandAndFootServer[] = [];
@@ -37,19 +37,23 @@ async function open(
   base: string,
   roomId: string,
   options: { origin?: string; autoPong?: boolean } = {},
-): Promise<{ ws: WsClient; frames: ServerFrame[] }> {
+): Promise<{ ws: WsClient; frames: ServerFrame[]; pongs: () => number }> {
   const ws = new WsClient(`ws://${base}/api/rooms/${roomId}/socket`, {
     origin: options.origin ?? "https://ours.example",
     autoPong: options.autoPong ?? true,
   });
   sockets.push(ws);
   const frames: ServerFrame[] = [];
-  ws.on("message", (data) => frames.push(JSON.parse(String(data)) as ServerFrame));
+  let pongs = 0;
+  ws.on("message", (data) => {
+    if (String(data) === PONG) pongs++;
+    else frames.push(JSON.parse(String(data)) as ServerFrame);
+  });
   await new Promise<void>((resolve, reject) => {
     ws.once("open", () => resolve());
     ws.once("error", reject);
   });
-  return { ws, frames };
+  return { ws, frames, pongs: () => pongs };
 }
 
 /** Send a request and wait for its reply. */
@@ -104,6 +108,18 @@ describe("the table socket, spoken directly", () => {
       ok: false,
       error: "no room with that code",
     });
+  });
+
+  it("answers the client's keep-alive, at a table and at a code with none", async () => {
+    const { base } = await boot();
+    const seat = await post(base, "/api/rooms", { name: "ana" });
+    if (!seat.ok) throw new Error(seat.error);
+    for (const socket of [await open(base, seat.data.roomId), await open(base, "NOSUCH")]) {
+      socket.ws.send(PING);
+      await vi.waitFor(() => expect(socket.pongs()).toBe(1));
+      // Nor is it mistaken for a request.
+      expect(socket.frames).toEqual([]);
+    }
   });
 
   it("answers anything asked of a code with no table behind it", async () => {
