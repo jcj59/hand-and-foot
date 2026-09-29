@@ -458,6 +458,10 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   `RoomDeps.pauseWhenIdle: false`. Closing sends `tableClosed {reason}`; the client goes home with
   a notice. Reloading the home screen no longer auto-rejoins a stored seat — only the table's own
   URL does; Home's Rejoin reads the saved credentials.
+- **Phone layout (post-M5).** `usePhone` (`matchMedia("(max-width: 767px)")`) switches the table to
+  a stacked layout: `OpponentStrip` chips with a modal melds sheet, compact meld chips, a fanned
+  hand. Desktop markup is unchanged. jsdom has no `matchMedia`, so tests get the desktop layout by
+  default; phone tests define `window.matchMedia` matching `PHONE_QUERY` and delete it afterwards.
 - **Bot milestone — the RL agent.** The point of the whole project. Design not yet written; the
   section in `DESIGN.md` is a placeholder. Observation = `PlayerView` (by construction the agent
   cannot see more than a human), reward is end-of-round. The evaluation baseline is **not**
