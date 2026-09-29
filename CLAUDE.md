@@ -10,20 +10,22 @@ Repo: `~/dev/hand-and-foot`, remote `git@github.com:jcj59/hand-and-foot.git`.
 
 ## Layout
 
-pnpm + Turborepo monorepo, TypeScript everywhere, four workspace packages:
+pnpm + Turborepo monorepo, TypeScript everywhere, six workspace packages:
 
 | Package | Name | State |
 | --- | --- | --- |
 | `packages/shared` | `@hf/shared` | Domain types, rules config, presets, client/server contract. Done for M1. |
 | `packages/engine` | `@hf/engine` | Pure rules engine `(state, action) => newState`. **Complete (M1).** |
-| `packages/server` | `@hf/server` | Authoritative Socket.io server: rooms, seats, per-seat broadcast, turn clock, action log, runnable entrypoint, Postgres persistence with restore-on-boot. **Complete (M2, M4).** |
+| `packages/server` | `@hf/server` | Authoritative table logic (`Room`, `TableChannel`, `RoomStore`) exported host-agnostically from `@hf/server/core`, plus a Node host for it (`ws` sockets, Postgres persistence, restore-on-boot). **Complete (M2, M4, M5).** |
 | `packages/client` | `@hf/client` | React + Vite + Tailwind + Zustand app: lobby, table, SVG cards, meld staging. **Complete (M3).** |
+| `packages/transport` | `@hf/transport` | The client's connection: HTTP to sit down, one WebSocket per table, reconnect with back-off, 25s keep-alive. Keeps Socket.io's `emit`/`on` surface. **M5.** |
+| `packages/worker` | `@hf/worker` | The production host: a Cloudflare Worker serving the client and a `TableObject` Durable Object per table code, hibernatable sockets, storage in the object's own SQLite KV. **M5.** |
 
-The three **libraries** are consumed **from source** — each `package.json` points
+The **libraries** are consumed **from source** — each `package.json` points
 `main`/`types`/`exports` at `./src/index.ts`, and none of them has a build step;
-`tsconfig.base.json` sets `noEmit: true`. `@hf/client` is the exception and the only one: it is an
-application, not a library, so it has no `exports` at all and `pnpm build` now runs Vite for it. Keep
-the libraries buildless — nothing imports them as bundles.
+`tsconfig.base.json` sets `noEmit: true`. `@hf/client` is an application, not a library, so it has
+no `exports` at all and `pnpm build` runs Vite for it; `@hf/worker` is bundled by Wrangler, never
+imported. Keep the libraries buildless — nothing imports them as bundles.
 
 Running the server from source therefore needs a TypeScript runtime: `@hf/server` carries `tsx` as a
 **runtime dependency** (production runs it too) and its `start`/`dev` scripts go through it. Node's
@@ -78,11 +80,23 @@ pnpm --filter @hf/client dev       # vite on :5173
 pnpm --filter @hf/client build     # vite build -> dist/
 ```
 
-`VITE_SERVER_URL` points it at the server, defaulting to `http://localhost:3000` to match the
-server's own default. The two run on **separate origins in development on purpose**, because that is
-how they deploy (Vercel and Fly.io), so CORS is exercised locally instead of discovered on release —
-which means the server needs `HF_CORS_ORIGINS=http://localhost:5173` to be strict locally, and is
-wide open by default.
+The client is **always same-origin**: in production the Worker serves the page, and in development
+Vite proxies `/api` (HTTP and WebSockets) to `HF_API_TARGET`, default `http://localhost:3000` (the
+Node server); point it at `http://localhost:8787` for `wrangler dev`. `VITE_SERVER_URL` still
+overrides the origin outright.
+
+The production host, locally (builds the client first, serves both on :8787):
+
+```bash
+pnpm --filter @hf/worker dev       # wrangler dev
+pnpm --filter @hf/worker run deploy  # client build + wrangler deploy (needs `wrangler login`)
+```
+
+`@hf/worker`'s tests run **inside workerd** via `@cloudflare/vitest-pool-workers`, which requires
+**vitest 4**, so that one package pins vitest ^4.1 while the rest are on vitest 5. Its `test` task
+depends on `@hf/client#build` in `turbo.json`, because Wrangler's assets directory is
+`packages/client/dist`. CI also runs `wrangler deploy --dry-run` — the bundle is where a Node-only
+import in `@hf/server/core` would first fail.
 
 `tsconfig.base.json` sets `lib: ["ES2022"]` with no DOM lib, so runtime globals Node provides but
 ES2022 does not type — `structuredClone`, `fetch`, timers on `window` — compile-fail even though
@@ -171,7 +185,7 @@ rather than assumed to have travelled.
 
 `@hf/server` is also at **100%** (266 tests, with the database tests running; M4b's 20 mutants
 were all killed). The load-bearing tests are the ones in
-`socket.integration.test.ts` that drive *real* Socket.io clients against a real server on an
+`socket.integration.test.ts` that drive *real* clients (Socket.io then, `@hf/transport` since M5) against a real server on an
 ephemeral port: `project()` being clean says nothing about whether the transport routes the right
 payload to the right socket, and that is what actually leaks a hand. Mutation tested the same way as
 the engine — **14/14 killed**. Two only died after new tests were added, and both were security
@@ -370,7 +384,9 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   computing them for `currentSeat` instead of the recipient both misleads that client and tells it
   something about another hand. Pinned in `room.test.ts` and over the wire in
   `socket.integration.test.ts`, and both wrong-seat mutants were confirmed killed.
-- **M4 — deploy.** Server on Fly.io, client on Vercel, Postgres on Neon.
+- **M4 — deploy.** Server on Fly.io, client on Vercel, Postgres on Neon. **Superseded by M5**: the
+  Fly/Vercel/Docker files were removed when hosting moved to Cloudflare (the M4b persistence and
+  Node host remain, for local play and self-hosting).
   - **M4a — keeping a seat across a reconnect (PR #12).** A new transport connection is a new
     socket to the server, and a seat belongs to a socket only once it has presented the token — but
     the client used to reclaim its seat only on page load. So any network blip, and *every server deploy*,
@@ -412,6 +428,27 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
     deployed, only local test tables were affected — so there is no compatibility code for it.
   - `pnpm start` does not forward SIGTERM (exit 143, no graceful shutdown) — never use it as a
     container command.
+- **M5 — free hosting on Cloudflare.** The requirement was literally $0/month for a family game,
+  always on. One Worker + one Durable Object per table code (`getByName(code)`); see DESIGN.md
+  "Hosting: a Durable Object per table".
+  - **M5a — one wire protocol.** Socket.io replaced by `@hf/shared/wire.ts`: `POST /api/rooms`,
+    `POST /api/rooms/:code/join`, WS `/api/rooms/:code/socket`, JSON frames `{id,event,payload}` →
+    `{ack,result}` or `{event,payload}`. `TableChannel` (server `table.ts`) is the per-table
+    protocol both hosts drive; `lobby.ts` has the Node host's open/join. Seats taken over HTTP are
+    disconnected until a socket presents the token.
+  - **M5b — the Worker.** `TableObject` restores from storage in its constructor, accepts sockets
+    with `ctx.acceptWebSocket` (hibernation), stores `{connection, token}` in each socket's
+    attachment, and on wake re-seats them via `TableChannel.adoptSeat` — silently. `RoomRecord`
+    gained `nextRoundReady`, `wentOn`, `nextRoomId` (Postgres column `waiting`, migration 3) so a
+    wake does not forget them. The client pings `"ping"` every 25s (Cloudflare drops idle sockets
+    at ~100s); the object answers via `setWebSocketAutoResponse` without waking.
+  - **A running turn clock keeps the object awake** (a pending `setTimeout` blocks hibernation), so
+    tables sleep only in the lobby, between rounds and while paused. Fine on the free plan (~450
+    GB-s per hour of play vs 13,000/day). Moving the clock to alarms would need persisted deadlines.
+  - **Testing gotchas:** `evictDurableObject` *waits* for pending timers ("still has active
+    references") where a real restart would not — tests cancel the room's timer first
+    (`stopClock`). Eviction with `webSockets: "close"` only affects hibernatable sockets.
+    `compatibility_date` cannot be newer than the local workerd supports (2026-08-15 now).
 - **Bot milestone — the RL agent.** The point of the whole project. Design not yet written; the
   section in `DESIGN.md` is a placeholder. Observation = `PlayerView` (by construction the agent
   cannot see more than a human), reward is end-of-round. The evaluation baseline is **not**

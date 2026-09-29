@@ -6,7 +6,6 @@ import {
   type RoomOptions,
   type RulesConfig,
 } from "@hf/shared";
-import { randomUUID } from "node:crypto";
 import { defaultConfig } from "@hf/engine";
 import { type Clock, systemClock } from "./clock";
 import { Room, type RoomResult } from "./room";
@@ -84,6 +83,9 @@ export class RoomManager {
   private readonly newUid: () => string;
   private cancelSweep: (() => void) | null = null;
 
+  /** Told when a room is removed, so whatever else holds it can let go too. */
+  onRemove: ((room: Room) => void) | null = null;
+
   constructor(options: ManagerOptions = {}) {
     this.clock = options.clock ?? systemClock;
     this.random = options.random ?? Math.random;
@@ -91,7 +93,8 @@ export class RoomManager {
     this.abandonedRoomMs = options.abandonedRoomMs ?? DEFAULT_ABANDONED_ROOM_MS;
     this.sweepIntervalMs = options.sweepIntervalMs ?? DEFAULT_SWEEP_INTERVAL_MS;
     this.store = options.store;
-    this.newUid = options.newUid ?? randomUUID;
+    // The global rather than node:crypto: this module also runs in a Cloudflare Worker.
+    this.newUid = options.newUid ?? (() => crypto.randomUUID());
   }
 
   get size(): number {
@@ -170,6 +173,7 @@ export class RoomManager {
     // Closed in the store too, or the next boot would bring back a room that was
     // deliberately let go.
     if (room) this.store?.closeRoom(room.uid, this.clock.now());
+    if (room) this.onRemove?.(room);
     return this.rooms.delete(roomId.toUpperCase());
   }
 

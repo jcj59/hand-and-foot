@@ -360,3 +360,4 @@ export interface LegalHints {
 }
 
 export * from "./protocol";
+export * from "./wire";

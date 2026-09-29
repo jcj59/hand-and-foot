@@ -209,8 +209,8 @@ describe("WriteBehind on shutdown", () => {
     expect(log.errors).toHaveLength(1);
   });
 
-  it("leaves room inside Fly's 30s kill timeout by default", () => {
-    // Pinned as a literal: it has to stay under `kill_timeout` in fly.toml, with
+  it("leaves room inside a host's usual 30s kill timeout by default", () => {
+    // Pinned as a literal: it has to stay under the host's kill timeout, with
     // time to spare for ending the pool, or the host kills the flush mid-write.
     expect(DEFAULT_SHUTDOWN_DEADLINE_MS).toBe(20_000);
   });

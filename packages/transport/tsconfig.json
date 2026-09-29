@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // A browser and Node 22 both provide WebSocket and fetch as globals, and this is
+    // the one library that uses them, so it takes the DOM types the others refuse.
+    "lib": ["ES2022", "DOM"]
+  },
+  "include": ["src"]
+}

@@ -6,18 +6,10 @@
  * change to the contract breaks whichever side is now inconsistent instead of
  * failing at runtime.
  */
-import { io, type Socket } from "socket.io-client";
-import type {
-  Ack,
-  Action,
-  ClientToServerEvents,
-  MeldPlay,
-  RoomOptions,
-  SeatCredentials,
-  ServerToClientEvents,
-} from "@hf/shared";
+import { connect as connectTransport, type TableSocket } from "@hf/transport";
+import type { Ack, Action, MeldPlay, RoomOptions, SeatCredentials } from "@hf/shared";
 
-export type HfClientSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
+export type HfClientSocket = TableSocket;
 
 /**
  * How long to wait for an ack before giving up on it.
@@ -35,17 +27,19 @@ export const ACK_TIMEOUT_MS = 10_000;
  * connection is bad, and treating the two alike would throw a player out of a
  * game over a slow network.
  */
-export const NO_RESPONSE = "the server did not respond — check your connection";
+export const NO_RESPONSE = "the server did not respond. Check your connection.";
 
 /**
- * Where the server lives.
+ * Where the server lives: this page's own origin — the empty string — unless
+ * `VITE_SERVER_URL` says otherwise.
  *
- * Separate origins in development on purpose: production serves the client from
- * Vercel and the server from Fly.io, so running them apart locally exercises the
- * CORS configuration rather than leaving it to be discovered on deploy.
+ * In production the Worker that runs the tables serves the page too. In
+ * development Vite's dev server proxies `/api` to whichever server is running
+ * (see `vite.config.ts`), so the client is same-origin there as well and runs
+ * exactly as it will be deployed.
  */
 export function serverUrl(env: { readonly VITE_SERVER_URL?: string } = import.meta.env): string {
-  return env.VITE_SERVER_URL ?? "http://localhost:3000";
+  return env.VITE_SERVER_URL ?? "";
 }
 
 /**
@@ -53,10 +47,10 @@ export function serverUrl(env: { readonly VITE_SERVER_URL?: string } = import.me
  * this client connects is the entry point, in plain sight.
  */
 export function connect(url: string): HfClientSocket {
-  // Socket.io reconnects on its own; the seat is reclaimed separately with the
-  // stored credentials, because a new transport connection is a new socket as
-  // far as the server is concerned and carries no seat with it.
-  return io(url, { transports: ["websocket"], autoConnect: true });
+  // The transport reconnects on its own; the seat is reclaimed separately with the
+  // stored credentials, because a new connection is a new socket as far as the
+  // server is concerned and carries no seat with it.
+  return connectTransport(url);
 }
 
 /**

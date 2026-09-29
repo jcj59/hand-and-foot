@@ -94,9 +94,12 @@ describe("startFromEnv", () => {
       { PORT: "0", HF_CORS_ORIGINS: "https://handandfoot.example" },
       log,
     );
-    expect(started!.server.io.engine.opts.cors).toEqual({
-      origin: ["https://handandfoot.example"],
+    const refused = await fetch(`http://localhost:${started!.port}/api/rooms`, {
+      method: "POST",
+      headers: { origin: "https://elsewhere.example" },
+      body: "{}",
     });
+    expect(refused.status).toBe(403);
     expect(log.logs[0]).toContain("origins: https://handandfoot.example");
     await started!.server.close();
   });

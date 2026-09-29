@@ -396,7 +396,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
               role="status"
               className="rounded bg-emerald-500/15 px-3 py-2 text-sm text-emerald-100"
             >
-              You have the books to go out — shed your last card to end the round.
+              You have the books to go out. Shed your last card to end the round.
             </p>
           )}
 
@@ -542,7 +542,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
     if (building) return "Click cards to add them; click a meld to aim wilds at it.";
     if (stagedCount(staging) > 0) return "Play or take back your melds, then discard.";
     if (obligationOpen) return "Play a card from the pile before you can discard.";
-    if (clock.inDiscardGrace) return "Time is up — only a discard will be accepted.";
+    if (clock.inDiscardGrace) return "Time is up. Only a discard will be accepted.";
     if (zone.length === 0) return "No cards left; your turn ends itself.";
     return "Click a card to meld or discard it.";
   }

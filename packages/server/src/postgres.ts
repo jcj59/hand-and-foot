@@ -57,6 +57,8 @@ export const MIGRATIONS: readonly string[] = [
    );`,
   // Hosting can be handed on, so who hosts is no longer implied by seat 0.
   `alter table rooms add column host_token text;`,
+  // Between rounds and after the match: who is ready, who went on, and where to.
+  `alter table rooms add column waiting jsonb;`,
 ];
 
 /**
@@ -91,9 +93,9 @@ export const DEFAULT_RETRY_DELAYS_MS: readonly number[] = [100, 500, 2_000, 5_00
 
 /**
  * How long a shutdown waits for queued writes before giving up on them. It has to
- * fall well inside the host's kill timeout (`kill_timeout` in `fly.toml`, 30s),
- * leaving room to end the connection pool: a process killed mid-flush loses the
- * same writes, and says nothing about which.
+ * fall well inside a host's kill timeout (30s is a common default, Fly's among
+ * them), leaving room to end the connection pool: a process killed mid-flush
+ * loses the same writes, and says nothing about which.
  */
 export const DEFAULT_SHUTDOWN_DEADLINE_MS = 20_000;
 
@@ -217,16 +219,20 @@ export class PostgresRoomStore implements RoomStore {
     const { sql } = this;
     this.writes.enqueue(`room ${room.id}`, () => {
       const players = sql.json(room.players as unknown as postgres.JSONValue);
+      // Whichever of these the record has; an absent one stays absent on load.
+      const { nextRoundReady, wentOn, nextRoomId } = room;
+      const waiting = sql.json({ nextRoundReady, wentOn, nextRoomId } as postgres.JSONValue);
       return sql`
-        insert into rooms (uid, code, config, seed, created_at, players, started, paused_seat, host_token)
+        insert into rooms (uid, code, config, seed, created_at, players, started, paused_seat, host_token, waiting)
         values (${room.uid}, ${room.id}, ${sql.json(room.config as unknown as postgres.JSONValue)},
                 ${room.seed}, ${room.createdAt}, ${players}, ${room.started}, ${room.pausedSeat},
-                ${room.hostToken ?? null})
+                ${room.hostToken ?? null}, ${waiting})
         on conflict (uid) do update set
           players = excluded.players,
           started = excluded.started,
           paused_seat = excluded.paused_seat,
-          host_token = excluded.host_token`;
+          host_token = excluded.host_token,
+          waiting = excluded.waiting`;
     });
   }
 
@@ -253,7 +259,7 @@ export class PostgresRoomStore implements RoomStore {
   async loadOpen(): Promise<readonly StoredRoom[]> {
     const { sql } = this;
     const rooms = await sql`
-      select uid, code, config, seed, created_at, players, started, paused_seat, host_token
+      select uid, code, config, seed, created_at, players, started, paused_seat, host_token, waiting
       from rooms where closed_at is null order by created_at`;
     if (rooms.length === 0) return [];
     const actions = await sql`
@@ -287,6 +293,8 @@ export class PostgresRoomStore implements RoomStore {
         started: row.started,
         pausedSeat: row.paused_seat,
         hostToken: row.host_token,
+        // Null on a row written before the column existed: nothing was pending.
+        ...((row.waiting ?? {}) as Pick<RoomRecord, "nextRoundReady" | "wentOn" | "nextRoomId">),
       },
       actions: logs.get(row.uid) ?? [],
     }));

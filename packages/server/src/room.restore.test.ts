@@ -427,8 +427,15 @@ describe("restoring who hosts", () => {
     const entry = await onlyRoom(store);
     const older = { ...entry.room };
     delete older.hostToken;
+    // Nor was anything waited on between rounds or after the match recorded.
+    delete older.nextRoundReady;
+    delete older.wentOn;
+    delete older.nextRoomId;
     const restored = restore({ ...entry, room: older }, new FakeClock(), store);
     expect(restored.hostSeat).toBe(0);
+    expect(restored.info().nextRoundReady).toEqual([]);
+    expect(restored.info().playAgain).toEqual([]);
+    expect(restored.nextRoomId).toBeNull();
     expect(restored.join("cy").ok).toBe(true);
     expect(restored.hostSeat).toBe(0);
   });

@@ -6,7 +6,7 @@
  * back to localhost in production.
  */
 interface ImportMetaEnv {
-  /** Where the server is. Defaults to the server's own default port when unset. */
+  /** Where the server is. The page's own origin when unset. */
   readonly VITE_SERVER_URL?: string;
 }
 

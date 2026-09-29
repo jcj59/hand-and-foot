@@ -76,6 +76,14 @@ function contract(name: string, open: () => Promise<RoomStore>): void {
       ]);
     });
 
+    it("gives back what the table is waiting on between rounds and after the match", async () => {
+      const waiting = { nextRoundReady: ["tok-a"], wentOn: ["tok-b"], nextRoomId: "NXT234" };
+      store.saveRoom(record(waiting));
+      await store.flush();
+      const [loaded] = await store.loadOpen();
+      expect(loaded?.room).toEqual(record(waiting));
+    });
+
     it("replaces the record on a second save, keeping the log", async () => {
       store.saveRoom(record({ started: false }));
       store.appendAction("uid-1", row(0));
@@ -175,10 +183,10 @@ describe.skipIf(DATABASE_URL === undefined)("Postgres", () => {
   describe("migrations", () => {
     it("apply once, and a second boot finds nothing to do", async () => {
       await wipe();
-      expect(await migrate(admin)).toBe(2);
+      expect(await migrate(admin)).toBe(3);
       expect(await migrate(admin)).toBe(0);
       const versions = await admin`select version from schema_migrations order by version`;
-      expect(versions.map((r) => r.version)).toEqual([1, 2]);
+      expect(versions.map((r) => r.version)).toEqual([1, 2, 3]);
     });
 
     it("are safe for two servers booting at once", async () => {
@@ -186,7 +194,7 @@ describe.skipIf(DATABASE_URL === undefined)("Postgres", () => {
       const second = postgres(url, { max: 1, onnotice: () => {} });
       try {
         const [a, b] = await Promise.all([migrate(admin), migrate(second)]);
-        expect(a + b).toBe(2);
+        expect(a + b).toBe(3);
       } finally {
         await second.end();
       }
@@ -201,12 +209,15 @@ describe.skipIf(DATABASE_URL === undefined)("Postgres", () => {
     await admin`insert into schema_migrations (version) values (1)`;
     await admin`insert into rooms (uid, code, config, seed, created_at, players, started)
       values ('old', 'OLD234', ${admin.json(EAST_COAST as never)}, 1, 1, '[]', false)`;
-    expect(await migrate(admin)).toBe(1);
+    expect(await migrate(admin)).toBe(2);
     const store = new PostgresRoomStore(admin, { retryDelaysMs: [] });
     const [old] = await store.loadOpen();
     expect(old?.room.uid).toBe("old");
     // A room saved before hosting could move records no host.
     expect(old?.room.hostToken).toBeNull();
+    // Nor anything it was waiting on.
+    expect(old?.room.nextRoundReady).toBeUndefined();
+    expect(old?.room.nextRoomId).toBeUndefined();
   });
 
   it("keeps a closed room's rows: a finished game is a record, not garbage", async () => {

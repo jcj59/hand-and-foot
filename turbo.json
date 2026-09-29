@@ -3,6 +3,7 @@
   "tasks": {
     "build": { "dependsOn": ["^build"], "outputs": ["dist/**"], "env": ["VITE_SERVER_URL"] },
     "typecheck": {},
-    "test": { "env": ["HF_TEST_DATABASE_URL"] }
+    "test": { "env": ["HF_TEST_DATABASE_URL"] },
+    "@hf/worker#test": { "dependsOn": ["@hf/client#build"] }
   }
 }

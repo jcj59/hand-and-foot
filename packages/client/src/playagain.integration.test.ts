@@ -1,3 +1,6 @@
+// @vitest-environment node
+// Against a real server, so in Node rather than the simulated browser: Node's own
+// WebSocket and jsdom each bring an Event class, and neither accepts the other's.
 /**
  * Playing again, against a real server: two players finish a round, each asks to
  * play again through the client's own action layer, and both end up seated in the

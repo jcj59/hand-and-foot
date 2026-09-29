@@ -105,6 +105,8 @@ export const useSession = create<SessionState>((set, get) => ({
  * make the real socket fail to satisfy this interface.
  */
 export interface SessionSocket {
+  /** Whether the transport is up now; it may have said so before anyone listened. */
+  readonly connected?: boolean;
   on(event: "connect" | "disconnect", handler: () => void): void;
   on(event: "view", handler: (update: ViewUpdate) => void): void;
   on(event: "room", handler: (info: RoomInfo) => void): void;
@@ -144,6 +146,9 @@ export function attachSession(socket: SessionSocket, sink: SessionSink): () => v
   socket.on("room", onRoom);
   socket.on("roundEnded", onResult);
   socket.on("seat", onSeat);
+  // The transport announces itself on its own schedule, which can be before the app
+  // has mounted and attached this; asking catches up on what was missed.
+  if (socket.connected) sink.setStatus("connected");
 
   return () => {
     socket.off("connect", onConnect);

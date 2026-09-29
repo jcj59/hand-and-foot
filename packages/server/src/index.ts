@@ -1,17 +1,18 @@
 import { createServer as createHttpServer, type Server as HttpServer } from "node:http";
-import { Server } from "socket.io";
 import { type Clock, systemClock } from "./clock";
 import { RoomManager } from "./manager";
-import { attachSocketServer, type HfServer } from "./socket";
+import { attachTables, type Tables } from "./socket";
 import type { RoomStore } from "./store";
 
 export * from "./clock";
+export * from "./lobby";
 export * from "./log";
 export * from "./manager";
 export * from "./postgres";
 export * from "./room";
 export * from "./socket";
 export * from "./store";
+export * from "./table";
 
 export interface ServerOptions {
   readonly clock?: Clock;
@@ -22,6 +23,8 @@ export interface ServerOptions {
   readonly abandonedRoomMs?: number;
   /** Allowed browser origins. The client is served from a different host in production. */
   readonly cors?: readonly string[];
+  /** How often each socket is checked for a vanished client; see `TransportOptions`. */
+  readonly heartbeatMs?: number;
   /**
    * Where rooms are kept so a restart can bring them back. The server takes it
    * over: `close` flushes and closes it. Restoring what it already holds is the
@@ -33,8 +36,9 @@ export interface ServerOptions {
 
 export interface HandAndFootServer {
   readonly http: HttpServer;
-  readonly io: HfServer;
   readonly manager: RoomManager;
+  /** Each table's connections, for tests and for the transport. */
+  readonly tables: Tables;
   listen(port: number): Promise<number>;
   close(): Promise<void>;
 }
@@ -44,21 +48,7 @@ export interface HandAndFootServer {
  * an ephemeral port and shut it down cleanly.
  */
 export function createServer(options: ServerOptions = {}): HandAndFootServer {
-  // Socket.io answers its own path and hands every other request to this. The one
-  // other thing worth answering is whether the process is up, for the host's
-  // health check; a bare 200 is what Fly needs, and the room count is a cheap
-  // sign of life when reading it by hand.
-  const http = createHttpServer((request, response) => {
-    if (request.method === "GET" && request.url === "/healthz") {
-      response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify({ ok: true, rooms: manager.size }));
-      return;
-    }
-    response.writeHead(404).end();
-  });
-  const io: HfServer = new Server(http, {
-    cors: { origin: options.cors ? [...options.cors] : "*" },
-  });
+  const http = createHttpServer();
   const manager = new RoomManager({
     clock: options.clock ?? systemClock,
     random: options.random,
@@ -66,13 +56,16 @@ export function createServer(options: ServerOptions = {}): HandAndFootServer {
     abandonedRoomMs: options.abandonedRoomMs,
     store: options.store,
   });
-  attachSocketServer(io, manager);
+  const tables = attachTables(http, manager, {
+    cors: options.cors,
+    heartbeatMs: options.heartbeatMs,
+  });
   manager.startSweeping();
 
   return {
     http,
-    io,
     manager,
+    tables,
     listen(port) {
       return new Promise((resolve) => {
         http.listen(port, () => {
@@ -89,8 +82,10 @@ export function createServer(options: ServerOptions = {}): HandAndFootServer {
       // Rooms hold live timers; dropping the server without releasing them would
       // keep firing turn clocks for tables that no longer exist.
       manager.disposeAll();
+      tables.close();
       await new Promise<void>((resolve) => {
-        io.close(() => resolve());
+        http.close(() => resolve());
+        http.closeAllConnections();
       });
       // Last, so the final moves before shutdown are written: they are exactly
       // the ones the restart needs.

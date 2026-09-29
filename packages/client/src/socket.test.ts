@@ -42,30 +42,24 @@ function fakeSocket(): {
 }
 
 describe("serverUrl", () => {
-  it("uses the configured server URL when one is set", () => {
+  it("takes an explicit server address when one is set", () => {
     expect(serverUrl({ VITE_SERVER_URL: "https://hf.example" })).toBe("https://hf.example");
   });
 
-  it("falls back to the server's own default port", () => {
-    // 3000 is @hf/server's DEFAULT_PORT; a mismatch here means nothing connects
-    // locally without extra configuration.
-    expect(serverUrl({})).toBe("http://localhost:3000");
-  });
-
-  it("reads the real build-time environment when given none", () => {
-    // The production call shape. Nothing sets VITE_SERVER_URL under test, so this
-    // exercises the default path rather than the injected one.
-    expect(serverUrl()).toBe("http://localhost:3000");
+  it("talks to its own origin otherwise, in development and production alike", () => {
+    // The Worker serves the page in production; Vite proxies /api in development.
+    expect(serverUrl({})).toBe("");
+    // Nothing sets VITE_SERVER_URL for the tests.
+    expect(serverUrl()).toBe("");
   });
 });
 
 describe("connect", () => {
-  it("opens a websocket-only socket at the given URL", () => {
-    // Websocket only on purpose: the long-poll fallback would reconnect as a new
-    // socket often enough to keep churning seats on the server.
+  it("opens a connection that reports itself connected until a table says otherwise", () => {
     const socket = connect("http://localhost:1");
-    expect(socket.io.opts.transports).toEqual(["websocket"]);
+    expect(socket.connected).toBe(true);
     socket.close();
+    expect(socket.connected).toBe(false);
   });
 
   it("builds an independent socket per call", () => {
@@ -101,7 +95,7 @@ describe("ask", () => {
     timers[0]();
     await expect(result).resolves.toEqual({
       ok: false,
-      error: "the server did not respond — check your connection",
+      error: "the server did not respond. Check your connection.",
     });
   });
 
@@ -137,7 +131,7 @@ describe("ask", () => {
     late!({ ok: true, data: 99 });
     expect(await result).toEqual({
       ok: false,
-      error: "the server did not respond — check your connection",
+      error: "the server did not respond. Check your connection.",
     });
   });
 

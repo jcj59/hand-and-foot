@@ -1,0 +1,24 @@
+// Hand and Foot on Cloudflare: one Worker serving the client's built files and the
+// game's API, and one Durable Object per table holding its game and connections.
+// Everything here runs on the Workers free plan.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "hand-and-foot",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-15",
+  // The client, built by `pnpm --filter @hf/client build`. The API is the Worker's;
+  // every other path is a file, or the app's own page for its client-side routes.
+  "assets": {
+    "directory": "../client/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"],
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "TABLES", "class_name": "TableObject" }],
+  },
+  // SQLite-backed, which is what the free plan provides and what the synchronous
+  // key-value storage the tables use needs.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TableObject"] }],
+  "observability": { "enabled": true },
+}

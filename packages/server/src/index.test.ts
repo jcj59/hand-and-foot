@@ -3,19 +3,59 @@ import { FakeClock } from "./clock";
 import { createServer } from "./index";
 import { InMemoryRoomStore } from "./store";
 
+/** Open a table over HTTP, as a browser at `origin` would. */
+function openTable(port: number, origin: string): Promise<Response> {
+  return fetch(`http://localhost:${port}/api/rooms`, {
+    method: "POST",
+    headers: { origin, "content-type": "application/json" },
+    body: JSON.stringify({ name: "ana" }),
+  });
+}
+
 describe("createServer", () => {
   it("allows any origin by default and locks to the given list when asked", async () => {
     // The client is served from a different host in production, so CORS has to
     // be configurable; wide open is only the convenience default for local play.
     const open = createServer();
-    expect(open.io.engine.opts.cors).toEqual({ origin: "*" });
+    const openPort = await open.listen(0);
+    const anywhere = await openTable(openPort, "https://anywhere.example");
+    expect(anywhere.status).toBe(200);
+    expect(anywhere.headers.get("access-control-allow-origin")).toBe("https://anywhere.example");
     await open.close();
 
     const locked = createServer({ cors: ["https://handandfoot.example"] });
-    expect(locked.io.engine.opts.cors).toEqual({
-      origin: ["https://handandfoot.example"],
-    });
+    const port = await locked.listen(0);
+    const ours = await openTable(port, "https://handandfoot.example");
+    expect(ours.status).toBe(200);
+    expect(ours.headers.get("access-control-allow-origin")).toBe("https://handandfoot.example");
+    const theirs = await openTable(port, "https://elsewhere.example");
+    expect(theirs.status).toBe(403);
+    expect(theirs.headers.get("access-control-allow-origin")).toBeNull();
     await locked.close();
+  });
+
+  it("answers the browser's preflight for a cross-origin request", async () => {
+    const server = createServer();
+    const port = await server.listen(0);
+    const preflight = await fetch(`http://localhost:${port}/api/rooms`, {
+      method: "OPTIONS",
+      headers: { origin: "https://handandfoot.example" },
+    });
+    expect(preflight.status).toBe(204);
+    expect(preflight.headers.get("access-control-allow-methods")).toContain("POST");
+    expect(preflight.headers.get("access-control-allow-headers")).toContain("content-type");
+    await server.close();
+  });
+
+  it("refuses a request body that is not JSON, or is too large", async () => {
+    const server = createServer();
+    const port = await server.listen(0);
+    const post = (body: string) =>
+      fetch(`http://localhost:${port}/api/rooms`, { method: "POST", body });
+    expect((await post("not json")).status).toBe(400);
+    expect((await post("[1]")).status).toBe(400);
+    expect((await post(JSON.stringify({ name: "x".repeat(20_000) }))).status).toBe(400);
+    await server.close();
   });
 
   it("reports the port the OS actually assigned when asked for any", async () => {

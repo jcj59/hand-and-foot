@@ -9,22 +9,15 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 import postgres from "postgres";
-import { io as connectClient, type Socket as ClientSocket } from "socket.io-client";
-import type {
-  Ack,
-  Action,
-  ClientToServerEvents,
-  SeatCredentials,
-  ServerToClientEvents,
-  ViewUpdate,
-} from "@hf/shared";
+import { connect as connectTransport, type TableSocket } from "@hf/transport";
+import type { Ack, Action, SeatCredentials, ViewUpdate } from "@hf/shared";
 import { defaultAction } from "@hf/engine";
 import { createServer, type HandAndFootServer } from "./index";
 import { openPostgresStore } from "./postgres";
 import { ownDatabase } from "./testDatabase";
 import { InMemoryRoomStore, type RoomStore } from "./store";
 
-type Client = ClientSocket<ServerToClientEvents, ClientToServerEvents>;
+type Client = TableSocket;
 
 const DATABASE_URL = process.env.HF_TEST_DATABASE_URL;
 
@@ -50,7 +43,7 @@ async function shutDown(server: HandAndFootServer): Promise<void> {
 }
 
 async function connect(url: string): Promise<Client> {
-  const socket: Client = connectClient(url, { transports: ["websocket"], forceNew: true });
+  const socket: Client = connectTransport(url);
   clients.push(socket);
   await new Promise<void>((resolve) => socket.once("connect", () => resolve()));
   return socket;

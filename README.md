@@ -11,37 +11,41 @@ The game is playable end to end in the browser: open or join a table by room cod
 a four-round match through to its final totals.
 
 - **Rules engine** (`packages/engine`) — complete and fully tested.
-- **Server** (`packages/server`) — complete and fully tested: the authoritative real-time
-  Socket.io server, with rooms, per-player filtered views, turn clock, and disconnect handling.
+- **Server** (`packages/server`) — complete and fully tested: the authoritative table logic, with
+  rooms, per-player filtered views, turn clock, and disconnect handling, plus a Node host for it.
 - **Browser client** (`packages/client`) — complete: the lobby (open or join a table by code or
   shared link, wait for players, host deals) and the table (hand, opponents, melds, piles, turn
   clock), with melds staged locally against the lay-down minimum before they are committed, the
   cards owed after taking the pile marked, and the discard.
-- **Persistence and deployment** — rooms are kept in Postgres and rebuilt by replaying their
-  action logs after a restart, so a deploy does not end the games in progress. The server ships as
-  a container for Fly.io and the client as a static build for Vercel. The agent comes next.
+- **Hosting** (`packages/worker`) — the whole game is one Cloudflare Worker on the free plan, with
+  each table a Durable Object that keeps its record and action log in its own storage and is
+  rebuilt from them after a restart, so a deploy does not end the games in progress. The agent
+  comes next.
 
-## Running the server locally
+## Running it locally
+
+The quickest way to play is the Worker itself, run locally by Wrangler. It builds the client and
+serves both on one port:
 
 ```bash
 pnpm install
-pnpm --filter @hf/server start    # or `dev` to restart on change
+pnpm --filter @hf/worker dev      # http://localhost:8787
 ```
 
-`PORT` defaults to 3000. The operational settings are `HF_CORS_ORIGINS`, `HF_RECONNECT_GRACE_MS`,
-and `HF_ABANDONED_ROOM_MS`, plus `DATABASE_URL` to keep rooms in Postgres across restarts (without
-it they live in memory only); see [`packages/server/src/env.ts`](packages/server/src/env.ts) for
-their defaults and formats. A value the server cannot parse stops it at startup.
-
-With the server running, start the client in a second terminal:
+To work on the client with hot reload, run a server and Vite side by side. Vite proxies `/api` to
+the Node server on :3000 by default:
 
 ```bash
+pnpm --filter @hf/server dev      # the Node server on :3000
 pnpm --filter @hf/client dev      # Vite on http://localhost:5173
 ```
 
-`VITE_SERVER_URL` points it at the server and defaults to `http://localhost:3000`. The two run on
-separate origins, as they do when deployed, so set `HF_CORS_ORIGINS=http://localhost:5173` on the
-server to exercise CORS strictly.
+or to the Worker, with `HF_API_TARGET=http://localhost:8787 pnpm --filter @hf/client dev`.
+
+The Node server's settings are `PORT` (default 3000), `HF_CORS_ORIGINS`, `HF_RECONNECT_GRACE_MS`,
+`HF_ABANDONED_ROOM_MS`, and `DATABASE_URL` to keep rooms in Postgres across restarts (without it
+they live in memory only); see [`packages/server/src/env.ts`](packages/server/src/env.ts) for
+their defaults and formats. A value the server cannot parse stops it at startup.
 
 ## Development
 
@@ -61,25 +65,24 @@ and are skipped otherwise. CI runs them against a Postgres service.
 
 ## Deploying
 
-The server runs on Fly.io as a single always-on machine, the client on Vercel, and the database on
-Neon. One-time setup:
+Everything deploys as one Cloudflare Worker, on the free plan. One-time setup:
 
-1. **Database.** Create a Neon project and copy its connection string (with `sslmode=require`).
-   The server creates its tables on first boot.
-2. **Server.** With `flyctl` logged in, create the app once, point it at the database, and deploy:
+1. **Account.** Create a free Cloudflare account, then log in from this machine:
 
    ```bash
-   fly apps create hand-and-foot          # or another name; match `app` in fly.toml
-   fly secrets set DATABASE_URL='postgresql://…' HF_CORS_ORIGINS='https://<client>.vercel.app'
-   fly deploy --ha=false
+   pnpm --filter @hf/worker exec wrangler login
    ```
 
-   It must stay at **one machine** (`--ha=false`): every room lives in that one process, so a
-   second machine would be a second, disjoint set of tables. The deploy strategy is `rolling`, which
-   stops the old machine before the new one starts; the old one writes out its last moves on
-   SIGTERM and the new one restores every open room before accepting players.
-3. **Client.** Import the repository into Vercel (it reads `vercel.json`; no framework preset) and
-   set `VITE_SERVER_URL` to the server's URL, e.g. `https://hand-and-foot.fly.dev`.
-4. **Continuous deployment.** Add a `FLY_API_TOKEN` secret to the GitHub repository
-   (`fly tokens create deploy`), and every push to `main` that passes CI deploys the server. Vercel
-   deploys the client from `main` on its own.
+2. **Deploy.** Build the client and deploy it with the Worker:
+
+   ```bash
+   pnpm --filter @hf/worker run deploy
+   ```
+
+   Wrangler prints the address, `https://hand-and-foot.<your-subdomain>.workers.dev`. That is the
+   game: share it, or a table's link, with the other players.
+
+3. **Continuous deployment** (optional). Add two secrets to the GitHub repository:
+   `CLOUDFLARE_ACCOUNT_ID` (shown on the Cloudflare dashboard) and `CLOUDFLARE_API_TOKEN` (create
+   one from the "Edit Cloudflare Workers" template). Every push to `main` that passes CI then
+   deploys. Until they exist the deploy workflow does nothing.

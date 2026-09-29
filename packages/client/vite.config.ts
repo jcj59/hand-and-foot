@@ -9,15 +9,17 @@ import { defineConfig } from "vitest/config";
  * engine, shared types and server are all consumed from source. `pnpm build`
  * was a no-op until now.
  *
- * The dev server proxies nothing — the client talks to the server over a socket
- * on its own origin, given by `VITE_SERVER_URL` and defaulting to the server's
- * own default port. Keeping them separate origins in development is deliberate,
- * because that is how they are deployed (Vercel and Fly.io), so CORS is
- * exercised locally rather than discovered in production.
+ * The client always talks to its own origin, because in production one Worker
+ * serves both the page and the API. In development the dev server makes that
+ * true too by proxying `/api` — HTTP and the table sockets — to a running
+ * server: the Node server on :3000 by default, or `HF_API_TARGET` for another,
+ * such as `wrangler dev` on :8787.
  */
+const apiTarget = process.env.HF_API_TARGET ?? "http://localhost:3000";
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  server: { port: 5173 },
+  server: { port: 5173, proxy: { "/api": { target: apiTarget, ws: true } } },
   test: {
     // Components are asserted through the real DOM. The pure modules — the
     // server-clock anchoring, the staging logic — do not need it, but one

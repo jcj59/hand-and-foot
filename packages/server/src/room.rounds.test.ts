@@ -153,3 +153,40 @@ describe("a restart part way through a match", () => {
     expect(restored.ok && restored.value.gameState).toEqual(state);
   });
 });
+
+describe("what a table is waiting on, across a restart", () => {
+  async function restart(store: InMemoryRoomStore): Promise<Room> {
+    const [stored] = await store.loadOpen();
+    const restored = Room.restore(stored!, { clock: new FakeClock(), newToken: () => "x", store });
+    expect(restored.ok).toBe(true);
+    return (restored as { value: Room }).value;
+  }
+
+  it("remembers who was ready for the next round, and forgets once it is dealt", async () => {
+    const store = new InMemoryRoomStore();
+    const { room } = table(["ana", "ben", "cy"], store);
+    finishRound(room);
+    room.readyForNextRound(2);
+    const back = await restart(store);
+    expect(back.info().nextRoundReady).toEqual([2]);
+    // The last two are all it still needs.
+    back.readyForNextRound(0);
+    expect(back.readyForNextRound(1)).toEqual({ ok: true, value: true });
+    expect((await restart(store)).info().nextRoundReady).toEqual([]);
+  });
+
+  it("remembers who went on to the next game, and where it is", async () => {
+    const store = new InMemoryRoomStore();
+    const { room } = table(["ana", "ben"], store);
+    for (let r = 1; r < SHORT.rounds; r++) {
+      finishRound(room);
+      everyoneReady(room);
+    }
+    finishRound(room);
+    expect(room.moveOn("t1").ok).toBe(true);
+    room.nextRoomId = "NXT234";
+    const back = await restart(store);
+    expect(back.info().playAgain).toEqual([1]);
+    expect(back.nextRoomId).toBe("NXT234");
+  });
+});

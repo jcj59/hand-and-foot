@@ -40,6 +40,12 @@ export interface RoomRecord {
   readonly pausedSeat: number | null;
   /** Token of the player who hosts. Absent from records saved before it could change. */
   readonly hostToken?: string | null;
+  /** Tokens of the players ready for the next round. Absent from older records. */
+  readonly nextRoundReady?: readonly string[];
+  /** Tokens of the players who went on to the next game. Absent from older records. */
+  readonly wentOn?: readonly string[];
+  /** The next game's table. Absent from older records. */
+  readonly nextRoomId?: string | null;
 }
 
 /** A room as loaded back: its record, and its log oldest first. */
