@@ -8,7 +8,7 @@ the design decisions, and the direction for the agent.
 ## Status
 
 The game is playable end to end in the browser: open or join a table by room code, deal, and play
-a round through to its score.
+a four-round match through to its final totals.
 
 - **Rules engine** (`packages/engine`) — complete and fully tested.
 - **Server** (`packages/server`) — complete and fully tested: the authoritative real-time
