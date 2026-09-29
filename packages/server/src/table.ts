@@ -62,6 +62,12 @@ export class TableChannel {
   private readonly owners = new Map<string, number>();
   /** Seats on their way to the next game, so a second click waits for the first. */
   private readonly moving = new Map<string, Promise<Ack<SeatCredentials>>>();
+  /**
+   * Where each connection was sent. The seat here is let go as the move finishes,
+   * so a repeat of the same click arriving after it would otherwise be refused as
+   * not seated rather than told the same thing again.
+   */
+  private readonly sent = new Map<number, Ack<SeatCredentials>>();
   private nextConnection = 1;
   private retired = false;
 
@@ -103,6 +109,7 @@ export class TableChannel {
   /** The connection closed. If it held a seat, the player is gone for now. */
   disconnect(connection: number): void {
     this.peers.delete(connection);
+    this.sent.delete(connection);
     const token = this.unseat(connection);
     if (token === null) return;
     const player = this.room.seatOf(token);
@@ -204,19 +211,21 @@ export class TableChannel {
         return;
       }
       case "playAgain": {
+        const already = this.sent.get(connection);
+        if (already) return reply(already);
         const token = this.sessions.get(connection);
         const player = token === undefined ? undefined : this.room.seatOf(token);
         if (token === undefined || !player) return reply({ ok: false, error: NOT_SEATED });
         if (!this.room.matchOver) return reply({ ok: false, error: "the match is not over yet" });
         const pending = this.moving.get(token);
-        if (pending) return reply(await pending);
+        if (pending) return reply(this.remember(connection, await pending));
         if (this.room.hasGoneOn(token)) {
           return reply({ ok: false, error: "you have already gone on to the next game" });
         }
         const moving = this.moveOn(token, player);
         this.moving.set(token, moving);
         try {
-          return reply(await moving);
+          return reply(this.remember(connection, await moving));
         } finally {
           this.moving.delete(token);
         }
@@ -244,6 +253,12 @@ export class TableChannel {
       default:
         return reply({ ok: false, error: `unknown request: ${frame.event}` });
     }
+  }
+
+  /** Keep a successful move's answer for this connection's repeats of it. */
+  private remember(connection: number, answer: Ack<SeatCredentials>): Ack<SeatCredentials> {
+    if (answer.ok) this.sent.set(connection, answer);
+    return answer;
   }
 
   private async moveOn(token: string, player: RoomPlayer): Promise<Ack<SeatCredentials>> {

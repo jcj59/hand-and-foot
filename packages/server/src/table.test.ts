@@ -155,6 +155,24 @@ describe("going on to the next game", () => {
     expect(answers.map((f) => ("ack" in f ? f.result : null))).toEqual([expected, expected]);
   });
 
+  it("gives a click that arrives after the move the same answer, not a refusal", async () => {
+    // A double click whose second half lands once the first has finished — the
+    // seat here is already let go by then. Found on CI's faster runner.
+    const { channel, calls, open } = finishedTable();
+    const p = peer();
+    const conn = channel.connect(p);
+    await ask(channel, conn, "resumeSeat", { roomId: "TBL234", token: "tok-0" });
+    const first = ask(channel, conn, "playAgain");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    open();
+    await first;
+    await ask(channel, conn, "playAgain");
+    expect(calls()).toBe(1);
+    const answers = p.frames.filter((f) => "ack" in f).slice(1);
+    const expected = { ok: true, data: { roomId: "NXT234", seat: 0, token: "next-1" } };
+    expect(answers.map((f) => ("ack" in f ? f.result : null))).toEqual([expected, expected]);
+  });
+
   it("refuses a player who has gone on and then comes back to ask again", async () => {
     const { channel, calls, open } = finishedTable();
     const p = peer();
