@@ -6,7 +6,7 @@ import { App } from "./App";
 import { CREDENTIALS_KEY, loadCredentials, saveCredentials } from "./credentials";
 import { createServerClock } from "./serverTime";
 import { useSession } from "./session";
-import { ACK_TIMEOUT_MS, type HfClientSocket } from "./socket";
+import { ACK_TIMEOUT_MS, connect, type HfClientSocket } from "./socket";
 
 /**
  * A transport the test drives by hand, with both halves the shell uses: listeners
@@ -141,6 +141,17 @@ describe("the connection banner", () => {
     mount(socket.socket);
     socket.fire("connect");
     expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("goes away with the real transport, which is connected before the app listens", async () => {
+    // In the browser the socket is made when main.tsx renders, and React attaches
+    // its listeners a moment later — after the transport has already said
+    // "connected". A banner waiting to hear that event never goes away.
+    const socket = connect("http://localhost:1");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    mount(socket);
+    expect(screen.queryByRole("status")).toBeNull();
+    socket.close();
   });
 
   it("warns that turns may be played for you when the socket drops", () => {
