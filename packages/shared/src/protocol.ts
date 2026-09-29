@@ -197,7 +197,7 @@ export interface ClientToServerEvents {
    * Once the round is over, get up from this table and into a waiting room for a
    * new game with the same rules. The first to ask opens it and hosts it; everyone
    * after joins the same one. The ack carries the seat in the new room, as a join
-   * does.
+   * does. Asking again on the same connection gets the same seat, not a second one.
    */
   playAgain: (ack: (result: Ack<SeatCredentials>) => void) => void;
   /**
