@@ -11,7 +11,7 @@
  * As with `Seats`, there is nothing here that could leak: the server sends
  * opponents as counts and melds, never cards in hand.
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { OpponentView, RoomInfo, RulesConfig } from "@hf/shared";
 import { classifyBook } from "@hf/engine";
 import { Melds } from "./Melds";
@@ -33,6 +33,18 @@ export function OpponentStrip({
   const nameOf = (seat: number): string =>
     room.players.find((p) => p.seat === seat)?.name ?? `Seat ${seat}`;
   const shown = opponents.find((o) => o.seat === open) ?? null;
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const showing = shown !== null;
+
+  useEffect(() => {
+    if (!showing) return;
+    closeRef.current?.focus();
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") setOpen(null);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [showing]);
 
   return (
     <>
@@ -109,6 +121,7 @@ export function OpponentStrip({
         >
           <div
             role="dialog"
+            aria-modal="true"
             aria-label={`${nameOf(shown.seat)}'s melds`}
             onClick={(event) => event.stopPropagation()}
             className="max-h-[70%] w-full overflow-y-auto rounded-t-xl border-t border-white/15 bg-felt-900 p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]"
@@ -116,6 +129,7 @@ export function OpponentStrip({
             <div className="mb-3 flex items-center justify-between">
               <h2 className="font-semibold">{nameOf(shown.seat)}</h2>
               <button
+                ref={closeRef}
                 type="button"
                 onClick={() => setOpen(null)}
                 className="rounded border border-white/25 px-3 py-1 text-sm"

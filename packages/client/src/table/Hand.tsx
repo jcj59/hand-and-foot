@@ -70,8 +70,8 @@ export function Hand({
 
   const sorted = sortForDisplay(cards);
 
-  function renderCard(card: Card, lastInRow: boolean): React.ReactElement {
-    const index = sorted.indexOf(card);
+  function renderCard(card: Card, position: number, rowLength: number): React.ReactElement {
+    const lastInRow = position === rowLength - 1;
     const owed = owedIds.has(card.id);
     const melded = !isWild(card.rank) && meldRanks.has(card.rank);
     const lifted = stagedIds.has(card.id) || chosenId === card.id;
@@ -108,10 +108,10 @@ export function Hand({
         {chosenId === card.id && menu && (
           // Upward: the hand sits at the bottom of the window.
           <div
-            // Opens away from the nearer edge, so a card at either end of the
-            // hand never has its menu pushed off the screen.
+            // Opens away from the nearer edge, so a card at either end of its
+            // row never has its menu pushed off the screen.
             className={`absolute bottom-full z-20 mb-1 ${
-              index < sorted.length / 2 ? "left-0" : "right-0"
+              position < rowLength / 2 ? "left-0" : "right-0"
             }`}
           >
             {menu}
@@ -137,13 +137,13 @@ export function Hand({
         <div className="flex flex-col gap-1 pt-3 pr-1">
           {fanRows(sorted).map((row) => (
             <div key={row[0]!.id} className="flex">
-              {row.map((card) => renderCard(card, row[row.length - 1] === card))}
+              {row.map((card, i) => renderCard(card, i, row.length))}
             </div>
           ))}
         </div>
       ) : (
         <div className="flex flex-wrap -space-x-2 pt-2 sm:-space-x-1">
-          {sorted.map((card) => renderCard(card, false))}
+          {sorted.map((card, i) => renderCard(card, i, sorted.length))}
         </div>
       )}
     </section>

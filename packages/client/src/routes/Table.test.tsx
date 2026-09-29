@@ -1762,6 +1762,40 @@ describe("on a phone", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("moves focus into the melds sheet, and closes it on Escape", () => {
+    asPhone();
+    mount(fakeSocket().socket);
+    fireEvent.click(screen.getByRole("button", { name: /^ben,/ }));
+    const sheet = screen.getByRole("dialog", { name: "ben's melds" });
+    expect(sheet).toHaveAttribute("aria-modal", "true");
+    expect(within(sheet).getByRole("button", { name: "Close" })).toHaveFocus();
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("opens a card's menu away from the nearer end of its own row", () => {
+    asPhone();
+    const ranks: Rank[] = ["4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"];
+    mount(
+      fakeSocket().socket,
+      update({
+        view: { phase: "play", hand: ranks.map((rank) => card(rank, "hearts")) },
+        hints: { phase: "play", canDraw: false },
+      }),
+    );
+    const menuSide = (name: string): string => {
+      fireEvent.click(handCard(name));
+      const place = screen.getByRole("menu").parentElement!;
+      const side = place.classList.contains("left-0") ? "left" : "right";
+      fireEvent.click(screen.getByRole("menuitem", { name: "Cancel" }));
+      return side;
+    };
+    // Eleven cards fan as rows of six and five: 9 ends the first, 10 starts the second.
+    expect(menuSide("Nine of hearts")).toBe("right");
+    expect(menuSide("Ten of hearts")).toBe("left");
+    expect(menuSide("Four of hearts")).toBe("left");
+  });
+
   it("says who has not gone down, and who is on turn", () => {
     asPhone();
     mount(fakeSocket().socket, update({ hints: { seatToAct: 1 }, view: { currentSeat: 1 } }));
