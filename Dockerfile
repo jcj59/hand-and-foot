@@ -14,6 +14,7 @@ COPY packages/shared/package.json packages/shared/
 COPY packages/engine/package.json packages/engine/
 COPY packages/server/package.json packages/server/
 COPY packages/client/package.json packages/client/
+COPY packages/transport/package.json packages/transport/
 RUN pnpm install --frozen-lockfile --prod --filter @hf/server...
 
 FROM node:22-slim

@@ -6,18 +6,10 @@
  * change to the contract breaks whichever side is now inconsistent instead of
  * failing at runtime.
  */
-import { io, type Socket } from "socket.io-client";
-import type {
-  Ack,
-  Action,
-  ClientToServerEvents,
-  MeldPlay,
-  RoomOptions,
-  SeatCredentials,
-  ServerToClientEvents,
-} from "@hf/shared";
+import { connect as connectTransport, type TableSocket } from "@hf/transport";
+import type { Ack, Action, MeldPlay, RoomOptions, SeatCredentials } from "@hf/shared";
 
-export type HfClientSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
+export type HfClientSocket = TableSocket;
 
 /**
  * How long to wait for an ack before giving up on it.
@@ -40,12 +32,15 @@ export const NO_RESPONSE = "the server did not respond — check your connection
 /**
  * Where the server lives.
  *
- * Separate origins in development on purpose: production serves the client from
- * Vercel and the server from Fly.io, so running them apart locally exercises the
- * CORS configuration rather than leaving it to be discovered on deploy.
+ * A production build is served by the same Worker that runs the tables, so it
+ * talks to its own origin — the empty string. In development the client and the
+ * Node server run on separate ports, which exercises the server's CORS handling
+ * rather than leaving it to be discovered later. `VITE_SERVER_URL` overrides both.
  */
-export function serverUrl(env: { readonly VITE_SERVER_URL?: string } = import.meta.env): string {
-  return env.VITE_SERVER_URL ?? "http://localhost:3000";
+export function serverUrl(
+  env: { readonly VITE_SERVER_URL?: string; readonly DEV?: boolean } = import.meta.env,
+): string {
+  return env.VITE_SERVER_URL ?? (env.DEV ? "http://localhost:3000" : "");
 }
 
 /**
@@ -53,10 +48,10 @@ export function serverUrl(env: { readonly VITE_SERVER_URL?: string } = import.me
  * this client connects is the entry point, in plain sight.
  */
 export function connect(url: string): HfClientSocket {
-  // Socket.io reconnects on its own; the seat is reclaimed separately with the
-  // stored credentials, because a new transport connection is a new socket as
-  // far as the server is concerned and carries no seat with it.
-  return io(url, { transports: ["websocket"], autoConnect: true });
+  // The transport reconnects on its own; the seat is reclaimed separately with the
+  // stored credentials, because a new connection is a new socket as far as the
+  // server is concerned and carries no seat with it.
+  return connectTransport(url);
 }
 
 /**

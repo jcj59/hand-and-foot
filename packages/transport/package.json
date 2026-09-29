@@ -1,5 +1,5 @@
 {
-  "name": "@hf/server",
+  "name": "@hf/transport",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -9,23 +9,14 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "start": "tsx src/main.ts",
-    "dev": "tsx watch src/main.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
     "test:coverage": "vitest run --coverage --coverage.provider=v8"
   },
   "dependencies": {
-    "@hf/engine": "workspace:*",
-    "@hf/shared": "workspace:*",
-    "postgres": "^3.4.7",
-    "tsx": "^4.20.6",
-    "ws": "^8.18.3"
+    "@hf/shared": "workspace:*"
   },
   "devDependencies": {
-    "@hf/transport": "workspace:*",
-    "@types/node": "^26.2.0",
-    "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^5.0.2",
     "typescript": "^5.7.2",
     "vitest": "^5.0.2"

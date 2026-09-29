@@ -42,30 +42,36 @@ function fakeSocket(): {
 }
 
 describe("serverUrl", () => {
-  it("uses the configured server URL when one is set", () => {
+  it("takes an explicit server address when one is set", () => {
     expect(serverUrl({ VITE_SERVER_URL: "https://hf.example" })).toBe("https://hf.example");
+    expect(serverUrl({ VITE_SERVER_URL: "https://hf.example", DEV: true })).toBe(
+      "https://hf.example",
+    );
   });
 
-  it("falls back to the server's own default port", () => {
-    // 3000 is @hf/server's DEFAULT_PORT; a mismatch here means nothing connects
-    // locally without extra configuration.
-    expect(serverUrl({})).toBe("http://localhost:3000");
+  it("talks to the local server in development", () => {
+    // Pinned as a literal: the server's own default port.
+    expect(serverUrl({ DEV: true })).toBe("http://localhost:3000");
+  });
+
+  it("talks to its own origin in a production build", () => {
+    // The Worker that runs the tables serves the page too.
+    expect(serverUrl({})).toBe("");
+    expect(serverUrl({ DEV: false })).toBe("");
   });
 
   it("reads the real build-time environment when given none", () => {
-    // The production call shape. Nothing sets VITE_SERVER_URL under test, so this
-    // exercises the default path rather than the injected one.
+    // Tests run as a development build, with nothing setting VITE_SERVER_URL.
     expect(serverUrl()).toBe("http://localhost:3000");
   });
 });
 
 describe("connect", () => {
-  it("opens a websocket-only socket at the given URL", () => {
-    // Websocket only on purpose: the long-poll fallback would reconnect as a new
-    // socket often enough to keep churning seats on the server.
+  it("opens a connection that reports itself connected until a table says otherwise", () => {
     const socket = connect("http://localhost:1");
-    expect(socket.io.opts.transports).toEqual(["websocket"]);
+    expect(socket.connected).toBe(true);
     socket.close();
+    expect(socket.connected).toBe(false);
   });
 
   it("builds an independent socket per call", () => {

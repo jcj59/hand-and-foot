@@ -1,0 +1,306 @@
+/**
+ * One table's connections: who is seated on which socket, what each request does,
+ * and who hears about it.
+ *
+ * It knows nothing about the transport. The Node server drives it from `ws`
+ * sockets and the Cloudflare Worker from a Durable Object's, and both get the same
+ * rules, because the rules are here:
+ *
+ * - The seat a connection may act as comes from the table's own record of which
+ *   connection presented which token, never from a payload — otherwise any client
+ *   could play as any seat, and the authoritative server would be authoritative
+ *   over nothing.
+ * - Every view goes out per connection through `viewFor(seat)`. A single payload
+ *   built for the table is exactly how hidden cards leak.
+ * - Only the connection that currently holds a seat speaks for it. A player who
+ *   reconnects is on a new connection before the old one is noticed gone, and the
+ *   old one's late departure must not mark them absent or give their seat away.
+ */
+import type { Ack, ClientFrame, SeatCredentials, ServerFrame } from "@hf/shared";
+import { isDraft, type Room, type RoomPlayer, type RoomResult } from "./room";
+
+/** One connection to the table, as the transport sees it. */
+export interface Peer {
+  send(frame: ServerFrame): void;
+}
+
+export interface TableHooks {
+  /**
+   * Seat a player from this finished table at the next game's waiting room — the
+   * same one for everyone who asks — and return their seat there. Crosses tables,
+   * so the transport that knows how to reach other tables provides it.
+   */
+  nextTable(room: Room, player: RoomPlayer): Promise<RoomResult<SeatCredentials>>;
+}
+
+export const NOT_SEATED = "you are not seated in a room";
+
+/**
+ * The answer to anything asked of a table that does not exist: a reclaim is told
+ * the room is gone, which sends a client home; anything else, that it holds no seat.
+ */
+export function refusal(event: string): Ack<never> {
+  return { ok: false, error: event === "resumeSeat" ? "no room with that code" : NOT_SEATED };
+}
+
+function ackOf<T>(result: RoomResult<T>): Ack<T> {
+  return result.ok ? { ok: true, data: result.value } : { ok: false, error: result.error };
+}
+
+export class TableChannel {
+  private readonly peers = new Map<number, Peer>();
+  /** The token each seated connection holds. */
+  private readonly sessions = new Map<number, string>();
+  /** The one connection that currently speaks for each token. */
+  private readonly owners = new Map<string, number>();
+  private nextConnection = 1;
+  private retired = false;
+
+  constructor(
+    readonly room: Room,
+    private readonly hooks: TableHooks,
+  ) {
+    // A move the *server* makes — a timeout, a dropped player's turn — reaches the
+    // table without anyone having asked.
+    room.onChange = () => {
+      this.broadcastViews();
+      this.broadcastRoom();
+      this.broadcastResult();
+    };
+  }
+
+  /** A new connection, holding no seat until it presents a token. */
+  connect(peer: Peer): number {
+    const id = this.nextConnection++;
+    this.peers.set(id, peer);
+    return id;
+  }
+
+  /** The connection closed. If it held a seat, the player is gone for now. */
+  disconnect(connection: number): void {
+    this.peers.delete(connection);
+    const token = this.unseat(connection);
+    if (token === null) return;
+    const player = this.room.seatOf(token);
+    /* v8 ignore next -- a token still owned is still seated: leaving lets go of it first */
+    if (!player) return;
+    this.room.setConnected(player.seat, false);
+    this.broadcastRoom();
+  }
+
+  /**
+   * The table is gone — reaped, or its process moving on. Connections still open
+   * to it hold nothing: every request is refused, as it would be at a code that
+   * never existed, and the room is no longer told to broadcast.
+   */
+  retire(): void {
+    this.retired = true;
+    this.sessions.clear();
+    this.owners.clear();
+    this.room.onChange = null;
+  }
+
+  /** Handle one request, answer it, and tell the table what changed. */
+  async handle(connection: number, frame: ClientFrame): Promise<void> {
+    const peer = this.peers.get(connection);
+    /* v8 ignore next -- a transport delivers no message after a connection's close */
+    if (!peer) return;
+    const reply = (result: Ack<unknown>): void => peer.send({ ack: frame.id, result });
+    if (this.retired) return reply(refusal(frame.event));
+    const payload = frame.payload as Record<string, unknown> | undefined;
+    const seated = this.seatOf(connection);
+
+    switch (frame.event) {
+      case "resumeSeat": {
+        if (payload?.roomId !== this.room.id)
+          return reply({ ok: false, error: "no room with that code" });
+        const resumed = this.room.resume(String(payload?.token ?? ""));
+        if (!resumed.ok) return reply({ ok: false, error: resumed.error });
+        // The seat comes from the token, not from the payload's seat field: trusting
+        // the field would let anyone with a valid token claim any seat in the room.
+        this.claim(connection, resumed.value.token);
+        reply({ ok: true, data: this.credentialsOf(resumed.value) });
+        this.broadcastRoom();
+        const update = this.room.viewFor(resumed.value.seat);
+        if (update) peer.send({ event: "view", payload: update });
+        // The result is broadcast once, when the round ends, so a seat that comes back
+        // afterwards would otherwise see a finished table with no scores on it.
+        const result = this.room.result();
+        if (result) peer.send({ event: "roundEnded", payload: result });
+        return;
+      }
+      case "startGame": {
+        if (seated === null) return reply({ ok: false, error: NOT_SEATED });
+        const started = this.room.start(seated);
+        if (!started.ok) return reply({ ok: false, error: started.error });
+        reply({ ok: true, data: undefined });
+        this.broadcastRoom();
+        this.broadcastViews();
+        return;
+      }
+      case "submitAction": {
+        if (seated === null) return reply({ ok: false, error: NOT_SEATED });
+        const applied = this.room.submitAction(seated, frame.payload as never);
+        reply(ackOf(applied));
+        if (!applied.ok) return;
+        this.broadcastViews();
+        this.broadcastResult();
+        return;
+      }
+      case "stageMelds": {
+        if (seated === null) return reply({ ok: false, error: NOT_SEATED });
+        // Normalized rather than trusted: this arrives as untyped JSON, and a draft
+        // that is not a list of well-formed groups is simply no draft.
+        const melds = isDraft(payload?.melds) ? payload.melds : [];
+        return reply(ackOf(this.room.stageMelds(seated, melds)));
+      }
+      case "setPaused": {
+        if (seated === null) return reply({ ok: false, error: NOT_SEATED });
+        const paused = this.room.setPaused(seated, payload?.paused === true);
+        reply(ackOf(paused));
+        if (!paused.ok) return;
+        this.broadcastRoom();
+        this.broadcastViews();
+        return;
+      }
+      case "setHost": {
+        if (seated === null) return reply({ ok: false, error: NOT_SEATED });
+        const changed = this.room.setHost(seated, Number(payload?.seat));
+        reply(ackOf(changed));
+        if (changed.ok) this.broadcastRoom();
+        return;
+      }
+      case "nextRound": {
+        if (seated === null) return reply({ ok: false, error: NOT_SEATED });
+        const ready = this.room.readyForNextRound(seated);
+        if (!ready.ok) return reply({ ok: false, error: ready.error });
+        reply({ ok: true, data: ready.value });
+        this.broadcastRoom();
+        if (ready.value) this.broadcastViews();
+        return;
+      }
+      case "playAgain": {
+        const token = this.sessions.get(connection);
+        const player = token === undefined ? undefined : this.room.seatOf(token);
+        if (token === undefined || !player) return reply({ ok: false, error: NOT_SEATED });
+        if (!this.room.matchOver) return reply({ ok: false, error: "the match is not over yet" });
+        const moved = await this.hooks.nextTable(this.room, player);
+        if (!moved.ok) return reply({ ok: false, error: moved.error });
+        // Off this table, as a leave: this connection no longer speaks for the seat.
+        this.letGo(token);
+        this.room.moveOn(token);
+        reply({ ok: true, data: moved.value });
+        this.broadcastRoom();
+        return;
+      }
+      case "leaveRoom": {
+        const token = this.sessions.get(connection);
+        // Only the seat's current owner speaks for it: a connection superseded by a
+        // resume elsewhere must not be able to give away a seat still in use.
+        if (token === undefined || this.owners.get(token) !== connection) {
+          this.sessions.delete(connection);
+          return reply({ ok: false, error: NOT_SEATED });
+        }
+        // Where everyone else sits now, so the ones who move up can be told.
+        const before = new Map(this.room.seats().map((p) => [p.token, p.seat]));
+        const left = this.room.leave(token);
+        /* v8 ignore next -- an owned token is always still seated: only its owner can leave */
+        if (!left.ok) return reply({ ok: false, error: left.error });
+        this.letGo(token);
+        reply({ ok: true, data: undefined });
+        this.tellMoved(before);
+        this.broadcastRoom();
+        this.broadcastViews();
+        return;
+      }
+      default:
+        return reply({ ok: false, error: `unknown request: ${frame.event}` });
+    }
+  }
+
+  /** Tell everyone at the table where things stand, as a newly wired room does. */
+  broadcastRoom(): void {
+    const info = this.room.info();
+    for (const [connection] of this.sessions) this.send(connection, "room", info);
+  }
+
+  // ------------------------------------------------------------------ seating ---
+
+  /** The seat a connection holds, or null. */
+  private seatOf(connection: number): number | null {
+    const token = this.sessions.get(connection);
+    if (token === undefined) return null;
+    /* v8 ignore next -- a held token is always seated: tokens let go are unheld first */
+    return this.room.seatOf(token)?.seat ?? null;
+  }
+
+  private credentialsOf(player: RoomPlayer): SeatCredentials {
+    return { roomId: this.room.id, seat: player.seat, token: player.token };
+  }
+
+  /** Seat this connection, taking the seat over from any that held it before. */
+  private claim(connection: number, token: string): void {
+    const prior = this.sessions.get(connection);
+    if (prior !== undefined && prior !== token) this.disconnectSeat(connection);
+    this.sessions.set(connection, token);
+    this.owners.set(token, connection);
+  }
+
+  /**
+   * Forget this connection's seat, returning the token only if the connection was
+   * still its owner — the only case in which its going says anything about the
+   * player.
+   */
+  private unseat(connection: number): string | null {
+    const token = this.sessions.get(connection);
+    this.sessions.delete(connection);
+    if (token === undefined || this.owners.get(token) !== connection) return null;
+    this.owners.delete(token);
+    return token;
+  }
+
+  /** Unseat a connection that is moving to another seat of this same table. */
+  private disconnectSeat(connection: number): void {
+    const token = this.unseat(connection);
+    const player = token === null ? undefined : this.room.seatOf(token);
+    if (player) this.room.setConnected(player.seat, false);
+  }
+
+  /** A token given up on purpose: no connection speaks for it any more. */
+  private letGo(token: string): void {
+    this.owners.delete(token);
+    for (const [connection, held] of this.sessions) {
+      if (held === token) this.sessions.delete(connection);
+    }
+  }
+
+  /** Tell each seated connection whose seat number changed what it is now. */
+  private tellMoved(before: ReadonlyMap<string, number>): void {
+    for (const [connection, token] of this.sessions) {
+      const player = this.room.seatOf(token);
+      if (player && player.seat !== before.get(token)) this.send(connection, "seat", player.seat);
+    }
+  }
+
+  // --------------------------------------------------------------- broadcasts ---
+
+  private send(connection: number, event: string, payload: unknown): void {
+    this.peers.get(connection)?.send({ event, payload });
+  }
+
+  /** Send each seat its own filtered view. Never build one payload for the table. */
+  private broadcastViews(): void {
+    for (const [connection, token] of this.sessions) {
+      const player = this.room.seatOf(token);
+      /* v8 ignore next -- a departed token's sessions are dropped with it */
+      const update = player ? this.room.viewFor(player.seat) : null;
+      if (update) this.send(connection, "view", update);
+    }
+  }
+
+  private broadcastResult(): void {
+    const result = this.room.result();
+    if (!result) return;
+    for (const [connection] of this.sessions) this.send(connection, "roundEnded", result);
+  }
+}

@@ -1,3 +1,6 @@
+// @vitest-environment node
+// Against a real server, so in Node rather than the simulated browser: Node's own
+// WebSocket and jsdom each bring an Event class, and neither accepts the other's.
 /**
  * Keeping a seat across a dropped connection, against a real server.
  *
@@ -48,10 +51,10 @@ function mount(socket: HfClientSocket): void {
   );
 }
 
-/** Drop the transport and let socket.io reconnect on its own, as a network blip does. */
+/** Drop the transport and let it reconnect on its own, as a network blip does. */
 async function dropTransport(socket: HfClientSocket): Promise<void> {
   const back = new Promise<void>((resolve) => socket.once("connect", () => resolve()));
-  socket.io.engine.close();
+  socket.dropConnection();
   await back;
 }
 
@@ -117,7 +120,7 @@ describe("a dropped connection", () => {
     // was away: either way the token names a room that no longer exists.
     const { alice, roomId } = await dealtTable();
     const back = new Promise<void>((resolve) => alice.once("connect", () => resolve()));
-    alice.io.engine.close();
+    alice.dropConnection();
     server.manager.remove(roomId);
     await back;
 

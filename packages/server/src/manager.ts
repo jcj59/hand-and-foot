@@ -84,6 +84,9 @@ export class RoomManager {
   private readonly newUid: () => string;
   private cancelSweep: (() => void) | null = null;
 
+  /** Told when a room is removed, so whatever else holds it can let go too. */
+  onRemove: ((room: Room) => void) | null = null;
+
   constructor(options: ManagerOptions = {}) {
     this.clock = options.clock ?? systemClock;
     this.random = options.random ?? Math.random;
@@ -170,6 +173,7 @@ export class RoomManager {
     // Closed in the store too, or the next boot would bring back a room that was
     // deliberately let go.
     if (room) this.store?.closeRoom(room.uid, this.clock.now());
+    if (room) this.onRemove?.(room);
     return this.rooms.delete(roomId.toUpperCase());
   }
 

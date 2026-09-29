@@ -1,10 +1,9 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { io as connectClient, type Socket as ClientSocket } from "socket.io-client";
+import { connect as connectTransport, type TableSocket } from "@hf/transport";
 import {
   EAST_COAST,
   type Ack,
   type Action,
-  type ClientToServerEvents,
   type RoomInfo,
   type RoomOptions,
   type RoundEnded,
@@ -15,10 +14,11 @@ import {
 import { defaultAction } from "@hf/engine";
 import { createServer, FakeClock, MAX_PLAYERS, type HandAndFootServer } from "./index";
 
-type Client = ClientSocket<ServerToClientEvents, ClientToServerEvents>;
+type Client = TableSocket;
 
 /**
- * These drive real Socket.io clients against a real server on an ephemeral port.
+ * These drive real clients — the one the browser uses, over plain WebSockets —
+ * against a real server on an ephemeral port.
  * The point is the boundary: `view.test.ts` in the engine proves `project()` is
  * clean, which says nothing about whether the transport routes the right payload
  * to the right socket. That is what leaks hidden cards in practice.
@@ -40,12 +40,9 @@ async function boot(): Promise<{ server: HandAndFootServer; port: number }> {
 }
 
 async function connect(port: number): Promise<Client> {
-  const socket: Client = connectClient(`http://localhost:${port}`, {
-    transports: ["websocket"],
-    forceNew: true,
-  });
+  const socket: Client = connectTransport(`http://localhost:${port}`);
   clients.push(socket);
-  await new Promise<void>((resolve) => socket.on("connect", () => resolve()));
+  await new Promise<void>((resolve) => socket.once("connect", () => resolve()));
   return socket;
 }
 

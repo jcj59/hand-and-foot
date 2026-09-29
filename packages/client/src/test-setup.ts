@@ -15,6 +15,8 @@ afterEach(cleanup);
 // A saved seat lives in both of the browser's stores (see `browserStore`), and a
 // test that clears only one would leak a seat from the last test into the next.
 beforeEach(() => {
+  // The real-server suites run in plain Node, which has no browser storage.
+  if (typeof window === "undefined") return;
   window.sessionStorage.clear();
   window.localStorage.clear();
 });
