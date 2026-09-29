@@ -90,6 +90,7 @@ function randomString(alphabet: string, length: number): string {
 export class TableObject extends DurableObject<Env> {
   private readonly store: DurableRoomStore;
   private channel: TableChannel | null = null;
+  private nextTableQueue: Promise<unknown> = Promise.resolve();
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -265,9 +266,20 @@ export class TableObject extends DurableObject<Env> {
 
   /**
    * Seat a player from this finished table at the next game's waiting room: the
-   * one the first to ask opened, or a new one with the same rules.
+   * one the first to ask opened, or a new one with the same rules. Requests run
+   * one at a time: the calls to other objects release the input gate, so a second
+   * request arriving meanwhile would otherwise open a table of its own.
    */
-  private async nextTable(room: Room, player: RoomPlayer): Promise<RoomResult<SeatCredentials>> {
+  private nextTable(room: Room, player: RoomPlayer): Promise<RoomResult<SeatCredentials>> {
+    const turn = this.nextTableQueue.then(() => this.seatAtNextTable(room, player));
+    this.nextTableQueue = turn.catch(() => undefined);
+    return turn;
+  }
+
+  private async seatAtNextTable(
+    room: Room,
+    player: RoomPlayer,
+  ): Promise<RoomResult<SeatCredentials>> {
     const answer = async (): Promise<Ack<SeatCredentials>> => {
       if (room.nextRoomId !== null) {
         const seated = await this.env.TABLES.getByName(room.nextRoomId).sitNext(player.name);

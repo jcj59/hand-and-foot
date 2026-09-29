@@ -209,6 +209,20 @@ describe("the table socket, spoken directly", () => {
     ).rejects.toThrow();
   });
 
+  it("answers a malformed table code with a 404, and keeps serving", async () => {
+    const { base } = await boot();
+    for (const path of ["/api/rooms/%E0/join", "/api/rooms/%zz/join"]) {
+      const response = await fetch(`http://${base}${path}`, {
+        method: "POST",
+        headers: { origin: "https://ours.example" },
+        body: "{}",
+      });
+      expect(response.status).toBe(404);
+    }
+    await expect(open(base, "%E0")).rejects.toThrow();
+    expect(await post(base, "/api/rooms", { name: "ana" })).toMatchObject({ ok: true });
+  });
+
   it("answers nothing but its own routes", async () => {
     const { base } = await boot();
     expect((await fetch(`http://${base}/elsewhere`)).status).toBe(404);

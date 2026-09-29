@@ -418,6 +418,25 @@ describe("a table", () => {
     });
   });
 
+  it("sends two players who ask for the next game at once to the same table", async () => {
+    const { ana, ben, anaSeat } = await dealtTable();
+    await insideTable(anaSeat.roomId, (room) => {
+      const internal = room as unknown as { state: object };
+      internal.state = { ...room.gameState!, roundEnded: true, roundNumber: room.config.rounds };
+    });
+    const [anaNext, benNext] = await Promise.all([
+      ask<SeatCredentials>(ana, "playAgain"),
+      ask<SeatCredentials>(ben, "playAgain"),
+    ]);
+    if (!anaNext.ok) throw new Error(anaNext.error);
+    if (!benNext.ok) throw new Error(benNext.error);
+    expect(benNext.data.roomId).toBe(anaNext.data.roomId);
+    expect([anaNext.data.seat, benNext.data.seat].sort()).toEqual([0, 1]);
+    expect(await insideTable(anaSeat.roomId, (room) => room.nextRoomId)).toBe(
+      anaNext.data.roomId,
+    );
+  });
+
   it("refuses a late comer to a next game already dealt, and opens a fresh one if it was reaped", async () => {
     const next = client();
     const opened = await ask<SeatCredentials>(next, "createRoom", { name: "ana" });

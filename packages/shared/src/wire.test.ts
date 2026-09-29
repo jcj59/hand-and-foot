@@ -16,6 +16,11 @@ describe("table paths", () => {
     expect(parseRoomPath(socketPath("A B/C"))).toEqual({ roomId: "A B/C", what: "socket" });
   });
 
+  it("recognises nothing in a path whose code is not a well-formed escape", () => {
+    expect(parseRoomPath("/api/rooms/%E0/socket")).toBeNull();
+    expect(parseRoomPath("/api/rooms/%zz/join")).toBeNull();
+  });
+
   it("recognises nothing else", () => {
     for (const path of [
       "/api/rooms",

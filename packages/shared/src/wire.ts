@@ -60,14 +60,21 @@ export const PONG = "pong";
 
 /**
  * Read a table code out of a request path, for the router on either server.
- * Returns the code and what is being asked of it, or null for anything else.
+ * Returns the code and what is being asked of it, or null for anything else,
+ * including a malformed escape, which would otherwise throw out of the router.
  */
 export function parseRoomPath(
   path: string,
 ): { readonly roomId: string; readonly what: "join" | "socket" } | null {
   const match = /^\/api\/rooms\/([^/]+)\/(join|socket)$/.exec(path);
   if (!match) return null;
-  return { roomId: decodeURIComponent(match[1]!), what: match[2] as "join" | "socket" };
+  let roomId: string;
+  try {
+    roomId = decodeURIComponent(match[1]!);
+  } catch {
+    return null;
+  }
+  return { roomId, what: match[2] as "join" | "socket" };
 }
 
 /** Tell a reply from a push. */
