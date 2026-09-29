@@ -122,7 +122,8 @@ export class TableSocket {
       options.WebSocket ?? (globalThis.WebSocket as unknown as SocketConstructor);
     this.fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
     // As Socket.io did: say "connected" once, after whoever built this has had the
-    // chance to listen for it.
+    // chance to listen for it. A listener attached later still misses it, so it
+    // should read `connected` when it attaches (as `attachSession` does).
     setTimeout(() => {
       if (!this.closed && this.connected) this.fire("connect");
     }, 0);
