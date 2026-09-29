@@ -945,6 +945,36 @@ describe("stageMelds over the wire", () => {
     expect(await stage(onTurn, { melds: "nonsense" })).toEqual({ ok: true, data: undefined });
     expect(await stage(onTurn, null)).toEqual({ ok: true, data: undefined });
   });
+
+  it.each([
+    ["a null group", { melds: [null] }],
+    ["card ids that are not a list", { melds: [{ rank: "K", cardIds: 5 }] }],
+  ])("keeps serving when %s is staged and the clock runs out", async (_, payload) => {
+    const clock = new FakeClock(1_000_000);
+    const server = createServer({ clock });
+    started.push(server);
+    const port = await server.listen(0);
+    const [a, b] = [await connect(port), await connect(port)];
+    const created = await createRoom(a, "ana");
+    if (!created.ok) throw new Error(created.error);
+    await joinRoom(b, created.data.roomId, "ben");
+    await startGame(a);
+    const room = server.manager.get(created.data.roomId)!;
+    const seat = room.gameState!.currentSeat;
+    const onTurn = seat === 0 ? a : b;
+    expect((await submit(onTurn, { type: "draw" })).ok).toBe(true);
+    const hand = room.gameState!.players[seat]!.hand.length;
+    expect(await stage(onTurn, payload)).toEqual({ ok: true, data: undefined });
+
+    // Main clock, then the discard grace: the server plays the turn out itself.
+    clock.advance(room.clockState().deadlineAt! - clock.now());
+    clock.advance(room.clockState().deadlineAt! - clock.now());
+    expect(room.gameState!.currentSeat).not.toBe(seat);
+    expect(room.gameState!.players[seat]!.hand).toHaveLength(hand - 1);
+    expect(room.log.entries().map((e) => e.action.type)).not.toContain("playMelds");
+    // Still serving: the next player can move.
+    expect((await submit(seat === 0 ? b : a, { type: "draw" })).ok).toBe(true);
+  });
 });
 
 describe("playing again over the wire", () => {

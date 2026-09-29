@@ -404,6 +404,12 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
     clean SIGTERM exit. No Docker on this machine, so the image was verified by replaying its steps
     in a scratch dir and running that tree as a real process through a SIGTERM restart against
     Postgres.
+  - **A pending foot is picked up automatically** when the turn reaches that player (in
+    `advanceTurn`), replacing their draw; `applyDraw` no longer handles `footPending`. So an action
+    log recorded before that change which contains a foot-pickup `draw` **no longer replays**: the
+    logged `draw` meets a turn already in the play phase and is refused, and `Room.restore` closes
+    such a room rather than rebuilding a different game. That is by design — nothing had been
+    deployed, only local test tables were affected — so there is no compatibility code for it.
   - `pnpm start` does not forward SIGTERM (exit 143, no graceful shutdown) — never use it as a
     container command.
 - **Bot milestone — the RL agent.** The point of the whole project. Design not yet written; the

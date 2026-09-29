@@ -146,6 +146,25 @@ describe("a staged lay-down when the clock runs out", () => {
     expect(room.clockState().inDiscardGrace).toBe(true);
   });
 
+  it.each([
+    ["a group that is not an object", (m: MeldPlay) => [m, 7]],
+    ["a group with no rank", (m: MeldPlay) => [m, { cardIds: m.cardIds }]],
+    ["a card id that is not a string", (m: MeldPlay) => [m, { ...m, cardIds: [1, 2, 3] }]],
+    ["a draft that is not a list", (m: MeldPlay) => ({ 0: m, length: 1 })],
+  ])("discards the whole draft when it holds %s", (_, malformed) => {
+    const { room, clock, seat, melds } = tableWithTwoMelds();
+    const before = room.log.length;
+    expect(room.stageMelds(seat, malformed(melds[0]) as unknown as MeldPlay[]).ok).toBe(true);
+    expire(room, clock);
+    expect(
+      room.log
+        .entries()
+        .slice(before)
+        .some((row) => row.action.type === "playMelds"),
+    ).toBe(false);
+    expect(room.clockState().inDiscardGrace).toBe(true);
+  });
+
   it("is not played when the player commits it themselves first", () => {
     const { room, clock, seat, melds } = tableWithTwoMelds();
     room.stageMelds(seat, melds);

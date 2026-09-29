@@ -71,6 +71,20 @@ describe("getting ready for the next round", () => {
     expect(room.log.entries().at(-1)!.action).toEqual({ type: "nextRound" });
   });
 
+  it("refuses the next round as an ordinary move, so no one deals past the others' ready", () => {
+    const { room } = table(["ana", "ben", "cy"]);
+    finishRound(room);
+    const seat = room.gameState!.currentSeat;
+    const logged = room.log.entries().length;
+    expect(room.submitAction(seat, { type: "nextRound" })).toEqual({
+      ok: false,
+      error: "the next round is dealt when everyone is ready",
+    });
+    expect(room.gameState!.roundNumber).toBe(1);
+    expect(room.gameState!.roundEnded).toBe(true);
+    expect(room.log.entries()).toHaveLength(logged);
+  });
+
   it("counts a player ready once however many times they say so", () => {
     const { room } = table(["ana", "ben"]);
     finishRound(room);

@@ -45,6 +45,26 @@ const MAX_FORCED_MOVES_PER_TURN = 12;
  */
 const MAX_DRAFT_GROUPS = 10;
 
+/**
+ * Whether an untyped value has the shape of a staged lay-down: a list of groups,
+ * each a rank and a list of card ids. The draft arrives as JSON from a browser and
+ * is played later inside a timer, where a malformed group would throw rather than
+ * be refused — so a draft that is not this shape is no draft at all.
+ */
+export function isDraft(value: unknown): value is readonly MeldPlay[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (meld: unknown) =>
+        typeof meld === "object" &&
+        meld !== null &&
+        typeof (meld as MeldPlay).rank === "string" &&
+        Array.isArray((meld as MeldPlay).cardIds) &&
+        (meld as MeldPlay).cardIds.every((id: unknown) => typeof id === "string"),
+    )
+  );
+}
+
 export interface RoomPlayer {
   /**
    * Position at the table. Stable once dealt; in the lobby a departure closes the
@@ -531,7 +551,7 @@ export class Room {
     if (seat !== state.currentSeat) return fail("it is not your turn");
     if (state.phase !== "play") return fail("melds can only be staged after drawing");
     if (this.graceUntil !== null) return fail("your turn is out of time: you can only discard");
-    this.draft = melds.length > 0 ? { seat, melds } : null;
+    this.draft = isDraft(melds) && melds.length > 0 ? { seat, melds } : null;
     return succeed(undefined);
   }
 
@@ -549,6 +569,11 @@ export class Room {
     if (!state) return fail("the game has not started");
     if (this.paused) return fail("the table is paused");
     if (seat !== state.currentSeat) return fail("it is not your turn");
+    // The next round is dealt by `readyForNextRound` once the whole table is ready;
+    // taken as an ordinary move it would let one player skip everyone else's ready.
+    if (action.type === "nextRound") {
+      return fail("the next round is dealt when everyone is ready");
+    }
     // Once the main clock is gone the turn is being wound up: a discard ends it,
     // anything else would extend a turn that has already run past its cap.
     if (source === "player" && this.graceUntil !== null && action.type !== "discard") {

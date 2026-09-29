@@ -1,7 +1,7 @@
 import type { Server, Socket } from "socket.io";
 import type { Ack, ClientToServerEvents, SeatCredentials, ServerToClientEvents } from "@hf/shared";
 import { configFor, type RoomManager } from "./manager";
-import type { Room, RoomResult } from "./room";
+import { isDraft, type Room, type RoomResult } from "./room";
 
 export type HfServer = Server<ClientToServerEvents, ServerToClientEvents>;
 export type HfSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
@@ -207,8 +207,8 @@ export function attachSocketServer(io: HfServer, manager: RoomManager): void {
       const session = sessionOf(socket);
       if (!session) return ack({ ok: false, error: "you are not seated in a room" });
       // Normalized rather than trusted: this arrives as untyped JSON, and a draft
-      // that is not a list of groups is simply no draft.
-      const melds = Array.isArray(payload?.melds) ? payload.melds : [];
+      // that is not a list of well-formed groups is simply no draft.
+      const melds = isDraft(payload?.melds) ? payload.melds : [];
       ack(ackOf(session.room.stageMelds(session.seat, melds)));
     });
 
