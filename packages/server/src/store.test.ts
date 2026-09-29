@@ -84,6 +84,14 @@ function contract(name: string, open: () => Promise<RoomStore>): void {
       expect(loaded?.room).toEqual(record(waiting));
     });
 
+    it("gives back when a pause began, whether the table paused itself, and until when it is saved", async () => {
+      const paused = { pausedSeat: 1, idlePaused: true, pausedSince: 1_000, savedUntil: 9_000 };
+      store.saveRoom(record(paused));
+      await store.flush();
+      const [loaded] = await store.loadOpen();
+      expect(loaded?.room).toEqual(record(paused));
+    });
+
     it("replaces the record on a second save, keeping the log", async () => {
       store.saveRoom(record({ started: false }));
       store.appendAction("uid-1", row(0));
