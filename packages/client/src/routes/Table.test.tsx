@@ -1049,9 +1049,90 @@ describe("pausing", () => {
     expect(sent[0]).toEqual({ event: "setPaused", args: [{ paused: true }] });
   });
 
-  it("offers a resume while paused", () => {
-    mount(fakeSocket().socket, update({ clock: { paused: true, deadlineAt: null } }));
-    expect(screen.getByRole("button", { name: /resume/i })).toBeInTheDocument();
+  it("says who paused, when the table will close, and offers a resume", async () => {
+    const closesAt = new Date(2026, 8, 29, 15, 45).getTime();
+    const { socket, sent } = fakeSocket();
+    mount(
+      socket,
+      update({
+        clock: { serverNow: Date.now(), paused: true, deadlineAt: null },
+        room: { pausedBy: 1, closesAt },
+      }),
+    );
+    const bar = screen.getByRole("status", { name: "Paused" });
+    expect(bar.textContent).toMatch(
+      /ben paused the table\. It closes at 3:45\sPM unless someone resumes it\./,
+    );
+    // One way to resume, not two.
+    expect(screen.getAllByRole("button", { name: "Resume" })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: /^pause$/i })).toBeNull();
+    fireEvent.click(within(bar).getByRole("button", { name: "Resume" }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toEqual({ event: "setPaused", args: [{ paused: false }] });
+  });
+
+  it("gives the closing time by this browser's clock, not the server's", () => {
+    // The server runs ten minutes ahead: its 3:55 is 3:45 here.
+    const skew = 10 * 60_000;
+    const closesAt = new Date(2026, 8, 29, 15, 45, 30).getTime() + skew;
+    mount(
+      fakeSocket().socket,
+      update({
+        clock: { serverNow: Date.now() + skew, paused: true, deadlineAt: null },
+        room: { pausedBy: 1, closesAt },
+      }),
+    );
+    expect(screen.getByRole("status", { name: "Paused" }).textContent).toMatch(
+      /It closes at 3:45\sPM unless someone resumes it\./,
+    );
+  });
+
+  it("offers to save a paused family game for later, and says until when once saved", async () => {
+    const { socket, sent } = fakeSocket();
+    mount(socket, update({ clock: { paused: true, deadlineAt: null }, room: { pausedBy: 0 } }));
+    fireEvent.click(screen.getByRole("button", { name: "Save for later" }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toEqual({ event: "saveForLater", args: [] });
+  });
+
+  it("shows a saved game's date, and offers no second save", () => {
+    const savedUntil = new Date(2026, 9, 6, 12, 0).getTime();
+    mount(
+      fakeSocket().socket,
+      update({
+        clock: { serverNow: Date.now(), paused: true, deadlineAt: null },
+        room: { pausedBy: 0, savedUntil, closesAt: savedUntil },
+      }),
+    );
+    expect(screen.getByRole("status", { name: "Paused" }).textContent).toMatch(
+      /Saved for later until Tue, Oct 6\./,
+    );
+    expect(screen.queryByRole("button", { name: "Save for later" })).toBeNull();
+  });
+
+  it("explains a table that paused itself, and lets a competitive table resume it", async () => {
+    const { socket, sent } = fakeSocket();
+    mount(
+      socket,
+      update({
+        clock: { paused: true, deadlineAt: null },
+        room: {
+          idlePaused: true,
+          config: { ...EAST_COAST, mode: "competitive", pauseEnabled: false },
+        },
+      }),
+    );
+    const bar = screen.getByRole("status", { name: "Paused" });
+    expect(bar.textContent).toMatch(/Paused because nobody has played for a full lap\./);
+    // Saving is a family-game thing.
+    expect(within(bar).queryByRole("button", { name: "Save for later" })).toBeNull();
+    fireEvent.click(within(bar).getByRole("button", { name: "Resume" }));
+    await waitFor(() => expect(sent[0]).toEqual({ event: "setPaused", args: [{ paused: false }] }));
+  });
+
+  it("shows no pause bar while the table is playing", () => {
+    mount(fakeSocket().socket);
+    expect(screen.queryByRole("status", { name: "Paused" })).toBeNull();
   });
 
   it("is absent at a competitive table", () => {

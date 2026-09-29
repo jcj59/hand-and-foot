@@ -37,6 +37,12 @@ export interface ServerClock {
    * negative, because "overdue by 4s" is not something a turn timer should show.
    */
   remaining(deadlineAt: number | null): number | null;
+  /**
+   * A server timestamp as this browser's clock would read it, for showing a time
+   * of day: the server's half past three is not half past three here if the two
+   * clocks disagree.
+   */
+  toLocal(serverAt: number): number;
   /** Whether a server timestamp has been seen yet. */
   readonly anchored: boolean;
   /** The current offset, exposed for assertions and debugging. */
@@ -80,6 +86,10 @@ export function createServerClock(now: () => number = Date.now): ServerClock {
     remaining(deadlineAt: number | null): number | null {
       if (deadlineAt === null) return null;
       return Math.max(0, deadlineAt - (now() + offsetMs));
+    },
+
+    toLocal(serverAt: number): number {
+      return serverAt - offsetMs;
     },
   };
 }

@@ -11,7 +11,7 @@
  * refused request as a value. A rejection is put on the store as a notice for the
  * interface to surface, and the caller learns whether it worked.
  */
-import type { Action, MeldPlay, RoomOptions, SeatCredentials } from "@hf/shared";
+import type { Action, CloseReason, MeldPlay, RoomOptions, SeatCredentials } from "@hf/shared";
 import { clearCredentials } from "./credentials";
 import { normalizeRoomCode } from "./roomCode";
 import * as wire from "./socket";
@@ -202,6 +202,54 @@ export async function pauseTable(
   }
   sink.setNotice(null);
   return true;
+}
+
+/** Keep this paused family table for a week, to be picked up again later. */
+export async function saveTableForLater(
+  socket: HfClientSocket,
+  sink: ActionSink,
+): Promise<boolean> {
+  const result = await wire.saveForLater(socket);
+  if (!result.ok) {
+    sink.setNotice(result.error);
+    return false;
+  }
+  sink.setNotice(null);
+  return true;
+}
+
+/** What a player is told when the table they were at is closed. */
+export function closedNotice(reason: CloseReason): string {
+  switch (reason) {
+    case "paused":
+      return "The table was closed after being paused for 30 minutes.";
+    case "saved":
+      return "The saved game was closed after a week without being picked up.";
+    case "abandoned":
+      return "The table was closed because everyone had left.";
+  }
+}
+
+/**
+ * When the server closes the table this player is at, get up from it and go
+ * home, saying why. Returns the teardown.
+ */
+export function leaveOnClose(
+  socket: HfClientSocket,
+  sink: { leave(): void; setNotice(notice: string | null): void; goHome(): void },
+): () => void {
+  const onClosed = ({ reason }: { readonly reason: CloseReason }): void => {
+    // The socket is let go of too: the server has retired the table, so this
+    // only stops the transport holding a connection to it.
+    void wire.leaveRoom(socket);
+    sink.leave();
+    sink.goHome();
+    sink.setNotice(closedNotice(reason));
+  };
+  socket.on("tableClosed", onClosed);
+  return () => {
+    socket.off("tableClosed", onClosed);
+  };
 }
 
 /**

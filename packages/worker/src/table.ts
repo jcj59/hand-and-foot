@@ -238,22 +238,36 @@ export class TableObject extends DurableObject<Env> {
    * the table is still empty is decided when it fires.
    */
   override async alarm(): Promise<void> {
-    const room = this.channel?.room;
-    const since = room?.abandonedSince ?? null;
-    if (!room || since === null) return;
-    if (systemClock.now() - since < ABANDONED_TABLE_MS) {
+    this.alarmAt = null;
+    const channel = this.channel;
+    const closing = channel?.room.closing(ABANDONED_TABLE_MS) ?? null;
+    if (!channel || closing === null) return;
+    if (systemClock.now() < closing.at) {
       this.scheduleReaping();
       return;
     }
-    this.store.closeRoom(room.uid, systemClock.now());
-    room.dispose();
-    this.channel?.retire();
+    this.store.closeRoom(channel.room.uid, systemClock.now());
+    channel.room.dispose();
+    // Anyone still looking at it is told why, rather than finding out on their
+    // next click.
+    channel.close(closing.reason);
     this.channel = null;
   }
 
+  /** The alarm last set, so an unchanged closing time is not written again. */
+  private alarmAt: number | null = null;
+
+  /**
+   * Set the alarm for when the table would close — abandoned, or paused too long;
+   * see `Room.closing`. Called whenever anything about the table changes. A time
+   * that moved later leaves an early alarm behind, which only finds the table
+   * still wanted and sets the next one.
+   */
   private scheduleReaping(): void {
-    const since = this.channel?.room.abandonedSince ?? null;
-    if (since !== null) void this.ctx.storage.setAlarm(since + ABANDONED_TABLE_MS);
+    const at = this.channel?.room.closing(ABANDONED_TABLE_MS)?.at ?? null;
+    if (at === null || at === this.alarmAt) return;
+    this.alarmAt = at;
+    void this.ctx.storage.setAlarm(at);
   }
 
   // ---------------------------------------------------------------- plumbing ---
@@ -261,6 +275,7 @@ export class TableObject extends DurableObject<Env> {
   private install(room: Room): void {
     this.channel = new TableChannel(room, {
       nextTable: (from, player) => this.nextTable(from, player),
+      changed: () => this.scheduleReaping(),
     });
   }
 

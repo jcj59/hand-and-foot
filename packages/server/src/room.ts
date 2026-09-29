@@ -4,6 +4,7 @@ import {
   type Action,
   type ActionSource,
   type ClockState,
+  type CloseReason,
   type GameState,
   type MeldPlay,
   type RoomInfo,
@@ -108,6 +109,12 @@ export interface RoomDeps {
    * for them. Not a rule of the game, so it is not in `RulesConfig`.
    */
   readonly reconnectGraceMs?: number;
+  /**
+   * Whether a table pauses itself once a whole lap goes by with nobody playing;
+   * on by default. Off only for tests of the clock, which let the server play
+   * every seat for many turns on purpose.
+   */
+  readonly pauseWhenIdle?: boolean;
   /** Where the room's record and log are kept so a restart can bring it back. */
   readonly store?: RoomStore;
   /** The room's identity in the store; see `RoomRecord.uid`. Defaults to its code. */
@@ -117,6 +124,23 @@ export interface RoomDeps {
 }
 
 export const DEFAULT_RECONNECT_GRACE_MS = 30_000;
+
+/**
+ * How long a paused table is kept before it is closed. A pause is for a break,
+ * not an ending: a table left paused all morning is a game nobody is coming back
+ * to, and every open table holds its code and, while anyone's tab is open, the
+ * host's resources.
+ */
+export const PAUSED_TABLE_MS = 30 * 60_000;
+
+/** How long a paused family table saved for later is kept. */
+export const SAVED_TABLE_MS = 7 * 24 * 60 * 60_000;
+
+/** Why a table is closing, and when. */
+export interface Closing {
+  readonly at: number;
+  readonly reason: CloseReason;
+}
 
 /**
  * One table: its seats, its authoritative game state, its clock, and its log.
@@ -197,6 +221,21 @@ export class Room {
   private pausedAt: number | null = null;
   private cancelTimer: (() => void) | null = null;
 
+  // --- keeping the table open ---
+  /** Paused by the table itself, for want of anyone playing, rather than a player. */
+  private idlePaused = false;
+  /**
+   * When the current pause began, for its time limit. Unlike `pausedAt`, which
+   * only does the clock's bookkeeping and restarts with the process, this is
+   * saved, so a restart or a Durable Object waking does not give a paused table a
+   * fresh half hour every time.
+   */
+  private pausedSince: number | null = null;
+  /** Set while a paused table is saved for later: when it stops being kept. */
+  private savedUntil: number | null = null;
+  /** Turns played for their seats in a row, with nobody at the table moving. */
+  private idleTurns = 0;
+
   constructor(id: string, config: RulesConfig, deps: RoomDeps) {
     this.id = id;
     this.uid = deps.uid ?? id;
@@ -274,9 +313,12 @@ export class Room {
     for (const token of record.nextRoundReady ?? []) room.ready.add(token);
     for (const token of record.wentOn ?? []) room.wentOn.add(token);
     room.next = record.nextRoomId ?? null;
-    if (record.pausedSeat !== null) {
-      room.pausedSeat = record.pausedSeat;
+    if (record.pausedSeat !== null) room.pausedSeat = record.pausedSeat;
+    room.idlePaused = record.idlePaused ?? false;
+    if (room.paused) {
       room.pausedAt = now;
+      room.pausedSince = record.pausedSince ?? now;
+      room.savedUntil = record.savedUntil ?? null;
     }
     room.state = state;
     if (state && !state.roundEnded) room.beginTurn(state.currentSeat);
@@ -305,6 +347,9 @@ export class Room {
       nextRoundReady: [...this.ready],
       wentOn: [...this.wentOn],
       nextRoomId: this.next,
+      idlePaused: this.idlePaused,
+      pausedSince: this.pausedSince,
+      savedUntil: this.savedUntil,
     };
   }
 
@@ -318,7 +363,32 @@ export class Room {
   }
 
   get paused(): boolean {
-    return this.pausedSeat !== undefined;
+    return this.pausedSeat !== undefined || this.idlePaused;
+  }
+
+  /**
+   * When this table should be closed, and why, if nothing changes before then:
+   * paused and never resumed, or with everyone gone. `abandonedMs` is the host's
+   * setting for the second. Null while the table is open indefinitely.
+   *
+   * A paused table goes by its pause, whoever is still connected: a tab left open
+   * on a paused table is not somebody playing. One saved for later is kept for
+   * days, and is not closed for being empty, since everyone leaving is the point.
+   */
+  closing(abandonedMs: number): Closing | null {
+    const pauseEnds = this.pauseEndsAt();
+    if (pauseEnds !== null) {
+      return { at: pauseEnds, reason: this.savedUntil !== null ? "saved" : "paused" };
+    }
+    const since = this.abandonedSince;
+    return since === null ? null : { at: since + abandonedMs, reason: "abandoned" };
+  }
+
+  private pauseEndsAt(): number | null {
+    if (!this.paused) return null;
+    if (this.savedUntil !== null) return this.savedUntil;
+    /* v8 ignore next -- a paused table always knows when its pause began */
+    return (this.pausedSince ?? this.deps.clock.now()) + PAUSED_TABLE_MS;
   }
 
   get seatCount(): number {
@@ -463,6 +533,7 @@ export class Room {
     this.ready.clear();
     this.save();
     this.draft = null;
+    this.idleTurns = 0;
     this.state = dealt.state;
     this.beginTurn(dealt.state.currentSeat);
     return true;
@@ -526,7 +597,11 @@ export class Room {
   }
 
   setPaused(seat: number, paused: boolean): RoomResult<undefined> {
-    if (!this.config.pauseEnabled) return fail("pausing is disabled in this mode");
+    // A table that paused itself can be resumed at any table, competitive ones
+    // included: nobody chose to pause it, so nobody is using a pause they are not
+    // allowed.
+    const resumingIdle = !paused && this.idlePaused;
+    if (!this.config.pauseEnabled && !resumingIdle) return fail("pausing is disabled in this mode");
     if (!this.players[seat]) return fail("no such seat");
     if (paused && this.paused) return fail("the table is already paused");
     if (!paused && !this.paused) return fail("the table is not paused");
@@ -536,6 +611,7 @@ export class Room {
     if (paused) {
       this.pausedSeat = seat;
       this.pausedAt = this.deps.clock.now();
+      this.pausedSince = this.pausedAt;
       this.rearm();
     } else {
       this.unpause();
@@ -564,7 +640,39 @@ export class Room {
     }
     this.pausedSeat = undefined;
     this.pausedAt = null;
+    this.idlePaused = false;
+    this.pausedSince = null;
+    this.savedUntil = null;
+    this.idleTurns = 0;
     this.rearm();
+  }
+
+  /**
+   * Keep this paused table for days rather than minutes, so the game can be picked
+   * up again another time. Family tables only, as pausing is; resuming ends it.
+   */
+  saveForLater(seat: number): RoomResult<undefined> {
+    if (!this.config.pauseEnabled) return fail("saving a game for later is for family games");
+    if (!this.players[seat]) return fail("no such seat");
+    if (!this.started) return fail("the game has not started");
+    if (!this.paused) return fail("pause the table before saving it for later");
+    this.savedUntil = this.deps.clock.now() + SAVED_TABLE_MS;
+    this.save();
+    return succeed(undefined);
+  }
+
+  /**
+   * Nobody has played for a whole lap: every seat's turn in a row was played for
+   * it. Pause rather than go on playing a game nobody is watching — which would
+   * never end, since the default policy never melds — and let the pause's time
+   * limit close it if nobody comes back.
+   */
+  private pauseForIdleness(): void {
+    this.idlePaused = true;
+    this.pausedAt = this.deps.clock.now();
+    this.pausedSince = this.pausedAt;
+    this.rearm();
+    this.save();
   }
 
   /**
@@ -611,6 +719,7 @@ export class Room {
     const result = applyAction(state, action);
     if (!result.ok) return fail(result.error);
 
+    if (source === "player") this.idleTurns = 0;
     this.state = result.state;
     this.log.append(seat, action, source, this.deps.clock.now());
     this.afterAction(seat);
@@ -841,6 +950,11 @@ export class Room {
       /* v8 ignore next */
       if (!this.apply(state.currentSeat, action, source)) break;
     }
+    this.idleTurns++;
+    const idle = this.deps.pauseWhenIdle !== false && this.idleTurns >= this.players.length;
+    if (idle && this.state && !this.state.roundEnded) {
+      this.pauseForIdleness();
+    }
     this.notify();
   }
 
@@ -895,6 +1009,9 @@ export class Room {
       hostSeat: this.hostSeat,
       started: this.started,
       pausedBy: this.pausedSeat,
+      idlePaused: this.idlePaused,
+      savedUntil: this.savedUntil,
+      closesAt: this.pauseEndsAt(),
       config: this.config,
       playAgain: this.players.filter((p) => this.wentOn.has(p.token)).map((p) => p.seat),
       nextRoundReady: this.players.filter((p) => this.ready.has(p.token)).map((p) => p.seat),

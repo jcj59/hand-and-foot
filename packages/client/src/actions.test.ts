@@ -4,7 +4,9 @@ import {
   createTable,
   joinTable,
   leaveTable,
+  closedNotice,
   pauseTable,
+  saveTableForLater,
   play,
   reclaimOnReconnect,
   reclaimSeat,
@@ -359,5 +361,29 @@ describe("pauseTable", () => {
     const target = sink();
     expect(await pauseTable(socket, true, target)).toBe(false);
     expect(target.notices).toEqual(["pausing is disabled in this mode"]);
+  });
+});
+
+describe("saveTableForLater", () => {
+  it("asks for the table to be kept, and reports a refusal", async () => {
+    const { socket, sent } = fakeSocket([
+      { ok: true, data: undefined },
+      { ok: false, error: "pause the table before saving it for later" },
+    ]);
+    const target = sink();
+    expect(await saveTableForLater(socket, target)).toBe(true);
+    expect(await saveTableForLater(socket, target)).toBe(false);
+    expect(sent.map((s) => s.event)).toEqual(["saveForLater", "saveForLater"]);
+    expect(target.notices).toEqual([null, "pause the table before saving it for later"]);
+  });
+});
+
+describe("closedNotice", () => {
+  it("says why a table closed, for each reason", () => {
+    expect(closedNotice("paused")).toBe("The table was closed after being paused for 30 minutes.");
+    expect(closedNotice("saved")).toBe(
+      "The saved game was closed after a week without being picked up.",
+    );
+    expect(closedNotice("abandoned")).toBe("The table was closed because everyone had left.");
   });
 });

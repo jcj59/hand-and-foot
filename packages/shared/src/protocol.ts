@@ -74,8 +74,18 @@ export interface RoomInfo {
   /** The seat allowed to start the game. */
   readonly hostSeat: number;
   readonly started: boolean;
-  /** Seat that paused the table, when paused. */
+  /** Seat that paused the table, when a player paused it. */
   readonly pausedBy?: number;
+  /** The table paused itself: a full lap of turns went by with nobody playing. */
+  readonly idlePaused?: boolean;
+  /** When a paused table was saved for later, the time it is kept until. */
+  readonly savedUntil?: number | null;
+  /**
+   * When the table will be closed if nothing changes: paused and not resumed, or
+   * with everyone gone. Server time, like the clock's deadline. Null while it is
+   * open indefinitely.
+   */
+  readonly closesAt?: number | null;
   readonly config: RulesConfig;
   /** Seats that have gone on from this finished table to a new game's waiting room. */
   readonly playAgain: readonly number[];
@@ -220,7 +230,15 @@ export interface ClientToServerEvents {
     ack: (result: Ack) => void,
   ) => void;
   setPaused: (payload: { readonly paused: boolean }, ack: (result: Ack) => void) => void;
+  /**
+   * Keep a paused family table for days rather than minutes, so the game can be
+   * picked up again later. Only while paused; resuming ends it.
+   */
+  saveForLater: (ack: (result: Ack) => void) => void;
 }
+
+/** Why a table was closed. */
+export type CloseReason = "paused" | "saved" | "abandoned";
 
 export interface ServerToClientEvents {
   /** Per-socket: the sending seat's own filtered view. */
@@ -234,4 +252,6 @@ export interface ServerToClientEvents {
    */
   seat: (seat: number) => void;
   roundEnded: (result: RoundEnded) => void;
+  /** Broadcast: the table has been closed, and why. Nothing more will come. */
+  tableClosed: (payload: { readonly reason: CloseReason }) => void;
 }

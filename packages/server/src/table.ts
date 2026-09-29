@@ -16,7 +16,7 @@
  *   reconnects is on a new connection before the old one is noticed gone, and the
  *   old one's late departure must not mark them absent or give their seat away.
  */
-import type { Ack, ClientFrame, SeatCredentials, ServerFrame } from "@hf/shared";
+import type { Ack, ClientFrame, CloseReason, SeatCredentials, ServerFrame } from "@hf/shared";
 import { isDraft, type Room, type RoomPlayer, type RoomResult } from "./room";
 
 /** One connection to the table, as the transport sees it. */
@@ -38,6 +38,12 @@ export interface TableHooks {
    * so the transport that knows how to reach other tables provides it.
    */
   nextTable(room: Room, player: RoomPlayer): Promise<RoomResult<SeatCredentials>>;
+  /**
+   * Something about the table changed — a request handled, or a move the server
+   * made itself. For a host that has to act on when the table would close, as a
+   * Durable Object setting its alarm does.
+   */
+  changed?(): void;
 }
 
 export const NOT_SEATED = "you are not seated in a room";
@@ -81,6 +87,7 @@ export class TableChannel {
       this.broadcastViews();
       this.broadcastRoom();
       this.broadcastResult();
+      this.hooks.changed?.();
     };
   }
 
@@ -131,8 +138,26 @@ export class TableChannel {
     this.room.onChange = null;
   }
 
+  /**
+   * The table has been closed for being left: tell everyone at it why, then
+   * retire. Without this a player looking at a paused table would find out only
+   * when their next click was refused.
+   */
+  close(reason: CloseReason): void {
+    for (const [connection] of this.sessions) this.send(connection, "tableClosed", { reason });
+    this.retire();
+  }
+
   /** Handle one request, answer it, and tell the table what changed. */
   async handle(connection: number, frame: ClientFrame): Promise<void> {
+    try {
+      await this.respond(connection, frame);
+    } finally {
+      if (!this.retired) this.hooks.changed?.();
+    }
+  }
+
+  private async respond(connection: number, frame: ClientFrame): Promise<void> {
     const peer = this.peers.get(connection);
     /* v8 ignore next -- a transport delivers no message after a connection's close */
     if (!peer) return;
@@ -192,6 +217,13 @@ export class TableChannel {
         if (!paused.ok) return;
         this.broadcastRoom();
         this.broadcastViews();
+        return;
+      }
+      case "saveForLater": {
+        if (seated === null) return reply({ ok: false, error: NOT_SEATED });
+        const saved = this.room.saveForLater(seated);
+        reply(ackOf(saved));
+        if (saved.ok) this.broadcastRoom();
         return;
       }
       case "setHost": {

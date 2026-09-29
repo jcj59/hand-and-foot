@@ -13,7 +13,7 @@ import {
 } from "cloudflare:test";
 import { afterEach, describe, expect, it } from "vitest";
 import { defaultAction } from "@hf/engine";
-import type { Room, TableChannel } from "@hf/server/core";
+import { PAUSED_TABLE_MS, type Room, type TableChannel } from "@hf/server/core";
 import {
   EAST_COAST,
   PING,
@@ -481,6 +481,38 @@ describe("a table", () => {
       ok: false,
       error: "the next game has already started without you",
     });
+  });
+
+  it("closes a table left paused, telling the players still looking at it", async () => {
+    const { ana, anaSeat } = await dealtTable();
+    const code = anaSeat.roomId;
+    const closed = new Promise((resolve) => ana.on("tableClosed", resolve));
+    expect(await ask(ana, "setPaused", { paused: true })).toEqual({ ok: true, data: undefined });
+    // The alarm is set for half an hour on; nothing yet.
+    expect(await runDurableObjectAlarm(tableOf(code))).toBe(true);
+    expect(await insideTable(code, (room) => room.paused)).toBe(true);
+    // Half an hour later, with everyone still connected, it goes.
+    await insideTable(code, (room) => {
+      (room as unknown as { pausedSince: number }).pausedSince = Date.now() - PAUSED_TABLE_MS - 1;
+    });
+    await runInDurableObject(tableOf(code), (instance: TableObject) => instance.alarm());
+    expect(await closed).toEqual({ reason: "paused" });
+    expect(await ask(client(), "resumeSeat", anaSeat)).toEqual({
+      ok: false,
+      error: "no room with that code",
+    });
+  });
+
+  it("keeps a table saved for later past the pause's half hour", async () => {
+    const { ana, anaSeat } = await dealtTable();
+    const code = anaSeat.roomId;
+    await ask(ana, "setPaused", { paused: true });
+    expect(await ask(ana, "saveForLater")).toEqual({ ok: true, data: undefined });
+    await insideTable(code, (room) => {
+      (room as unknown as { pausedSince: number }).pausedSince = Date.now() - PAUSED_TABLE_MS - 1;
+    });
+    await runInDurableObject(tableOf(code), (instance: TableObject) => instance.alarm());
+    expect(await insideTable(code, (room) => room.info().savedUntil)).toBeGreaterThan(Date.now());
   });
 
   it("closes a table everyone has left, freeing its code", async () => {

@@ -234,6 +234,20 @@ describe("the table socket, spoken directly", () => {
   });
 });
 
+describe("closing a table", () => {
+  it("tells a player still at it why it closed", async () => {
+    const { server, base } = await boot();
+    const seat = await post(base, "/api/rooms", { name: "ana" });
+    if (!seat.ok) throw new Error(seat.error);
+    const socket = await open(base, seat.data.roomId);
+    await ask(socket, 1, "resumeSeat", seat.data);
+    server.manager.remove(seat.data.roomId, "paused");
+    await vi.waitFor(() =>
+      expect(socket.frames.at(-1)).toEqual({ event: "tableClosed", payload: { reason: "paused" } }),
+    );
+  });
+});
+
 describe("the heartbeat", () => {
   it("drops a client that stops answering, and marks its seat empty", async () => {
     const { server, base } = await boot(30);

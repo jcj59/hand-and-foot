@@ -53,7 +53,13 @@ function tableWithTwoMelds(config: RulesConfig = NO_MINIMUM): {
   for (let seed = 1; seed < 5_000; seed++) {
     const clock = new FakeClock(1_000_000);
     let token = 0;
-    const room = new Room("DRAFT1", config, { clock, seed, newToken: () => `t${token++}` });
+    const room = new Room("DRAFT1", config, {
+      clock,
+      seed,
+      newToken: () => `t${token++}`,
+      // Timeouts in a row are the setup here, not a table left idle.
+      pauseWhenIdle: false,
+    });
     room.join("ana");
     room.join("ben");
     room.start(0);
