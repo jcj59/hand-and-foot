@@ -86,16 +86,13 @@ export interface ScoringConfig {
 
 export interface RulesConfig {
   /**
-   * Number of rounds in the match. **Reserved and currently unenforced**: the first
-   * release is a single round, so nothing advances `roundNumber` past 1 and no code
-   * reads this field. It is kept so the config shape stays stable for multi-round
-   * matches (roadmap item 1); wire it up there rather than assuming it works.
+   * Number of rounds in the match. After each round but the last, a `nextRound`
+   * action deals the next one; scores add up across them.
    */
   readonly rounds: number;
   /**
    * Per-round point minimum required to lay your first melds, indexed by
-   * `roundNumber - 1`. This one *is* honored, so escalating minimums already work
-   * as soon as rounds advance.
+   * `roundNumber - 1`. A round past the end of the list has no minimum.
    */
   readonly layDownMinimums: readonly number[];
   readonly wildRatio: WildRatioRule;
@@ -129,8 +126,8 @@ export interface RulesConfig {
 
 /** East Coast preset (default): naturals must strictly outnumber wilds; Family-paced. */
 export const EAST_COAST: RulesConfig = {
-  rounds: 1,
-  layDownMinimums: [60],
+  rounds: 4,
+  layDownMinimums: [60, 90, 120, 150],
   wildRatio: "naturals-exceed-wilds",
   marvaRule: false,
   goOutCleanBooks: 1,
@@ -208,6 +205,8 @@ export interface GameState {
    * only this seat earns the go-out bonus.
    */
   readonly wentOutSeat?: number;
+  /** Every finished round's scores, oldest first; the current round is not in it. */
+  readonly pastRounds?: readonly (readonly RoundScore[])[];
 }
 
 /** What one player can see of another player: counts, not hidden card contents. */
@@ -247,6 +246,22 @@ export interface PlayerView {
    * hand would settle it.
    */
   readonly pickedUp: readonly string[];
+  /**
+   * Who went out, once someone has. Public: every seat sees the go-out as it
+   * happens, and the table has to be able to say so.
+   */
+  readonly wentOutSeat: number | null;
+  /**
+   * Turns left in the final lap a without-discard go-out starts, or null when no
+   * final lap is running. Public for the same reason: each remaining player needs
+   * to know this turn is their last.
+   */
+  readonly finalLapRemaining: number | null;
+  /**
+   * Each seat's total over the rounds already finished, in seat order — public, as
+   * the scores of a finished round are. Zero for everyone in the first round.
+   */
+  readonly scoresSoFar: readonly number[];
 }
 
 /** One meld a player lays or extends: the cards to add and the rank they form. */
@@ -260,12 +275,41 @@ export type Action =
   | { readonly type: "draw" }
   | { readonly type: "takePile" }
   | { readonly type: "playMelds"; readonly melds: readonly MeldPlay[] }
-  | { readonly type: "discard"; readonly cardId: string };
+  | { readonly type: "discard"; readonly cardId: string }
+  /**
+   * Deal the next round of the match, once this one has ended and it was not the
+   * last. Not a player's move but the table's: the server submits it once everyone
+   * still playing is ready. An action all the same, so a match replays from its log.
+   */
+  | { readonly type: "nextRound" };
 
 /** One player's score for a completed round. */
 export interface RoundScore {
   readonly seat: number;
+  /** The sum of the breakdown, so nothing has to add it up to show a total. */
   readonly score: number;
+  readonly breakdown: ScoreBreakdown;
+}
+
+/**
+ * How a round score is made up, so a scoreboard can show the arithmetic rather than
+ * only the total. Every field is already signed: the parts add up to `score`.
+ */
+export interface ScoreBreakdown {
+  /** Completed books with no wild. */
+  readonly cleanBooks: number;
+  /** Completed books with at least one wild. */
+  readonly dirtyBooks: number;
+  /** `cleanBooks` and `dirtyBooks` at the table's bonus for each. */
+  readonly bookBonus: number;
+  /** Face value of every card melded, books and open melds alike. */
+  readonly meldedCards: number;
+  /** The go-out bonus, for the one player who went out; otherwise 0. */
+  readonly goOutBonus: number;
+  /** Cards still held in hand and foot when the round ended. */
+  readonly heldCount: number;
+  /** Their face value, as a negative number. */
+  readonly heldPenalty: number;
 }
 
 /**

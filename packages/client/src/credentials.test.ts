@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { SeatCredentials } from "@hf/shared";
 import {
   browserStore,
+  tabbedStore,
   clearCredentials,
   CREDENTIALS_KEY,
   loadCredentials,
@@ -144,17 +145,20 @@ describe("browserStore", () => {
     expect(loadCredentials()).toBeNull();
   });
 
-  it("returns null when even reaching for localStorage throws", () => {
+  it("returns null when even reaching for storage throws", () => {
     // A browser configured to block site data throws on the property access
     // itself, not on the read, so the guard has to wrap the access. Simulated by
-    // replacing the accessor, since jsdom's own storage always works.
+    // replacing the accessors, since jsdom's own storage always works.
     const real = Object.getOwnPropertyDescriptor(window, "localStorage");
-    Object.defineProperty(window, "localStorage", {
-      configurable: true,
-      get() {
-        throw new Error("access denied");
-      },
-    });
+    const realSession = Object.getOwnPropertyDescriptor(window, "sessionStorage");
+    for (const name of ["localStorage", "sessionStorage"]) {
+      Object.defineProperty(window, name, {
+        configurable: true,
+        get() {
+          throw new Error("access denied");
+        },
+      });
+    }
     try {
       expect(browserStore()).toBeNull();
       // And the callers degrade rather than throwing out of a join.
@@ -163,6 +167,73 @@ describe("browserStore", () => {
       expect(() => clearCredentials()).not.toThrow();
     } finally {
       if (real) Object.defineProperty(window, "localStorage", real);
+      if (realSession) Object.defineProperty(window, "sessionStorage", realSession);
     }
+  });
+});
+
+describe("a seat per tab", () => {
+  /** A plain in-memory store, standing in for one of the browser's. */
+  function memory(): CredentialStore & { readonly items: Map<string, string> } {
+    const items = new Map<string, string>();
+    return {
+      items,
+      getItem: (key) => items.get(key) ?? null,
+      setItem: (key, value) => void items.set(key, value),
+      removeItem: (key) => void items.delete(key),
+    };
+  }
+  const ana: SeatCredentials = { roomId: "ABC234", seat: 0, token: "ana-token" };
+  const ben: SeatCredentials = { roomId: "ABC234", seat: 1, token: "ben-token" };
+
+  it("gives each tab back its own seat after a reload, though they share a browser", () => {
+    // The bug this exists for: two players in one browser, and a reload handing
+    // one of them the other's seat.
+    const local = memory();
+    const tabA = tabbedStore(memory(), local);
+    const tabB = tabbedStore(memory(), local);
+    saveCredentials(ana, tabA);
+    saveCredentials(ben, tabB);
+    expect(loadCredentials(tabA)).toEqual(ana);
+    expect(loadCredentials(tabB)).toEqual(ben);
+  });
+
+  it("lets a new tab fall back to the last seat saved, to recover a closed window", () => {
+    const local = memory();
+    saveCredentials(ana, tabbedStore(memory(), local));
+    expect(loadCredentials(tabbedStore(memory(), local))).toEqual(ana);
+  });
+
+  it("does not take away another tab's way back when leaving", () => {
+    const local = memory();
+    const tabA = tabbedStore(memory(), local);
+    const tabB = tabbedStore(memory(), local);
+    saveCredentials(ana, tabA);
+    saveCredentials(ben, tabB);
+    clearCredentials(tabA);
+    expect(loadCredentials(tabA)).toEqual(ben);
+    expect(local.items.size).toBe(1);
+    clearCredentials(tabB);
+    expect(local.items.size).toBe(0);
+  });
+
+  it("works with only one of the two stores reachable", () => {
+    const onlyLocal = tabbedStore(null, memory());
+    saveCredentials(ana, onlyLocal);
+    expect(loadCredentials(onlyLocal)).toEqual(ana);
+    clearCredentials(onlyLocal);
+    const onlySession = tabbedStore(memory(), null);
+    saveCredentials(ben, onlySession);
+    expect(loadCredentials(onlySession)).toEqual(ben);
+    clearCredentials(onlySession);
+    expect(loadCredentials(onlySession)).toBeNull();
+  });
+
+  it("is what the browser gets: the tab's own storage first", () => {
+    window.localStorage.setItem(CREDENTIALS_KEY, JSON.stringify(ben));
+    expect(loadCredentials()).toEqual(ben);
+    saveCredentials(ana);
+    expect(JSON.parse(window.sessionStorage.getItem(CREDENTIALS_KEY)!)).toEqual(ana);
+    expect(loadCredentials()).toEqual(ana);
   });
 });

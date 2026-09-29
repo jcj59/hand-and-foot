@@ -1,7 +1,7 @@
 import type { Server, Socket } from "socket.io";
 import type { Ack, ClientToServerEvents, SeatCredentials, ServerToClientEvents } from "@hf/shared";
 import { configFor, type RoomManager } from "./manager";
-import type { Room, RoomResult } from "./room";
+import { isDraft, type Room, type RoomResult } from "./room";
 
 export type HfServer = Server<ClientToServerEvents, ServerToClientEvents>;
 export type HfSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
@@ -203,6 +203,15 @@ export function attachSocketServer(io: HfServer, manager: RoomManager): void {
       broadcastResult(session.room);
     });
 
+    socket.on("stageMelds", (payload, ack) => {
+      const session = sessionOf(socket);
+      if (!session) return ack({ ok: false, error: "you are not seated in a room" });
+      // Normalized rather than trusted: this arrives as untyped JSON, and a draft
+      // that is not a list of well-formed groups is simply no draft.
+      const melds = isDraft(payload?.melds) ? payload.melds : [];
+      ack(ackOf(session.room.stageMelds(session.seat, melds)));
+    });
+
     socket.on("setPaused", (payload, ack) => {
       const session = sessionOf(socket);
       if (!session) return ack({ ok: false, error: "you are not seated in a room" });
@@ -211,6 +220,62 @@ export function attachSocketServer(io: HfServer, manager: RoomManager): void {
       if (!paused.ok) return;
       broadcastRoom(session.room);
       broadcastViews(session.room);
+    });
+
+    socket.on("setHost", (payload, ack) => {
+      const session = sessionOf(socket);
+      if (!session) return ack({ ok: false, error: "you are not seated in a room" });
+      const changed = session.room.setHost(session.seat, Number(payload?.seat));
+      ack(ackOf(changed));
+      if (changed.ok) broadcastRoom(session.room);
+    });
+
+    socket.on("nextRound", (ack) => {
+      const session = sessionOf(socket);
+      if (!session) return ack({ ok: false, error: "you are not seated in a room" });
+      const ready = session.room.readyForNextRound(session.seat);
+      if (!ready.ok) return ack(ready);
+      ack({ ok: true, data: ready.value });
+      broadcastRoom(session.room);
+      if (ready.value) broadcastViews(session.room);
+    });
+
+    socket.on("playAgain", (ack) => {
+      const session = sessions.get(socket.id);
+      const room = session && manager.get(session.roomId);
+      const player = session && room?.seatOf(session.token);
+      if (!session || !room || !player) {
+        return ack({ ok: false, error: "you are not seated in a room" });
+      }
+      if (!room.matchOver) return ack({ ok: false, error: "the match is not over yet" });
+
+      // Everyone after the first goes to the same waiting room — unless it has been
+      // dealt without them, or reaped, in which case a player who asks now gets a
+      // fresh one, or is told why not.
+      let next = room.nextRoomId === null ? undefined : manager.get(room.nextRoomId);
+      if (next?.started) {
+        return ack({ ok: false, error: "the next game has already started without you" });
+      }
+      if (!next) {
+        next = wire(manager.create(room.config));
+        room.nextRoomId = next.id;
+      }
+      const joined = next.join(player.name);
+      if (!joined.ok) return ack({ ok: false, error: joined.error });
+
+      // Off the old table, as a leave: this socket no longer speaks for that seat.
+      unseat(socket.id);
+      for (const [socketId, other] of sessions) {
+        if (other.roomId === room.id && other.token === session.token) sessions.delete(socketId);
+      }
+      room.moveOn(session.token);
+      claim(socket.id, next.id, joined.value.token);
+      ack({
+        ok: true,
+        data: { roomId: next.id, seat: joined.value.seat, token: joined.value.token },
+      });
+      broadcastRoom(room);
+      broadcastRoom(next);
     });
 
     socket.on("leaveRoom", (ack) => {

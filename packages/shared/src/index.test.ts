@@ -139,8 +139,9 @@ describe("rule presets", () => {
     expect(EAST_COAST.handSize).toBe(14);
     expect(EAST_COAST.footSize).toBe(14);
     expect(EAST_COAST.extraDecks).toBe(1);
-    expect(EAST_COAST.rounds).toBe(1);
-    expect(EAST_COAST.layDownMinimums).toEqual([60]);
+    // Four rounds with escalating minimums: the house schedule, chosen 2026-09-28.
+    expect(EAST_COAST.rounds).toBe(4);
+    expect(EAST_COAST.layDownMinimums).toEqual([60, 90, 120, 150]);
     expect(EAST_COAST.stockExhaustion).toBe("reshuffle");
     expect(EAST_COAST.marvaRule).toBe(false);
   });

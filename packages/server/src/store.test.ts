@@ -10,7 +10,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import postgres from "postgres";
 import { EAST_COAST, WEST_COAST, type LoggedAction } from "@hf/shared";
-import { migrate, openPostgresStore, PostgresRoomStore } from "./postgres";
+import { migrate, MIGRATIONS, openPostgresStore, PostgresRoomStore } from "./postgres";
 import { ownDatabase } from "./testDatabase";
 import { InMemoryRoomStore, type RoomRecord, type RoomStore } from "./store";
 
@@ -29,6 +29,7 @@ function record(overrides: Partial<RoomRecord> = {}): RoomRecord {
     ],
     started: true,
     pausedSeat: null,
+    hostToken: "tok-b",
     ...overrides,
   };
 }
@@ -174,10 +175,10 @@ describe.skipIf(DATABASE_URL === undefined)("Postgres", () => {
   describe("migrations", () => {
     it("apply once, and a second boot finds nothing to do", async () => {
       await wipe();
-      expect(await migrate(admin)).toBe(1);
+      expect(await migrate(admin)).toBe(2);
       expect(await migrate(admin)).toBe(0);
       const versions = await admin`select version from schema_migrations order by version`;
-      expect(versions.map((r) => r.version)).toEqual([1]);
+      expect(versions.map((r) => r.version)).toEqual([1, 2]);
     });
 
     it("are safe for two servers booting at once", async () => {
@@ -185,11 +186,27 @@ describe.skipIf(DATABASE_URL === undefined)("Postgres", () => {
       const second = postgres(url, { max: 1, onnotice: () => {} });
       try {
         const [a, b] = await Promise.all([migrate(admin), migrate(second)]);
-        expect(a + b).toBe(1);
+        expect(a + b).toBe(2);
       } finally {
         await second.end();
       }
     });
+  });
+
+  it("upgrades a database made before a later migration, and keeps its rows", async () => {
+    // A server that ran only the first migration, then a newer one boots.
+    await wipe();
+    await admin`create table schema_migrations (version integer primary key, applied_at timestamptz not null default now())`;
+    await admin.unsafe(MIGRATIONS[0]!);
+    await admin`insert into schema_migrations (version) values (1)`;
+    await admin`insert into rooms (uid, code, config, seed, created_at, players, started)
+      values ('old', 'OLD234', ${admin.json(EAST_COAST as never)}, 1, 1, '[]', false)`;
+    expect(await migrate(admin)).toBe(1);
+    const store = new PostgresRoomStore(admin, { retryDelaysMs: [] });
+    const [old] = await store.loadOpen();
+    expect(old?.room.uid).toBe("old");
+    // A room saved before hosting could move records no host.
+    expect(old?.room.hostToken).toBeNull();
   });
 
   it("keeps a closed room's rows: a finished game is a record, not garbage", async () => {

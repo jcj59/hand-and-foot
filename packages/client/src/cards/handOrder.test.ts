@@ -7,6 +7,7 @@ import {
   isDeadWeight,
   isRedCard,
   sortForDisplay,
+  isUnplayable,
 } from "./handOrder";
 
 const card = (rank: Rank, suit: Suit | null): Card => ({ id: `${rank}-${suit}`, rank, suit });
@@ -116,5 +117,39 @@ describe("dead weight and colour", () => {
     expect(isRedCard(card("A", "diamonds"))).toBe(true);
     expect(isRedCard(card("A", "spades"))).toBe(false);
     expect(isRedCard(card("JOKER", null))).toBe(false);
+  });
+});
+
+describe("isUnplayable", () => {
+  const black = { id: "b3", rank: "3" as const, suit: "clubs" as const };
+  const red = { id: "r3", rank: "3" as const, suit: "hearts" as const };
+  const king = { id: "k", rank: "K" as const, suit: "clubs" as const };
+  const inHand = { inFoot: false, blackThreesHeld: 7, hasBlackThreeMeld: true };
+  const inFoot = { inFoot: true, blackThreesHeld: 1, hasBlackThreeMeld: false };
+
+  it("never plays a red three, anywhere", () => {
+    expect(isUnplayable(red, inHand)).toBe(true);
+    expect(isUnplayable(red, { ...inFoot, blackThreesHeld: 7, hasBlackThreeMeld: true })).toBe(
+      true,
+    );
+  });
+
+  it("never plays a black three from the hand, however many are held", () => {
+    expect(isUnplayable(black, inHand)).toBe(true);
+  });
+
+  it("plays a black three from the foot once seven are held", () => {
+    expect(isUnplayable(black, inFoot)).toBe(true);
+    expect(isUnplayable(black, { ...inFoot, blackThreesHeld: 6 })).toBe(true);
+    expect(isUnplayable(black, { ...inFoot, blackThreesHeld: 7 })).toBe(false);
+  });
+
+  it("plays a black three from the foot onto a black-three book already down", () => {
+    expect(isUnplayable(black, { ...inFoot, hasBlackThreeMeld: true })).toBe(false);
+  });
+
+  it("leaves every other card alone", () => {
+    expect(isUnplayable(king, inHand)).toBe(false);
+    expect(isUnplayable(king, inFoot)).toBe(false);
   });
 });

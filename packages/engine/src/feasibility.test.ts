@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   EAST_COAST,
+  WEST_COAST,
   type Card,
   type GameState,
   type PlayerState,
@@ -118,8 +119,8 @@ describe("book bonuses in the minimum calculation", () => {
   });
 
   it("applies no minimum in a round the config does not configure one for", () => {
-    // layDownMinimums has a single entry, so round 2 falls back to no minimum.
-    const s: GameState = { ...state({ hand: cards("4", 2) }, [card("4")]), roundNumber: 2 };
+    // layDownMinimums has four entries, so a fifth round falls back to no minimum.
+    const s: GameState = { ...state({ hand: cards("4", 2) }, [card("4")]), roundNumber: 5 };
     expect(canTakePile(s, 0).feasible).toBe(true);
   });
 });
@@ -140,5 +141,167 @@ describe("the witness plan is completable", () => {
     };
     const r = applyAction(withPile, { type: "playMelds", melds: [...f.plan] });
     expect(r.ok).toBe(true);
+  });
+});
+
+describe("spending wilds to take the pile", () => {
+  // The solver used to build melds from naturals only, so a take that needed a wild
+  // was refused even when it was plainly legal — found in a real game, where a
+  // player holding two queens and a joker could not take a queen.
+  it("makes the pile card's pair a meld with a wild to reach the minimum", () => {
+    const joker = card("JOKER");
+    const queens = cards("Q", 2);
+    const s = state({ hand: [...queens, joker, card("7"), card("9")] }, [card("Q")]);
+    const f = canTakePile(s, 0);
+    expect(f.feasible).toBe(true);
+    // Three queens and the joker: 30 + 50 = 80, over the 60 minimum.
+    expect(f.plan).toEqual([
+      { rank: "Q", cardIds: expect.arrayContaining([...queens.map((c) => c.id), joker.id]) },
+    ]);
+    const took = applyAction(s, { type: "takePile" });
+    expect(took.ok).toBe(true);
+    if (!took.ok) return;
+    expect(applyAction(took.state, { type: "playMelds", melds: f.plan! }).ok).toBe(true);
+  });
+
+  it("brings the pile card in with a wild when already down, with no minimum to meet", () => {
+    const two = card("2", "hearts");
+    const s = state({ isDown: true, hand: [card("K"), two] }, [card("K")]);
+    const f = canTakePile(s, 0);
+    expect(f.feasible).toBe(true);
+    expect(f.plan?.[0]?.cardIds).toContain(two.id);
+  });
+
+  it("adds wilds to a natural meld to make up the total", () => {
+    // Three kings are 30; one two makes 50, still short, so the second goes on too
+    // for 70. East Coast allows two wilds on three naturals.
+    const twos = cards("2", 2);
+    const s = state({ hand: [...cards("K", 2), ...twos] }, [card("K")]);
+    const f = canTakePile(s, 0);
+    expect(f.feasible).toBe(true);
+    expect(f.plan?.[0]?.cardIds).toEqual(expect.arrayContaining(twos.map((c) => c.id)));
+  });
+
+  it("spends only the wilds the minimum needs, most valuable first", () => {
+    const joker = card("JOKER");
+    const two = card("2");
+    const s = state({ hand: [...cards("K", 2), two, joker, card("9"), card("9")] }, [card("K")]);
+    const f = canTakePile(s, 0);
+    expect(f.feasible).toBe(true);
+    const played = f.plan!.flatMap((play) => play.cardIds);
+    // K K K + joker = 80 clears 60; the two is kept.
+    expect(played).toContain(joker.id);
+    expect(played).not.toContain(two.id);
+  });
+
+  it("respects the table's wild ratio", () => {
+    // A pair of kings needs both twos to reach 60 — two naturals and two wilds,
+    // which West Coast allows and East Coast, where naturals must outnumber wilds,
+    // does not.
+    const s = state({ hand: [card("K"), ...cards("2", 2)] }, [card("K")]);
+    expect(canTakePile(s, 0).feasible).toBe(false);
+    const west = canTakePile({ ...s, config: WEST_COAST }, 0);
+    expect(west.feasible).toBe(true);
+    expect(west.plan![0]!.cardIds).toHaveLength(4);
+  });
+
+  it("puts a wild where it adds the most, not merely where it fits first", () => {
+    // Three nines are 15. The two on the nines makes 35, short of 60 with nothing
+    // left; the two with the pair of aces makes 15 + 30 + 20 = 65.
+    const s = state({ hand: [...cards("9", 2), ...cards("A", 2), card("2")] }, [card("9")]);
+    const f = canTakePile(s, 0);
+    expect(f.feasible).toBe(true);
+    expect(f.plan!.map((play) => play.rank).sort()).toEqual(["9", "A"]);
+  });
+
+  it("chooses the meld a wild completes into a book over one it merely joins", () => {
+    // Nines sort first, so a wild placed wherever it first fits goes on the nines
+    // for 125. On the six kings it completes a dirty book: 60 + 15 + 50 + 300 = 425.
+    const high = { ...EAST_COAST, layDownMinimums: [400] };
+    const hand = [...cards("K", 5), ...cards("9", 3), card("JOKER")];
+    const s = { ...state({ hand }, [card("K")]), config: high };
+    expect(canTakePile(s, 0).feasible).toBe(true);
+  });
+
+  it("counts the dirty book a wild completes toward the minimum", () => {
+    // Six kings and a joker: 60 + 50 = 110 in cards, and the dirty book bonus on
+    // top is what clears a 400 minimum.
+    const high = { ...EAST_COAST, layDownMinimums: [400] };
+    const s = { ...state({ hand: [...cards("K", 5), card("JOKER")] }, [card("K")]), config: high };
+    expect(canTakePile(s, 0).feasible).toBe(true);
+  });
+
+  it("still refuses when even every wild cannot reach the minimum", () => {
+    // Three fours and a two: 15 + 20 = 35 < 60, with nowhere else to spend.
+    const s = state({ hand: [...cards("4", 2), card("2")] }, [card("4")]);
+    expect(canTakePile(s, 0).feasible).toBe(false);
+  });
+
+  it("will not make a meld of one natural and wilds", () => {
+    // Under either ratio a single natural cannot carry two wilds.
+    const s = state({ isDown: true, hand: cards("JOKER", 2) }, [card("K")]);
+    expect(canTakePile(s, 0).feasible).toBe(false);
+  });
+
+  it("reaches the same answer whatever order the cards arrive in", () => {
+    const hand = [card("Q"), card("JOKER"), card("7"), card("Q"), card("2"), card("9")];
+    const pile = [card("Q")];
+    const forward = canTakePile(state({ hand }, pile), 0);
+    const backward = canTakePile(state({ hand: [...hand].reverse() }, pile), 0);
+    expect(backward).toEqual(forward);
+  });
+});
+
+describe("a wild on the pile", () => {
+  // From a real game: the pile was a lone 2, and the player held 7 7 7 and J J J
+  // (45) and a 2 of their own. The pile's 2 on either meld makes 65, over 60 —
+  // but the solver only knew how to bring in a pile card that was a natural, and
+  // spent the player's own 2 instead of the pile's.
+  it("is brought in by placing the pile's wild on a meld", () => {
+    // The player's own two is made first, so it sorts ahead of the pile's: the
+    // order the real game dealt them in, which is what exposed the bug.
+    const handTwo = card("2", "hearts");
+    const pileTwo = card("2", "hearts");
+    const hand = [
+      ...cards("7", 3),
+      ...cards("J", 3),
+      handTwo,
+      card("10"),
+      card("4"),
+      card("4"),
+      card("9"),
+      card("K"),
+      card("Q"),
+      card("3", "hearts"),
+    ];
+    const s = state({ hand }, [pileTwo]);
+    const f = canTakePile(s, 0);
+    expect(f.feasible).toBe(true);
+    const played = f.plan!.flatMap((play) => play.cardIds);
+    expect(played).toContain(pileTwo.id);
+    // Only as many wilds as needed: the pile's two is enough, the player's is kept.
+    expect(played).not.toContain(handTwo.id);
+    const took = applyAction(s, { type: "takePile" });
+    expect(took.ok).toBe(true);
+    if (!took.ok) return;
+    expect(applyAction(took.state, { type: "playMelds", melds: f.plan! }).ok).toBe(true);
+  });
+
+  it("still refuses when the pile's wild has no meld to go on", () => {
+    // Already down and holding no melds' worth of anything: a lone wild cannot
+    // start a meld.
+    const s = state({ isDown: true, hand: [card("5"), card("9")] }, [card("JOKER")]);
+    expect(canTakePile(s, 0).feasible).toBe(false);
+  });
+
+  it("goes onto a meld already down when that is the only place for it", () => {
+    const joker = card("JOKER");
+    const s = state(
+      { isDown: true, hand: [card("5")], melds: [{ rank: "K", cards: cards("K", 3) }] },
+      [joker],
+    );
+    const f = canTakePile(s, 0);
+    expect(f.feasible).toBe(true);
+    expect(f.plan).toEqual([{ rank: "K", cardIds: [joker.id] }]);
   });
 });

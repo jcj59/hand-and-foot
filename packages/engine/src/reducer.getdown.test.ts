@@ -107,9 +107,9 @@ describe("getting-down minimum (round 1 = 60)", () => {
   });
 
   it("applies no minimum in a round the config does not configure one for", () => {
-    // layDownMinimums has a single entry, so round 2 falls back to no minimum.
+    // layDownMinimums has four entries, so a fifth round falls back to no minimum.
     const hand = cards("4", 3); // worth 15, far below 60
-    const s: GameState = { ...notDown(hand), roundNumber: 2 };
+    const s: GameState = { ...notDown(hand), roundNumber: 5 };
     const r = applyAction(s, {
       type: "playMelds",
       melds: [{ rank: "4", cardIds: hand.map((c) => c.id) }],

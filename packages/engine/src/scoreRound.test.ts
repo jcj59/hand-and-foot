@@ -9,6 +9,7 @@ import {
   type Suit,
 } from "@hf/shared";
 import { scoreRound } from "./scoreRound";
+import { cardValue } from "./scoring";
 
 let idc = 0;
 function card(rank: Rank, suit: Suit = "clubs"): Card {
@@ -118,5 +119,95 @@ describe("scoreRound", () => {
   it("returns one entry per seat, in seat order", () => {
     const s = table([player({}), player({}), player({}), player({})], 2);
     expect(scoreRound(s).map((r) => r.seat)).toEqual([0, 1, 2, 3]);
+  });
+});
+
+describe("the score breakdown", () => {
+  it("shows every part of the score, and the parts add up to it", () => {
+    const clean = {
+      rank: "K" as const,
+      cards: Array.from({ length: 7 }, (_, i) => ({
+        id: `bk${i}`,
+        rank: "K" as const,
+        suit: "clubs" as const,
+      })),
+    };
+    const dirty = {
+      rank: "Q" as const,
+      cards: [
+        ...Array.from({ length: 6 }, (_, i) => ({
+          id: `bq${i}`,
+          rank: "Q" as const,
+          suit: "clubs" as const,
+        })),
+        { id: "bw", rank: "2" as const, suit: "hearts" as const },
+      ],
+    };
+    const open = {
+      rank: "9" as const,
+      cards: Array.from({ length: 3 }, (_, i) => ({
+        id: `b9${i}`,
+        rank: "9" as const,
+        suit: "clubs" as const,
+      })),
+    };
+    const state: GameState = {
+      config: EAST_COAST,
+      seed: 0,
+      roundNumber: 1,
+      currentSeat: 0,
+      phase: "draw",
+      stock: [],
+      discard: [],
+      roundEnded: true,
+      wentOutSeat: 0,
+      players: [
+        {
+          hand: [],
+          foot: [],
+          melds: [clean, dirty, open],
+          isDown: true,
+          inFoot: true,
+          footPending: false,
+        },
+        {
+          hand: [{ id: "h1", rank: "A", suit: "spades" }],
+          foot: [{ id: "f1", rank: "3", suit: "hearts" }],
+          melds: [],
+          isDown: false,
+          inFoot: false,
+          footPending: false,
+        },
+      ],
+    };
+    const [out, held] = scoreRound(state);
+    const { scoring } = EAST_COAST;
+    const cardPoints = [...clean.cards, ...dirty.cards, ...open.cards].reduce(
+      (n, c) => n + cardValue(c, EAST_COAST),
+      0,
+    );
+    expect(out!.breakdown).toEqual({
+      cleanBooks: 1,
+      dirtyBooks: 1,
+      bookBonus: scoring.cleanBookBonus + scoring.dirtyBookBonus,
+      meldedCards: cardPoints,
+      goOutBonus: scoring.goOutBonus,
+      heldCount: 0,
+      heldPenalty: 0,
+    });
+    expect(held!.breakdown).toMatchObject({
+      cleanBooks: 0,
+      dirtyBooks: 0,
+      goOutBonus: 0,
+      heldCount: 2,
+    });
+    // A held red three costs 500, whatever else is held.
+    expect(held!.breakdown.heldPenalty).toBe(
+      -(cardValue({ id: "h1", rank: "A", suit: "spades" }, EAST_COAST) + 500),
+    );
+    for (const row of [out!, held!]) {
+      const b = row.breakdown;
+      expect(row.score).toBe(b.bookBonus + b.meldedCards + b.goOutBonus + b.heldPenalty);
+    }
   });
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { EAST_COAST, type Ack, type RoomInfo } from "@hf/shared";
 import { CREDENTIALS_KEY, loadCredentials } from "../credentials";
@@ -33,6 +33,8 @@ function roomInfo(overrides: Partial<RoomInfo> = {}): RoomInfo {
       { seat: 1, name: "ben", connected: true },
     ],
     hostSeat: 0,
+    playAgain: [],
+    nextRoundReady: [],
     started: false,
     config: EAST_COAST,
     ...overrides,
@@ -259,5 +261,33 @@ describe("the rules summary", () => {
     seated(0);
     mount(fakeSocket().socket);
     expect(screen.getByText(/family rules/i)).toBeInTheDocument();
+  });
+});
+
+describe("handing hosting on", () => {
+  it("lets the host make another player the host", async () => {
+    const socket = fakeSocket();
+    seated(0);
+    mount(socket.socket);
+    fireEvent.click(screen.getByRole("button", { name: "Make ben the host" }));
+    await waitFor(() => expect(socket.sent).toEqual([{ event: "setHost", args: [{ seat: 1 }] }]));
+  });
+
+  it("offers it only to the host, and never on the host's own row", () => {
+    seated(0);
+    mount(fakeSocket().socket);
+    expect(screen.queryByRole("button", { name: "Make ana the host" })).toBeNull();
+    act(() => useSession.getState().applyRoom(roomInfo({ hostSeat: 1 })));
+    expect(screen.queryByRole("button", { name: /make .* the host/i })).toBeNull();
+  });
+
+  it("surfaces a refusal", async () => {
+    const socket = fakeSocket([
+      { ok: false, error: "the host can only be changed before the deal" },
+    ]);
+    seated(0);
+    mount(socket.socket);
+    fireEvent.click(screen.getByRole("button", { name: "Make ben the host" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/before the deal/));
   });
 });

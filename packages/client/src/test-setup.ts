@@ -1,4 +1,4 @@
-import { afterEach } from "vitest";
+import { afterEach, beforeEach } from "vitest";
 import { cleanup } from "@testing-library/react";
 // Adds the DOM matchers — toBeDisabled, toHaveValue, toBeInTheDocument and the
 // rest. Worth the dependency for the failure messages alone: a bare
@@ -11,3 +11,10 @@ import "@testing-library/jest-dom/vitest";
 // component from one test stays in the document and the next test's query finds
 // two of everything.
 afterEach(cleanup);
+
+// A saved seat lives in both of the browser's stores (see `browserStore`), and a
+// test that clears only one would leak a seat from the last test into the next.
+beforeEach(() => {
+  window.sessionStorage.clear();
+  window.localStorage.clear();
+});

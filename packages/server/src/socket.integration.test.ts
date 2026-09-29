@@ -5,6 +5,7 @@ import {
   type Ack,
   type Action,
   type ClientToServerEvents,
+  type RoomInfo,
   type RoomOptions,
   type RoundEnded,
   type SeatCredentials,
@@ -12,7 +13,7 @@ import {
   type ViewUpdate,
 } from "@hf/shared";
 import { defaultAction } from "@hf/engine";
-import { createServer, FakeClock, type HandAndFootServer } from "./index";
+import { createServer, FakeClock, MAX_PLAYERS, type HandAndFootServer } from "./index";
 
 type Client = ClientSocket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -910,4 +911,261 @@ describe("a whole round, end to end", () => {
     expect(endings).toHaveLength(2);
     expect(strayEndings).toEqual([]);
   }, 30_000);
+});
+
+describe("stageMelds over the wire", () => {
+  function stage(socket: Client, payload: unknown): Promise<Ack<undefined>> {
+    return new Promise((resolve) => socket.emit("stageMelds", payload as never, resolve));
+  }
+
+  it("refuses a socket that holds no seat", async () => {
+    const { port } = await boot();
+    const stranger = await connect(port);
+    expect(await stage(stranger, { melds: [] })).toEqual({
+      ok: false,
+      error: "you are not seated in a room",
+    });
+  });
+
+  it("reaches the sender's own room, and treats a malformed payload as no draft", async () => {
+    const { server, port } = await boot();
+    const [a, b] = [await connect(port), await connect(port)];
+    const created = await createRoom(a, "ana");
+    if (!created.ok) throw new Error(created.error);
+    await joinRoom(b, created.data.roomId, "ben");
+    await startGame(a);
+    const room = server.manager.get(created.data.roomId)!;
+    const onTurn = room.gameState!.currentSeat === 0 ? a : b;
+    // Before drawing the room refuses any draft, which shows the call got there.
+    expect(await stage(onTurn, { melds: [] })).toEqual({
+      ok: false,
+      error: "melds can only be staged after drawing",
+    });
+    expect((await submit(onTurn, { type: "draw" })).ok).toBe(true);
+    expect(await stage(onTurn, { melds: "nonsense" })).toEqual({ ok: true, data: undefined });
+    expect(await stage(onTurn, null)).toEqual({ ok: true, data: undefined });
+  });
+
+  it.each([
+    ["a null group", { melds: [null] }],
+    ["card ids that are not a list", { melds: [{ rank: "K", cardIds: 5 }] }],
+  ])("keeps serving when %s is staged and the clock runs out", async (_, payload) => {
+    const clock = new FakeClock(1_000_000);
+    const server = createServer({ clock });
+    started.push(server);
+    const port = await server.listen(0);
+    const [a, b] = [await connect(port), await connect(port)];
+    const created = await createRoom(a, "ana");
+    if (!created.ok) throw new Error(created.error);
+    await joinRoom(b, created.data.roomId, "ben");
+    await startGame(a);
+    const room = server.manager.get(created.data.roomId)!;
+    const seat = room.gameState!.currentSeat;
+    const onTurn = seat === 0 ? a : b;
+    expect((await submit(onTurn, { type: "draw" })).ok).toBe(true);
+    const hand = room.gameState!.players[seat]!.hand.length;
+    expect(await stage(onTurn, payload)).toEqual({ ok: true, data: undefined });
+
+    // Main clock, then the discard grace: the server plays the turn out itself.
+    clock.advance(room.clockState().deadlineAt! - clock.now());
+    clock.advance(room.clockState().deadlineAt! - clock.now());
+    expect(room.gameState!.currentSeat).not.toBe(seat);
+    expect(room.gameState!.players[seat]!.hand).toHaveLength(hand - 1);
+    expect(room.log.entries().map((e) => e.action.type)).not.toContain("playMelds");
+    // Still serving: the next player can move.
+    expect((await submit(seat === 0 ? b : a, { type: "draw" })).ok).toBe(true);
+  });
+});
+
+describe("playing again over the wire", () => {
+  /** A dealt table whose round the server has just finished. */
+  async function finished(names: readonly string[]): Promise<{
+    server: HandAndFootServer;
+    port: number;
+    sockets: Client[];
+    roomId: string;
+  }> {
+    const { server, port } = await boot();
+    const sockets: Client[] = [];
+    for (let i = 0; i < names.length; i++) sockets.push(await connect(port));
+    const created = await createRoom(sockets[0]!, names[0]!);
+    if (!created.ok) throw new Error(created.error);
+    for (let i = 1; i < names.length; i++)
+      await joinRoom(sockets[i]!, created.data.roomId, names[i]!);
+    await startGame(sockets[0]!);
+    // End the match directly — its last round: how a round ends is the engine's business, and what
+    // is under test here is what the transport does afterwards.
+    const room = server.manager.get(created.data.roomId)!;
+    const state = room.gameState!;
+    Object.assign(room as unknown as { state: typeof state }, {
+      state: { ...state, roundEnded: true, roundNumber: state.config.rounds },
+    });
+    return { server, port, sockets, roomId: created.data.roomId };
+  }
+
+  const again = (socket: Client): Promise<Ack<SeatCredentials>> =>
+    new Promise((resolve) => socket.emit("playAgain", resolve));
+
+  it("opens a waiting room for the first to ask, and brings the others into the same one", async () => {
+    const { server, sockets, roomId } = await finished(["ana", "ben", "cy"]);
+    const [a, b] = sockets as [Client, Client, Client];
+
+    const seen = waitForRoom(b, (info) => info.roomId === roomId && info.playAgain.length === 1);
+    const first = await again(a);
+    if (!first.ok) throw new Error(first.error);
+    expect(first.data.roomId).not.toBe(roomId);
+    expect(first.data.seat).toBe(0);
+    // The table left behind shows who has gone on.
+    expect((await seen).playAgain).toEqual([0]);
+
+    const second = await again(b);
+    expect(second).toMatchObject({ ok: true, data: { roomId: first.data.roomId, seat: 1 } });
+    const next = server.manager.get(first.data.roomId)!;
+    expect(next.started).toBe(false);
+    expect(next.seats().map((p) => p.name)).toEqual(["ana", "ben"]);
+    expect(next.config).toEqual(server.manager.get(roomId)!.config);
+
+    // The first to go hosts, and deals when they choose — here without cy.
+    expect((await startGame(a)).ok).toBe(true);
+    expect(next.gameState!.players).toHaveLength(2);
+  });
+
+  it("tells a player who asks too late that the next game started without them", async () => {
+    const { sockets } = await finished(["ana", "ben", "cy"]);
+    const [a, b, c] = sockets as [Client, Client, Client];
+    await again(a);
+    await again(b);
+    await startGame(a);
+    expect(await again(c)).toEqual({
+      ok: false,
+      error: "the next game has already started without you",
+    });
+  });
+
+  it("is refused before the round is over, and to a socket with no seat", async () => {
+    const { port } = await boot();
+    const [a, b, stranger] = [await connect(port), await connect(port), await connect(port)];
+    const created = await createRoom(a, "ana");
+    if (!created.ok) throw new Error(created.error);
+    await joinRoom(b, created.data.roomId, "ben");
+    await startGame(a);
+    expect(await again(a)).toEqual({ ok: false, error: "the match is not over yet" });
+    expect(await again(stranger)).toEqual({ ok: false, error: "you are not seated in a room" });
+  });
+
+  it("says so when the waiting room has filled up", async () => {
+    // Strangers can join the waiting room by its code like any lobby.
+    const { port, sockets } = await finished(["ana", "ben"]);
+    const [a, b] = sockets as [Client, Client];
+    const first = await again(a);
+    if (!first.ok) throw new Error(first.error);
+    for (let i = 0; i < MAX_PLAYERS - 1; i++) {
+      const stranger = await connect(port);
+      expect((await joinRoom(stranger, first.data.roomId, `guest${i}`)).ok).toBe(true);
+    }
+    expect(await again(b)).toEqual({ ok: false, error: `a table seats at most ${MAX_PLAYERS}` });
+  });
+
+  it("lets go of an older connection still speaking for the old seat", async () => {
+    // The same player reconnected on a second socket before the first was noticed
+    // gone: once they move on, neither may act for the old seat.
+    const { port, sockets, server, roomId } = await finished(["ana", "ben"]);
+    const [, b] = sockets as [Client, Client];
+    const creds = server.manager.get(roomId)!.seats()[1]!;
+    const again2 = await connect(port);
+    expect((await resumeSeat(again2, { roomId, seat: 1, token: creds.token })).ok).toBe(true);
+    expect((await again(again2)).ok).toBe(true);
+    expect(await again(b)).toEqual({ ok: false, error: "you are not seated in a room" });
+  });
+
+  it("speaks for the new seat from then on, not the old one", async () => {
+    const { server, sockets, roomId } = await finished(["ana", "ben"]);
+    const [a] = sockets as [Client, Client];
+    const moved = await again(a);
+    if (!moved.ok) throw new Error(moved.error);
+    // The old seat is let go; this socket's requests now go to the waiting room.
+    expect(server.manager.get(roomId)!.seats()[0]!.left).toBe(true);
+    expect(await startGame(a)).toEqual({ ok: false, error: "a game needs at least 2 players" });
+  });
+});
+
+/** The next room broadcast that satisfies a predicate. */
+function waitForRoom(socket: Client, ok: (info: RoomInfo) => boolean): Promise<RoomInfo> {
+  return new Promise((resolve) => {
+    const onRoom = (info: RoomInfo): void => {
+      if (!ok(info)) return;
+      socket.off("room", onRoom);
+      resolve(info);
+    };
+    socket.on("room", onRoom);
+  });
+}
+
+describe("handing hosting on over the wire", () => {
+  it("tells the table who hosts now, and lets only the host do it", async () => {
+    const { port } = await boot();
+    const [a, b] = [await connect(port), await connect(port)];
+    const created = await createRoom(a, "ana");
+    if (!created.ok) throw new Error(created.error);
+    await joinRoom(b, created.data.roomId, "ben");
+    const setHost = (socket: Client, seat: unknown): Promise<Ack<undefined>> =>
+      new Promise((resolve) => socket.emit("setHost", { seat } as never, resolve));
+
+    expect(await setHost(b, 1)).toEqual({
+      ok: false,
+      error: "only the host can hand hosting to someone else",
+    });
+    const told = waitForRoom(b, (info) => info.hostSeat === 1);
+    expect(await setHost(a, 1)).toEqual({ ok: true, data: undefined });
+    expect((await told).hostSeat).toBe(1);
+    // Nonsense arrives as untyped JSON and is refused, not trusted.
+    expect(await setHost(b, "zero")).toEqual({ ok: false, error: "no such seat" });
+    const stranger = await connect(port);
+    expect(await setHost(stranger, 0)).toEqual({
+      ok: false,
+      error: "you are not seated in a room",
+    });
+  });
+});
+
+describe("the next round over the wire", () => {
+  it("shows who is ready, and deals the next round to everyone once all are", async () => {
+    const { server, port } = await boot();
+    const [a, b] = [await connect(port), await connect(port)];
+    const created = await createRoom(a, "ana");
+    if (!created.ok) throw new Error(created.error);
+    await joinRoom(b, created.data.roomId, "ben");
+    await startGame(a);
+    const room = server.manager.get(created.data.roomId)!;
+    const state = room.gameState!;
+    Object.assign(room as unknown as { state: typeof state }, {
+      state: { ...state, roundEnded: true },
+    });
+
+    const ready = (socket: Client): Promise<Ack<boolean>> =>
+      new Promise((resolve) => socket.emit("nextRound", resolve));
+    const seen = waitForRoom(b, (info) => info.nextRoundReady.length === 1);
+    expect(await ready(a)).toEqual({ ok: true, data: false });
+    expect((await seen).nextRoundReady).toEqual([0]);
+
+    const dealtA = next(a, "view");
+    const dealtB = next(b, "view");
+    expect(await ready(b)).toEqual({ ok: true, data: true });
+    const [viewA, viewB] = await Promise.all([dealtA, dealtB]);
+    expect(viewA.view.roundNumber).toBe(2);
+    expect(viewB.view.roundNumber).toBe(2);
+  });
+
+  it("refuses a socket with no seat, and a round still being played", async () => {
+    const { port } = await boot();
+    const [a, b, stranger] = [await connect(port), await connect(port), await connect(port)];
+    const created = await createRoom(a, "ana");
+    if (!created.ok) throw new Error(created.error);
+    await joinRoom(b, created.data.roomId, "ben");
+    await startGame(a);
+    const ready = (socket: Client): Promise<Ack<boolean>> =>
+      new Promise((resolve) => socket.emit("nextRound", resolve));
+    expect(await ready(stranger)).toEqual({ ok: false, error: "you are not seated in a room" });
+    expect(await ready(a)).toEqual({ ok: false, error: "the round is still being played" });
+  });
 });

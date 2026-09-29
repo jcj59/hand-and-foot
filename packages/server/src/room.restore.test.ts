@@ -55,6 +55,11 @@ function playRich(room: Room, steps: number, seed = 5): void {
     } else if (plan) {
       action = { type: "playMelds", melds: plan };
       plan = null;
+    } else if ((actor.pickedUp ?? []).length > 0) {
+      // Picked up where a restart left off: a pile taken, its obligation still
+      // owed, and no plan in hand. The policy settles it the way it would for an
+      // absent player.
+      action = defaultAction(state)!;
     } else {
       // The cards a player can act with: the hand, or the foot once in it.
       const zone = actor.inFoot ? actor.foot : actor.hand;
@@ -402,5 +407,29 @@ describe("refusing a stored room that does not add up", () => {
     expect(refusal({ ...entry, actions: [...entry.actions, extra] })).toMatch(
       new RegExp(`action ${entry.actions.length} replays as refused`),
     );
+  });
+});
+
+describe("restoring who hosts", () => {
+  it("keeps a handed-on host across a restart", async () => {
+    const store = new InMemoryRoomStore();
+    const room = openRoom(store);
+    seat(room, ["ana", "ben", "cy"]);
+    room.setHost(0, 2);
+    const restored = restore(await onlyRoom(store), new FakeClock(), store);
+    expect(restored.hostSeat).toBe(2);
+  });
+
+  it("falls back to the first seat for a room saved before hosting could move", async () => {
+    const store = new InMemoryRoomStore();
+    const room = openRoom(store);
+    seat(room, ["ana", "ben"]);
+    const entry = await onlyRoom(store);
+    const older = { ...entry.room };
+    delete older.hostToken;
+    const restored = restore({ ...entry, room: older }, new FakeClock(), store);
+    expect(restored.hostSeat).toBe(0);
+    expect(restored.join("cy").ok).toBe(true);
+    expect(restored.hostSeat).toBe(0);
   });
 });

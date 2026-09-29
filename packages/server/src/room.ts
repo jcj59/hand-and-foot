@@ -5,12 +5,22 @@ import {
   type ActionSource,
   type ClockState,
   type GameState,
+  type MeldPlay,
   type RoomInfo,
   type RoundEnded,
   type RulesConfig,
   type ViewUpdate,
 } from "@hf/shared";
-import { applyAction, deal, defaultAction, legalHints, project, scoreRound } from "@hf/engine";
+import {
+  applyAction,
+  deal,
+  defaultAction,
+  isMatchOver,
+  legalHints,
+  matchTotals,
+  project,
+  scoreRound,
+} from "@hf/engine";
 import type { Clock } from "./clock";
 import { type ActionLog, InMemoryActionLog, StoredActionLog } from "./log";
 import type { RoomRecord, RoomStore, StoredRoom } from "./store";
@@ -27,6 +37,33 @@ export { MAX_PLAYERS, MIN_PLAYERS };
  * rather than a loop that pins a core.
  */
 const MAX_FORCED_MOVES_PER_TURN = 12;
+
+/**
+ * Ceiling on how many staged groups the timeout will search combinations of. A
+ * lay-down has one group per rank, so real play stays far below this; the cap only
+ * bounds the search against a payload built to be large.
+ */
+const MAX_DRAFT_GROUPS = 10;
+
+/**
+ * Whether an untyped value has the shape of a staged lay-down: a list of groups,
+ * each a rank and a list of card ids. The draft arrives as JSON from a browser and
+ * is played later inside a timer, where a malformed group would throw rather than
+ * be refused — so a draft that is not this shape is no draft at all.
+ */
+export function isDraft(value: unknown): value is readonly MeldPlay[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (meld: unknown) =>
+        typeof meld === "object" &&
+        meld !== null &&
+        typeof (meld as MeldPlay).rank === "string" &&
+        Array.isArray((meld as MeldPlay).cardIds) &&
+        (meld as MeldPlay).cardIds.every((id: unknown) => typeof id === "string"),
+    )
+  );
+}
 
 export interface RoomPlayer {
   /**
@@ -109,11 +146,34 @@ export class Room {
   /** Set by the transport so a move the *server* plays still reaches the table. */
   onChange: (() => void) | null = null;
 
+  /**
+   * The waiting room for the next game, once someone at this finished table has
+   * asked to play again. Everyone after them joins the same one.
+   */
+  nextRoomId: string | null = null;
+
   private readonly deps: RoomDeps;
   private readonly reconnectGraceMs: number;
   private readonly players: RoomPlayer[] = [];
+  /**
+   * Who hosts, by token rather than seat: the host is a person, and handing the
+   * table to someone else should not move anyone's seat. Null only for a room
+   * nobody has joined.
+   */
+  private hostToken: string | null = null;
+  /** Tokens of the players who went on to the next game's waiting room. */
+  private readonly wentOn = new Set<string>();
+  /** Tokens of the players ready for the next round, once a round has ended. */
+  private readonly ready = new Set<string>();
   private state: GameState | null = null;
   private pausedSeat: number | undefined;
+  /**
+   * The lay-down the seat on turn is building but has not played; see
+   * `stageMelds`. Only ever the current turn's, so it is dropped when the turn
+   * moves on and never outlives the process — a restart loses nothing a player
+   * committed to.
+   */
+  private draft: { readonly seat: number; readonly melds: readonly MeldPlay[] } | null = null;
 
   // --- turn clock ---
   /** When the turn on the clock began, already shifted forward by any pause. */
@@ -198,6 +258,9 @@ export class Room {
     for (const seat of record.players) {
       room.players.push({ ...seat, connected: false, disconnectedAt: now });
     }
+    // Rooms saved before hosting could be handed on have no host recorded; the
+    // first seat hosted them.
+    room.hostToken = record.hostToken ?? record.players[0]?.token ?? null;
     if (record.pausedSeat !== null) {
       room.pausedSeat = record.pausedSeat;
       room.pausedAt = now;
@@ -223,6 +286,7 @@ export class Room {
       })),
       started: this.started,
       pausedSeat: this.pausedSeat ?? null,
+      hostToken: this.hostToken,
     };
   }
 
@@ -286,6 +350,8 @@ export class Room {
       left: false,
     };
     this.players.push(player);
+    // Whoever opens the table hosts it until they hand it on.
+    this.hostToken ??= player.token;
     this.save();
     return succeed(player);
   }
@@ -314,13 +380,64 @@ export class Room {
       // nobody else is holding it.
       if (pauser === player) this.unpause();
       else if (pauser) this.pausedSeat = pauser.seat;
+      // A departing host hands the table to whoever is now first in line.
+      if (this.hostToken === player.token) this.hostToken = this.players[0]?.token ?? null;
       this.save();
       return succeed(player);
     }
     player.left = true;
+    this.ready.delete(player.token);
     this.setConnected(player.seat, false);
     this.save();
+    // The others may have been waiting only on this player to start the next round.
+    this.dealNextRoundIfReady();
     return succeed(player);
+  }
+
+  /**
+   * Leave this finished table for the next game's waiting room. Recorded so the
+   * players still here can see who has gone on, and otherwise a leave like any
+   * other.
+   */
+  moveOn(token: string): RoomResult<RoomPlayer> {
+    if (!this.matchOver) return fail("the match is not over yet");
+    const left = this.leave(token);
+    if (left.ok) this.wentOn.add(token);
+    return left;
+  }
+
+  /**
+   * Say this player is ready for the next round. It is dealt the moment everyone
+   * still at the table is — no one is dealt in while still reading the scores — and
+   * a player who has left is not waited for. Returns whether this was the one that
+   * dealt it.
+   */
+  readyForNextRound(seat: number): RoomResult<boolean> {
+    if (!this.state?.roundEnded) return fail("the round is still being played");
+    if (this.matchOver) return fail("that was the last round");
+    const player = this.players[seat];
+    /* v8 ignore next -- the transport only ever passes a seat it assigned */
+    if (!player) return fail("no such seat");
+    this.ready.add(player.token);
+    return succeed(this.dealNextRoundIfReady());
+  }
+
+  private dealNextRoundIfReady(): boolean {
+    const state = this.state;
+    if (!state?.roundEnded || this.matchOver) return false;
+    const staying = this.players.filter((p) => !p.left);
+    if (!staying.every((p) => this.ready.has(p.token))) return false;
+    // An ordinary action, logged like any other, so a restart replays the match
+    // across its rounds.
+    const dealt = applyAction(state, { type: "nextRound" });
+    /* v8 ignore next -- the checks above are exactly the ones nextRound makes */
+    if (!dealt.ok) return false;
+    this.log.append(state.currentSeat, { type: "nextRound" }, "player", this.deps.clock.now());
+    this.ready.clear();
+    this.draft = null;
+    this.state = dealt.state;
+    this.beginTurn(dealt.state.currentSeat);
+    return true;
   }
 
   /** Reclaim a seat after dropping off. Idempotent: rejoining twice is not an error. */
@@ -359,11 +476,25 @@ export class Room {
   }
 
   /**
-   * The first seat hosts. A host who leaves the lobby passes it on without any
-   * bookkeeping, because the seats behind them close up and the next becomes 0.
+   * The seat allowed to deal. The first player to join hosts until they hand it
+   * on; a host who leaves the lobby passes it to the first seat.
    */
   get hostSeat(): number {
-    return 0;
+    return this.players.find((p) => p.token === this.hostToken)?.seat ?? 0;
+  }
+
+  /**
+   * Hand hosting to another player. Only the host may, and only before the deal:
+   * dealing is the one thing a host does, so afterwards there is nothing to hand on.
+   */
+  setHost(bySeat: number, toSeat: number): RoomResult<undefined> {
+    if (this.started) return fail("the host can only be changed before the deal");
+    if (bySeat !== this.hostSeat) return fail("only the host can hand hosting to someone else");
+    const target = this.players[toSeat];
+    if (!target) return fail("no such seat");
+    this.hostToken = target.token;
+    this.save();
+    return succeed(undefined);
   }
 
   setPaused(seat: number, paused: boolean): RoomResult<undefined> {
@@ -409,6 +540,22 @@ export class Room {
   }
 
   /**
+   * Record the lay-down a player is building, so that if their clock runs out it
+   * can be played for them rather than lost. Accepted only from the seat on turn,
+   * in the play phase, while melding is still open; anything else is refused and
+   * nothing is kept.
+   */
+  stageMelds(seat: number, melds: readonly MeldPlay[]): RoomResult<undefined> {
+    const state = this.state;
+    if (!state || state.roundEnded) return fail("there is no hand in play");
+    if (seat !== state.currentSeat) return fail("it is not your turn");
+    if (state.phase !== "play") return fail("melds can only be staged after drawing");
+    if (this.graceUntil !== null) return fail("your turn is out of time: you can only discard");
+    this.draft = isDraft(melds) && melds.length > 0 ? { seat, melds } : null;
+    return succeed(undefined);
+  }
+
+  /**
    * Validate and apply one action. A rule violation comes back as a rejection
    * rather than an exception, because it is an ordinary outcome the client has
    * to render, not a failure of the server.
@@ -422,6 +569,11 @@ export class Room {
     if (!state) return fail("the game has not started");
     if (this.paused) return fail("the table is paused");
     if (seat !== state.currentSeat) return fail("it is not your turn");
+    // The next round is dealt by `readyForNextRound` once the whole table is ready;
+    // taken as an ordinary move it would let one player skip everyone else's ready.
+    if (action.type === "nextRound") {
+      return fail("the next round is dealt when everyone is ready");
+    }
     // Once the main clock is gone the turn is being wound up: a discard ends it,
     // anything else would extend a turn that has already run past its cap.
     if (source === "player" && this.graceUntil !== null && action.type !== "discard") {
@@ -467,6 +619,7 @@ export class Room {
   }
 
   private beginTurn(seat: number): void {
+    this.draft = null;
     this.clockSeat = seat;
     this.turnStartedAt = this.deps.clock.now();
     this.accruedMs = 0;
@@ -557,10 +710,13 @@ export class Room {
     if (!state || state.roundEnded) return;
 
     if (this.graceUntil === null) {
-      // The main clock is gone. Bring the turn to the point where only a discard
-      // is left — drawing, and settling any pile obligation, are not choices the
-      // player still gets to make — then open the discard-only window so they
-      // still pick their own card instead of having one picked for them.
+      // The main clock is gone. First, whatever the player had staged and not yet
+      // played: they meant to play it, and losing it to the clock would be the
+      // harshest reading of a timeout. Then bring the turn to the point where only
+      // a discard is left — drawing, and settling any pile obligation, are not
+      // choices the player still gets to make — and open the discard-only window
+      // so they still pick their own card instead of having one picked for them.
+      this.playDraft("timeout");
       this.playForcedUntilDiscardable("timeout");
       if (this.state?.roundEnded || this.state?.currentSeat !== state.currentSeat) {
         this.notify();
@@ -574,6 +730,37 @@ export class Room {
 
     // The grace is gone too: play the discard for them.
     this.forceTurn("timeout");
+  }
+
+  /**
+   * Play as much of the staged lay-down as the rules allow.
+   *
+   * The whole draft is tried first. If the engine refuses it — a group still two
+   * cards short, a total below the minimum — the largest part it will accept is
+   * played instead, trying every combination of whole groups from the most cards
+   * down. A lay-down is at most a handful of groups, so that is a few dozen
+   * attempts at the reducer, and it finds, say, the two finished groups of three
+   * even when a third was still a pair. If nothing is acceptable, nothing is played.
+   */
+  private playDraft(source: ActionSource): void {
+    const state = this.state;
+    const draft = this.draft;
+    this.draft = null;
+    if (!state || !draft || draft.seat !== state.currentSeat || state.phase !== "play") return;
+    const groups = draft.melds.slice(0, MAX_DRAFT_GROUPS);
+    const subsets: (readonly MeldPlay[])[] = [];
+    for (let mask = (1 << groups.length) - 1; mask > 0; mask--) {
+      subsets.push(groups.filter((_, i) => mask & (1 << i)));
+    }
+    const size = (melds: readonly MeldPlay[]): number =>
+      melds.reduce((n, meld) => n + meld.cardIds.length, 0);
+    subsets.sort((a, b) => size(b) - size(a));
+    for (const melds of subsets) {
+      if (applyAction(state, { type: "playMelds", melds }).ok) {
+        this.apply(state.currentSeat, { type: "playMelds", melds }, source);
+        return;
+      }
+    }
   }
 
   /**
@@ -612,6 +799,9 @@ export class Room {
    */
   private forceTurn(source: ActionSource): void {
     const startedSeat = this.state?.currentSeat;
+    // A player whose turn is taken from them — gone past their grace, or out of
+    // time — keeps what they had staged, exactly as at the main clock's expiry.
+    this.playDraft(source);
     for (let i = 0; i < MAX_FORCED_MOVES_PER_TURN; i++) {
       const state = this.state;
       /* v8 ignore next */
@@ -678,6 +868,8 @@ export class Room {
       started: this.started,
       pausedBy: this.pausedSeat,
       config: this.config,
+      playAgain: this.players.filter((p) => this.wentOn.has(p.token)).map((p) => p.seat),
+      nextRoundReady: this.players.filter((p) => this.ready.has(p.token)).map((p) => p.seat),
     };
   }
 
@@ -698,6 +890,17 @@ export class Room {
   /** Final scores, once the round is over. */
   result(): RoundEnded | null {
     if (!this.state?.roundEnded) return null;
-    return { scores: scoreRound(this.state), wentOutSeat: this.state.wentOutSeat };
+    return {
+      scores: scoreRound(this.state),
+      wentOutSeat: this.state.wentOutSeat,
+      roundNumber: this.state.roundNumber,
+      totals: matchTotals(this.state),
+      matchOver: isMatchOver(this.state),
+    };
+  }
+
+  /** Whether the last round of the match has been played. */
+  get matchOver(): boolean {
+    return this.state !== null && isMatchOver(this.state);
   }
 }

@@ -38,6 +38,8 @@ export interface RoomRecord {
   readonly players: readonly SeatRecord[];
   readonly started: boolean;
   readonly pausedSeat: number | null;
+  /** Token of the player who hosts. Absent from records saved before it could change. */
+  readonly hostToken?: string | null;
 }
 
 /** A room as loaded back: its record, and its log oldest first. */

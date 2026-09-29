@@ -106,12 +106,15 @@ player can.
 A turn is represented as a short sequence of atomic, server-validated actions (draw, play melds,
 discard) rather than a single whole-turn submission or a per-card stream. Only draw and play melds
 correspond to a game phase; the discard ends the play phase rather than being one, and a player who
-has shed every card ends the turn without it. The rules require this action-grained shape regardless:
-the per-round minimum must be validated across an entire lay-down at once, and a drawn card is
-concealed until the server reveals it, so a turn cannot be planned in advance in a single message.
-The client stages a player's melds locally, with a running total against the minimum, and submits
-only committed actions. This keeps the server the sole authority while the interface remains
-responsive.
+has shed every card ends the turn without it. The rules require this action-grained shape
+regardless: the per-round minimum must be validated across an entire lay-down at once, and a drawn
+card is concealed until the server reveals it, so a turn cannot be planned in advance in a single
+message. The client stages a player's melds locally, with a running total against the minimum, and
+submits only committed actions. This keeps the server the sole authority while the interface remains
+responsive. The staged lay-down is also mirrored to the server as a draft, which is not checked
+against the rules or logged as a move; its only use is that a player whose clock runs out, or whose
+turn the server takes over after a disconnect, has the largest part of it the rules accept played
+for them rather than lost.
 
 ### Legality decided once, on the server
 
@@ -185,20 +188,23 @@ default move on their behalf. That default is a pure function in the engine, so 
 replays exactly like a chosen one. It is deliberately conservative — it draws, settles a take-pile
 obligation if one is open, and otherwise discards by heuristic, but it never melds voluntarily,
 because laying a player's cards down while they are away commits them to a position they never
-chose. One consequence matters for the server: a table of nothing but defaults never ends a round,
-so an abandoned room is reaped rather than left to finish. A heuristic strong enough to serve as the
-agent's evaluation baseline is separate, later work that will share the discard heuristic.
+chose. (A lay-down the player had staged themselves is different: they did choose it, so it is
+played before the default takes over.) One consequence matters for the server: a table of nothing
+but defaults never ends a round, so an abandoned room is reaped rather than left to finish. A
+heuristic strong enough to serve as the agent's evaluation baseline is separate, later work that
+will share the discard heuristic.
 
 Leaving on purpose is a separate `leaveRoom` request rather than a closed socket, because the tab
 usually stays open and the connection outlives the player's interest in the table. Before the deal
 the seat is removed and the seats behind it close up, since `deal` seats exactly as many players as
-there are and a gap would be dealt a hand nobody holds; the first seat hosts, so a departing host
-hands the table to the next in line with no extra bookkeeping. Closing the gap renumbers other
-players, so the server keys each socket's seat by token rather than by number, answers a
-`resumeSeat` with the seat it resolved, and tells any socket that moved its new number. After the
-deal the player count is fixed, so the seat stays and is treated as a disconnect whose grace has
-already run out: the server plays it at once instead of stalling the table for a player who has
-said they are not coming back.
+there are and a gap would be dealt a hand nobody holds. Whoever opens the table hosts it, and may
+hand hosting to another player before the deal; the host is recorded by token rather than by seat,
+so handing it on moves nobody, and a departing host passes it to whoever is then first in line.
+Closing the gap renumbers other players, so the server keys each socket's seat by token rather than
+by number, answers a `resumeSeat` with the seat it resolved, and tells any socket that moved its new
+number. After the deal the player count is fixed, so the seat stays and is treated as a disconnect
+whose grace has already run out: the server plays it at once instead of stalling the table for a
+player who has said they are not coming back.
 
 A dropped connection is recovered by the client rather than the transport. Socket.io reconnects on
 its own, but to the server the result is a new socket carrying no seat, so the client presents its
@@ -239,13 +245,13 @@ and replayed to reconstruct active games on restart, rather than serializing the
 graph. The database is a durability backstop, not a coordinator; authoritative state remains in the
 single process.
 
-The log cannot carry what happens around the game rather than in it — who is seated, whether the
-table has dealt, who paused it — so each room also keeps a small record of those, rewritten when
-they change. Rooms are keyed in storage by an identifier of their own rather than by their code,
-because six-character codes are short enough to come round again, and a new table must never
-inherit an old one's history. Nothing is deleted: a room that is reaped is only marked closed, since
-a finished game reproduces a defect exactly, can become a regression test, and is a training example
-for the agent.
+The log cannot carry what happens around the game rather than in it — who is seated, who hosts,
+whether the table has dealt, who paused it — so each room also keeps a small record of those,
+rewritten when they change. Rooms are keyed in storage by an identifier of their own rather than by
+their code, because six-character codes are short enough to come round again, and a new table must
+never inherit an old one's history. Nothing is deleted: a room that is reaped is only marked closed,
+since a finished game reproduces a defect exactly, can become a regression test, and is a training
+example for the agent.
 
 Writes are issued behind the game in the order they happened and are never awaited by it, so a slow
 database costs recoverability rather than a player's turn. A write that fails is retried through a
@@ -327,7 +333,10 @@ The reinforcement-learning agent is the primary planned work and is described ab
 release of the platform is a single round played over a shareable room link. Additional platform
 work, in order:
 
-1. Multi-round matches with escalating minimums and cumulative scoring.
+1. ~~Multi-round matches with escalating minimums and cumulative scoring.~~ Done: four rounds at
+   60, 90, 120 and 150, the first turn rotating each round, and the next round dealt once every
+   player still at the table is ready. Moving to the next round is an action like any other, so a
+   match replays from its log across all its rounds.
 2. A configurable rules editor, since the engine is already fully config-driven.
 3. An interactive tutorial that teaches the game through guided scenarios.
 4. Support for large tables on mobile.

@@ -404,6 +404,12 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
     clean SIGTERM exit. No Docker on this machine, so the image was verified by replaying its steps
     in a scratch dir and running that tree as a real process through a SIGTERM restart against
     Postgres.
+  - **A pending foot is picked up automatically** when the turn reaches that player (in
+    `advanceTurn`), replacing their draw; `applyDraw` no longer handles `footPending`. So an action
+    log recorded before that change which contains a foot-pickup `draw` **no longer replays**: the
+    logged `draw` meets a turn already in the play phase and is refused, and `Room.restore` closes
+    such a room rather than rebuilding a different game. That is by design — nothing had been
+    deployed, only local test tables were affected — so there is no compatibility code for it.
   - `pnpm start` does not forward SIGTERM (exit 143, no graceful shutdown) — never use it as a
     container command.
 - **Bot milestone — the RL agent.** The point of the whole project. Design not yet written; the
@@ -427,12 +433,26 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   go-out check and round scoring all assume that. Partnership play would move melds to a team and
   touch all of them; see the rationale in `DESIGN.md`. Don't add team logic without that being an
   explicit new decision.
-- **`config.rounds` is reserved and unenforced.** Nothing reads it and nothing advances `roundNumber`
-  past 1. `layDownMinimums` *is* honored per round, so escalating minimums work the moment rounds
-  advance. Wire both up in roadmap item 1, not before.
-- **`canTakePile` is deliberately conservative.** It is sound (a reported plan is always completable)
-  but does not optimize wild allocation across ranks, so it can refuse a legal take in wild-heavy
-  positions. Improving it is bot-milestone work; preserve soundness.
+- **A match is `config.rounds` rounds (4 in both presets), minimums 60 / 90 / 120 / 150.** Moving
+  to the next round is an ordinary action, `{ type: "nextRound" }`, accepted only once a round has
+  ended and it was not the last (`isMatchOver`). It deals round r from `roundSeed(seed, r)` — round
+  1 is the match seed itself, so every game recorded before rounds existed replays unchanged — with
+  the first turn rotating one seat per round, and appends the finished round's `scoreRound` to
+  `GameState.pastRounds`; `matchTotals` adds them up. Because it is an action, the server logs it
+  and a restart replays a match across rounds. The server deals it once everyone still at the table
+  has said ready (`Room.readyForNextRound`, `RoomInfo.nextRoundReady`); a player who leaves is not
+  waited for. `RoundEnded` carries `roundNumber`, `totals` and `matchOver`; `PlayerView.scoresSoFar`
+  carries the finished rounds' totals. Play again (a new game) is offered only once the match is
+  over.
+- **`canTakePile` spends wilds, but only as needed, and stays sound.** It used to meld naturals
+  only, which refused plainly legal takes (two queens and a joker could not take a queen) — found in
+  a real game. `greedyLayDown` now melds naturals, then spends wilds highest-value first only while
+  the goal is unmet: a pile card's pair made a meld with a wild, then the single best-gain move
+  under the table's wild ratio. It is still sound rather than optimal: every group passes
+  `validateMeld` with the meld it joins. It takes the round `minimum` (`layDownMinimum`) and sorts
+  its input, because the policy discharging a take must find the plan that authorized it — the
+  property test now checks that after every take. Exotic lay-downs can still be missed; smarter
+  search is bot-milestone work.
 - **Shedding every card is not going out.** A player may legally play or discard their last foot card
   without the go-out books; they keep no cards, the round continues, and they draw one card per turn
   until the books are complete. So `player.hand.length + player.foot.length === 0` does **not** mean

@@ -11,7 +11,7 @@
  * refused request as a value. A rejection is put on the store as a notice for the
  * interface to surface, and the caller learns whether it worked.
  */
-import type { Action, RoomOptions, SeatCredentials } from "@hf/shared";
+import type { Action, MeldPlay, RoomOptions, SeatCredentials } from "@hf/shared";
 import { clearCredentials } from "./credentials";
 import { normalizeRoomCode } from "./roomCode";
 import * as wire from "./socket";
@@ -148,6 +148,21 @@ export async function leaveTable(socket: HfClientSocket, sink: { leave(): void }
   sink.leave();
 }
 
+/** Hand hosting to another player in the lobby. Only the host's client offers this. */
+export async function makeHost(
+  socket: HfClientSocket,
+  seat: number,
+  sink: ActionSink,
+): Promise<boolean> {
+  const result = await wire.setHost(socket, seat);
+  if (!result.ok) {
+    sink.setNotice(result.error);
+    return false;
+  }
+  sink.setNotice(null);
+  return true;
+}
+
 /** Deal the first round. Only the host's client offers this. */
 export async function startTable(socket: HfClientSocket, sink: ActionSink): Promise<boolean> {
   const result = await wire.startGame(socket);
@@ -186,5 +201,51 @@ export async function pauseTable(
     return false;
   }
   sink.setNotice(null);
+  return true;
+}
+
+/**
+ * Keep the server's copy of the lay-down being built, so that a turn clock running
+ * out plays it rather than losing it. Nothing is reported either way: the player
+ * did not ask for this, and a draft that did not arrive only means the timeout
+ * falls back to what it did before.
+ */
+export async function stageDraft(
+  socket: HfClientSocket,
+  melds: readonly MeldPlay[],
+): Promise<void> {
+  await wire.stageMelds(socket, melds);
+}
+
+/**
+ * Leave a finished table for the next game's waiting room. The seat there replaces
+ * the one here — everything about the old table is forgotten — and the caller gets
+ * the new room's id to go to. A refusal (the next game started without them) is a
+ * notice, and the player stays where they are.
+ */
+export async function playAgain(
+  socket: HfClientSocket,
+  sink: ActionSink & { leave(): void },
+): Promise<string | null> {
+  const result = await wire.playAgain(socket);
+  if (!result.ok) {
+    sink.setNotice(result.error);
+    return null;
+  }
+  sink.leave();
+  sink.seat(result.data);
+  return result.data.roomId;
+}
+
+/** Say ready for the next round of the match. A refusal is a notice. */
+export async function readyForNextRound(
+  socket: HfClientSocket,
+  sink: ActionSink,
+): Promise<boolean> {
+  const result = await wire.readyForNextRound(socket);
+  if (!result.ok) {
+    sink.setNotice(result.error);
+    return false;
+  }
   return true;
 }

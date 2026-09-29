@@ -15,10 +15,6 @@ export function applyTakePile(state: GameState): ApplyResult {
     return fail("the pile can only be taken during the draw phase");
   }
   const seat = state.currentSeat;
-  const player = state.players[seat];
-  if (player.footPending) {
-    return fail("you must pick up your foot this turn, not the pile");
-  }
   if (state.discard.length === 0) {
     return fail("the discard pile is empty");
   }

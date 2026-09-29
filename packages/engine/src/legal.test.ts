@@ -158,31 +158,6 @@ describe("legalHints", () => {
     ).toBe(true);
   });
 
-  // A player owing a foot pickup must draw their foot, not the pile, so offering
-  // the pile here would contradict what `applyTakePile` accepts.
-  it("does not offer the pile to a player who owes a foot pickup", () => {
-    const hints = (footPending: boolean) =>
-      legalHints(
-        table(player({ isDown: true, footPending, hand: cards("K", 2), foot: cards("5", 3) }), {
-          phase: "draw",
-          discard: [card("K")],
-        }),
-        0,
-      );
-
-    // Same position but for the pending foot: the pile is otherwise takeable.
-    expect(hints(false).canTakePile).toBe(true);
-    expect(hints(true).canTakePile).toBe(false);
-
-    // And the reducer rejects the take, which is what the hint is promising.
-    const pending = table(
-      player({ isDown: true, footPending: true, hand: cards("K", 2), foot: cards("5", 3) }),
-      { phase: "draw", discard: [card("K")] },
-    );
-    const r = applyAction(pending, { type: "takePile" });
-    expect(r.ok).toBe(false);
-  });
-
   it("reports a black-three book only from the foot, and only at seven", () => {
     const seven = table(player({ isDown: true, inFoot: true, foot: cards("3", 7) }), {
       phase: "play",

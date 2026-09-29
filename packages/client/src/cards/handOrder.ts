@@ -76,6 +76,30 @@ export function isDeadWeight(card: Card): boolean {
   return isRedThree(card);
 }
 
+/** What decides whether a black three in the player's own cards can be played. */
+export interface PlayContext {
+  readonly inFoot: boolean;
+  /** Black threes in the cards being played from — the hand, or the foot. */
+  readonly blackThreesHeld: number;
+  /** Whether a meld of black threes is already down. */
+  readonly hasBlackThreeMeld: boolean;
+}
+
+/**
+ * Whether one of the player's own cards is out of play right now, and so drawn
+ * dimmed and offered no meld.
+ *
+ * A red three never plays. A black three plays only from the foot, and only as a
+ * book of seven or more — so it is live there only when the player holds seven of
+ * them or already has that book down to add to. Everywhere else it is as dead as a
+ * red three, and saying so on the card saves the player trying.
+ */
+export function isUnplayable(card: Card, context: PlayContext): boolean {
+  if (isRedThree(card)) return true;
+  if (!isBlackThree(card)) return false;
+  return !(context.inFoot && (context.blackThreesHeld >= 7 || context.hasBlackThreeMeld));
+}
+
 /** Red for hearts and diamonds, as on a real card. */
 export function isRedCard(card: Card): boolean {
   return isRed(card);

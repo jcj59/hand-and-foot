@@ -82,7 +82,19 @@ function playRandomGame(
       expect(r.ok, `witness plan rejected on seed ${seed}: ${r.ok ? "" : r.error}`).toBe(true);
       pendingPlan = null;
     }
-    if (action.type === "takePile" && r.ok) tookPile++;
+    if (action.type === "takePile" && r.ok) {
+      tookPile++;
+      // And the policy, left to settle the obligation on the player's behalf, finds
+      // a lay-down the reducer accepts: the search that authorized the take and the
+      // one that discharges it are one function over the same cards.
+      const settle = defaultAction(r.state);
+      expect(settle?.type, `policy found no way to settle on seed ${seed}`).toBe("playMelds");
+      const settled = applyAction(r.state, settle!);
+      expect(
+        settled.ok,
+        `policy's plan rejected on seed ${seed}: ${settled.ok ? "" : settled.error}`,
+      ).toBe(true);
+    }
     if (!r.ok) break;
     actions.push(action);
     state = r.state;

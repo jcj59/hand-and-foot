@@ -8,7 +8,15 @@
 // file: the server sends a `PlayerView` produced by the engine's projection,
 // which is the anti-cheat boundary, and these types only wrap it.
 
-import type { Action, GameMode, LegalHints, PlayerView, RoundScore, RulesConfig } from "./index";
+import type {
+  MeldPlay,
+  Action,
+  GameMode,
+  LegalHints,
+  PlayerView,
+  RoundScore,
+  RulesConfig,
+} from "./index";
 
 /** Where an action in the log came from. */
 export type ActionSource = "player" | "timeout" | "disconnect";
@@ -69,6 +77,10 @@ export interface RoomInfo {
   /** Seat that paused the table, when paused. */
   readonly pausedBy?: number;
   readonly config: RulesConfig;
+  /** Seats that have gone on from this finished table to a new game's waiting room. */
+  readonly playAgain: readonly number[];
+  /** Seats that are ready for the next round of the match, once a round has ended. */
+  readonly nextRoundReady: readonly number[];
 }
 
 /** The per-player broadcast: one of these goes to each socket after every accepted action. */
@@ -92,6 +104,12 @@ export interface ViewUpdate {
 /** Sent once when a round finishes, to every seat. */
 export interface RoundEnded {
   readonly scores: readonly RoundScore[];
+  /** Which round of the match this was, from 1. */
+  readonly roundNumber: number;
+  /** Each seat's total over the match so far, this round included, in seat order. */
+  readonly totals: readonly number[];
+  /** Whether this was the last round: the match is over and the totals are final. */
+  readonly matchOver: boolean;
   /** Seat that went out, if anyone did; the stock running out ends a round with nobody out. */
   readonly wentOutSeat?: number;
 }
@@ -172,7 +190,35 @@ export interface ClientToServerEvents {
    */
   leaveRoom: (ack: (result: Ack) => void) => void;
   startGame: (ack: (result: Ack) => void) => void;
+  /** Hand hosting to the player in `seat`. Only the host may, and only before the deal. */
+  setHost: (payload: { readonly seat: number }, ack: (result: Ack) => void) => void;
   submitAction: (action: Action, ack: (result: Ack) => void) => void;
+  /**
+   * Once the round is over, get up from this table and into a waiting room for a
+   * new game with the same rules. The first to ask opens it and hosts it; everyone
+   * after joins the same one. The ack carries the seat in the new room, as a join
+   * does.
+   */
+  playAgain: (ack: (result: Ack<SeatCredentials>) => void) => void;
+  /**
+   * Say this seat is ready for the next round of the match. It is dealt once
+   * everyone still at the table is; the ack says whether this was the one that
+   * dealt it.
+   */
+  nextRound: (ack: (result: Ack<boolean>) => void) => void;
+  /**
+   * The lay-down this seat is building but has not played, sent as it changes.
+   *
+   * Only so the server can play it for them if the turn clock runs out first: the
+   * staging lives in the browser, and a timeout is exactly when the browser cannot
+   * be relied on — backgrounded, asleep, or gone. It goes only to the server, is
+   * forgotten when the turn ends, and is never shown to another seat. Ignored
+   * outside the sender's own play phase.
+   */
+  stageMelds: (
+    payload: { readonly melds: readonly MeldPlay[] },
+    ack: (result: Ack) => void,
+  ) => void;
   setPaused: (payload: { readonly paused: boolean }, ack: (result: Ack) => void) => void;
 }
 

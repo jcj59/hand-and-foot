@@ -25,6 +25,9 @@ export function Home({ socket }: HomeProps): React.ReactElement {
   const seat = useSession((s) => s.seat);
   const setNotice = useSession((s) => s.setNotice);
   const notice = useSession((s) => s.notice);
+  // A seat this tab still holds — the player came to the main screen from a table
+  // without leaving it — and the way back to it.
+  const held = useSession((s) => s.credentials);
 
   const [name, setName] = useState("");
   const [code, setCode] = useState(fromLink ? normalizeRoomCode(fromLink) : "");
@@ -54,6 +57,21 @@ export function Home({ socket }: HomeProps): React.ReactElement {
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-col gap-6 p-6">
+      {held && (
+        <section
+          aria-label="Your table"
+          className="flex items-center justify-between gap-3 rounded border border-amber-300/50 bg-amber-300/10 p-3"
+        >
+          <p className="text-sm">You still have a seat at table {held.roomId}.</p>
+          <button
+            type="button"
+            onClick={() => navigate(`/room/${held.roomId}`)}
+            className="rounded bg-amber-300 px-3 py-1.5 text-sm font-medium text-black"
+          >
+            Rejoin
+          </button>
+        </section>
+      )}
       <header>
         <h1 className="text-3xl font-semibold">Hand and Foot</h1>
         <p className="mt-1 text-sm text-white/60">
@@ -132,8 +150,8 @@ export function Home({ socket }: HomeProps): React.ReactElement {
               value={mode}
               onChange={(e) => setMode(e.target.value as GameMode)}
             >
-              <option value="family">Family — anyone can pause</option>
-              <option value="competitive">Competitive — no pausing</option>
+              <option value="family">Family</option>
+              <option value="competitive">Competitive</option>
             </select>
           </label>
         </fieldset>

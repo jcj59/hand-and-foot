@@ -34,7 +34,30 @@ export function StagingPanel({
   onCommit,
   onClear,
 }: StagingPanelProps): React.ReactElement | null {
-  if (staging.groups.length === 0) return null;
+  // A group with no cards yet is only a target — a meld already on the table picked
+  // to receive a wild — and is shown there, highlighted, rather than here.
+  const groups = staging.groups.filter((group) => group.cardIds.length > 0);
+  if (groups.length === 0) {
+    // Meld mode with nothing picked yet: say how it works, and how to leave.
+    return (
+      <section
+        aria-label="Lay-down being built"
+        className="flex flex-col gap-2 rounded border border-white/15 bg-black/25 p-3 text-sm"
+      >
+        <h2 className="font-medium text-white/80">Building a lay-down</h2>
+        <p className="text-white/60">
+          Click cards in your hand to add them. Click a meld to send wilds to it.
+        </p>
+        <button
+          type="button"
+          onClick={onClear}
+          className="self-start rounded border border-white/25 px-3 py-1.5 text-sm"
+        >
+          Stop melding
+        </button>
+      </section>
+    );
+  }
   const byId = new Map(zone.map((card) => [card.id, card]));
 
   return (
@@ -56,23 +79,32 @@ export function StagingPanel({
       </div>
 
       <ul className="flex flex-col gap-2">
-        {staging.groups.map((group) => {
+        {groups.map((group) => {
           const groupPreview = preview.groups.find((g) => g.rank === group.rank);
           const focused = staging.focusedRank === group.rank;
           return (
-            <li key={group.rank} className="flex flex-col gap-1">
+            <li
+              key={group.rank}
+              // The whole box selects the meld: it is the thing the player is looking
+              // at, and a wild has no rank of its own, so something has to say which
+              // meld it joins. Clicking a card inside takes that card back instead.
+              onClick={() => onFocus(group.rank)}
+              className={`flex cursor-pointer flex-col gap-1 rounded border p-2 ${
+                focused ? "border-amber-300 bg-amber-300/10" : "border-white/15"
+              }`}
+            >
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => onFocus(group.rank)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onFocus(group.rank);
+                  }}
                   aria-pressed={focused}
-                  // Focusing is how a wild is aimed: it has no rank of its own, so the
-                  // player says which book they are spending it on.
-                  className={`rounded px-2 py-0.5 text-xs ${
-                    focused ? "bg-amber-300 text-black" : "border border-white/25 text-white/70"
-                  }`}
+                  aria-label={`Select the ${group.rank}s meld`}
+                  className={`text-sm font-medium ${focused ? "text-amber-200" : "text-white/80"}`}
                 >
-                  {group.rank}s{focused ? " · wilds go here" : ""}
+                  {group.rank}s
                 </button>
                 <span className="text-xs text-white/50">
                   {groupPreview?.combinedSize ?? group.cardIds.length} total
@@ -83,13 +115,14 @@ export function StagingPanel({
                 {group.cardIds.map((id) => {
                   const card = byId.get(id);
                   return card ? (
-                    <PlayingCard
-                      key={id}
-                      card={card}
-                      size="small"
-                      selected
-                      onSelect={() => onUnstage(id)}
-                    />
+                    <span key={id} onClick={(event) => event.stopPropagation()}>
+                      <PlayingCard
+                        card={card}
+                        size="small"
+                        selected
+                        onSelect={() => onUnstage(id)}
+                      />
+                    </span>
                   ) : null;
                 })}
               </div>
