@@ -238,6 +238,7 @@ export class TableObject extends DurableObject<Env> {
    * the table is still empty is decided when it fires.
    */
   override async alarm(): Promise<void> {
+    this.alarmAt = null;
     const channel = this.channel;
     const closing = channel?.room.closing(ABANDONED_TABLE_MS) ?? null;
     if (!channel || closing === null) return;

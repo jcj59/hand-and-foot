@@ -4,9 +4,12 @@
  * for a family game the way to keep it for another day.
  *
  * The closing time is shown as a clock time rather than a countdown. It is half
- * an hour or a week away, and a countdown would tick for no reason.
+ * an hour or a week away, and a countdown would tick for no reason. Both times
+ * are the server's, so they are read through the session's clock offset, as the
+ * turn clock's deadline is.
  */
 import type { RoomInfo } from "@hf/shared";
+import { useSession } from "../session";
 
 export interface PauseBarProps {
   readonly room: RoomInfo;
@@ -23,6 +26,7 @@ export function PauseBar({
   onResume,
   onSaveForLater,
 }: PauseBarProps): React.ReactElement | null {
+  const serverClock = useSession((s) => s.clock);
   const paused = room.pausedBy !== undefined || room.idlePaused === true;
   if (!paused) return null;
 
@@ -33,9 +37,9 @@ export function PauseBar({
   const closes = room.closesAt ?? null;
   const when =
     saved !== null
-      ? `Saved for later until ${formatDay(saved)}. Come back through the home screen or this table's link to pick the game back up.`
+      ? `Saved for later until ${formatDay(serverClock.toLocal(saved))}. Come back through the home screen or this table's link to pick the game back up.`
       : closes !== null
-        ? `It closes at ${formatTime(closes)} unless someone resumes it.`
+        ? `It closes at ${formatTime(serverClock.toLocal(closes))} unless someone resumes it.`
         : null;
 
   return (

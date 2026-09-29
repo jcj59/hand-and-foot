@@ -533,6 +533,7 @@ export class Room {
     this.ready.clear();
     this.save();
     this.draft = null;
+    this.idleTurns = 0;
     this.state = dealt.state;
     this.beginTurn(dealt.state.currentSeat);
     return true;

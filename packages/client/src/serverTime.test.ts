@@ -149,3 +149,12 @@ describe("remaining", () => {
     expect(clock.remaining(3_000)).toBe(2_000);
   });
 });
+
+describe("toLocal", () => {
+  it("reads a server time as this browser's clock would", () => {
+    // The server runs five seconds ahead, so its 20s is this browser's 15s.
+    const clock = createServerClock(fakeNow(1_000).now);
+    clock.anchor(6_000);
+    expect(clock.toLocal(20_000)).toBe(15_000);
+  });
+});

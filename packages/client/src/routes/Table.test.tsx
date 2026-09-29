@@ -1054,7 +1054,10 @@ describe("pausing", () => {
     const { socket, sent } = fakeSocket();
     mount(
       socket,
-      update({ clock: { paused: true, deadlineAt: null }, room: { pausedBy: 1, closesAt } }),
+      update({
+        clock: { serverNow: Date.now(), paused: true, deadlineAt: null },
+        room: { pausedBy: 1, closesAt },
+      }),
     );
     const bar = screen.getByRole("status", { name: "Paused" });
     expect(bar.textContent).toMatch(
@@ -1066,6 +1069,22 @@ describe("pausing", () => {
     fireEvent.click(within(bar).getByRole("button", { name: "Resume" }));
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0]).toEqual({ event: "setPaused", args: [{ paused: false }] });
+  });
+
+  it("gives the closing time by this browser's clock, not the server's", () => {
+    // The server runs ten minutes ahead: its 3:55 is 3:45 here.
+    const skew = 10 * 60_000;
+    const closesAt = new Date(2026, 8, 29, 15, 45, 30).getTime() + skew;
+    mount(
+      fakeSocket().socket,
+      update({
+        clock: { serverNow: Date.now() + skew, paused: true, deadlineAt: null },
+        room: { pausedBy: 1, closesAt },
+      }),
+    );
+    expect(screen.getByRole("status", { name: "Paused" }).textContent).toMatch(
+      /It closes at 3:45\sPM unless someone resumes it\./,
+    );
   });
 
   it("offers to save a paused family game for later, and says until when once saved", async () => {
@@ -1081,7 +1100,7 @@ describe("pausing", () => {
     mount(
       fakeSocket().socket,
       update({
-        clock: { paused: true, deadlineAt: null },
+        clock: { serverNow: Date.now(), paused: true, deadlineAt: null },
         room: { pausedBy: 0, savedUntil, closesAt: savedUntil },
       }),
     );

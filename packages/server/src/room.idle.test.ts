@@ -44,6 +44,35 @@ function timeOut(room: Room, clock: FakeClock): void {
   }
 }
 
+/**
+ * Play by hand to the last card of the stock, then let the clock play out the
+ * round: ana's turn runs out on her and ben, gone, has his whole turn played for
+ * him, which ends the round on the same turn that completes a lap nobody played.
+ */
+function endRoundOnClockPlayedTurns(): { room: Room; clock: FakeClock } {
+  const { room, clock } = started({ ...EAST_COAST, extraDecks: 0, stockExhaustion: "end" });
+  const done = (): boolean => {
+    const state = room.gameState!;
+    return state.stock.length === 1 && state.phase === "draw" && state.currentSeat === 0;
+  };
+  for (let guard = 0; !done(); guard++) {
+    expect(guard).toBeLessThan(2_000);
+    const state = room.gameState!;
+    const seat = state.currentSeat;
+    if (state.phase === "draw") room.submitAction(seat, { type: "draw" });
+    else {
+      const card = state.players[seat]!.hand[0] ?? state.players[seat]!.foot[0]!;
+      room.submitAction(seat, { type: "discard", cardId: card.id });
+    }
+  }
+  room.setConnected(1, false);
+  for (let guard = 0; !room.gameState!.roundEnded; guard++) {
+    expect(guard).toBeLessThan(10);
+    clock.advance(WHOLE_TURN);
+  }
+  return { room, clock };
+}
+
 describe("a table nobody is playing", () => {
   it("pauses itself once every seat's turn in a row has been played for it", () => {
     const { room, clock } = started();
@@ -92,33 +121,22 @@ describe("a table nobody is playing", () => {
   });
 
   it("does not pause a round an auto-played turn just finished, which has no clock to stop", () => {
-    const { room, clock } = started({ ...EAST_COAST, extraDecks: 0, stockExhaustion: "end" });
-    // By hand until one card is left to draw and it is ana's turn to draw it.
-    const done = (): boolean => {
-      const state = room.gameState!;
-      return state.stock.length === 1 && state.phase === "draw" && state.currentSeat === 0;
-    };
-    for (let guard = 0; !done(); guard++) {
-      expect(guard).toBeLessThan(2_000);
-      const state = room.gameState!;
-      const seat = state.currentSeat;
-      if (state.phase === "draw") room.submitAction(seat, { type: "draw" });
-      else {
-        const card = state.players[seat]!.hand[0] ?? state.players[seat]!.foot[0]!;
-        room.submitAction(seat, { type: "discard", cardId: card.id });
-      }
-    }
-    // Ana's clock runs out on her; ben has gone, so his whole turn is played for
-    // him — and finding the stock empty, that turn ends the round, on the same
-    // turn that completes a lap nobody played.
-    room.setConnected(1, false);
-    for (let guard = 0; !room.gameState!.roundEnded; guard++) {
-      expect(guard).toBeLessThan(10);
-      clock.advance(WHOLE_TURN);
-    }
+    const { room } = endRoundOnClockPlayedTurns();
     expect(room.log.entries().at(-1)).toMatchObject({ seat: 1, source: "disconnect" });
     expect(room.paused).toBe(false);
     expect(room.info().idlePaused).toBe(false);
+  });
+
+  it("starts a fresh lap when the next round is dealt", () => {
+    const { room, clock } = endRoundOnClockPlayedTurns();
+    room.setConnected(1, true);
+    expect(room.readyForNextRound(0).ok).toBe(true);
+    expect(room.readyForNextRound(1)).toEqual({ ok: true, value: true });
+    // Everyone just said ready: the turns played for them last round do not count.
+    timeOut(room, clock);
+    expect(room.paused).toBe(false);
+    timeOut(room, clock);
+    expect(room.paused).toBe(true);
   });
 });
 
