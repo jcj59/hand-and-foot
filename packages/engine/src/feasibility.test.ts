@@ -119,8 +119,8 @@ describe("book bonuses in the minimum calculation", () => {
   });
 
   it("applies no minimum in a round the config does not configure one for", () => {
-    // layDownMinimums has a single entry, so round 2 falls back to no minimum.
-    const s: GameState = { ...state({ hand: cards("4", 2) }, [card("4")]), roundNumber: 2 };
+    // layDownMinimums has four entries, so a fifth round falls back to no minimum.
+    const s: GameState = { ...state({ hand: cards("4", 2) }, [card("4")]), roundNumber: 5 };
     expect(canTakePile(s, 0).feasible).toBe(true);
   });
 });

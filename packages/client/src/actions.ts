@@ -236,3 +236,16 @@ export async function playAgain(
   sink.seat(result.data);
   return result.data.roomId;
 }
+
+/** Say ready for the next round of the match. A refusal is a notice. */
+export async function readyForNextRound(
+  socket: HfClientSocket,
+  sink: ActionSink,
+): Promise<boolean> {
+  const result = await wire.readyForNextRound(socket);
+  if (!result.ok) {
+    sink.setNotice(result.error);
+    return false;
+  }
+  return true;
+}

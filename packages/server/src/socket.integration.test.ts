@@ -963,12 +963,12 @@ describe("playing again over the wire", () => {
     for (let i = 1; i < names.length; i++)
       await joinRoom(sockets[i]!, created.data.roomId, names[i]!);
     await startGame(sockets[0]!);
-    // End the round directly: how a round ends is the engine's business, and what
+    // End the match directly — its last round: how a round ends is the engine's business, and what
     // is under test here is what the transport does afterwards.
     const room = server.manager.get(created.data.roomId)!;
     const state = room.gameState!;
     Object.assign(room as unknown as { state: typeof state }, {
-      state: { ...state, roundEnded: true },
+      state: { ...state, roundEnded: true, roundNumber: state.config.rounds },
     });
     return { server, port, sockets, roomId: created.data.roomId };
   }
@@ -1019,7 +1019,7 @@ describe("playing again over the wire", () => {
     if (!created.ok) throw new Error(created.error);
     await joinRoom(b, created.data.roomId, "ben");
     await startGame(a);
-    expect(await again(a)).toEqual({ ok: false, error: "the round is not over yet" });
+    expect(await again(a)).toEqual({ ok: false, error: "the match is not over yet" });
     expect(await again(stranger)).toEqual({ ok: false, error: "you are not seated in a room" });
   });
 
@@ -1095,5 +1095,47 @@ describe("handing hosting on over the wire", () => {
       ok: false,
       error: "you are not seated in a room",
     });
+  });
+});
+
+describe("the next round over the wire", () => {
+  it("shows who is ready, and deals the next round to everyone once all are", async () => {
+    const { server, port } = await boot();
+    const [a, b] = [await connect(port), await connect(port)];
+    const created = await createRoom(a, "ana");
+    if (!created.ok) throw new Error(created.error);
+    await joinRoom(b, created.data.roomId, "ben");
+    await startGame(a);
+    const room = server.manager.get(created.data.roomId)!;
+    const state = room.gameState!;
+    Object.assign(room as unknown as { state: typeof state }, {
+      state: { ...state, roundEnded: true },
+    });
+
+    const ready = (socket: Client): Promise<Ack<boolean>> =>
+      new Promise((resolve) => socket.emit("nextRound", resolve));
+    const seen = waitForRoom(b, (info) => info.nextRoundReady.length === 1);
+    expect(await ready(a)).toEqual({ ok: true, data: false });
+    expect((await seen).nextRoundReady).toEqual([0]);
+
+    const dealtA = next(a, "view");
+    const dealtB = next(b, "view");
+    expect(await ready(b)).toEqual({ ok: true, data: true });
+    const [viewA, viewB] = await Promise.all([dealtA, dealtB]);
+    expect(viewA.view.roundNumber).toBe(2);
+    expect(viewB.view.roundNumber).toBe(2);
+  });
+
+  it("refuses a socket with no seat, and a round still being played", async () => {
+    const { port } = await boot();
+    const [a, b, stranger] = [await connect(port), await connect(port), await connect(port)];
+    const created = await createRoom(a, "ana");
+    if (!created.ok) throw new Error(created.error);
+    await joinRoom(b, created.data.roomId, "ben");
+    await startGame(a);
+    const ready = (socket: Client): Promise<Ack<boolean>> =>
+      new Promise((resolve) => socket.emit("nextRound", resolve));
+    expect(await ready(stranger)).toEqual({ ok: false, error: "you are not seated in a room" });
+    expect(await ready(a)).toEqual({ ok: false, error: "the round is still being played" });
   });
 });

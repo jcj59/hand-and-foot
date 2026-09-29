@@ -427,9 +427,17 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   go-out check and round scoring all assume that. Partnership play would move melds to a team and
   touch all of them; see the rationale in `DESIGN.md`. Don't add team logic without that being an
   explicit new decision.
-- **`config.rounds` is reserved and unenforced.** Nothing reads it and nothing advances `roundNumber`
-  past 1. `layDownMinimums` *is* honored per round, so escalating minimums work the moment rounds
-  advance. Wire both up in roadmap item 1, not before.
+- **A match is `config.rounds` rounds (4 in both presets), minimums 60 / 90 / 120 / 150.** Moving
+  to the next round is an ordinary action, `{ type: "nextRound" }`, accepted only once a round has
+  ended and it was not the last (`isMatchOver`). It deals round r from `roundSeed(seed, r)` — round
+  1 is the match seed itself, so every game recorded before rounds existed replays unchanged — with
+  the first turn rotating one seat per round, and appends the finished round's `scoreRound` to
+  `GameState.pastRounds`; `matchTotals` adds them up. Because it is an action, the server logs it
+  and a restart replays a match across rounds. The server deals it once everyone still at the table
+  has said ready (`Room.readyForNextRound`, `RoomInfo.nextRoundReady`); a player who leaves is not
+  waited for. `RoundEnded` carries `roundNumber`, `totals` and `matchOver`; `PlayerView.scoresSoFar`
+  carries the finished rounds' totals. Play again (a new game) is offered only once the match is
+  over.
 - **`canTakePile` spends wilds, but only as needed, and stays sound.** It used to meld naturals
   only, which refused plainly legal takes (two queens and a joker could not take a queen) — found in
   a real game. `greedyLayDown` now melds naturals, then spends wilds highest-value first only while

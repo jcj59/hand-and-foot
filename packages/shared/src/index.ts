@@ -86,16 +86,13 @@ export interface ScoringConfig {
 
 export interface RulesConfig {
   /**
-   * Number of rounds in the match. **Reserved and currently unenforced**: the first
-   * release is a single round, so nothing advances `roundNumber` past 1 and no code
-   * reads this field. It is kept so the config shape stays stable for multi-round
-   * matches (roadmap item 1); wire it up there rather than assuming it works.
+   * Number of rounds in the match. After each round but the last, a `nextRound`
+   * action deals the next one; scores add up across them.
    */
   readonly rounds: number;
   /**
    * Per-round point minimum required to lay your first melds, indexed by
-   * `roundNumber - 1`. This one *is* honored, so escalating minimums already work
-   * as soon as rounds advance.
+   * `roundNumber - 1`. A round past the end of the list has no minimum.
    */
   readonly layDownMinimums: readonly number[];
   readonly wildRatio: WildRatioRule;
@@ -129,8 +126,8 @@ export interface RulesConfig {
 
 /** East Coast preset (default): naturals must strictly outnumber wilds; Family-paced. */
 export const EAST_COAST: RulesConfig = {
-  rounds: 1,
-  layDownMinimums: [60],
+  rounds: 4,
+  layDownMinimums: [60, 90, 120, 150],
   wildRatio: "naturals-exceed-wilds",
   marvaRule: false,
   goOutCleanBooks: 1,
@@ -208,6 +205,8 @@ export interface GameState {
    * only this seat earns the go-out bonus.
    */
   readonly wentOutSeat?: number;
+  /** Every finished round's scores, oldest first; the current round is not in it. */
+  readonly pastRounds?: readonly (readonly RoundScore[])[];
 }
 
 /** What one player can see of another player: counts, not hidden card contents. */
@@ -258,6 +257,11 @@ export interface PlayerView {
    * to know this turn is their last.
    */
   readonly finalLapRemaining: number | null;
+  /**
+   * Each seat's total over the rounds already finished, in seat order — public, as
+   * the scores of a finished round are. Zero for everyone in the first round.
+   */
+  readonly scoresSoFar: readonly number[];
 }
 
 /** One meld a player lays or extends: the cards to add and the rank they form. */
@@ -271,7 +275,13 @@ export type Action =
   | { readonly type: "draw" }
   | { readonly type: "takePile" }
   | { readonly type: "playMelds"; readonly melds: readonly MeldPlay[] }
-  | { readonly type: "discard"; readonly cardId: string };
+  | { readonly type: "discard"; readonly cardId: string }
+  /**
+   * Deal the next round of the match, once this one has ended and it was not the
+   * last. Not a player's move but the table's: the server submits it once everyone
+   * still playing is ready. An action all the same, so a match replays from its log.
+   */
+  | { readonly type: "nextRound" };
 
 /** One player's score for a completed round. */
 export interface RoundScore {

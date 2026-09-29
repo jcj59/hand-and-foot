@@ -5,10 +5,20 @@ import { prng, shuffle } from "./rng";
 /**
  * Produce the initial state of a round: build and shuffle the shoe, deal a hand
  * and a foot to each player, optionally flip one card to start the discard pile,
- * and leave the remainder as the stock. Deterministic in the seed.
+ * and leave the remainder as the stock. Deterministic in the seed and the round.
+ *
+ * Each round shuffles from its own seed, derived from the match's, so a match is
+ * still reproducible from one number; round 1 uses the match seed itself, so every
+ * game recorded before there were rounds deals exactly as it did. The first turn
+ * passes one seat to the left each round, as the deal does at a real table.
  */
-export function deal(playerCount: number, config: RulesConfig, seed: number): GameState {
-  const rng = prng(seed);
+export function deal(
+  playerCount: number,
+  config: RulesConfig,
+  seed: number,
+  roundNumber = 1,
+): GameState {
+  const rng = prng(roundSeed(seed, roundNumber));
   const shoe = shuffle(buildShoe(playerCount, config.extraDecks), rng);
 
   let next = 0;
@@ -36,11 +46,20 @@ export function deal(playerCount: number, config: RulesConfig, seed: number): Ga
   return {
     config,
     seed,
-    roundNumber: 1,
+    roundNumber,
     players,
-    currentSeat: 0,
+    currentSeat: (roundNumber - 1) % playerCount,
     phase: "draw",
     stock,
     discard,
   };
+}
+
+/**
+ * The shuffle seed for one round of a match. Round 1 is the match seed, unchanged;
+ * later rounds step by a large odd number so that no two rounds of any match share
+ * a shuffle, and none collides with the stock reshuffle, which offsets by one.
+ */
+export function roundSeed(seed: number, roundNumber: number): number {
+  return (seed + (roundNumber - 1) * 1_000_003) >>> 0;
 }

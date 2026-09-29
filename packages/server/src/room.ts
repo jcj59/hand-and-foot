@@ -11,7 +11,16 @@ import {
   type RulesConfig,
   type ViewUpdate,
 } from "@hf/shared";
-import { applyAction, deal, defaultAction, legalHints, project, scoreRound } from "@hf/engine";
+import {
+  applyAction,
+  deal,
+  defaultAction,
+  isMatchOver,
+  legalHints,
+  matchTotals,
+  project,
+  scoreRound,
+} from "@hf/engine";
 import type { Clock } from "./clock";
 import { type ActionLog, InMemoryActionLog, StoredActionLog } from "./log";
 import type { RoomRecord, RoomStore, StoredRoom } from "./store";
@@ -134,6 +143,8 @@ export class Room {
   private hostToken: string | null = null;
   /** Tokens of the players who went on to the next game's waiting room. */
   private readonly wentOn = new Set<string>();
+  /** Tokens of the players ready for the next round, once a round has ended. */
+  private readonly ready = new Set<string>();
   private state: GameState | null = null;
   private pausedSeat: number | undefined;
   /**
@@ -355,8 +366,11 @@ export class Room {
       return succeed(player);
     }
     player.left = true;
+    this.ready.delete(player.token);
     this.setConnected(player.seat, false);
     this.save();
+    // The others may have been waiting only on this player to start the next round.
+    this.dealNextRoundIfReady();
     return succeed(player);
   }
 
@@ -366,10 +380,44 @@ export class Room {
    * other.
    */
   moveOn(token: string): RoomResult<RoomPlayer> {
-    if (!this.state?.roundEnded) return fail("the round is not over yet");
+    if (!this.matchOver) return fail("the match is not over yet");
     const left = this.leave(token);
     if (left.ok) this.wentOn.add(token);
     return left;
+  }
+
+  /**
+   * Say this player is ready for the next round. It is dealt the moment everyone
+   * still at the table is — no one is dealt in while still reading the scores — and
+   * a player who has left is not waited for. Returns whether this was the one that
+   * dealt it.
+   */
+  readyForNextRound(seat: number): RoomResult<boolean> {
+    if (!this.state?.roundEnded) return fail("the round is still being played");
+    if (this.matchOver) return fail("that was the last round");
+    const player = this.players[seat];
+    /* v8 ignore next -- the transport only ever passes a seat it assigned */
+    if (!player) return fail("no such seat");
+    this.ready.add(player.token);
+    return succeed(this.dealNextRoundIfReady());
+  }
+
+  private dealNextRoundIfReady(): boolean {
+    const state = this.state;
+    if (!state?.roundEnded || this.matchOver) return false;
+    const staying = this.players.filter((p) => !p.left);
+    if (!staying.every((p) => this.ready.has(p.token))) return false;
+    // An ordinary action, logged like any other, so a restart replays the match
+    // across its rounds.
+    const dealt = applyAction(state, { type: "nextRound" });
+    /* v8 ignore next -- the checks above are exactly the ones nextRound makes */
+    if (!dealt.ok) return false;
+    this.log.append(state.currentSeat, { type: "nextRound" }, "player", this.deps.clock.now());
+    this.ready.clear();
+    this.draft = null;
+    this.state = dealt.state;
+    this.beginTurn(dealt.state.currentSeat);
+    return true;
   }
 
   /** Reclaim a seat after dropping off. Idempotent: rejoining twice is not an error. */
@@ -796,6 +844,7 @@ export class Room {
       pausedBy: this.pausedSeat,
       config: this.config,
       playAgain: this.players.filter((p) => this.wentOn.has(p.token)).map((p) => p.seat),
+      nextRoundReady: this.players.filter((p) => this.ready.has(p.token)).map((p) => p.seat),
     };
   }
 
@@ -816,6 +865,17 @@ export class Room {
   /** Final scores, once the round is over. */
   result(): RoundEnded | null {
     if (!this.state?.roundEnded) return null;
-    return { scores: scoreRound(this.state), wentOutSeat: this.state.wentOutSeat };
+    return {
+      scores: scoreRound(this.state),
+      wentOutSeat: this.state.wentOutSeat,
+      roundNumber: this.state.roundNumber,
+      totals: matchTotals(this.state),
+      matchOver: isMatchOver(this.state),
+    };
+  }
+
+  /** Whether the last round of the match has been played. */
+  get matchOver(): boolean {
+    return this.state !== null && isMatchOver(this.state);
   }
 }

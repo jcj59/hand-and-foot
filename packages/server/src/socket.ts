@@ -230,6 +230,16 @@ export function attachSocketServer(io: HfServer, manager: RoomManager): void {
       if (changed.ok) broadcastRoom(session.room);
     });
 
+    socket.on("nextRound", (ack) => {
+      const session = sessionOf(socket);
+      if (!session) return ack({ ok: false, error: "you are not seated in a room" });
+      const ready = session.room.readyForNextRound(session.seat);
+      if (!ready.ok) return ack(ready);
+      ack({ ok: true, data: ready.value });
+      broadcastRoom(session.room);
+      if (ready.value) broadcastViews(session.room);
+    });
+
     socket.on("playAgain", (ack) => {
       const session = sessions.get(socket.id);
       const room = session && manager.get(session.roomId);
@@ -237,8 +247,7 @@ export function attachSocketServer(io: HfServer, manager: RoomManager): void {
       if (!session || !room || !player) {
         return ack({ ok: false, error: "you are not seated in a room" });
       }
-      if (!room.gameState?.roundEnded)
-        return ack({ ok: false, error: "the round is not over yet" });
+      if (!room.matchOver) return ack({ ok: false, error: "the match is not over yet" });
 
       // Everyone after the first goes to the same waiting room — unless it has been
       // dealt without them, or reaped, in which case a player who asks now gets a

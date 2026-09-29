@@ -79,6 +79,8 @@ export interface RoomInfo {
   readonly config: RulesConfig;
   /** Seats that have gone on from this finished table to a new game's waiting room. */
   readonly playAgain: readonly number[];
+  /** Seats that are ready for the next round of the match, once a round has ended. */
+  readonly nextRoundReady: readonly number[];
 }
 
 /** The per-player broadcast: one of these goes to each socket after every accepted action. */
@@ -102,6 +104,12 @@ export interface ViewUpdate {
 /** Sent once when a round finishes, to every seat. */
 export interface RoundEnded {
   readonly scores: readonly RoundScore[];
+  /** Which round of the match this was, from 1. */
+  readonly roundNumber: number;
+  /** Each seat's total over the match so far, this round included, in seat order. */
+  readonly totals: readonly number[];
+  /** Whether this was the last round: the match is over and the totals are final. */
+  readonly matchOver: boolean;
   /** Seat that went out, if anyone did; the stock running out ends a round with nobody out. */
   readonly wentOutSeat?: number;
 }
@@ -192,6 +200,12 @@ export interface ClientToServerEvents {
    * does.
    */
   playAgain: (ack: (result: Ack<SeatCredentials>) => void) => void;
+  /**
+   * Say this seat is ready for the next round of the match. It is dealt once
+   * everyone still at the table is; the ack says whether this was the one that
+   * dealt it.
+   */
+  nextRound: (ack: (result: Ack<boolean>) => void) => void;
   /**
    * The lay-down this seat is building but has not played, sent as it changes.
    *

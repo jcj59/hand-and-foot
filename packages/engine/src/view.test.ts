@@ -46,6 +46,16 @@ function table(players: PlayerState[]): GameState {
   };
 }
 
+const noBreakdown = {
+  cleanBooks: 0,
+  dirtyBooks: 0,
+  bookBonus: 0,
+  meldedCards: 0,
+  goOutBonus: 0,
+  heldCount: 0,
+  heldPenalty: 0,
+};
+
 describe("project (per-player view)", () => {
   const state = deal(4, EAST_COAST, 55);
   const view = project(state, 0);
@@ -181,6 +191,22 @@ describe("project from any seat", () => {
       expect(project(s, seat).wentOutSeat).toBe(2);
       expect(project(s, seat).finalLapRemaining).toBe(2);
     }
+  });
+
+  it("tells every seat the match totals of the rounds already finished", () => {
+    const round = (a: number, b: number) => [
+      { seat: 0, score: a, breakdown: noBreakdown },
+      { seat: 1, score: b, breakdown: noBreakdown },
+    ];
+    const s: GameState = {
+      ...table([player(), player()]),
+      pastRounds: [round(100, -20), round(50, 300)],
+    };
+    expect(project(s, 0).scoresSoFar).toEqual([150, 280]);
+    expect(project(s, 1).scoresSoFar).toEqual([150, 280]);
+    // The round being played is not counted until it is over.
+    expect(project({ ...s, roundEnded: true }, 0).scoresSoFar).toEqual([150, 280]);
+    expect(project(table([player(), player()]), 0).scoresSoFar).toEqual([0, 0]);
   });
 
   it("says plainly when nobody has gone out and no final lap is running", () => {

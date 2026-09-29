@@ -3,6 +3,7 @@ import { type ApplyResult, fail } from "./core";
 import { applyDraw } from "./draw";
 import { applyDiscard } from "./discard";
 import { applyPlayMelds } from "./playMelds";
+import { applyNextRound } from "./nextRound";
 import { applyTakePile } from "./takePile";
 
 export type { ApplyResult };
@@ -11,9 +12,11 @@ export type { ApplyResult };
  * The pure turn engine. Validates an action against the current phase and state
  * and returns either the next state or a rejection. It never mutates its input,
  * which is what makes replay, property testing, and agent search over cloned
- * states possible. No action is accepted once the round has ended.
+ * states possible. Once a round has ended, the only action accepted is dealing
+ * the next one.
  */
 export function applyAction(state: GameState, action: Action): ApplyResult {
+  if (action.type === "nextRound") return applyNextRound(state);
   if (state.roundEnded) {
     return fail("the round has already ended");
   }

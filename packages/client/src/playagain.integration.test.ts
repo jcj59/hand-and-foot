@@ -62,11 +62,11 @@ describe("playing again", () => {
     if (!created.ok) throw new Error(created.error);
     await joinRoom(ben, created.data.roomId, "ben");
     await startGame(ana);
-    // End the round on the server; how rounds end is not what is under test.
+    // End the match on the server; how rounds end is not what is under test.
     const room = server.manager.get(created.data.roomId)!;
     const state = room.gameState!;
     Object.assign(room as unknown as { state: typeof state }, {
-      state: { ...state, roundEnded: true },
+      state: { ...state, roundEnded: true, roundNumber: state.config.rounds },
     });
 
     const anaSink = sink();

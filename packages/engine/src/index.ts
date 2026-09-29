@@ -8,6 +8,7 @@ export * from "./meld";
 export * from "./scoring";
 export * from "./scoreRound";
 export * from "./reducer";
+export * from "./nextRound";
 export * from "./feasibility";
 export * from "./plan";
 export * from "./policy";

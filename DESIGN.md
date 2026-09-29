@@ -327,7 +327,10 @@ The reinforcement-learning agent is the primary planned work and is described ab
 release of the platform is a single round played over a shareable room link. Additional platform
 work, in order:
 
-1. Multi-round matches with escalating minimums and cumulative scoring.
+1. ~~Multi-round matches with escalating minimums and cumulative scoring.~~ Done: four rounds at
+   60, 90, 120 and 150, the first turn rotating each round, and the next round dealt once every
+   player still at the table is ready. Moving to the next round is an action like any other, so a
+   match replays from its log across all its rounds.
 2. A configurable rules editor, since the engine is already fully config-driven.
 3. An interactive tutorial that teaches the game through guided scenarios.
 4. Support for large tables on mobile.

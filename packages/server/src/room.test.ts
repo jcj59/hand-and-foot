@@ -422,11 +422,11 @@ describe("moving on to the next game", () => {
   it("is refused before the round is over, and for a token that is not here", () => {
     const room = newRoom();
     seated(room, ["ana", "ben"]);
-    expect(room.moveOn("token-0")).toEqual({ ok: false, error: "the round is not over yet" });
+    expect(room.moveOn("token-0")).toEqual({ ok: false, error: "the match is not over yet" });
     room.start(0);
     const state = room.gameState!;
     Object.assign(room as unknown as { state: typeof state }, {
-      state: { ...state, roundEnded: true },
+      state: { ...state, roundEnded: true, roundNumber: state.config.rounds },
     });
     expect(room.moveOn("nobody").ok).toBe(false);
     expect(room.info().playAgain).toEqual([]);

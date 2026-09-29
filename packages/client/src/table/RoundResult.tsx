@@ -21,8 +21,12 @@ export interface RoundResultProps {
   readonly config: RulesConfig;
   /** Get up from the table and go back to the main screen. */
   readonly onLeave: () => void;
-  /** Go to the next game's waiting room. */
+  /** Go to the next game's waiting room. Offered once the match is over. */
   readonly onPlayAgain: () => void;
+  /** Say ready for the next round of the match. Offered until the last round. */
+  readonly onNextRound: () => void;
+  /** This viewer's seat, to know whether they have said ready already. */
+  readonly seat: number;
   /** A refusal to show where the player is looking, over the table. */
   readonly notice: string | null;
 }
@@ -38,6 +42,8 @@ export function RoundResult({
   config,
   onLeave,
   onPlayAgain,
+  onNextRound,
+  seat: mySeat,
   notice,
 }: RoundResultProps): React.ReactElement {
   const { scoring } = config;
@@ -45,23 +51,42 @@ export function RoundResult({
   // Where the panel has been dragged to, as an offset from where it opens.
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const drag = useRef<{ x: number; y: number } | null>(null);
-  const ranked = [...result.scores].sort((a, b) => b.score - a.score);
+  // Ranked by the match so far: that is the standing that matters between rounds.
+  const totalOf = (seat: number): number => result.totals[seat] ?? 0;
+  const ranked = [...result.scores].sort((a, b) => totalOf(b.seat) - totalOf(a.seat));
   const nameOf = (seat: number): string =>
     room.players.find((p) => p.seat === seat)?.name ?? `Seat ${seat}`;
-  const headline =
-    result.wentOutSeat !== undefined
+  const best = Math.max(...result.scores.map((r) => totalOf(r.seat)));
+  const winners = result.scores.filter((r) => totalOf(r.seat) === best).map((r) => nameOf(r.seat));
+  const headline = result.matchOver
+    ? winners.length === 1
+      ? `${winners[0]} wins!`
+      : `A tie between ${winners.join(" and ")}!`
+    : result.wentOutSeat !== undefined
       ? `${nameOf(result.wentOutSeat)} went out!`
       : "The stock ran out.";
+  const iAmReady = room.nextRoundReady.includes(mySeat);
   // What to do next stays on screen whether or not the scores are.
   const choices = (
     <>
-      <button
-        type="button"
-        onClick={onPlayAgain}
-        className="rounded bg-amber-300 px-3 py-1.5 text-sm font-medium text-black"
-      >
-        Play again
-      </button>
+      {result.matchOver ? (
+        <button
+          type="button"
+          onClick={onPlayAgain}
+          className="rounded bg-amber-300 px-3 py-1.5 text-sm font-medium text-black"
+        >
+          Play again
+        </button>
+      ) : (
+        <button
+          type="button"
+          disabled={iAmReady}
+          onClick={onNextRound}
+          className="rounded bg-amber-300 px-3 py-1.5 text-sm font-medium text-black disabled:opacity-60"
+        >
+          {iAmReady ? "Waiting for the others…" : "Next round"}
+        </button>
+      )}
       <button
         type="button"
         onClick={onLeave}
@@ -128,7 +153,11 @@ export function RoundResult({
           </span>
         </div>
         <div className="p-4 pt-2">
-          <h2 className="mt-1 text-sm font-medium text-white/70">Round over</h2>
+          <h2 className="mt-1 text-sm font-medium text-white/70">
+            {result.matchOver
+              ? `Final scores after ${config.rounds} rounds`
+              : `Round ${result.roundNumber} of ${config.rounds} over`}
+          </h2>
           <div className="mt-2 overflow-x-auto">
             <table className="w-full min-w-[32rem] text-sm">
               <thead>
@@ -139,7 +168,8 @@ export function RoundResult({
                   <th className="py-1 pr-3 font-normal">Cards melded</th>
                   <th className="py-1 pr-3 font-normal">Went out</th>
                   <th className="py-1 pr-3 font-normal">Cards left</th>
-                  <th className="py-1 font-normal">Total</th>
+                  <th className="py-1 pr-3 font-normal">This round</th>
+                  <th className="py-1 font-normal">{result.matchOver ? "Final" : "Total"}</th>
                 </tr>
               </thead>
               <tbody>
@@ -171,14 +201,21 @@ export function RoundResult({
                           ? "none"
                           : `${b.heldCount} card${b.heldCount === 1 ? "" : "s"}: ${signed(b.heldPenalty)}`}
                       </td>
-                      <td className="py-1 font-semibold">{score}</td>
+                      <td className="py-1 pr-3">{score}</td>
+                      <td className="py-1 font-semibold">{totalOf(seat)}</td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
-          {room.playAgain.length > 0 && (
+          {!result.matchOver && room.nextRoundReady.length > 0 && (
+            <p role="status" className="mt-3 text-sm text-amber-100">
+              Ready for round {result.roundNumber + 1}: {room.nextRoundReady.map(nameOf).join(", ")}{" "}
+              ({room.nextRoundReady.length} of {room.players.length})
+            </p>
+          )}
+          {result.matchOver && room.playAgain.length > 0 && (
             // Who is already waiting for the next game, so a player can see whether
             // anyone is there to play with.
             <p role="status" className="mt-3 text-sm text-amber-100">

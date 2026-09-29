@@ -34,6 +34,7 @@ function roomInfo(overrides: Partial<RoomInfo> = {}): RoomInfo {
     ],
     hostSeat: 0,
     playAgain: [],
+    nextRoundReady: [],
     started: false,
     config: EAST_COAST,
     ...overrides,

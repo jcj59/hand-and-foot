@@ -71,8 +71,15 @@ function meld(name: string): void {
   else choose(name, /^(meld|add to .*)$/i);
 }
 
-/** A round result with a breakdown whose parts add up to each score. */
-function scored(scores: [number, number][], wentOutSeat?: number): RoundEnded {
+/**
+ * A round result with a breakdown whose parts add up to each score. The match is
+ * over unless said otherwise, and the totals are the round's scores.
+ */
+function scored(
+  scores: [number, number][],
+  wentOutSeat?: number,
+  match: { matchOver?: boolean; roundNumber?: number; totals?: number[] } = {},
+): RoundEnded {
   return {
     scores: scores.map(([seat, score]) => ({
       seat,
@@ -88,6 +95,9 @@ function scored(scores: [number, number][], wentOutSeat?: number): RoundEnded {
       },
     })),
     wentOutSeat,
+    roundNumber: match.roundNumber ?? 4,
+    totals: match.totals ?? scores.map(([, score]) => score),
+    matchOver: match.matchOver ?? true,
   };
 }
 
@@ -100,6 +110,7 @@ function roomInfo(overrides: Partial<RoomInfo> = {}): RoomInfo {
     ],
     hostSeat: 0,
     playAgain: [],
+    nextRoundReady: [],
     started: true,
     config: EAST_COAST,
     ...overrides,
@@ -131,6 +142,7 @@ function update(
     pickedUp: [],
     wentOutSeat: null,
     finalLapRemaining: null,
+    scoresSoFar: [],
     ...overrides.view,
   };
   return {
@@ -464,6 +476,9 @@ describe("the round result", () => {
       useSession.setState({
         result: {
           wentOutSeat: 0,
+          roundNumber: 1,
+          totals: [2 * cleanBookBonus + dirtyBookBonus + 185 + goOutBonus, 40 - 520],
+          matchOver: false,
           scores: [
             {
               seat: 0,
@@ -1425,6 +1440,7 @@ describe("the controls added from play-testing", () => {
             [1, 5],
           ],
           1,
+          { matchOver: false, roundNumber: 1 },
         ),
       }),
     );
@@ -1493,7 +1509,11 @@ describe("the controls added from play-testing", () => {
 
   it("says when the stock ran out rather than naming anyone", () => {
     mount(fakeSocket().socket);
-    act(() => useSession.setState({ result: scored([[0, 10]]) }));
+    act(() =>
+      useSession.setState({
+        result: scored([[0, 10]], undefined, { matchOver: false, roundNumber: 1 }),
+      }),
+    );
     expect(screen.getByRole("dialog")).toHaveTextContent("The stock ran out.");
   });
 
@@ -1510,5 +1530,96 @@ describe("the controls added from play-testing", () => {
     expect(
       within(screen.getByLabelText(/your melds/i)).getByText(/7 cards · clean/),
     ).toBeInTheDocument();
+  });
+});
+
+describe("a match of several rounds", () => {
+  it("says which round of how many, and the scores so far once past the first", () => {
+    mount(fakeSocket().socket, update({ view: { roundNumber: 2, scoresSoFar: [450, 120] } }));
+    expect(screen.getByText(/round 2 of 4 · minimum 90/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/scores so far/i)).toHaveTextContent("ana 450 · ben 120");
+  });
+
+  it("shows no running scores in the first round", () => {
+    mount(fakeSocket().socket);
+    expect(screen.getByText(/round 1 of 4 · minimum 60/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/scores so far/i)).toBeNull();
+  });
+
+  it("offers the next round, not a new game, while the match goes on", async () => {
+    const { socket, sent } = fakeSocket([{ ok: true, data: false }]);
+    mount(socket);
+    act(() =>
+      useSession.setState({
+        result: scored(
+          [
+            [0, 300],
+            [1, 500],
+          ],
+          1,
+          { matchOver: false, roundNumber: 1, totals: [300, 500] },
+        ),
+      }),
+    );
+    const dialog = screen.getByRole("dialog", { name: /round result/i });
+    expect(dialog).toHaveTextContent("Round 1 of 4 over");
+    expect(within(dialog).queryByRole("button", { name: /^play again$/i })).toBeNull();
+    // Ranked by the match so far: ben leads.
+    const rows = within(dialog).getAllByRole("row").slice(1);
+    expect(rows[0]).toHaveAccessibleName(/^ben/);
+    fireEvent.click(within(dialog).getByRole("button", { name: /^next round$/i }));
+    await waitFor(() => expect(sent).toEqual([{ event: "nextRound", args: [] }]));
+
+    act(() => useSession.getState().applyRoom(roomInfo({ nextRoundReady: [0] })));
+    expect(within(dialog).getByRole("status")).toHaveTextContent("Ready for round 2: ana (1 of 2)");
+    expect(within(dialog).getByRole("button", { name: /waiting for the others/i })).toBeDisabled();
+  });
+
+  it("names the winner at the end of the match, with the final totals", () => {
+    mount(fakeSocket().socket);
+    act(() =>
+      useSession.setState({
+        result: scored(
+          [
+            [0, 40],
+            [1, 90],
+          ],
+          0,
+          { matchOver: true, roundNumber: 4, totals: [2400, 1800] },
+        ),
+      }),
+    );
+    const dialog = screen.getByRole("dialog", { name: /round result/i });
+    expect(dialog).toHaveTextContent("ana wins!");
+    expect(dialog).toHaveTextContent("Final scores after 4 rounds");
+    expect(within(dialog).getByRole("row", { name: /^ana/ })).toHaveTextContent("2400");
+    expect(within(dialog).getByRole("button", { name: /^play again$/i })).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: /next round/i })).toBeNull();
+  });
+
+  it("calls a tie a tie", () => {
+    mount(fakeSocket().socket);
+    act(() =>
+      useSession.setState({
+        result: scored(
+          [
+            [0, 40],
+            [1, 90],
+          ],
+          0,
+          { matchOver: true, totals: [2000, 2000] },
+        ),
+      }),
+    );
+    expect(screen.getByRole("dialog")).toHaveTextContent("A tie between ana and ben!");
+  });
+
+  it("clears the last round's scores when the next one is dealt", () => {
+    mount(fakeSocket().socket);
+    act(() =>
+      useSession.setState({ result: scored([[0, 10]], 0, { matchOver: false, roundNumber: 1 }) }),
+    );
+    act(() => useSession.getState().applyUpdate(update({ view: { roundNumber: 2 } })));
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

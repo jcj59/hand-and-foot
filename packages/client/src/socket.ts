@@ -129,6 +129,10 @@ export function playAgain(socket: HfClientSocket): Promise<Ack<SeatCredentials>>
   return ask((ack) => socket.emit("playAgain", ack));
 }
 
+export function readyForNextRound(socket: HfClientSocket): Promise<Ack<boolean>> {
+  return ask((ack) => socket.emit("nextRound", ack));
+}
+
 export function stageMelds(
   socket: HfClientSocket,
   melds: readonly MeldPlay[],

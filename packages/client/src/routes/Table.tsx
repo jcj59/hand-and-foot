@@ -22,7 +22,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { isBlackThree, isWild, type Card, type Rank } from "@hf/shared";
 import { useNavigate } from "react-router-dom";
-import { leaveTable, pauseTable, play, playAgain, stageDraft } from "../actions";
+import { leaveTable, pauseTable, play, playAgain, readyForNextRound, stageDraft } from "../actions";
 import { isUnplayable, type PlayContext } from "../cards/handOrder";
 import { FaceDownPile, PlayingCard } from "../cards/PlayingCard";
 import { useSession } from "../session";
@@ -280,10 +280,18 @@ export function Table({ socket }: TableProps): React.ReactElement {
         <div className="flex flex-wrap items-baseline gap-x-3">
           <h1 className="text-lg font-semibold">Table {room.roomId}</h1>
           <p className="text-sm text-white/60">
-            Round {view.roundNumber} · minimum{" "}
+            Round {view.roundNumber} of {room.config.rounds} · minimum{" "}
             {room.config.layDownMinimums[view.roundNumber - 1] ?? "—"}
             {view.isDown ? " · you are down" : " · not down"}
           </p>
+          {/* The match so far, once there is one: it is what every later round is
+              being played for. */}
+          {view.roundNumber > 1 && (
+            <p aria-label="Scores so far" className="text-sm text-white/60">
+              Scores:{" "}
+              {view.scoresSoFar.map((total, seat) => `${nameOf(seat)} ${total}`).join(" · ")}
+            </p>
+          )}
         </div>
         {/* Once the round is over no turn is live, so there is no clock to show even
             if a deadline still arrives. */}
@@ -521,6 +529,8 @@ export function Table({ socket }: TableProps): React.ReactElement {
             })
           }
           notice={notice}
+          onNextRound={() => void readyForNextRound(socket, sink)}
+          seat={view.seat}
         />
       )}
     </main>
