@@ -458,6 +458,10 @@ describe("a table", () => {
     ws.send(JSON.stringify({ id: 2, event: "playAgain" }));
     ws.send(JSON.stringify({ id: 3, event: "playAgain" }));
     await until(() => acks.has(2) && acks.has(3));
+    // And a third click after the move has finished gets the same answer too.
+    ws.send(JSON.stringify({ id: 4, event: "playAgain" }));
+    await until(() => acks.has(4));
+    expect(acks.get(4)).toEqual(acks.get(2));
     ws.close();
     const first = acks.get(2)!;
     if (!first.ok) throw new Error(first.error);
