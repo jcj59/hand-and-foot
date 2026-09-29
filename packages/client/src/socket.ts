@@ -30,17 +30,16 @@ export const ACK_TIMEOUT_MS = 10_000;
 export const NO_RESPONSE = "the server did not respond — check your connection";
 
 /**
- * Where the server lives.
+ * Where the server lives: this page's own origin — the empty string — unless
+ * `VITE_SERVER_URL` says otherwise.
  *
- * A production build is served by the same Worker that runs the tables, so it
- * talks to its own origin — the empty string. In development the client and the
- * Node server run on separate ports, which exercises the server's CORS handling
- * rather than leaving it to be discovered later. `VITE_SERVER_URL` overrides both.
+ * In production the Worker that runs the tables serves the page too. In
+ * development Vite's dev server proxies `/api` to whichever server is running
+ * (see `vite.config.ts`), so the client is same-origin there as well and runs
+ * exactly as it will be deployed.
  */
-export function serverUrl(
-  env: { readonly VITE_SERVER_URL?: string; readonly DEV?: boolean } = import.meta.env,
-): string {
-  return env.VITE_SERVER_URL ?? (env.DEV ? "http://localhost:3000" : "");
+export function serverUrl(env: { readonly VITE_SERVER_URL?: string } = import.meta.env): string {
+  return env.VITE_SERVER_URL ?? "";
 }
 
 /**

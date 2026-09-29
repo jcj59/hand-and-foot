@@ -37,20 +37,23 @@ that I can own a project end to end, from technical design through deployment.
    React client          |  Home > Create/Join > Lobby > Table       |
    <<  PlayerView only <<  |  local staging, SVG cards, timers/overlays|
         ^                 +------------------------------------------+
-        | ViewUpdate (per-player filtered)      | actions over Socket.io
-        |                                        v
+        | ViewUpdate (per-player filtered)      | HTTP to sit down, then
+        |                                        v one WebSocket per table
    +----+------------------------------------------------------------+
-   | Server (single authoritative process)                            |
+   | Cloudflare Worker: serves the client, routes /api by table code   |
+   +----+------------------------------------------------------------+
+        |  one Durable Object per table code
+   +----v------------------------------------------------------------+
+   | Table (Room + TableChannel, shared with the Node server)          |
    |  +---------------+   validate / apply  +-----------------------+  |
-   |  | Game manager  |------------------->|  Rules engine (pure)  |  |
-   |  |  per room     |<-------------------| (state,action)=>state |  |
-   |  |  + pacing/    |   new state         +-----------------------+  |
-   |  |  timers/pause |        |  project a per-player PlayerView       |
-   |  +-------+-------+        |  append the action to the log          |
-   |          | write-behind   v                                        |
+   |  | Room: seats,  |------------------->|  Rules engine (pure)  |  |
+   |  |  pacing,      |<-------------------| (state,action)=>state |  |
+   |  |  timers/pause |   new state         +-----------------------+  |
+   |  +-------+-------+        |  project a per-player PlayerView       |
+   |          | write-through  v  append the action to the log          |
    +----------+---------- action log ---------------------------------+
               v
-        Postgres: append-only action log; replay to recover on restart
+        the table's own storage: record + append-only log; replay to recover
 ```
 
 The system has three components joined by a single shared contract.
@@ -61,6 +64,10 @@ isolation and allows the game to be simulated headlessly, a prerequisite for tra
 
 **Server.** Runs the authoritative engine for each room, validates incoming actions, projects a
 filtered view for each player, broadcasts it, and owns room lifecycle, pacing, and reconnection.
+The table logic — `Room` for the game around the engine and `TableChannel` for a table's
+connections — knows nothing about how it is hosted. In production each table is its own Cloudflare
+Durable Object; the same code also runs in a single Node process, with Postgres, for local play and
+for self-hosting.
 
 **Client.** A React application that renders only the filtered `PlayerView` it receives and submits
 validated actions. It never has access to another player's hidden cards.
@@ -163,11 +170,26 @@ cannot be stopped. Exposing the full rules surface belongs with the configurable
 
 ### Transport
 
-I used Socket.io for the transport layer. It provides rooms, acknowledgement callbacks (which map
-directly onto the submit-and-accept-or-reject action pattern), automatic reconnection, and liveness
-detection. These are well-understood concerns that did not warrant a custom implementation, and
-building them by hand would not have contributed to the parts of the system I set out to
-demonstrate.
+The first transport was Socket.io, which provides rooms, acknowledgement callbacks (a natural fit
+for submit-then-accept-or-reject), reconnection and liveness detection. It was replaced when the
+hosting moved to Cloudflare, because it assumes one server process holding every connection, and a
+Durable Object per table is the opposite shape.
+
+The replacement is small and keeps the same contract. Opening or joining a table is an HTTP
+request, because there is not yet a table to hold a socket to. Once seated, a client holds one
+plain WebSocket to that table, and each request is a JSON frame with an id that the reply echoes,
+which is all an acknowledgement callback ever was. Server pushes are frames with an event name. The
+client-side wrapper keeps Socket.io's surface — `emit` with a callback, `on`/`off`, `connect` and
+`disconnect` events — so nothing above it changed; underneath it reconnects with back-off and moves
+its socket when a player moves to another table. A dropped socket reconnects as a new connection
+that holds no seat until it presents its token again, exactly as before.
+
+Liveness is the client's job now, because a browser cannot send a WebSocket protocol ping. It sends
+a plain-text `ping` every 25 seconds, which keeps Cloudflare from closing an idle socket (it does so
+after roughly 100 seconds) and doubles as the client's own check: an interval with nothing heard
+back means the connection is dead, however open the browser believes it is, and the client drops
+and reopens it. The Node server additionally pings from its side, so that a seat whose client
+vanished is marked empty promptly.
 
 ### Pacing and disconnection
 
@@ -206,9 +228,9 @@ number. After the deal the player count is fixed, so the seat stays and is treat
 whose grace has already run out: the server plays it at once instead of stalling the table for a
 player who has said they are not coming back.
 
-A dropped connection is recovered by the client rather than the transport. Socket.io reconnects on
-its own, but to the server the result is a new socket carrying no seat, so the client presents its
-seat token again on every reconnect, not only when the page loads. This matters more than it first
+A dropped connection is recovered by the client rather than the transport. The transport reconnects
+on its own, but to the server the result is a new socket carrying no seat, so the client presents
+its seat token again on every reconnect, not only when the page loads. This matters more than it first
 appears: every deploy of the server restarts it, which reconnects every open tab at once, and a tab
 that did not reclaim its seat would show a live table whose every move is refused while the server,
 seeing the seat empty, plays it on the player's behalf. The client distinguishes a refused reclaim,
@@ -238,16 +260,17 @@ playing forever.
 
 ### Persistence
 
-A single server process holds each room's game in memory, which is sufficient for the intended
-scale but means a restart would otherwise drop in-progress games — and every deploy is a restart.
-Because the action log already exists, persistence is inexpensive: the log is written to Postgres
-and replayed to reconstruct active games on restart, rather than serializing the full game-state
-graph. The database is a durability backstop, not a coordinator; authoritative state remains in the
-single process.
+Whatever hosts a table holds its game in memory, which means a restart would otherwise drop
+in-progress games — and every deploy is a restart. Because the action log already exists,
+persistence is inexpensive: the log is written to storage and replayed to reconstruct active games
+on restart, rather than serializing the full game-state graph. Storage is a durability backstop,
+not a coordinator; authoritative state remains in memory with the table. The store is an interface
+with two implementations: Postgres for the Node server, and a Durable Object's own storage.
 
 The log cannot carry what happens around the game rather than in it — who is seated, who hosts,
-whether the table has dealt, who paused it — so each room also keeps a small record of those,
-rewritten when they change. Rooms are keyed in storage by an identifier of their own rather than by
+whether the table has dealt, who paused it, who has said they are ready for the next round, who has
+gone on to play again and where — so each room also keeps a small record of those, rewritten when
+they change. Rooms are keyed in storage by an identifier of their own rather than by
 their code, because six-character codes are short enough to come round again, and a new table must
 never inherit an old one's history. Nothing is deleted: a room that is reaped is only marked closed,
 since a finished game reproduces a defect exactly, can become a regression test, and is a training
@@ -267,20 +290,57 @@ how much of it had been used died with the process. A paused table stays paused.
 returns, a restored room is abandoned and runs no clock, so a restart never has the server playing
 turns for tables nobody has come back to.
 
-The deployment follows from holding rooms in one process. The server runs as exactly one machine,
+The Node server's deployment follows from holding rooms in one process. It runs as exactly one machine,
 because a second would be a second, disjoint set of tables. Deploys stop the old process before
 starting the new one: the old one hears SIGTERM, stops its clocks and writes out what it still owes
 the database, and the new one restores every open room before it accepts a connection. Running the
 two side by side, as a blue-green deploy would, would have both writing the same rooms.
 
-Writing out what it owes is bounded in time. The host kills a process that has not exited within its
-kill timeout (30 seconds on Fly), and a flush against a database that has stopped answering would
+Writing out what it owes is bounded in time. A host kills a process that has not exited within its
+kill timeout (commonly 30 seconds), and a flush against a database that has stopped answering would
 otherwise retry each write for most of a minute. So once shutdown begins, a failing write is not
 retried, and the queue gets twenty seconds to drain; whatever remains is abandoned under a single
 log line naming each write, and the process exits on its own. The cost of a database outage during
 a deploy is therefore that the affected rooms come back a few moves behind or, where the gap falls
 mid-log, are refused on restore — and that it is on record which ones, rather than lost to a kill
 signal that says nothing.
+
+### Hosting: a Durable Object per table
+
+The game is played by one family, so the hosting had to cost nothing — not a few dollars a month,
+nothing — while still being an always-on server that anyone can reach by link. An always-on
+virtual machine fails the first requirement on every provider that does not eventually charge, and
+a serverless function fails the second, because a table is a set of long-lived connections around
+shared in-memory state with timers. Cloudflare's Durable Objects fit both: an object is a
+single-threaded actor addressed by name, with its own storage, that can hold WebSockets, and the
+free plan covers far more than this game uses.
+
+Each table is one object, addressed by its code. That is a better fit than the single process it
+replaced, not just a cheaper one. A table was always the unit of consistency — nothing in the game
+reads across tables — and an object gives exactly that unit a home: its requests are serialized,
+so there is no locking; its storage is transactional and local, so writes are synchronous and never
+queued behind the game; and it cannot be run twice at once, which is the invariant the Node
+deployment had to protect by hand. The one operation that crosses tables, moving players to the next
+game, is a call from one object to another. Codes are drawn at random and an object refuses to open
+a second table under a code it is already running, so a collision is retried rather than detected
+by a registry.
+
+The free plan bills an object for the time it spends in memory, and a table with players waiting
+at it is mostly idle. So sockets are accepted through the hibernation API: when nothing is
+happening, the runtime may evict the object from memory while its sockets stay open, and an
+evicted object is not billed. The next message wakes it, and waking is a restart — the constructor
+rebuilds the game from storage by replaying the log — followed by re-seating each still-open socket
+from the seat token it carries in its own attachment, so its player notices nothing. The keep-alive
+is answered by the runtime itself without waking the object. A running turn clock holds a timer,
+which keeps the object awake, so a table actually in play stays resident; it can sleep between
+rounds, while paused, and in the lobby. At about 450 GB-seconds per hour of play against a free
+allowance of 13,000 a day, that is ample. Moving the turn clock onto the object's alarm would let it
+sleep mid-round too, but only by persisting the clock's deadlines so that a wake does not restart
+the turn — complexity with no saving that matters at this scale.
+
+An abandoned table is closed by an alarm rather than by a sweep over every room, since there is no
+longer a process that holds them all: whenever the table empties it sets an alarm for when it would
+be abandoned long enough, and the alarm checks again when it fires.
 
 ## Testing
 
@@ -302,16 +362,18 @@ the test effort.
 
 - TypeScript across the stack, with a shared types package so the client and server contract is
   checked at compile time.
-- A pnpm and Turborepo monorepo with four packages: shared types, engine, server, and client.
-- React with Vite, Tailwind CSS, Zustand, and React Router on the client; a Node service running the
-  authoritative engine on the server.
+- A pnpm and Turborepo monorepo: shared types, engine, server (the table logic, and a Node host for
+  it), client, the client's transport, and the Cloudflare Worker.
+- React with Vite, Tailwind CSS, Zustand, and React Router on the client; the authoritative engine
+  in a Durable Object per table in production, or in a Node process.
 - Vitest and fast-check for tests, and ESLint and Prettier for consistency.
 - GitHub Actions runs type-checking, linting, tests, and formatting checks on every push and pull
   request.
-- The server is containerized and deployed to Fly.io as a single always-on instance; the client is
-  built statically and served from Vercel; game state is persisted to a managed Postgres database
-  (Neon). CI also builds the server image and checks that it answers its health check and shuts
-  down cleanly on SIGTERM, and a passing build on `main` deploys the server.
+- The whole game deploys as one Cloudflare Worker on the free plan: the Worker serves the built
+  client and routes each table's requests to its Durable Object. The Worker's tests run inside the
+  Workers runtime (workerd) and drive it with the real client transport, including eviction and
+  hibernation. CI bundles the Worker exactly as a deploy would, and a passing build on `main`
+  deploys it.
 
 ## Reinforcement-learning agent (design in progress)
 

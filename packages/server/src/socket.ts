@@ -97,7 +97,8 @@ export function attachTables(
       return;
     }
     // A bare 200 is what a host's health check needs, and the room count is a cheap
-    // sign of life when reading it by hand. The old path is kept for the Dockerfile.
+    // sign of life when reading it by hand. The old path is kept for hosts already
+    // configured to check it.
     if (request.method === "GET" && (path === HEALTH_PATH || path === "/healthz")) {
       return json(response, 200, { ok: true, rooms: manager.size });
     }

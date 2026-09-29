@@ -93,9 +93,9 @@ export const DEFAULT_RETRY_DELAYS_MS: readonly number[] = [100, 500, 2_000, 5_00
 
 /**
  * How long a shutdown waits for queued writes before giving up on them. It has to
- * fall well inside the host's kill timeout (`kill_timeout` in `fly.toml`, 30s),
- * leaving room to end the connection pool: a process killed mid-flush loses the
- * same writes, and says nothing about which.
+ * fall well inside a host's kill timeout (30s is a common default, Fly's among
+ * them), leaving room to end the connection pool: a process killed mid-flush
+ * loses the same writes, and says nothing about which.
  */
 export const DEFAULT_SHUTDOWN_DEADLINE_MS = 20_000;
 

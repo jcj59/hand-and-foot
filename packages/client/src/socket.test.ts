@@ -44,25 +44,13 @@ function fakeSocket(): {
 describe("serverUrl", () => {
   it("takes an explicit server address when one is set", () => {
     expect(serverUrl({ VITE_SERVER_URL: "https://hf.example" })).toBe("https://hf.example");
-    expect(serverUrl({ VITE_SERVER_URL: "https://hf.example", DEV: true })).toBe(
-      "https://hf.example",
-    );
   });
 
-  it("talks to the local server in development", () => {
-    // Pinned as a literal: the server's own default port.
-    expect(serverUrl({ DEV: true })).toBe("http://localhost:3000");
-  });
-
-  it("talks to its own origin in a production build", () => {
-    // The Worker that runs the tables serves the page too.
+  it("talks to its own origin otherwise, in development and production alike", () => {
+    // The Worker serves the page in production; Vite proxies /api in development.
     expect(serverUrl({})).toBe("");
-    expect(serverUrl({ DEV: false })).toBe("");
-  });
-
-  it("reads the real build-time environment when given none", () => {
-    // Tests run as a development build, with nothing setting VITE_SERVER_URL.
-    expect(serverUrl()).toBe("http://localhost:3000");
+    // Nothing sets VITE_SERVER_URL for the tests.
+    expect(serverUrl()).toBe("");
   });
 });
 

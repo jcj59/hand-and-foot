@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "dev": "pnpm --filter @hf/client build && wrangler dev",
+    "deploy": "pnpm --filter @hf/client build && wrangler deploy",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

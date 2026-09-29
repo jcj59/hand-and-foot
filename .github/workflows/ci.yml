@@ -33,26 +33,7 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
       - run: pnpm format:check
-      # What Vercel runs, so a client that will not build is caught here first.
+      # What the deploy runs, short of uploading: the client build, and the Worker
+      # bundled with it — which is where a Node-only import would first fail.
       - run: pnpm --filter @hf/client build
-
-  image:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: docker build -t hand-and-foot-server .
-      # Boot the image as Fly would, check it answers, and check it stops cleanly
-      # on SIGTERM — which it only does if the server itself is PID 1's process.
-      - name: Smoke test
-        run: |
-          docker run -d --name hf -p 8080:8080 hand-and-foot-server
-          for i in $(seq 1 30); do
-            curl -fsS http://localhost:8080/healthz && break
-            sleep 1
-          done
-          curl -fsS http://localhost:8080/healthz
-          docker stop --time 10 hf
-          code=$(docker inspect hf --format '{{.State.ExitCode}}')
-          docker logs hf
-          docker logs hf 2>&1 | grep -q "SIGTERM received, closing rooms"
-          test "$code" = "0"
+      - run: pnpm --filter @hf/worker exec wrangler deploy --dry-run --outdir "$RUNNER_TEMP/worker"
