@@ -22,6 +22,9 @@ function newRoom(
       seed: 7,
       newToken: () => `tok-${tokens++}`,
       reconnectGraceMs,
+      // These tests let the server play every seat for many turns on purpose;
+      // pausing for idleness is tested in room.idle.test.ts.
+      pauseWhenIdle: false,
     },
   );
   room.join("ana");

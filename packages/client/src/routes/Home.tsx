@@ -11,6 +11,7 @@ import { useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ROOM_CODE_LENGTH, type GameMode, type RulesPreset } from "@hf/shared";
 import { createTable, joinTable } from "../actions";
+import { loadCredentials } from "../credentials";
 import { isPossibleRoomCode, normalizeRoomCode } from "../roomCode";
 import { useSession } from "../session";
 import type { HfClientSocket } from "../socket";
@@ -27,7 +28,9 @@ export function Home({ socket }: HomeProps): React.ReactElement {
   const notice = useSession((s) => s.notice);
   // A seat this tab still holds — the player came to the main screen from a table
   // without leaving it — and the way back to it.
-  const held = useSession((s) => s.credentials);
+  // A seat held in this tab, or one saved by an earlier visit that has not been
+  // reclaimed: reloading the home screen leaves it unclaimed until Rejoin.
+  const held = useSession((s) => s.credentials) ?? loadCredentials();
 
   const [name, setName] = useState("");
   const [code, setCode] = useState(fromLink ? normalizeRoomCode(fromLink) : "");

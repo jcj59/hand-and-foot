@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { EAST_COAST, type Ack, type RoomInfo, type ViewUpdate } from "@hf/shared";
 import { App } from "./App";
@@ -208,11 +208,11 @@ describe("routing", () => {
 });
 
 describe("reclaiming a stored seat", () => {
-  it("asks for the seat back once the socket is up", async () => {
+  it("asks for the seat back once the socket is up, on reloading the table's page", async () => {
     // This is what makes a reload recoverable rather than a lost place.
     saveCredentials({ roomId: "ABC234", seat: 1, token: "tok" });
     const socket = fakeSocket([{ ok: true, data: { roomId: "ABC234", seat: 1, token: "tok" } }]);
-    mount(socket.socket);
+    mount(socket.socket, "/room/ABC234");
     socket.fire("connect");
     await waitFor(() => expect(socket.sent).toHaveLength(1));
     expect(socket.sent[0]).toEqual({
@@ -226,10 +226,59 @@ describe("reclaiming a stored seat", () => {
     // The host left while this browser was away and the seats closed up.
     saveCredentials({ roomId: "ABC234", seat: 1, token: "tok" });
     const socket = fakeSocket([{ ok: true, data: { roomId: "ABC234", seat: 0, token: "tok" } }]);
-    mount(socket.socket);
+    mount(socket.socket, "/room/ABC234");
     socket.fire("connect");
     await waitFor(() => expect(useSession.getState().credentials?.seat).toBe(0));
     expect(loadCredentials()?.seat).toBe(0);
+  });
+
+  it("stays on the home screen when that is what was reloaded, offering the way back", async () => {
+    saveCredentials({ roomId: "ABC234", seat: 1, token: "tok" });
+    const socket = fakeSocket([{ ok: true, data: { roomId: "ABC234", seat: 1, token: "tok" } }]);
+    mount(socket.socket, "/");
+    socket.fire("connect");
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    // Nothing asked of the server, and still home.
+    expect(socket.sent).toEqual([]);
+    expect(screen.getByRole("heading", { name: "Hand and Foot" })).toBeTruthy();
+    // Rejoining is one click, and only then is the seat reclaimed.
+    const rejoin = within(screen.getByRole("region", { name: "Your table" })).getByRole("button", {
+      name: "Rejoin",
+    });
+    expect(screen.getByText(/You still have a seat at table ABC234/)).toBeTruthy();
+    act(() => rejoin.click());
+    await waitFor(() => expect(socket.sent.map((s) => s.event)).toEqual(["resumeSeat"]));
+    await waitFor(() => expect(useSession.getState().credentials?.roomId).toBe("ABC234"));
+  });
+
+  it("does not reclaim a stored seat from another table's page", async () => {
+    saveCredentials({ roomId: "ABC234", seat: 1, token: "tok" });
+    const socket = fakeSocket();
+    mount(socket.socket, "/room/XYZ789");
+    socket.fire("connect");
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(socket.sent).toEqual([]);
+  });
+});
+
+describe("a table the server closes", () => {
+  it("sends the player home, saying why, and lets go of the seat", async () => {
+    const held = { roomId: "ABC234", seat: 0, token: "tok" };
+    useSession.getState().seat(held);
+    const socket = fakeSocket();
+    mount(socket.socket, "/room/ABC234");
+    socket.fire("connect");
+    socket.fire("room", roomInfo({ started: true }));
+    socket.fire("tableClosed", { reason: "paused" });
+    expect(screen.getByRole("heading", { name: "Hand and Foot" })).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toBe(
+      "The table was closed after being paused for 30 minutes.",
+    );
+    expect(useSession.getState().credentials).toBeNull();
+    expect(loadCredentials()).toBeNull();
+    // No Rejoin for a table that is gone.
+    expect(screen.queryByRole("region", { name: "Your table" })).toBeNull();
+    await waitFor(() => expect(socket.sent.map((s) => s.event)).toContain("leaveRoom"));
   });
 });
 
@@ -275,7 +324,7 @@ describe("moving up a seat", () => {
     // reaped. Keeping them would retry a doomed reclaim on every load.
     saveCredentials({ roomId: "ABC234", seat: 1, token: "stale" });
     const socket = fakeSocket([{ ok: false, error: "that seat is not yours" }]);
-    mount(socket.socket);
+    mount(socket.socket, "/room/ABC234");
     socket.fire("connect");
     await waitFor(() => expect(loadCredentials()).toBeNull());
     expect(useSession.getState().credentials).toBeNull();
@@ -292,7 +341,7 @@ describe("moving up a seat", () => {
       { ok: true, data: held },
       { ok: true, data: held },
     ]);
-    mount(socket.socket);
+    mount(socket.socket, "/room/ABC234");
     socket.fire("connect");
     await waitFor(() => expect(useSession.getState().credentials).toEqual(held));
     socket.fire("disconnect");
@@ -310,7 +359,7 @@ describe("moving up a seat", () => {
       const stored = { roomId: "ABC234", seat: 1, token: "tok" };
       saveCredentials(stored);
       const socket = fakeSocket(["silent", { ok: true, data: stored }]);
-      mount(socket.socket);
+      mount(socket.socket, "/room/ABC234");
       socket.fire("connect");
       expect(socket.sent).toHaveLength(1);
       await act(() => vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS));
@@ -335,7 +384,7 @@ describe("moving up a seat", () => {
     // so there is nothing left for a reconnect to ask for.
     saveCredentials({ roomId: "ABC234", seat: 1, token: "stale" });
     const socket = fakeSocket([{ ok: false, error: "that seat is not yours" }]);
-    mount(socket.socket);
+    mount(socket.socket, "/room/ABC234");
     socket.fire("connect");
     await waitFor(() => expect(loadCredentials()).toBeNull());
     socket.fire("disconnect");
@@ -381,7 +430,16 @@ describe("listener lifecycle", () => {
     unmount();
     expect(socket.removed.sort()).toEqual(
       // `connect` twice: once for the connection status, once to reclaim the seat.
-      ["connect", "connect", "disconnect", "room", "roundEnded", "seat", "view"].sort(),
+      [
+        "connect",
+        "connect",
+        "disconnect",
+        "room",
+        "roundEnded",
+        "seat",
+        "tableClosed",
+        "view",
+      ].sort(),
     );
   });
 

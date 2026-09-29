@@ -22,7 +22,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { isBlackThree, isWild, type Card, type Rank } from "@hf/shared";
 import { useNavigate } from "react-router-dom";
-import { leaveTable, pauseTable, play, playAgain, readyForNextRound, stageDraft } from "../actions";
+import {
+  leaveTable,
+  pauseTable,
+  play,
+  playAgain,
+  readyForNextRound,
+  saveTableForLater,
+  stageDraft,
+} from "../actions";
 import { isUnplayable, type PlayContext } from "../cards/handOrder";
 import { FaceDownPile, PlayingCard } from "../cards/PlayingCard";
 import { useSession } from "../session";
@@ -30,6 +38,7 @@ import type { HfClientSocket } from "../socket";
 import { Hand } from "../table/Hand";
 import { pulseStyle } from "../table/pulse";
 import { Melds } from "../table/Melds";
+import { PauseBar } from "../table/PauseBar";
 import { Seats } from "../table/Seats";
 import { RoundResult } from "../table/RoundResult";
 import { StagingPanel } from "../table/StagingPanel";
@@ -299,17 +308,18 @@ export function Table({ socket }: TableProps): React.ReactElement {
           {!result && (
             <div className="flex items-center gap-3">
               <TurnClock clock={clock} />
-              {room.config.pauseEnabled && (
+              {/* Resuming is the pause bar's, beside what the pause means. */}
+              {room.config.pauseEnabled && !clock.paused && (
                 <button
                   type="button"
                   disabled={busy}
                   onClick={() => {
                     setBusy(true);
-                    void pauseTable(socket, !clock.paused, sink).finally(() => setBusy(false));
+                    void pauseTable(socket, true, sink).finally(() => setBusy(false));
                   }}
                   className="rounded border border-white/25 px-3 py-1 text-sm disabled:opacity-40"
                 >
-                  {clock.paused ? "Resume" : "Pause"}
+                  Pause
                 </button>
               )}
             </div>
@@ -334,6 +344,20 @@ export function Table({ socket }: TableProps): React.ReactElement {
           seatToAct={hints.seatToAct}
         />
       </div>
+
+      <PauseBar
+        room={room}
+        nameOf={nameOf}
+        busy={busy}
+        onResume={() => {
+          setBusy(true);
+          void pauseTable(socket, false, sink).finally(() => setBusy(false));
+        }}
+        onSaveForLater={() => {
+          setBusy(true);
+          void saveTableForLater(socket, sink).finally(() => setBusy(false));
+        }}
+      />
 
       {lastLap && !result && (
         // Loud on purpose: a player who misses this plays their last turn as if the

@@ -46,6 +46,12 @@ export interface RoomRecord {
   readonly wentOn?: readonly string[];
   /** The next game's table. Absent from older records. */
   readonly nextRoomId?: string | null;
+  /** The table paused itself for want of anyone playing. Absent from older records. */
+  readonly idlePaused?: boolean;
+  /** When the current pause began, so a restart does not restart its time limit. */
+  readonly pausedSince?: number | null;
+  /** When a table saved for later stops being kept. */
+  readonly savedUntil?: number | null;
 }
 
 /** A room as loaded back: its record, and its log oldest first. */

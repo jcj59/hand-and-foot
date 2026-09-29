@@ -220,8 +220,15 @@ export class PostgresRoomStore implements RoomStore {
     this.writes.enqueue(`room ${room.id}`, () => {
       const players = sql.json(room.players as unknown as postgres.JSONValue);
       // Whichever of these the record has; an absent one stays absent on load.
-      const { nextRoundReady, wentOn, nextRoomId } = room;
-      const waiting = sql.json({ nextRoundReady, wentOn, nextRoomId } as postgres.JSONValue);
+      const { nextRoundReady, wentOn, nextRoomId, idlePaused, pausedSince, savedUntil } = room;
+      const waiting = sql.json({
+        nextRoundReady,
+        wentOn,
+        nextRoomId,
+        idlePaused,
+        pausedSince,
+        savedUntil,
+      } as postgres.JSONValue);
       return sql`
         insert into rooms (uid, code, config, seed, created_at, players, started, paused_seat, host_token, waiting)
         values (${room.uid}, ${room.id}, ${sql.json(room.config as unknown as postgres.JSONValue)},
@@ -294,7 +301,10 @@ export class PostgresRoomStore implements RoomStore {
         pausedSeat: row.paused_seat,
         hostToken: row.host_token,
         // Null on a row written before the column existed: nothing was pending.
-        ...((row.waiting ?? {}) as Pick<RoomRecord, "nextRoundReady" | "wentOn" | "nextRoomId">),
+        ...((row.waiting ?? {}) as Pick<
+          RoomRecord,
+          "nextRoundReady" | "wentOn" | "nextRoomId" | "idlePaused" | "pausedSince" | "savedUntil"
+        >),
       },
       actions: logs.get(row.uid) ?? [],
     }));

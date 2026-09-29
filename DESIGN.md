@@ -338,9 +338,33 @@ allowance of 13,000 a day, that is ample. Moving the turn clock onto the object'
 sleep mid-round too, but only by persisting the clock's deadlines so that a wake does not restart
 the turn — complexity with no saving that matters at this scale.
 
-An abandoned table is closed by an alarm rather than by a sweep over every room, since there is no
-longer a process that holds them all: whenever the table empties it sets an alarm for when it would
-be abandoned long enough, and the alarm checks again when it fires.
+A table is closed by an alarm rather than by a sweep over every room, since there is no longer a
+process that holds them all: whenever anything about the table changes it sets an alarm for when it
+would close, and the alarm checks again when it fires.
+
+### How long a table is kept
+
+Closing a table only once everyone had disconnected turned out not to be enough, because a tab left
+open counts as someone there: the client's keep-alive keeps it connected indefinitely. A table
+paused one morning was still open that evening. So a table's lifetime is now decided by one rule,
+`Room.closing`, which both hosts act on — the Node server's sweep and the Durable Object's alarm:
+
+- A paused table is closed half an hour after it was paused, whoever is still connected. A pause is
+  for a break; a tab left open on a paused table is not somebody playing.
+- A family table can be saved for later while paused, which keeps it for a week instead, and it is
+  not closed for being empty in the meantime, since everyone leaving is the point. Anyone who comes
+  back resumes it, and resuming makes it an ordinary table again.
+- A table nobody is playing pauses itself, once a whole lap of turns has been played by the clock
+  with nobody at the table moving; then the pause's half hour applies. Without this a forgotten,
+  unpaused table would be played by the server forever, since the default policy never melds and so
+  never ends a round — and on Cloudflare it would hold its object awake all the while. This applies
+  to competitive tables too, where players cannot pause: nobody chose this pause, so anyone may
+  resume it.
+- Otherwise, as before, a table everyone has left is closed half an hour after the last one went.
+
+When the pause began is saved with the table, so neither a restart nor a Durable Object waking gives
+a paused table a fresh half hour. Players still at a table when it closes are told why and sent
+home, rather than finding out on their next click.
 
 ## Testing
 

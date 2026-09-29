@@ -6,8 +6,8 @@
  * server injects its `Clock`.
  */
 import { useEffect, useRef, useState } from "react";
-import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
-import { reclaimOnReconnect, reclaimSeat } from "./actions";
+import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { leaveOnClose, reclaimOnReconnect, reclaimSeat } from "./actions";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { loadCredentials } from "./credentials";
 import { Home } from "./routes/Home";
@@ -29,6 +29,7 @@ export function App({ socket }: AppProps): React.ReactElement {
   const seat = useSession((s) => s.seat);
   const leave = useSession((s) => s.leave);
   const setNotice = useSession((s) => s.setNotice);
+  const navigate = useNavigate();
 
   useEffect(
     // The teardown is the function `attachSession` returns, so a remount detaches
@@ -48,6 +49,11 @@ export function App({ socket }: AppProps): React.ReactElement {
         setNotice,
       }),
     [socket, seat, leave, setNotice],
+  );
+
+  useEffect(
+    () => leaveOnClose(socket, { leave, setNotice, goHome: () => navigate("/") }),
+    [socket, leave, setNotice, navigate],
   );
 
   return (
@@ -88,10 +94,13 @@ function ResumeSeat({ socket }: { readonly socket: HfClientSocket }): null {
   const status = useSession((s) => s.status);
   const seat = useSession((s) => s.seat);
   const credentials = useSession((s) => s.credentials);
-  const [tried, setTried] = useState(false);
+  // The page it has settled for, so arriving at another page — the table, from
+  // the home screen's Rejoin — asks afresh.
+  const [triedFor, setTriedFor] = useState<string | null>(null);
   // One request per connection: a re-render while it is in flight must not ask
   // again, but a new connection must.
   const asked = useRef(false);
+  const { pathname } = useLocation();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -99,26 +108,29 @@ function ResumeSeat({ socket }: { readonly socket: HfClientSocket }): null {
       asked.current = false;
       return;
     }
-    if (tried || asked.current) return;
+    if (triedFor === pathname || asked.current) return;
     // A seat already held in this tab needs no reclaiming; this is for a fresh load.
     if (credentials) {
-      setTried(true);
+      setTriedFor(pathname);
       return;
     }
     const stored = loadCredentials();
-    if (!stored) {
-      setTried(true);
+    // Only the table's own page takes the player back to it. Reloading the home
+    // screen leaves them there, with its Rejoin offering the way back — being
+    // pulled into a game they had stepped away from is not what a reload means.
+    if (!stored || pathname.toUpperCase() !== `/ROOM/${stored.roomId.toUpperCase()}`) {
+      setTriedFor(pathname);
       return;
     }
     asked.current = true;
     void reclaimSeat(socket, stored, { seat }).then((outcome) => {
       if (outcome === "unreachable") return;
-      setTried(true);
-      // Back to the table they were at. Reloading the table URL makes this a no-op;
-      // reloading the home screen returns them to a game still in progress.
+      asked.current = false;
+      setTriedFor(pathname);
+      // The table URL as the server spells it, in case it was typed in lower case.
       if (outcome === "reclaimed") navigate(`/room/${stored.roomId}`, { replace: true });
     });
-  }, [tried, status, credentials, socket, seat, navigate]);
+  }, [triedFor, pathname, status, credentials, socket, seat, navigate]);
 
   return null;
 }

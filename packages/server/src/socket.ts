@@ -67,11 +67,12 @@ export function attachTables(
     return channel;
   };
   // A reaped room's channel goes with it, or it would be kept alive by the map.
-  manager.onRemove = (room) => {
+  manager.onRemove = (room, reason) => {
     const channel = channels.get(room.id);
     if (channel?.room !== room) return;
     channels.delete(room.id);
-    channel.retire();
+    if (reason) channel.close(reason);
+    else channel.retire();
   };
 
   const allowed = (origin: string | undefined): boolean =>

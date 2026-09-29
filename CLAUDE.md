@@ -449,6 +449,15 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
     references") where a real restart would not — tests cancel the room's timer first
     (`stopClock`). Eviction with `webSockets: "close"` only affects hibernatable sockets.
     `compatibility_date` cannot be newer than the local workerd supports (2026-08-15 now).
+- **Table lifetime (post-M5).** `Room.closing(abandonedMs)` is the one rule both hosts close tables
+  by (Node `RoomManager.sweep`, the Durable Object's alarm via the `TableHooks.changed` hook):
+  paused → `PAUSED_TABLE_MS` (30 min) after `pausedSince`; saved for later (family only, while
+  paused) → `SAVED_TABLE_MS` (7 days); else abandoned → `abandonedMs` after the last seat left. A
+  full lap of clock-played turns with no player move pauses the table itself (`idlePaused`, any
+  mode, anyone may resume). Clock tests that let the server play many turns opt out with
+  `RoomDeps.pauseWhenIdle: false`. Closing sends `tableClosed {reason}`; the client goes home with
+  a notice. Reloading the home screen no longer auto-rejoins a stored seat — only the table's own
+  URL does; Home's Rejoin reads the saved credentials.
 - **Bot milestone — the RL agent.** The point of the whole project. Design not yet written; the
   section in `DESIGN.md` is a placeholder. Observation = `PlayerView` (by construction the agent
   cannot see more than a human), reward is end-of-round. The evaluation baseline is **not**

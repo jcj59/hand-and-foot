@@ -9,7 +9,7 @@ import { EAST_COAST, type ServerFrame } from "@hf/shared";
 import { FakeClock } from "./clock";
 import { Room } from "./room";
 import { InMemoryRoomStore } from "./store";
-import { TableChannel, type Peer } from "./table";
+import { NOT_SEATED, TableChannel, type Peer } from "./table";
 
 const noNextTable = {
   nextTable: () => Promise.resolve({ ok: false as const, error: "no" }),
@@ -190,5 +190,62 @@ describe("going on to the next game", () => {
       result: { ok: false, error: "you have already gone on to the next game" },
     });
     expect(calls()).toBe(1);
+  });
+});
+
+describe("closing a table that was left", () => {
+  it("tells everyone seated why, then refuses whatever comes after", async () => {
+    const { channel } = table(["ana", "ben"]);
+    const [ana, stranger] = [peer(), peer()];
+    const a = channel.connect(ana);
+    channel.connect(stranger);
+    await ask(channel, a, "resumeSeat", { roomId: "TBL234", token: "tok-0" });
+    channel.close("paused");
+    expect(ana.frames.at(-1)).toEqual({ event: "tableClosed", payload: { reason: "paused" } });
+    // Only seated connections are at the table to be told.
+    expect(stranger.frames).toEqual([]);
+    await ask(channel, a, "startGame");
+    expect(ana.frames.at(-1)).toMatchObject({ result: { ok: false } });
+  });
+});
+
+describe("saving a paused game for later", () => {
+  it("is asked for over the channel, and everyone sees until when", async () => {
+    const { channel, room } = table(["ana", "ben"]);
+    const [ana, ben] = [peer(), peer()];
+    const a = channel.connect(ana);
+    const b = channel.connect(ben);
+    await ask(channel, a, "resumeSeat", { roomId: "TBL234", token: "tok-0" });
+    await ask(channel, b, "resumeSeat", { roomId: "TBL234", token: "tok-1" });
+    await ask(channel, a, "startGame");
+    await ask(channel, a, "saveForLater");
+    expect(ana.frames.at(-1)).toMatchObject({
+      result: { ok: false, error: "pause the table before saving it for later" },
+    });
+    await ask(channel, a, "setPaused", { paused: true });
+    await ask(channel, b, "saveForLater");
+    expect(ben.frames.filter((f) => "ack" in f).at(-1)).toMatchObject({ result: { ok: true } });
+    const savedUntil = room.info().savedUntil;
+    expect(savedUntil).not.toBeNull();
+    expect(ana.frames.at(-1)).toMatchObject({ event: "room", payload: { savedUntil } });
+    // A connection holding no seat cannot.
+    const nobody = peer();
+    await ask(channel, channel.connect(nobody), "saveForLater");
+    expect(nobody.frames.at(-1)).toMatchObject({ result: { ok: false, error: NOT_SEATED } });
+  });
+
+  it("lets the host know after every request, and after moves the server makes", async () => {
+    const { room } = table(["ana", "ben"]);
+    let changes = 0;
+    const channel = new TableChannel(room, { ...noNextTable, changed: () => changes++ });
+    const a = channel.connect(peer());
+    await ask(channel, a, "resumeSeat", { roomId: "TBL234", token: "tok-0" });
+    expect(changes).toBe(1);
+    room.onChange?.();
+    expect(changes).toBe(2);
+    // Not once the table is closed: there is nothing left to schedule.
+    channel.close("abandoned");
+    await ask(channel, a, "startGame");
+    expect(changes).toBe(2);
   });
 });

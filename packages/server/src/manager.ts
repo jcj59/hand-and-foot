@@ -3,6 +3,7 @@ import {
   ROOM_CODE_ALPHABET,
   ROOM_CODE_LENGTH,
   WEST_COAST,
+  type CloseReason,
   type RoomOptions,
   type RulesConfig,
 } from "@hf/shared";
@@ -84,7 +85,7 @@ export class RoomManager {
   private cancelSweep: (() => void) | null = null;
 
   /** Told when a room is removed, so whatever else holds it can let go too. */
-  onRemove: ((room: Room) => void) | null = null;
+  onRemove: ((room: Room, reason?: CloseReason) => void) | null = null;
 
   constructor(options: ManagerOptions = {}) {
     this.clock = options.clock ?? systemClock;
@@ -165,7 +166,8 @@ export class RoomManager {
     return { ok: true, value: { room, seat: joined.value.seat, token: joined.value.token } };
   }
 
-  remove(roomId: string): boolean {
+  /** Close a room; `reason` says why, when it was closed for being left idle. */
+  remove(roomId: string, reason?: CloseReason): boolean {
     const room = this.get(roomId);
     // Dropping the reference is not enough: a room holds a live timer, and one
     // left armed would keep firing against a table nobody can see.
@@ -173,12 +175,13 @@ export class RoomManager {
     // Closed in the store too, or the next boot would bring back a room that was
     // deliberately let go.
     if (room) this.store?.closeRoom(room.uid, this.clock.now());
-    if (room) this.onRemove?.(room);
+    if (room) this.onRemove?.(room, reason);
     return this.rooms.delete(roomId.toUpperCase());
   }
 
   /**
-   * Drop rooms nobody is in any more.
+   * Close rooms nobody is playing any more: everyone gone, or paused past the
+   * pause's limit — see `Room.closing`.
    *
    * This is not just tidiness. A table where every seat has dropped never ends
    * its round on its own — the default policy settles obligations and discards
@@ -189,12 +192,12 @@ export class RoomManager {
     const now = this.clock.now();
     const reaped: string[] = [];
     for (const [id, room] of this.rooms) {
-      const since = room.abandonedSince;
-      if (since === null || now - since < this.abandonedRoomMs) continue;
+      const closing = room.closing(this.abandonedRoomMs);
+      if (closing === null || now < closing.at) continue;
       // One teardown path, so a room can never be dropped without releasing its
       // timer. (In practice an abandoned room has already gone quiet, but that
       // is a property of `Room`, not something the manager should rely on.)
-      this.remove(id);
+      this.remove(id, closing.reason);
       reaped.push(id);
     }
     return reaped;

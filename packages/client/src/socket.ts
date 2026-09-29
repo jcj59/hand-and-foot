@@ -141,3 +141,7 @@ export function setHost(socket: HfClientSocket, seat: number): Promise<Ack<undef
 export function setPaused(socket: HfClientSocket, paused: boolean): Promise<Ack<undefined>> {
   return ask((ack) => socket.emit("setPaused", { paused }, ack));
 }
+
+export function saveForLater(socket: HfClientSocket): Promise<Ack<undefined>> {
+  return ask((ack) => socket.emit("saveForLater", ack));
+}
