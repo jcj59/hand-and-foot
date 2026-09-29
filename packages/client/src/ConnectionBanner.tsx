@@ -22,7 +22,7 @@ export function ConnectionBanner(): React.ReactElement | null {
     >
       {connecting
         ? "Connecting to the table…"
-        : "Disconnected — reconnecting. Your turns may be played for you."}
+        : "Disconnected, reconnecting now. Your turns may be played for you."}
     </div>
   );
 }

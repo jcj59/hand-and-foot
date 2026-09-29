@@ -95,7 +95,7 @@ describe("ask", () => {
     timers[0]();
     await expect(result).resolves.toEqual({
       ok: false,
-      error: "the server did not respond — check your connection",
+      error: "the server did not respond. Check your connection.",
     });
   });
 
@@ -131,7 +131,7 @@ describe("ask", () => {
     late!({ ok: true, data: 99 });
     expect(await result).toEqual({
       ok: false,
-      error: "the server did not respond — check your connection",
+      error: "the server did not respond. Check your connection.",
     });
   });
 

@@ -27,7 +27,7 @@ export const ACK_TIMEOUT_MS = 10_000;
  * connection is bad, and treating the two alike would throw a player out of a
  * game over a slow network.
  */
-export const NO_RESPONSE = "the server did not respond — check your connection";
+export const NO_RESPONSE = "the server did not respond. Check your connection.";
 
 /**
  * Where the server lives: this page's own origin — the empty string — unless
