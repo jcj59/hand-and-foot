@@ -40,6 +40,8 @@ export function soundsFor(before: Moment, now: Moment): Sound[] {
 
 const MUTE_KEY = "hf.muted";
 
+const UNLOCK_EVENTS = ["pointerdown", "pointerup", "touchend", "click", "keydown"] as const;
+
 function readMuted(): boolean {
   try {
     return window.localStorage.getItem(MUTE_KEY) === "1";
@@ -144,19 +146,28 @@ export function useTableSounds(now: Moment): {
   const ctx = useRef<AudioContext | null>(null);
   const before = useRef<Moment | null>(null);
 
-  // Audio may only start after the player has done something on the page.
+  // Audio may only start after the player has done something on the page. A touch
+  // counts as a gesture only when it ends, so the unlock listens to both ends of a
+  // press; iOS also wants a sound started inside that gesture, hence the silence.
   useEffect(() => {
     const Ctor = audioContextCtor();
     if (!Ctor) return;
     const unlock = (): void => {
-      if (!ctx.current) ctx.current = new Ctor();
-      void ctx.current.resume();
+      if (!ctx.current) {
+        const created = new Ctor();
+        ctx.current = created;
+        const silence = created.createBufferSource();
+        silence.buffer = created.createBuffer(1, 1, created.sampleRate);
+        silence.connect(created.destination);
+        silence.start(0);
+      }
+      if (ctx.current.state !== "running") ctx.current.resume().catch(() => {});
     };
-    window.addEventListener("pointerdown", unlock);
-    window.addEventListener("keydown", unlock);
+    for (const event of UNLOCK_EVENTS) window.addEventListener(event, unlock);
     return () => {
-      window.removeEventListener("pointerdown", unlock);
-      window.removeEventListener("keydown", unlock);
+      for (const event of UNLOCK_EVENTS) window.removeEventListener(event, unlock);
+      ctx.current?.close().catch(() => {});
+      ctx.current = null;
     };
   }, []);
 

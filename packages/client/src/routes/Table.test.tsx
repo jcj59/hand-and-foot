@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, beforeEach, vi } from "vitest";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import {
   EAST_COAST,
   type Ack,
@@ -2080,8 +2080,15 @@ describe("what just happened", () => {
 
 describe("sound", () => {
   /** An audio device that counts what it is asked to play. */
-  function fakeAudio(): { oscillators: number; noises: number; restore: () => void } {
-    const counts = { oscillators: 0, noises: 0 };
+  function fakeAudio(): {
+    oscillators: number;
+    noises: number;
+    silences: number;
+    contexts: number;
+    closed: number;
+    restore: () => void;
+  } {
+    const counts = { oscillators: 0, noises: 0, silences: 0, contexts: 0, closed: 0 };
     const node = () => ({
       connect: (n: unknown) => n,
       gain: {
@@ -2095,7 +2102,19 @@ describe("sound", () => {
       currentTime = 0;
       sampleRate = 8_000;
       destination = {};
-      resume = () => Promise.resolve();
+      state = "suspended";
+      constructor() {
+        counts.contexts++;
+      }
+      resume = () => {
+        this.state = "running";
+        return Promise.resolve();
+      };
+      close = () => {
+        counts.closed++;
+        this.state = "closed";
+        return Promise.resolve();
+      };
       createGain = node;
       createBiquadFilter = () => ({
         ...node(),
@@ -2104,12 +2123,17 @@ describe("sound", () => {
         Q: { value: 0 },
       });
       createBuffer = (_: number, length: number) => ({
+        length,
         getChannelData: () => new Float32Array(length),
       });
-      createBufferSource = () => {
-        counts.noises++;
-        return { ...node(), buffer: null, start() {} };
-      };
+      createBufferSource = () => ({
+        ...node(),
+        buffer: null as { length: number } | null,
+        start() {
+          if (this.buffer && this.buffer.length > 1) counts.noises++;
+          else counts.silences++;
+        },
+      });
       createOscillator = () => {
         counts.oscillators++;
         return { ...node(), type: "", frequency: { value: 0 }, start() {}, stop() {} };
@@ -2127,9 +2151,26 @@ describe("sound", () => {
     const audio = fakeAudio();
     try {
       mount(fakeSocket().socket, update({ hints: { seatToAct: 1 }, view: { currentSeat: 1 } }));
-      fireEvent.pointerDown(window);
+      fireEvent.pointerUp(window);
+      expect(audio.silences).toBe(1);
       act(() => useSession.getState().applyUpdate(update()));
       expect(audio.oscillators).toBe(2);
+    } finally {
+      audio.restore();
+    }
+  });
+
+  it("opens one audio context however many gestures unlock it, and closes it on leaving", () => {
+    const audio = fakeAudio();
+    try {
+      mount(fakeSocket().socket);
+      fireEvent.touchEnd(window);
+      fireEvent.click(window);
+      fireEvent.keyDown(window, { key: "a" });
+      expect(audio.contexts).toBe(1);
+      expect(audio.silences).toBe(1);
+      cleanup();
+      expect(audio.closed).toBe(1);
     } finally {
       audio.restore();
     }
@@ -2139,7 +2180,7 @@ describe("sound", () => {
     const audio = fakeAudio();
     try {
       mount(fakeSocket().socket, update({ hints: { seatToAct: 1 }, view: { currentSeat: 1 } }));
-      fireEvent.pointerDown(window);
+      fireEvent.touchEnd(window);
       const toggle = screen.getByRole("button", { name: "Turn sound off" });
       fireEvent.click(toggle);
       expect(screen.getByRole("button", { name: "Turn sound on" })).toHaveAttribute(
