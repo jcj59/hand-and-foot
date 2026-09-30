@@ -1871,9 +1871,13 @@ describe("on a phone", () => {
 });
 
 describe("laying a hand out in rows", () => {
-  it("fits whole cards to the screen: six across a 390-wide phone, five at 360", () => {
-    expect(perRow(390)).toBe(6);
-    expect(perRow(360)).toBe(5);
+  it("fits as many whole cards as the hand's measured width holds, gaps included", () => {
+    // Exactly six cards and their gaps are 356 wide; a pixel less fits five.
+    expect(perRow(356)).toBe(6);
+    expect(perRow(355)).toBe(5);
+    // A phone's hand uses 46-wide cards: a 390 phone's hand, beside the foot pile,
+    // is about 326 wide, which holds six.
+    expect(perRow(326, 46)).toBe(6);
     expect(perRow(100)).toBe(3);
   });
 
@@ -1930,7 +1934,8 @@ describe("laying a hand out in rows", () => {
         [...screen.getByRole("region", { name: "Your hand" }).querySelector(".pt-3")!.children].map(
           (row) => within(row as HTMLElement).getAllByRole("img").length,
         );
-      expect(rowSizes()).toEqual([4, 4, 4]);
+      // 330 holds six of a phone's 46-wide cards with their gaps.
+      expect(rowSizes()).toEqual([6, 6]);
       act(() => observers.at(-1)!.fire(1_000));
       expect(rowSizes()).toEqual([12]);
     } finally {

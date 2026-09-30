@@ -571,7 +571,13 @@ export function Table({ socket }: TableProps): React.ReactElement {
         </p>
       )}
 
-      <footer className="flex shrink-0 flex-col gap-2 border-t border-white/10 pt-2">
+      {/* On a phone the hand may take a little under half the screen and scrolls past
+          that, so the middle of the table is never pushed off it. */}
+      <footer
+        className={`flex shrink-0 flex-col gap-2 border-t border-white/10 pt-2 ${
+          phone ? "max-h-[48dvh] overflow-y-auto" : ""
+        }`}
+      >
         {!result && (
           <section className="flex flex-wrap items-center gap-2" aria-label="Your turn">
             {myTurn ? (

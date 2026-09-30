@@ -112,6 +112,7 @@ export function Hand({
         >
           <PlayingCard
             card={card}
+            size={rows ? "medium" : "normal"}
             selected={lifted}
             dimmed={isUnplayable(card, playContext)}
             onSelect={interactive ? onSelect : undefined}
@@ -148,7 +149,7 @@ export function Hand({
       {/* Side by side, never overlapping: every card's whole face is readable. */}
       {rows ? (
         <div ref={rowsRef} className="flex flex-col gap-1 pt-3">
-          {evenRows(sorted, perRow(rowsWidth)).map((row) => (
+          {evenRows(sorted, perRow(rowsWidth, PHONE_CARD_W)).map((row) => (
             <div key={row[0]!.id} className="flex gap-1">
               {row.map((card, i) => renderCard(card, i, row.length))}
             </div>
@@ -182,12 +183,16 @@ function useWidth<T extends HTMLElement>(): [(element: T | null) => void, number
   return [setElement, width];
 }
 
+/** The width of a card in a phone's hand; see `CardSize`. */
+const PHONE_CARD_W = 46;
+
 /**
- * How many whole cards fit across a space this wide: a card and its gap are 60
- * pixels, and the table keeps a little margin either side.
+ * How many whole cards `cardWidth` wide fit across the hand's own width, which
+ * is measured inside the table's margins: n cards take n card widths plus a
+ * 4-pixel gap between each.
  */
-export function perRow(width: number): number {
-  return Math.max(3, Math.floor((width - 24) / 60));
+export function perRow(width: number, cardWidth = 56): number {
+  return Math.max(3, Math.floor((width + 4) / (cardWidth + 4)));
 }
 
 /** The hand as rows of equal length, as few as fit `max` cards a row. */

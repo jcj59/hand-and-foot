@@ -15,7 +15,7 @@ import { cardLabel, rankLabel, suitSymbol } from "./cardText";
 import { pulseStyle } from "../table/pulse";
 import { isDeadWeight, isRedCard } from "./handOrder";
 
-export type CardSize = "large" | "normal" | "small";
+export type CardSize = "large" | "normal" | "medium" | "small";
 
 export interface PlayingCardProps {
   readonly card: Card;
@@ -36,6 +36,8 @@ const DIMENSIONS: Readonly<Record<CardSize, { readonly w: number; readonly h: nu
   // The piles in the middle of the table, which everyone watches.
   large: { w: 84, h: 120 },
   normal: { w: 56, h: 80 },
+  // A hand on a phone: whole cards, side by side, without taking the screen.
+  medium: { w: 46, h: 66 },
   small: { w: 36, h: 52 },
 };
 
