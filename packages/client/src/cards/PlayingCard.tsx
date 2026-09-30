@@ -138,7 +138,7 @@ export function PlayingCard({
       disabled={disabled}
       data-card-id={card.id}
       onClick={() => onSelect(card)}
-      className={`rounded transition-transform ${selected ? "-translate-y-2" : ""} ${
+      className={`rounded transition-transform duration-150 ease-out ${selected ? "-translate-y-3" : ""} ${
         dimmed ? "opacity-60" : ""
       } disabled:cursor-not-allowed disabled:opacity-40`}
     >

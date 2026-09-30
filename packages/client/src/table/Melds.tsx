@@ -73,19 +73,23 @@ export function Melds({
           kind === "incomplete" ? (
             <div className="flex -space-x-4">
               {sortForDisplay(meld.cards).map((card) => (
-                <PlayingCard key={card.id} card={card} size={size} />
+                <span key={card.id} data-motion={card.id}>
+                  <PlayingCard card={card} size={size} />
+                </span>
               ))}
             </div>
           ) : (
-            <BookCard
-              // A natural on top, so the rank is what shows, not a wild.
-              // A natural on top, so the rank is what shows, of the book's colour
-              // where there is one: red for clean, black for dirty.
-              top={bookTop(meld.cards, kind)}
-              kind={kind}
-              count={meld.cards.length}
-              size={size}
-            />
+            // One element shows the whole book, so it answers for every card in it.
+            <span data-motion={meld.cards.map((card) => card.id).join(" ")}>
+              <BookCard
+                // A natural on top, so the rank is what shows, of the book's colour
+                // where there is one: red for clean, black for dirty.
+                top={bookTop(meld.cards, kind)}
+                kind={kind}
+                count={meld.cards.length}
+                size={size}
+              />
+            </span>
           );
         const caption = (
           <span className="text-xs whitespace-nowrap text-white/60">
@@ -156,7 +160,11 @@ function MeldChips({
           selected ? "ring-2 ring-amber-300" : ""
         } ${pencilled ? "border-dashed border-sky-300" : ""}`;
         return (
-          <li key={meld.rank} aria-label={meldLabel(meld)}>
+          <li
+            key={meld.rank}
+            aria-label={meldLabel(meld)}
+            data-motion={meld.cards.map((card) => card.id).join(" ")}
+          >
             {onSelect ? (
               <button
                 type="button"

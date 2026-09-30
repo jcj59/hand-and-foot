@@ -31,6 +31,7 @@ export function Seats({ opponents, room, config, seatToAct }: SeatsProps): React
         return (
           <li
             key={opponent.seat}
+            data-anchor={`seat-${opponent.seat}`}
             aria-label={seatLabel(opponent, info?.name ?? `Seat ${opponent.seat}`, onTurn)}
             className={`flex min-w-44 flex-col gap-2 rounded border p-2 ${
               onTurn ? "border-amber-300 bg-amber-300/10" : "border-white/10 bg-black/20"

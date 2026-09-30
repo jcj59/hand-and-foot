@@ -476,6 +476,13 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   on turn. The server's `Room.noteMove` sets `ViewUpdate.lastMove`; the drawn card is stripped for
   every other seat (pinned in `room.lastmove.test.ts` and over the wire). The client's
   `useMoveNews` announces others' discards/pickups once per `seq` and marks the player's own draw.
+- **Card animations.** FLIP, no library: `table/motion.ts` plans (pure, unit-tested) and
+  `table/cardMotion.ts` plays them with the Web Animations API. Cards carry `data-motion` (their
+  ids; a collapsed book or chip lists all of its cards), places carry `data-anchor` (`stock`,
+  `discard`, `seat-N`). Movement runs only when a new `lastMove.seq` arrives; jsdom has no
+  `animate` and reduced-motion users get none, so tests see a static table. Verify visually with
+  Playwright frames captured right after a change (headless Chromium needs `LD_LIBRARY_PATH` at the
+  `pwlibs` conda env for nss/nspr/alsa on this machine).
 - **Bot milestone — the RL agent.** The point of the whole project. Design not yet written; the
   section in `DESIGN.md` is a placeholder. Observation = `PlayerView` (by construction the agent
   cannot see more than a human), reward is end-of-round. The evaluation baseline is **not**

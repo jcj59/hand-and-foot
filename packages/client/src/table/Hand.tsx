@@ -90,6 +90,7 @@ export function Hand({
     return (
       <span
         key={card.id}
+        data-motion={card.id}
         className="relative flex flex-col items-center gap-0.5"
         title={
           owed

@@ -19,7 +19,7 @@
  * that looks like a mistake (a wild, or a card the player could lay off on a meld
  * they already have) asks once more before it goes.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { isBlackThree, isWild, type Card, type Rank } from "@hf/shared";
 import { useNavigate } from "react-router-dom";
 import {
@@ -39,6 +39,7 @@ import { usePhone } from "../usePhone";
 import { Hand } from "../table/Hand";
 import { pulseStyle } from "../table/pulse";
 import { Melds } from "../table/Melds";
+import { useCardMotion } from "../table/cardMotion";
 import { useMoveNews } from "../table/moveNews";
 import { PauseBar } from "../table/PauseBar";
 import { OpponentStrip } from "../table/OpponentStrip";
@@ -119,6 +120,10 @@ export function Table({ socket }: TableProps): React.ReactElement {
   // On a phone the player's own melds are cards, as on the desktop, unless they
   // choose chips to save room; the choice is remembered on this device.
   const [compactMelds, setCompactMelds] = useState(() => readCompactMelds());
+
+  // Cards slide from where they were to where the latest move put them.
+  const tableRef = useRef<HTMLElement>(null);
+  useCardMotion(tableRef, update?.lastMove, update?.view.seat);
 
   const liveZone = update && (update.view.inFoot ? update.view.foot : update.view.hand);
   useEffect(() => {
@@ -319,9 +324,11 @@ export function Table({ socket }: TableProps): React.ReactElement {
   const canTake = myTurn && hints.canTakePile && !busy;
 
   const lastLap = view.finalLapRemaining !== null && view.wentOutSeat !== null;
+  // The pile's top card, which is the one that moves when the pile is played to.
+  const pileTop = view.discard.at(-1);
 
   return (
-    <main className="flex h-full flex-col gap-2 overflow-hidden p-2 sm:p-3">
+    <main ref={tableRef} className="flex h-full flex-col gap-2 overflow-hidden p-2 sm:p-3">
       <header
         className={`flex shrink-0 items-center justify-between gap-2 ${phone ? "" : "flex-wrap"}`}
       >
@@ -465,7 +472,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
                 <span className={news.card ? "" : "pl-2"}>{news.text}</span>
               </div>
             )}
-            <div className="flex flex-col items-center gap-1">
+            <div className="flex flex-col items-center gap-1" data-anchor="stock">
               <span className="text-xs text-white/60">Stock</span>
               <FaceDownPile
                 count={view.stockCount}
@@ -476,7 +483,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
               />
               {canDraw && <PilePrompt>Draw a card</PilePrompt>}
             </div>
-            <div className="flex flex-col items-center gap-1">
+            <div className="flex flex-col items-center gap-1" data-anchor="discard">
               <span className="text-xs text-white/60">Discard ({view.discard.length})</span>
               {canTake ? (
                 <button
@@ -485,11 +492,12 @@ export function Table({ socket }: TableProps): React.ReactElement {
                   onClick={() => void send({ type: "takePile" })}
                   style={pilePulse}
                   className="pile-prompt rounded p-1 ring-2 ring-amber-300 transition hover:bg-white/10"
+                  data-motion={pileTop?.id}
                 >
                   <DiscardPile cards={view.discard} size={phone ? "normal" : "large"} />
                 </button>
               ) : (
-                <div className="p-1">
+                <div className="p-1" data-motion={pileTop?.id}>
                   <DiscardPile cards={view.discard} size={phone ? "normal" : "large"} />
                 </div>
               )}
