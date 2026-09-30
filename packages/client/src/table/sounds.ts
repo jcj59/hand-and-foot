@@ -1,10 +1,10 @@
 /**
- * The table's sounds, synthesized with the Web Audio API.
+ * The table's sounds, played with the Web Audio API.
  *
- * Nothing is loaded: a card's flick is a short burst of filtered noise, and the
- * turn chime and round-end phrases are a few sine notes with a soft envelope. That
- * keeps the build free of audio files and licences, and every sound is a few lines
- * that can be tuned by ear.
+ * Each kind of move has one short recording (Kenney's Casino Audio, CC0, in
+ * `public/sounds`), played once per move however many cards it moves. The turn
+ * chime and round-end phrases are synthesized — a few sine notes with a soft
+ * envelope — and a synthesized flick stands in for a recording not yet loaded.
  *
  * What plays when is decided by `soundsFor`, a pure function over the table as it
  * was and as it is — so the decision is tested without a speaker, and the audio

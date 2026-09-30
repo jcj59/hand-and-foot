@@ -135,7 +135,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
   // The same, for the other players on a computer: shown in full unless collapsed.
   const [compactSeats, setCompactSeats] = useState(() => readFlag(COMPACT_SEATS_KEY));
 
-  // A flick for every card that moves, a chime when it is this player's turn, and
+  // One card sound for every move, a chime when it is this player's turn, and
   // a phrase when a round or the match ends.
   const { muted, setMuted } = useTableSounds({
     moveSeq: update?.lastMove?.seq ?? null,
