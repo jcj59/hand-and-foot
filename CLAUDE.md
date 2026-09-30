@@ -464,9 +464,10 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   46px `medium` cards sized to the measured width (`evenRows`/`perRow` in `Hand.tsx`). The footer
   holding the hand is capped at `48dvh` and scrolls, so a small phone keeps the piles in view; for
   that reason a card's menu opens as a bottom sheet portalled to `document.body`, not above the
-  card, where the scrolling footer would clip it. Desktop markup is unchanged. jsdom has no
-  `matchMedia`, so tests get the desktop layout by default; phone tests define
-  `window.matchMedia` matching `PHONE_QUERY` and delete it afterwards.
+  card, where the scrolling footer would clip it. On a computer the other players are shown in
+  full, but a "Collapse players" toggle swaps in the same `OpponentStrip` (remembered per device,
+  `hf.compactSeats`). jsdom has no `matchMedia`, so tests get the desktop layout by default; phone
+  tests define `window.matchMedia` matching `PHONE_QUERY` and delete it afterwards.
 - **Take-back and the latest move (post-M5).** `takeBack` (engine `takeBack.ts`) restores
   `GameState.turnBase`, the seat before the turn's first play; `withTurnBase` keeps the *first*
   base, and `withoutTurnBase` (in `core.ts`) clears it at turn end, at go-out, and when a play
@@ -479,10 +480,13 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
 - **Card animations.** FLIP, no library: `table/motion.ts` plans (pure, unit-tested) and
   `table/cardMotion.ts` plays them with the Web Animations API. Cards carry `data-motion` (their
   ids; a collapsed book or chip lists all of its cards), places carry `data-anchor` (`stock`,
-  `discard`, `seat-N`). Movement runs only when a new `lastMove.seq` arrives; jsdom has no
-  `animate` and reduced-motion users get none, so tests see a static table. Verify visually with
-  Playwright frames captured right after a change (headless Chromium needs `LD_LIBRARY_PATH` at the
-  `pwlibs` conda env for nss/nspr/alsa on this machine).
+  `discard`, `seat-N`), and zones carry `data-zone` (`hand`, `melds`, `pile`, `seat`). Only a card
+  that changed zone slides — plus the hand closing up — because a meld that grew shifts the rest by
+  layout alone; and a card scrolled out of view (clipped by a scrolling ancestor) is never flown,
+  or its copy is drawn over the hand. Movement runs only when a new `lastMove.seq` arrives; jsdom
+  has no `animate` and reduced-motion users get none, so tests see a static table. Verify visually
+  with Playwright frames captured right after a change (headless Chromium needs `LD_LIBRARY_PATH`
+  at the `pwlibs` conda env for nss/nspr/alsa on this machine).
 - **Sounds.** `table/sounds.ts`: synthesized with Web Audio (no audio files). `soundsFor` (pure,
   tested) maps a change in `{moveSeq, moveKind, myTurn, result}` to sounds: a card flick per move, a
   riffle for a pile pickup, a chime when the turn comes to this player, phrases for round and match

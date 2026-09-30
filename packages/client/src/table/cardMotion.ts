@@ -9,7 +9,7 @@
  */
 import { useLayoutEffect, useRef, type RefObject } from "react";
 import type { LastMove } from "@hf/shared";
-import { planMotion, type Box, type Ghost, type Slide } from "./motion";
+import { planMotion, type Box, type Ghost, type Slide, type Spot } from "./motion";
 
 /** How long a card takes to slide into place. */
 export const SLIDE_MS = 420;
@@ -24,16 +24,68 @@ function box(el: Element): Box {
 }
 
 interface Measured {
-  readonly cards: Map<string, Box>;
+  readonly cards: Map<string, Spot>;
   readonly elements: Map<string, HTMLElement>;
   readonly anchors: Map<string, Box>;
 }
 
+/**
+ * The rectangles an element's scrolling ancestors clip it to, up to the table.
+ * Cards share most of their ancestors, so each ancestor's answer is kept in `seen`
+ * for the rest of one measurement rather than read again per card.
+ */
+function clipsOf(
+  el: HTMLElement,
+  root: HTMLElement,
+  seen: Map<HTMLElement, readonly DOMRect[]>,
+): readonly DOMRect[] {
+  const at = el.parentElement;
+  if (!at || at === root.parentElement) return [];
+  const known = seen.get(at);
+  if (known) return known;
+  const style = getComputedStyle(at);
+  const above = clipsOf(at, root, seen);
+  const clips =
+    style.overflowY === "visible" && style.overflowX === "visible"
+      ? above
+      : [at.getBoundingClientRect(), ...above];
+  seen.set(at, clips);
+  return clips;
+}
+
+/**
+ * How much of an element its scrolling ancestors leave in view, up to the table.
+ * The middle of the table and the phone's hand both scroll, and a card scrolled
+ * out of either must not be flown across what is in view.
+ */
+function inView(
+  el: HTMLElement,
+  root: HTMLElement,
+  seen: Map<HTMLElement, readonly DOMRect[]>,
+): boolean {
+  const r = el.getBoundingClientRect();
+  if (r.width === 0 || r.height === 0) return false;
+  let top = r.top;
+  let bottom = r.bottom;
+  let left = r.left;
+  let right = r.right;
+  for (const clip of clipsOf(el, root, seen)) {
+    top = Math.max(top, clip.top);
+    bottom = Math.min(bottom, clip.bottom);
+    left = Math.max(left, clip.left);
+    right = Math.min(right, clip.right);
+  }
+  const shown = Math.max(0, bottom - top) * Math.max(0, right - left);
+  return shown >= 0.5 * r.width * r.height;
+}
+
 function measure(root: HTMLElement): Measured {
-  const cards = new Map<string, Box>();
+  const cards = new Map<string, Spot>();
   const elements = new Map<string, HTMLElement>();
+  const clips = new Map<HTMLElement, readonly DOMRect[]>();
   for (const el of root.querySelectorAll<HTMLElement>("[data-motion]")) {
-    const where = box(el);
+    const zone = el.closest<HTMLElement>("[data-zone]")?.dataset.zone ?? "table";
+    const where: Spot = { ...box(el), zone, visible: inView(el, root, clips) };
     for (const id of el.dataset.motion!.split(" ")) {
       // The first place a card is shown wins; it is the one players are looking at.
       if (cards.has(id)) continue;
@@ -163,7 +215,7 @@ export function useCardMotion(
   move: LastMove | undefined,
   mySeat: number | undefined,
 ): void {
-  const before = useRef<Map<string, Box>>(new Map());
+  const before = useRef<Map<string, Spot>>(new Map());
   const seen = useRef<number | null>(null);
   // Nothing animates on the first measurement: a move already there when the page
   // opened happened before anyone was watching.

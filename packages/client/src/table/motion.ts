@@ -28,6 +28,17 @@ export interface Box {
   readonly h: number;
 }
 
+/** Where a card is shown: its box, the zone it is in, and whether it can be seen. */
+export interface Spot extends Box {
+  /** `hand`, `melds`, `pile`, or `seat`: which part of the table shows the card. */
+  readonly zone: string;
+  /**
+   * Whether the card is actually in view — not scrolled out of the middle of the
+   * table, say. A card out of view has nowhere visible to fly from or to.
+   */
+  readonly visible: boolean;
+}
+
 /** Slide an element from `from` to where it now is. */
 export interface Slide {
   readonly kind: "slide";
@@ -54,8 +65,8 @@ const STILL_PX = 12;
 export function planMotion(
   move: LastMove,
   mySeat: number,
-  before: ReadonlyMap<string, Box>,
-  after: ReadonlyMap<string, Box>,
+  before: ReadonlyMap<string, Spot>,
+  after: ReadonlyMap<string, Spot>,
   anchors: ReadonlyMap<string, Box>,
 ): Motion[] {
   const plans: Motion[] = [];
@@ -73,10 +84,18 @@ export function planMotion(
   };
 
   for (const [id, now] of after) {
+    // A card that lands out of view is not animated: its flight would be drawn
+    // over whatever is in view there instead.
+    if (!now.visible) continue;
     const was = before.get(id);
     if (was) {
+      if (!was.visible) continue;
+      // A card that stayed in its zone has only been moved by the layout — a meld
+      // that grew, a hand that wrapped — except in the hand, where the cards
+      // closing up around one that left is worth seeing.
+      if (was.zone === now.zone && now.zone !== "hand") continue;
       if (Math.hypot(was.x - now.x, was.y - now.y) < STILL_PX) continue;
-      plans.push({ kind: "slide", id, from: was, reveal: false });
+      plans.push({ kind: "slide", id, from: box(was), reveal: false });
       continue;
     }
     const from = originOfNew(id);
@@ -96,4 +115,8 @@ export function planMotion(
     }
   }
   return plans;
+}
+
+function box(spot: Spot): Box {
+  return { x: spot.x, y: spot.y, w: spot.w, h: spot.h };
 }

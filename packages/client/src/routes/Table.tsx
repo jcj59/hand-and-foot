@@ -120,7 +120,9 @@ export function Table({ socket }: TableProps): React.ReactElement {
   );
   // On a phone the player's own melds are cards, as on the desktop, unless they
   // choose chips to save room; the choice is remembered on this device.
-  const [compactMelds, setCompactMelds] = useState(() => readCompactMelds());
+  const [compactMelds, setCompactMelds] = useState(() => readFlag(COMPACT_MELDS_KEY));
+  // The same, for the other players on a computer: shown in full unless collapsed.
+  const [compactSeats, setCompactSeats] = useState(() => readFlag(COMPACT_SEATS_KEY));
 
   // A flick for every card that moves, a chime when it is this player's turn, and
   // a phrase when a round or the match ends.
@@ -425,7 +427,25 @@ export function Table({ socket }: TableProps): React.ReactElement {
       </header>
 
       <div className="shrink-0">
-        {phone ? (
+        {!phone && (
+          // On a computer the other players are shown in full, with their melds;
+          // collapsed, they are the phone's strip of chips, a tap from the melds.
+          <div className="flex items-center justify-between px-3 pt-1 text-xs text-white/60">
+            <span>Players</span>
+            <button
+              type="button"
+              aria-pressed={compactSeats}
+              onClick={() => {
+                setCompactSeats(!compactSeats);
+                writeFlag(COMPACT_SEATS_KEY, !compactSeats);
+              }}
+              className="rounded border border-white/20 px-2 py-0.5 text-white/70"
+            >
+              {compactSeats ? "Show players" : "Collapse players"}
+            </button>
+          </div>
+        )}
+        {phone || compactSeats ? (
           <OpponentStrip
             opponents={view.opponents}
             room={room}
@@ -502,7 +522,11 @@ export function Table({ socket }: TableProps): React.ReactElement {
               />
               {canDraw && <PilePrompt>Draw a card</PilePrompt>}
             </div>
-            <div className="flex flex-col items-center gap-1" data-anchor="discard">
+            <div
+              className="flex flex-col items-center gap-1"
+              data-anchor="discard"
+              data-zone="pile"
+            >
               <span className="text-xs text-white/60">Discard ({view.discard.length})</span>
               {canTake ? (
                 <button
@@ -539,7 +563,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
             </p>
           )}
 
-          <section className="flex flex-col gap-2" aria-label="Your melds">
+          <section className="flex flex-col gap-2" aria-label="Your melds" data-zone="melds">
             <div className="flex items-center gap-3">
               <h2 className="text-sm font-medium text-white/80">Your melds</h2>
               {phone && view.melds.length > 0 && (
@@ -548,7 +572,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
                   aria-pressed={compactMelds}
                   onClick={() => {
                     setCompactMelds(!compactMelds);
-                    writeCompactMelds(!compactMelds);
+                    writeFlag(COMPACT_MELDS_KEY, !compactMelds);
                   }}
                   className="rounded border border-white/20 px-2 py-0.5 text-xs text-white/70"
                 >
@@ -869,18 +893,19 @@ function PilePrompt({ children }: { readonly children: React.ReactNode }): React
 }
 
 const COMPACT_MELDS_KEY = "hf.compactMelds";
+const COMPACT_SEATS_KEY = "hf.compactSeats";
 
-function readCompactMelds(): boolean {
+function readFlag(key: string): boolean {
   try {
-    return window.localStorage.getItem(COMPACT_MELDS_KEY) === "1";
+    return window.localStorage.getItem(key) === "1";
   } catch {
     return false;
   }
 }
 
-function writeCompactMelds(compact: boolean): void {
+function writeFlag(key: string, on: boolean): void {
   try {
-    window.localStorage.setItem(COMPACT_MELDS_KEY, compact ? "1" : "0");
+    window.localStorage.setItem(key, on ? "1" : "0");
   } catch {
     // Blocked storage: the choice lasts until the page is reloaded.
   }
