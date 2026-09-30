@@ -120,7 +120,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
   );
   // On a phone the player's own melds are cards, as on the desktop, unless they
   // choose chips to save room; the choice is remembered on this device.
-  const [compactMelds, setCompactMelds] = useState(() => readCompactMelds());
+  const [compactMelds, setCompactMelds] = useState(() => readFlag(COMPACT_MELDS_KEY));
   // The same, for the other players on a computer: shown in full unless collapsed.
   const [compactSeats, setCompactSeats] = useState(() => readFlag(COMPACT_SEATS_KEY));
 
@@ -426,21 +426,24 @@ export function Table({ socket }: TableProps): React.ReactElement {
         </div>
       </header>
 
-      <div className="relative shrink-0">
+      <div className="shrink-0">
         {!phone && (
           // On a computer the other players are shown in full, with their melds;
           // collapsed, they are the phone's strip of chips, a tap from the melds.
-          <button
-            type="button"
-            aria-pressed={compactSeats}
-            onClick={() => {
-              setCompactSeats(!compactSeats);
-              writeFlag(COMPACT_SEATS_KEY, !compactSeats);
-            }}
-            className="absolute -top-1 right-0 z-10 rounded border border-white/20 bg-felt-900 px-2 py-0.5 text-xs text-white/70"
-          >
-            {compactSeats ? "Show players" : "Collapse players"}
-          </button>
+          <div className="flex items-center justify-between px-3 pt-1 text-xs text-white/60">
+            <span>Players</span>
+            <button
+              type="button"
+              aria-pressed={compactSeats}
+              onClick={() => {
+                setCompactSeats(!compactSeats);
+                writeFlag(COMPACT_SEATS_KEY, !compactSeats);
+              }}
+              className="rounded border border-white/20 px-2 py-0.5 text-white/70"
+            >
+              {compactSeats ? "Show players" : "Collapse players"}
+            </button>
+          </div>
         )}
         {phone || compactSeats ? (
           <OpponentStrip
@@ -569,7 +572,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
                   aria-pressed={compactMelds}
                   onClick={() => {
                     setCompactMelds(!compactMelds);
-                    writeCompactMelds(!compactMelds);
+                    writeFlag(COMPACT_MELDS_KEY, !compactMelds);
                   }}
                   className="rounded border border-white/20 px-2 py-0.5 text-xs text-white/70"
                 >
@@ -903,22 +906,6 @@ function readFlag(key: string): boolean {
 function writeFlag(key: string, on: boolean): void {
   try {
     window.localStorage.setItem(key, on ? "1" : "0");
-  } catch {
-    // Blocked storage: the choice lasts until the page is reloaded.
-  }
-}
-
-function readCompactMelds(): boolean {
-  try {
-    return window.localStorage.getItem(COMPACT_MELDS_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function writeCompactMelds(compact: boolean): void {
-  try {
-    window.localStorage.setItem(COMPACT_MELDS_KEY, compact ? "1" : "0");
   } catch {
     // Blocked storage: the choice lasts until the page is reloaded.
   }
