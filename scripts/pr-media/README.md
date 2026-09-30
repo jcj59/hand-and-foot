@@ -17,7 +17,8 @@ an animation) in its description, under `## Screenshots`.
    Arguments: `<out.png> <width> <height> <action> <mode>`. Modes stage a state
    (`mine`, `theirs`) or a change to capture mid-animation (`draw`, `discard`,
    `oppdraw`, `grabby`), with `FRAMES=40,120,300` giving the milliseconds after the
-   change to capture. `BIG_MELDS=1` adds enough melds that the middle scrolls.
+   change to capture. `BIG_MELDS=1` adds enough melds that the middle scrolls;
+   `GRABBY_ME=1` makes the viewer the Grabby Pants holder.
    On this machine Chromium needs nss/nspr/alsa from the `pwlibs` conda env.
 
    For "before" shots, build and render the base branch first.
