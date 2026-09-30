@@ -56,7 +56,7 @@ export function OpponentStrip({
           const clean = books.filter((kind) => kind === "clean").length;
           const held = opponent.inFoot ? opponent.footCount : opponent.handCount;
           return (
-            <li key={opponent.seat} className="shrink-0">
+            <li key={opponent.seat} className="shrink-0" data-anchor={`seat-${opponent.seat}`}>
               <button
                 type="button"
                 aria-label={chipLabel(nameOf(opponent.seat), opponent, onTurn, clean, books.length)}
