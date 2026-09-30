@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { EAST_COAST, type Ack, type RoomInfo, type ViewUpdate } from "@hf/shared";
 import { App } from "./App";
@@ -266,7 +266,7 @@ describe("a table the server closes", () => {
   it("sends the player home, saying why, and lets go of the seat", async () => {
     const held = { roomId: "ABC234", seat: 0, token: "tok" };
     useSession.getState().seat(held);
-    const socket = fakeSocket();
+    const socket = fakeSocket([{ ok: true, data: held }]);
     mount(socket.socket, "/room/ABC234");
     socket.fire("connect");
     socket.fire("room", roomInfo({ started: true }));
@@ -280,6 +280,49 @@ describe("a table the server closes", () => {
     // No Rejoin for a table that is gone.
     expect(screen.queryByRole("region", { name: "Your table" })).toBeNull();
     await waitFor(() => expect(socket.sent.map((s) => s.event)).toContain("leaveRoom"));
+  });
+});
+
+describe("a new game after an old one", () => {
+  it("shows none of the old game's scoreboard at the new table", async () => {
+    // Round 1 of a game ends, the player goes to the main menu, opens a new table,
+    // and is dealt round 1 there: the old scoreboard must not come with them.
+    const old = { roomId: "OLD234", seat: 0, token: "old" };
+    useSession.getState().seat(old);
+    const socket = fakeSocket([
+      // Reclaiming the old seat as the socket connects, then opening the new table.
+      { ok: true, data: old },
+      { ok: true, data: { roomId: "NEW234", seat: 0, token: "new" } },
+    ]);
+    mount(socket.socket, "/room/OLD234");
+    socket.fire("connect");
+    const oldRoom = roomInfo({ roomId: "OLD234", started: true });
+    const round1 = (room: RoomInfo): ViewUpdate => {
+      const u = viewUpdate(room);
+      return { ...u, view: { ...u.view, roundNumber: 1 } };
+    };
+    socket.fire("view", round1(oldRoom));
+    socket.fire("roundEnded", {
+      scores: [
+        { seat: 0, score: 100, breakdown: {} },
+        { seat: 1, score: 50, breakdown: {} },
+      ],
+      roundNumber: 1,
+      totals: [100, 50],
+      matchOver: false,
+    });
+    expect(screen.getByText(/Round 1 of 4 over/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Main menu" }));
+    fireEvent.change(screen.getByRole("textbox", { name: /your name/i }), {
+      target: { value: "ana" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /open a new table/i }));
+    await waitFor(() => expect(useSession.getState().credentials?.roomId).toBe("NEW234"));
+
+    socket.fire("view", round1(roomInfo({ roomId: "NEW234", started: true })));
+    expect(screen.queryByText(/Round 1 of 4 over/)).toBeNull();
+    expect(useSession.getState().result).toBeNull();
   });
 });
 

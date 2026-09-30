@@ -212,6 +212,57 @@ const run = async () => {
             lastMove: { seq: 6, seat: 0, kind: "discard", card: c("7", "clubs") },
           });
         }
+        if (mode === "stale") {
+          // A finished round at one table, then a fresh deal (round 1) at another.
+          const bd = {
+            cleanBooks: 0,
+            dirtyBooks: 0,
+            bookBonus: 0,
+            meldedCards: 0,
+            goOutBonus: 0,
+            heldCount: 0,
+            heldPenalty: 0,
+          };
+          ws.send(
+            JSON.stringify({
+              event: "view",
+              payload: {
+                ...base,
+                view: { ...view, roundNumber: 1, playedThisTurn: [] },
+                room: { ...room, roomId: "OLD234" },
+              },
+            }),
+          );
+          ws.send(
+            JSON.stringify({
+              event: "roundEnded",
+              payload: {
+                scores: [0, 1, 2].map((seat) => ({
+                  seat,
+                  score: 1000 - seat * 300,
+                  breakdown: bd,
+                })),
+                wentOutSeat: 2,
+                roundNumber: 1,
+                totals: [1000, 700, 400],
+                matchOver: false,
+              },
+            }),
+          );
+          later(700, {
+            ...base,
+            view: {
+              ...view,
+              roundNumber: 1,
+              melds: [],
+              isDown: false,
+              playedThisTurn: [],
+              opponents: view.opponents.slice(0, 1),
+              scoresSoFar: [0, 0],
+            },
+            room: { ...room, roomId: "NEW234", players: room.players.slice(0, 2) },
+          });
+        }
         if (mode === "grabby") {
           setTimeout(
             () =>

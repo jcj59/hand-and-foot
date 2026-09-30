@@ -62,6 +62,12 @@ export const useSession = create<SessionState>((set, get) => ({
 
   seat: (credentials) => {
     saveCredentials(credentials);
+    // A different table: nothing held about the old one — its room, its last view,
+    // above all its scoreboard — belongs at this one.
+    if (get().credentials?.roomId !== credentials.roomId) {
+      set({ credentials, room: null, update: null, result: null });
+      return;
+    }
     set({ credentials });
   },
 
@@ -87,8 +93,13 @@ export const useSession = create<SessionState>((set, get) => ({
     set({
       update,
       room: update.room,
-      // A fresh deal ends the previous round's scoreboard.
-      result: update.view.roundNumber !== get().update?.view.roundNumber ? null : get().result,
+      // A fresh deal ends the previous round's scoreboard — and a view from another
+      // table ends any scoreboard at all, even at the same round number.
+      result:
+        update.room.roomId !== get().update?.room.roomId ||
+        update.view.roundNumber !== get().update?.view.roundNumber
+          ? null
+          : get().result,
     });
   },
 
