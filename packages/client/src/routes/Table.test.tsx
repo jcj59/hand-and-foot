@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, beforeEach, vi } from "vitest";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import {
   EAST_COAST,
   type Ack,
@@ -2075,5 +2075,154 @@ describe("what just happened", () => {
     expect(screen.getByRole("status", { name: "Latest move" }).textContent).toBe(
       "ben picked up the pile (12 cards)",
     );
+  });
+});
+
+describe("sound", () => {
+  /** An audio device that counts what it is asked to play. */
+  function fakeAudio(): {
+    oscillators: number;
+    noises: number;
+    silences: number;
+    contexts: number;
+    closed: number;
+    restore: () => void;
+  } {
+    const counts = { oscillators: 0, noises: 0, silences: 0, contexts: 0, closed: 0 };
+    const node = () => ({
+      connect: (n: unknown) => n,
+      gain: {
+        value: 0,
+        setValueAtTime() {},
+        linearRampToValueAtTime() {},
+        exponentialRampToValueAtTime() {},
+      },
+    });
+    class FakeContext {
+      currentTime = 0;
+      sampleRate = 8_000;
+      destination = {};
+      state = "suspended";
+      constructor() {
+        counts.contexts++;
+      }
+      resume = () => {
+        this.state = "running";
+        return Promise.resolve();
+      };
+      close = () => {
+        counts.closed++;
+        this.state = "closed";
+        return Promise.resolve();
+      };
+      createGain = node;
+      createBiquadFilter = () => ({
+        ...node(),
+        type: "",
+        frequency: { value: 0 },
+        Q: { value: 0 },
+      });
+      createBuffer = (_: number, length: number) => ({
+        length,
+        getChannelData: () => new Float32Array(length),
+      });
+      createBufferSource = () => ({
+        ...node(),
+        buffer: null as { length: number } | null,
+        start() {
+          if (this.buffer && this.buffer.length > 1) counts.noises++;
+          else counts.silences++;
+        },
+      });
+      createOscillator = () => {
+        counts.oscillators++;
+        return { ...node(), type: "", frequency: { value: 0 }, start() {}, stop() {} };
+      };
+    }
+    Object.defineProperty(window, "AudioContext", { configurable: true, value: FakeContext });
+    return Object.assign(counts, {
+      restore: () => delete (window as { AudioContext?: unknown }).AudioContext,
+    });
+  }
+
+  afterEach(() => window.localStorage.removeItem("hf.muted"));
+
+  it("chimes when the turn comes round, once the player has touched the page", () => {
+    const audio = fakeAudio();
+    try {
+      mount(fakeSocket().socket, update({ hints: { seatToAct: 1 }, view: { currentSeat: 1 } }));
+      fireEvent.pointerUp(window);
+      expect(audio.silences).toBe(1);
+      act(() => useSession.getState().applyUpdate(update()));
+      expect(audio.oscillators).toBe(2);
+    } finally {
+      audio.restore();
+    }
+  });
+
+  it("opens one audio context however many gestures unlock it, and closes it on leaving", () => {
+    const audio = fakeAudio();
+    try {
+      mount(fakeSocket().socket);
+      fireEvent.touchEnd(window);
+      fireEvent.click(window);
+      fireEvent.keyDown(window, { key: "a" });
+      expect(audio.contexts).toBe(1);
+      expect(audio.silences).toBe(1);
+      cleanup();
+      expect(audio.closed).toBe(1);
+    } finally {
+      audio.restore();
+    }
+  });
+
+  it("riffles for a pile pickup and plays a phrase at the end of a round and the match", () => {
+    const audio = fakeAudio();
+    try {
+      mount(fakeSocket().socket);
+      fireEvent.pointerUp(window);
+      act(() =>
+        useSession
+          .getState()
+          .applyUpdate(update({ lastMove: { seq: 3, seat: 1, kind: "takePile", count: 4 } })),
+      );
+      expect(audio.noises).toBe(5);
+      act(() =>
+        useSession.setState({ result: scored([[0, 10]], 0, { matchOver: false, roundNumber: 1 }) }),
+      );
+      expect(audio.oscillators).toBe(3);
+      // Clearing the result reopens this player's turn, which chimes.
+      act(() => useSession.setState({ result: null }));
+      expect(audio.oscillators).toBe(3 + 2);
+      act(() => useSession.setState({ result: scored([[0, 10]], 0, { matchOver: true }) }));
+      expect(audio.oscillators).toBe(3 + 2 + 5);
+    } finally {
+      audio.restore();
+    }
+  });
+
+  it("stays silent when muted, and remembers the choice", () => {
+    const audio = fakeAudio();
+    try {
+      mount(fakeSocket().socket, update({ hints: { seatToAct: 1 }, view: { currentSeat: 1 } }));
+      fireEvent.touchEnd(window);
+      const toggle = screen.getByRole("button", { name: "Turn sound off" });
+      fireEvent.click(toggle);
+      expect(screen.getByRole("button", { name: "Turn sound on" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(window.localStorage.getItem("hf.muted")).toBe("1");
+      act(() =>
+        useSession
+          .getState()
+          .applyUpdate(
+            update({ lastMove: { seq: 3, seat: 1, kind: "discard", card: card("4", "clubs") } }),
+          ),
+      );
+      expect(audio.oscillators + audio.noises).toBe(0);
+    } finally {
+      audio.restore();
+    }
   });
 });

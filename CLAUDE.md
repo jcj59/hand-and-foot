@@ -483,6 +483,12 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   `animate` and reduced-motion users get none, so tests see a static table. Verify visually with
   Playwright frames captured right after a change (headless Chromium needs `LD_LIBRARY_PATH` at the
   `pwlibs` conda env for nss/nspr/alsa on this machine).
+- **Sounds.** `table/sounds.ts`: synthesized with Web Audio (no audio files). `soundsFor` (pure,
+  tested) maps a change in `{moveSeq, moveKind, myTurn, result}` to sounds: a card flick per move, a
+  riffle for a pile pickup, a chime when the turn comes to this player, phrases for round and match
+  end. The `AudioContext` is created on the first user gesture (`UNLOCK_EVENTS`; a touch only counts
+  when it ends, so both ends of a press are listened for) per browser autoplay rules, and closed on
+  unmount; mute is per device (`hf.muted`).
 - **Bot milestone — the RL agent.** The point of the whole project. Design not yet written; the
   section in `DESIGN.md` is a placeholder. Observation = `PlayerView` (by construction the agent
   cannot see more than a human), reward is end-of-round. The evaluation baseline is **not**
