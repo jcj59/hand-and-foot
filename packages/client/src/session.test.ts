@@ -48,6 +48,7 @@ function viewUpdate(overrides: { serverNow?: number; roundNumber?: number } = {}
       phase: "draw",
       roundNumber,
       pickedUp: [],
+      playedThisTurn: [],
       wentOutSeat: null,
       finalLapRemaining: null,
       scoresSoFar: [],

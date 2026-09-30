@@ -207,6 +207,13 @@ export interface GameState {
   readonly wentOutSeat?: number;
   /** Every finished round's scores, oldest first; the current round is not in it. */
   readonly pastRounds?: readonly (readonly RoundScore[])[];
+  /**
+   * The seat on turn as it was before its first play this turn, while it has
+   * played anything that can still be taken back; see `takeBack`. Cleared when
+   * the turn ends, and when picking up the foot mid-turn makes the plays before
+   * it final.
+   */
+  readonly turnBase?: { readonly seat: number; readonly player: PlayerState };
 }
 
 /** What one player can see of another player: counts, not hidden card contents. */
@@ -247,6 +254,12 @@ export interface PlayerView {
    */
   readonly pickedUp: readonly string[];
   /**
+   * Ids of the viewer's own cards played to melds this turn that can still be
+   * taken back — the viewer's own, and only while it is their turn. Empty
+   * otherwise.
+   */
+  readonly playedThisTurn: readonly string[];
+  /**
    * Who went out, once someone has. Public: every seat sees the go-out as it
    * happens, and the table has to be able to say so.
    */
@@ -276,6 +289,13 @@ export type Action =
   | { readonly type: "takePile" }
   | { readonly type: "playMelds"; readonly melds: readonly MeldPlay[] }
   | { readonly type: "discard"; readonly cardId: string }
+  /**
+   * Undo every meld played this turn: the cards go back to the zone they came
+   * from and the melds are as they were before the turn's first play. The draw or
+   * the pile pickup stays; so does a foot picked up mid-turn, and the plays before
+   * it, since the player has seen the foot.
+   */
+  | { readonly type: "takeBack" }
   /**
    * Deal the next round of the match, once this one has ended and it was not the
    * last. Not a player's move but the table's: the server submits it once everyone

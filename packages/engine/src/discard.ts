@@ -7,6 +7,7 @@ import {
   ok,
   setActiveCards,
   updatePlayer,
+  withoutTurnBase,
 } from "./core";
 import { claimsGoOut } from "./goout";
 
@@ -48,7 +49,7 @@ export function applyDiscard(state: GameState, cardId: string): ApplyResult {
   // nobody has gone out yet. Otherwise the player has just shed every card and the
   // turn ends normally.
   if (player.inFoot && remaining.length === 0 && claimsGoOut(state, player)) {
-    return ok({ ...afterDiscard, roundEnded: true, wentOutSeat: seat });
+    return ok({ ...withoutTurnBase(afterDiscard), roundEnded: true, wentOutSeat: seat });
   }
 
   // Emptying the hand by discarding makes the foot pending for next turn.

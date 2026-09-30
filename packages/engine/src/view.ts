@@ -8,6 +8,16 @@ import type { GameState, OpponentView, PlayerView } from "@hf/shared";
  * stock) is reduced to a count. Public information is passed through unchanged.
  * This is the anti-cheat boundary: it is the only thing a client should receive.
  */
+/** Ids of the seat's cards melded this turn that can still be taken back. */
+function playedThisTurn(state: GameState, seat: number): string[] {
+  const base = state.turnBase;
+  if (!base || base.seat !== seat || state.currentSeat !== seat) return [];
+  const before = new Set(base.player.melds.flatMap((meld) => meld.cards.map((card) => card.id)));
+  return state.players[seat].melds.flatMap((meld) =>
+    meld.cards.filter((card) => !before.has(card.id)).map((card) => card.id),
+  );
+}
+
 export function project(state: GameState, seat: number): PlayerView {
   const self = state.players[seat];
 
@@ -40,6 +50,9 @@ export function project(state: GameState, seat: number): PlayerView {
     // The viewer's own obligation, and only ever theirs: `OpponentView` has no such
     // field, so another seat's is not merely omitted here but unrepresentable.
     pickedUp: self.pickedUp ?? [],
+    // Also the viewer's own, and only on their own turn: a base kept for another
+    // seat says nothing here.
+    playedThisTurn: playedThisTurn(state, seat),
     wentOutSeat: state.wentOutSeat ?? null,
     // Zero means the lap is over, which the round having ended already says.
     finalLapRemaining: state.finalLapRemaining ? state.finalLapRemaining : null,

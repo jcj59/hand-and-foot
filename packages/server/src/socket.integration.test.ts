@@ -410,6 +410,22 @@ describe("playing over the wire", () => {
     expect(JSON.stringify(opponent)).not.toContain(hostBox.last!.view.hand[before].id);
   });
 
+  it("tells only the drawer which card they drew, and everyone that a card was drawn", async () => {
+    const { host, guest } = await seatTwo();
+    trackViews(host);
+    trackViews(guest);
+    await startGame(host);
+    const mine = waitFor(host, "view", (u) => u.lastMove?.kind === "draw");
+    const theirs = waitFor(guest, "view", (u) => u.lastMove?.kind === "draw");
+    expect((await submit(host, { type: "draw" })).ok).toBe(true);
+    const [own, other] = await Promise.all([mine, theirs]);
+    const drawn = own.lastMove!.card!;
+    expect(own.view.hand.map((c) => c.id)).toContain(drawn.id);
+    expect(other.lastMove).toEqual({ seq: own.lastMove!.seq, seat: own.view.seat, kind: "draw" });
+    // Over the wire, not just in the projection: the id is nowhere in the guest's update.
+    expect(JSON.stringify(other)).not.toContain(drawn.id);
+  });
+
   it("rejects an out-of-turn action and leaves the game untouched", async () => {
     const { server, host, guest, roomId } = await seatTwo();
     await startGame(host);

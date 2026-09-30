@@ -30,7 +30,14 @@ export interface MeldsProps {
    * cards. For a phone, where a row of fanned melds would take the whole screen.
    */
   readonly chips?: boolean;
+  /**
+   * Cards played this turn, which can still be taken back. A meld holding any is
+   * outlined dashed — pencilled in, not yet inked — until the turn ends.
+   */
+  readonly provisionalIds?: ReadonlySet<string>;
 }
+
+const NONE: ReadonlySet<string> = new Set();
 
 export function Melds({
   melds,
@@ -39,11 +46,21 @@ export function Melds({
   onSelect,
   selectedRank = null,
   chips = false,
+  provisionalIds = NONE,
 }: MeldsProps): React.ReactElement {
   if (melds.length === 0) {
     return <p className="text-xs text-white/40">Not down yet.</p>;
   }
-  if (chips) return <MeldChips melds={melds} onSelect={onSelect} selectedRank={selectedRank} />;
+  if (chips) {
+    return (
+      <MeldChips
+        melds={melds}
+        onSelect={onSelect}
+        selectedRank={selectedRank}
+        provisionalIds={provisionalIds}
+      />
+    );
+  }
 
   return (
     <ul className="flex flex-wrap gap-3">
@@ -51,6 +68,7 @@ export function Melds({
         const kind = classifyBook(meld);
         const size = compact ? "small" : "normal";
         const selected = selectedRank === meld.rank;
+        const pencilled = meld.cards.some((card) => provisionalIds.has(card.id));
         const face =
           kind === "incomplete" ? (
             <div className="flex -space-x-4">
@@ -73,6 +91,7 @@ export function Melds({
           <span className="text-xs whitespace-nowrap text-white/60">
             {meld.cards.length} cards{kind === "incomplete" ? "" : ` · ${kind}`}
             {!compact && ` · ${meldPoints(meld, config)}`}
+            {pencilled && " · this turn"}
           </span>
         );
         return (
@@ -85,13 +104,17 @@ export function Melds({
                 onClick={() => onSelect(meld.rank)}
                 className={`flex flex-col items-start gap-1 rounded p-1 ${
                   selected ? "ring-2 ring-amber-300" : "hover:bg-white/5"
-                }`}
+                } ${pencilled ? "outline-2 outline-offset-2 outline-sky-300 outline-dashed" : ""}`}
               >
                 {face}
                 {caption}
               </button>
             ) : (
-              <div className="flex flex-col items-start gap-1 p-1">
+              <div
+                className={`flex flex-col items-start gap-1 rounded p-1 ${
+                  pencilled ? "outline-2 outline-offset-2 outline-sky-300 outline-dashed" : ""
+                }`}
+              >
                 {face}
                 {caption}
               </div>
@@ -107,7 +130,8 @@ function MeldChips({
   melds,
   onSelect,
   selectedRank,
-}: Pick<MeldsProps, "melds" | "onSelect" | "selectedRank">): React.ReactElement {
+  provisionalIds = NONE,
+}: Pick<MeldsProps, "melds" | "onSelect" | "selectedRank" | "provisionalIds">): React.ReactElement {
   return (
     <ul className="flex flex-wrap gap-1.5">
       {melds.map((meld) => {
@@ -127,9 +151,10 @@ function MeldChips({
             {wilds > 0 && <span className="text-[10px] text-white/50">{wilds}w</span>}
           </>
         );
+        const pencilled = meld.cards.some((card) => provisionalIds.has(card.id));
         const shape = `flex items-baseline gap-1 rounded border px-2 py-0.5 ${look} ${
           selected ? "ring-2 ring-amber-300" : ""
-        }`;
+        } ${pencilled ? "border-dashed border-sky-300" : ""}`;
         return (
           <li key={meld.rank} aria-label={meldLabel(meld)}>
             {onSelect ? (

@@ -5,6 +5,7 @@ import { applyDiscard } from "./discard";
 import { applyPlayMelds } from "./playMelds";
 import { applyNextRound } from "./nextRound";
 import { applyTakePile } from "./takePile";
+import { applyTakeBack } from "./takeBack";
 
 export type { ApplyResult };
 
@@ -29,5 +30,7 @@ export function applyAction(state: GameState, action: Action): ApplyResult {
       return applyPlayMelds(state, action.melds);
     case "discard":
       return applyDiscard(state, action.cardId);
+    case "takeBack":
+      return applyTakeBack(state);
   }
 }

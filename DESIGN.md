@@ -123,6 +123,21 @@ against the rules or logged as a move; its only use is that a player whose clock
 turn the server takes over after a disconnect, has the largest part of it the rules accept played
 for them rather than lost.
 
+Nothing played during a turn is final until the turn ends, as at a real table, where a player who
+put a wild on the wrong meld picks it back up before discarding. The engine keeps the seat as it
+was before the turn's first play (`GameState.turnBase`), and a `takeBack` action restores it: the
+cards return to the hand, the melds are as they were, a go-down made this turn is undone, and a
+take-pile obligation the plays had settled is owed again. The client then puts the same cards
+straight back into the lay-down being built, so moving a wild is a correction rather than a rebuild.
+Two things are never undone: the draw or pickup, and a foot picked up mid-turn by melding the hand
+away — picking it up clears the base, because undoing past it would let a player replan with cards
+they have now seen. Because it is an ordinary action, it is logged and replays like any other.
+
+What a player just did is sent with every view (`ViewUpdate.lastMove`), so the table can announce
+another player's discard or pickup instead of leaving players to notice a changed card. A drawn
+card is included only in the drawer's own update; everyone else learns that a card was drawn, not
+which, and that is pinned over the wire as well as in the projection.
+
 ### Legality decided once, on the server
 
 The interface has to know which moves are available in order to be usable: an enabled button that the
@@ -426,6 +441,7 @@ work, in order:
 2. A configurable rules editor, since the engine is already fully config-driven.
 3. An interactive tutorial that teaches the game through guided scenarios.
 4. ~~Support for large tables on mobile.~~ Done: below 768px the table stacks vertically, with
-   opponents as a strip of summary chips (tap one for its melds), melds as compact chips, and the
-   hand as an overlapping fan that splits into rows when long.
+   opponents as a strip of summary chips (tap one for its melds), the player's own melds as cards
+   that can be collapsed to compact chips, and the hand in even rows sized to the screen, so no
+   card ever overlaps another.
 5. A competitive layer with accounts, matchmaking, and ranked play.

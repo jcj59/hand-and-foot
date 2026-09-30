@@ -3,9 +3,11 @@ import {
   MIN_PLAYERS,
   type Action,
   type ActionSource,
+  type Card,
   type ClockState,
   type CloseReason,
   type GameState,
+  type LastMove,
   type MeldPlay,
   type RoomInfo,
   type RoundEnded,
@@ -235,6 +237,8 @@ export class Room {
   private savedUntil: number | null = null;
   /** Turns played for their seats in a row, with nobody at the table moving. */
   private idleTurns = 0;
+  /** The latest move, for views; see `noteMove`. Not saved: it is only news. */
+  private lastMove: LastMove | null = null;
 
   constructor(id: string, config: RulesConfig, deps: RoomDeps) {
     this.id = id;
@@ -531,6 +535,8 @@ export class Room {
     if (!dealt.ok) return false;
     this.log.append(state.currentSeat, { type: "nextRound" }, "player", this.deps.clock.now());
     this.ready.clear();
+    // A new deal has no latest move; the last round's is not news in this one.
+    this.lastMove = null;
     this.save();
     this.draft = null;
     this.idleTurns = 0;
@@ -722,6 +728,7 @@ export class Room {
     if (source === "player") this.idleTurns = 0;
     this.state = result.state;
     this.log.append(seat, action, source, this.deps.clock.now());
+    this.noteMove(seat, action, state, result.state);
     this.afterAction(seat);
     return succeed(undefined);
   }
@@ -968,8 +975,50 @@ export class Room {
     if (!result.ok) return false;
     this.state = result.state;
     this.log.append(seat, action, source, this.deps.clock.now());
+    this.noteMove(seat, action, state, result.state);
     this.afterAction(seat);
     return true;
+  }
+
+  /**
+   * Remember what a move did, for the views that follow: the card a draw added to
+   * the drawer's hand, the card a discard left on the pile, how many cards the pile
+   * or a lay-down moved. Worked out from the states either side, so it cannot
+   * disagree with what the engine actually did. Numbered by the move's place in the
+   * action log, which is saved and replayed, so a number never repeats across a
+   * restart or a Durable Object waking.
+   */
+  private noteMove(seat: number, action: Action, before: GameState, after: GameState): void {
+    const seq = this.log.length;
+    const held = (s: GameState): readonly Card[] => {
+      const p = s.players[seat]!;
+      return p.inFoot ? p.foot : p.hand;
+    };
+    switch (action.type) {
+      case "draw": {
+        const had = new Set(held(before).map((c) => c.id));
+        const drawn = held(after).find((c) => !had.has(c.id));
+        this.lastMove = { seq, seat, kind: "draw", ...(drawn ? { card: drawn } : {}) };
+        return;
+      }
+      case "takePile":
+        this.lastMove = { seq, seat, kind: "takePile", count: before.discard.length };
+        return;
+      case "playMelds":
+        this.lastMove = {
+          seq,
+          seat,
+          kind: "meld",
+          count: action.melds.reduce((n, m) => n + m.cardIds.length, 0),
+        };
+        return;
+      case "takeBack":
+        this.lastMove = { seq, seat, kind: "takeBack" };
+        return;
+      case "discard":
+        this.lastMove = { seq, seat, kind: "discard", card: after.discard.at(-1)! };
+        return;
+    }
   }
 
   private notify(): void {
@@ -1021,7 +1070,12 @@ export class Room {
   /** The filtered update for one seat. Null before the game starts. */
   viewFor(seat: number): ViewUpdate | null {
     if (!this.state) return null;
+    // A drawn card is its drawer's alone; everyone else is told only that one was.
+    const move = this.lastMove;
+    const lastMove =
+      move && move.kind === "draw" && move.seat !== seat ? { ...move, card: undefined } : move;
     return {
+      ...(lastMove ? { lastMove: stripUndefined(lastMove) } : {}),
       view: project(this.state, seat),
       clock: this.clockState(),
       room: this.info(),
@@ -1048,4 +1102,9 @@ export class Room {
   get matchOver(): boolean {
     return this.state !== null && isMatchOver(this.state);
   }
+}
+
+/** A copy without undefined fields, so a withheld card leaves no key behind. */
+function stripUndefined<T extends object>(value: T): T {
+  return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as T;
 }

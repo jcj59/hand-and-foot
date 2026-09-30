@@ -459,9 +459,23 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   a notice. Reloading the home screen no longer auto-rejoins a stored seat — only the table's own
   URL does; Home's Rejoin reads the saved credentials.
 - **Phone layout (post-M5).** `usePhone` (`matchMedia("(max-width: 767px)")`) switches the table to
-  a stacked layout: `OpponentStrip` chips with a modal melds sheet, compact meld chips, a fanned
-  hand. Desktop markup is unchanged. jsdom has no `matchMedia`, so tests get the desktop layout by
-  default; phone tests define `window.matchMedia` matching `PHONE_QUERY` and delete it afterwards.
+  a stacked layout: `OpponentStrip` chips with a modal melds sheet, the player's own melds as cards
+  (collapsible to chips, remembered per device), and the hand in even, non-overlapping rows of
+  46px `medium` cards sized to the measured width (`evenRows`/`perRow` in `Hand.tsx`). The footer
+  holding the hand is capped at `48dvh` and scrolls, so a small phone keeps the piles in view; for
+  that reason a card's menu opens as a bottom sheet portalled to `document.body`, not above the
+  card, where the scrolling footer would clip it. Desktop markup is unchanged. jsdom has no
+  `matchMedia`, so tests get the desktop layout by default; phone tests define
+  `window.matchMedia` matching `PHONE_QUERY` and delete it afterwards.
+- **Take-back and the latest move (post-M5).** `takeBack` (engine `takeBack.ts`) restores
+  `GameState.turnBase`, the seat before the turn's first play; `withTurnBase` keeps the *first*
+  base, and `withoutTurnBase` (in `core.ts`) clears it at turn end, at go-out, and when a play
+  empties the hand into the foot (foot cards seen ⇒ earlier plays final). `PlayerView.playedThisTurn`
+  is own-seat only (pinned in `view.test.ts`). Mutation-tested: all killed except one equivalent —
+  `playedThisTurn`'s `state.currentSeat !== seat` guard, since a base only ever exists for the seat
+  on turn. The server's `Room.noteMove` sets `ViewUpdate.lastMove`; the drawn card is stripped for
+  every other seat (pinned in `room.lastmove.test.ts` and over the wire). The client's
+  `useMoveNews` announces others' discards/pickups once per `seq` and marks the player's own draw.
 - **Bot milestone — the RL agent.** The point of the whole project. Design not yet written; the
   section in `DESIGN.md` is a placeholder. Observation = `PlayerView` (by construction the agent
   cannot see more than a human), reward is end-of-round. The evaluation baseline is **not**

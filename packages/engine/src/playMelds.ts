@@ -15,10 +15,12 @@ import {
   ok,
   setActiveCards,
   updatePlayer,
+  withoutTurnBase,
 } from "./core";
 import { naturalRank, validateMeld } from "./meld";
 import { cardValue, classifyBook } from "./scoring";
 import { claimsGoOut } from "./goout";
+import { withTurnBase } from "./takeBack";
 
 /**
  * Lay new melds and extend existing ones from the current player's active zone.
@@ -111,7 +113,11 @@ export function applyPlayMelds(state: GameState, plays: readonly MeldPlay[]): Ap
   const owed = player.pickedUp ?? [];
   const obligationMet = owed.length > 0 && laid.some((c) => owed.includes(c.id));
   const newMelds: Meld[] = [...melds.entries()].map(([rank, cards]) => ({ rank, cards }));
-  const nextState = updatePlayer(state, seat, (p) => {
+  // Remember the seat before the turn's first play, so the plays can be taken
+  // back until the turn ends — unless this play empties the hand into the foot,
+  // which makes everything played so far final; see `applyTakeBack`.
+  const based = emptiesHand ? withoutTurnBase(state) : withTurnBase(state, seat, player);
+  const nextState = updatePlayer(based, seat, (p) => {
     const withZone = setActiveCards({ ...p, melds: newMelds, isDown: down }, zone);
     const withFoot = emptiesHand ? { ...withZone, inFoot: true } : withZone;
     return obligationMet ? { ...withFoot, pickedUp: [] } : withFoot;
@@ -127,7 +133,7 @@ export function applyPlayMelds(state: GameState, plays: readonly MeldPlay[]): Ap
     }
     const nextSeat = (seat + 1) % state.players.length;
     return ok({
-      ...nextState,
+      ...withoutTurnBase(nextState),
       currentSeat: nextSeat,
       phase: "draw",
       finalLapRemaining: state.players.length - 1,

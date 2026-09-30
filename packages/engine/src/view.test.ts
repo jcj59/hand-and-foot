@@ -264,3 +264,27 @@ describe("the take-pile obligation in a view", () => {
     expect(project(s, 1).pickedUp).toEqual([theirs.id]);
   });
 });
+
+describe("what can be taken back, in a view", () => {
+  it("is told only to the player whose plays they are, and only on their turn", () => {
+    // What was played is on the table for everyone to see; which of it is still
+    // provisional is the player's own plan, like the rest of their turn.
+    const played = cards("K", 3);
+    const before = player({ hand: [...played, card("5")], isDown: true });
+    const s: GameState = {
+      ...table([
+        { ...before, hand: [card("5")], melds: [{ rank: "K", cards: played }] },
+        // Melds of their own, so a base misapplied to them would have something to show.
+        player({ melds: [{ rank: "Q", cards: cards("Q", 3) }], isDown: true }),
+      ]),
+      currentSeat: 0,
+      phase: "play",
+      turnBase: { seat: 0, player: before },
+    };
+    expect(project(s, 0).playedThisTurn).toEqual(played.map((c) => c.id));
+    expect(project(s, 1).playedThisTurn).toEqual([]);
+    expect(project(s, 1)).not.toHaveProperty("turnBase");
+    // And the opponent's view carries no trace of the base: no hand before, no field.
+    expect(JSON.stringify(project(s, 1))).not.toContain(before.hand[3]!.id);
+  });
+});

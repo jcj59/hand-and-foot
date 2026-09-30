@@ -15,6 +15,7 @@ export * from "./policy";
 export * from "./goout";
 export * from "./legal";
 export * from "./replay";
+export * from "./takeBack";
 
 export const defaultConfig: RulesConfig = EAST_COAST;
 
