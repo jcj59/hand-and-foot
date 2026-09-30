@@ -70,7 +70,7 @@ export function Hand({
 
   if (cards.length === 0) {
     return (
-      <section className="flex flex-col gap-2" aria-label={title}>
+      <section className="flex flex-col gap-2" aria-label={title} data-zone="hand">
         <h2 className="text-sm font-medium text-white/80">{title} (0)</h2>
         <p className="text-sm text-white/50">
           No cards. You still take a turn: draw, and play from the pile if it fits.
@@ -146,7 +146,7 @@ export function Hand({
   }
 
   return (
-    <section className="flex flex-col gap-2" aria-label={title}>
+    <section className="flex flex-col gap-2" aria-label={title} data-zone="hand">
       <h2 className="text-sm font-medium text-white/80">
         {title} ({cards.length})
         {/* Wilds are a resource to plan a lay-down around rather than a rank to

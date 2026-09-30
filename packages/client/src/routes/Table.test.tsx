@@ -290,6 +290,24 @@ describe("the piles", () => {
   });
 });
 
+describe("collapsing the other seats on a computer", () => {
+  afterEach(() => window.localStorage.removeItem("hf.compactSeats"));
+
+  it("shows them in full by default, and as chips once collapsed, remembering the choice", () => {
+    mount(fakeSocket().socket);
+    expect(screen.getByLabelText(/ben, 11 in hand, 14 in foot, not down/i).tagName).toBe("LI");
+    fireEvent.click(screen.getByRole("button", { name: "Collapse players" }));
+    // The chip, a tap from the melds, as on a phone.
+    fireEvent.click(screen.getByRole("button", { name: "ben, 11 in hand, not down" }));
+    expect(screen.getByRole("dialog", { name: "ben's melds" })).toBeInTheDocument();
+    expect(window.localStorage.getItem("hf.compactSeats")).toBe("1");
+    expect(screen.getByRole("button", { name: "Show players" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+});
+
 describe("the other seats", () => {
   it("shows counts and never an opponent's cards", () => {
     mount(fakeSocket().socket);
