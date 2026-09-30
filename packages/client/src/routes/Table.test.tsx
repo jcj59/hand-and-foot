@@ -2176,6 +2176,31 @@ describe("sound", () => {
     }
   });
 
+  it("riffles for a pile pickup and plays a phrase at the end of a round and the match", () => {
+    const audio = fakeAudio();
+    try {
+      mount(fakeSocket().socket);
+      fireEvent.pointerUp(window);
+      act(() =>
+        useSession
+          .getState()
+          .applyUpdate(update({ lastMove: { seq: 3, seat: 1, kind: "takePile", count: 4 } })),
+      );
+      expect(audio.noises).toBe(5);
+      act(() =>
+        useSession.setState({ result: scored([[0, 10]], 0, { matchOver: false, roundNumber: 1 }) }),
+      );
+      expect(audio.oscillators).toBe(3);
+      // Clearing the result reopens this player's turn, which chimes.
+      act(() => useSession.setState({ result: null }));
+      expect(audio.oscillators).toBe(3 + 2);
+      act(() => useSession.setState({ result: scored([[0, 10]], 0, { matchOver: true }) }));
+      expect(audio.oscillators).toBe(3 + 2 + 5);
+    } finally {
+      audio.restore();
+    }
+  });
+
   it("stays silent when muted, and remembers the choice", () => {
     const audio = fakeAudio();
     try {
