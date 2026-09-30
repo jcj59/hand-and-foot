@@ -307,3 +307,42 @@ describe("attachSession", () => {
     expect(vi.isMockFunction(target.setStatus)).toBe(false);
   });
 });
+
+describe("moving to another table", () => {
+  const ended = {
+    scores: [],
+    roundNumber: 1,
+    totals: [],
+    matchOver: false,
+  } as unknown as RoundEnded;
+
+  it("drops everything held about the old table when seated at a new one", () => {
+    const store = useSession.getState();
+    store.seat({ roomId: "OLD234", seat: 0, token: "a" });
+    store.applyUpdate(viewUpdate({ roundNumber: 1 }));
+    store.applyResult(ended);
+    store.seat({ roomId: "NEW234", seat: 1, token: "b" });
+    const now = useSession.getState();
+    expect([now.room, now.update, now.result]).toEqual([null, null, null]);
+    expect(now.credentials?.roomId).toBe("NEW234");
+  });
+
+  it("keeps the table's state when re-seated at the same one", () => {
+    const store = useSession.getState();
+    store.seat({ roomId: "ABC234", seat: 0, token: "a" });
+    store.applyUpdate(viewUpdate({ roundNumber: 1 }));
+    store.applyResult(ended);
+    // Seats closing up in the lobby, or a reclaim: the same table.
+    store.reseat(1);
+    expect(useSession.getState().result).toBe(ended);
+  });
+
+  it("drops a scoreboard when a view arrives from another table at the same round", () => {
+    const store = useSession.getState();
+    store.applyUpdate(viewUpdate({ roundNumber: 1 }));
+    store.applyResult(ended);
+    const other = viewUpdate({ roundNumber: 1 });
+    store.applyUpdate({ ...other, room: { ...other.room, roomId: "ZZZ999" } });
+    expect(useSession.getState().result).toBeNull();
+  });
+});
