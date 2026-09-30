@@ -149,7 +149,6 @@ export function play(
     case "draw":
     case "discard":
     case "meld":
-    case "pile":
     case "take-back":
     case "pile": {
       const recording = recordings.get(sound === "pile" ? "draw" : sound);
