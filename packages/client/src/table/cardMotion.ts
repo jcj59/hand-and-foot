@@ -55,37 +55,82 @@ function reducedMotion(): boolean {
   );
 }
 
+interface Flight {
+  readonly animation: Animation;
+  readonly copy: HTMLElement;
+}
+
+/** Cards in the air, by the real element each one stands in for. */
+const flights = new Map<HTMLElement, Flight>();
+
+/** Put a card down where the layout has it: drop its copy and show the real one. */
+function land(el: HTMLElement): void {
+  const flight = flights.get(el);
+  if (!flight) return;
+  flights.delete(el);
+  flight.animation.cancel();
+  flight.copy.remove();
+  el.style.visibility = "";
+}
+
+/**
+ * Settle every card still in the air, so a move that follows quickly is measured
+ * from where cards rest rather than from somewhere along a flight.
+ */
+function landAll(): void {
+  for (const el of [...flights.keys()]) land(el);
+}
+
+/**
+ * A copy of `el` fixed over where it now is, in `document.body`. The copy is what
+ * flies: the real card sits inside the footer or the table's middle, both of which
+ * scroll and so would clip it anywhere outside their own bounds.
+ */
+function copyOf(el: HTMLElement, at: Box): HTMLElement {
+  const copy = el.cloneNode(true) as HTMLElement;
+  copy.removeAttribute("data-motion");
+  for (const inner of copy.querySelectorAll("[data-motion]")) inner.removeAttribute("data-motion");
+  copy.setAttribute("aria-hidden", "true");
+  copy.style.cssText += `;position:fixed;left:${at.x}px;top:${at.y}px;width:${at.w}px;height:${at.h}px;margin:0;z-index:40;pointer-events:none;visibility:visible`;
+  document.body.appendChild(copy);
+  return copy;
+}
+
 function slide(el: HTMLElement, plan: Slide): void {
+  land(el);
   const now = box(el);
   const dx = plan.from.x + plan.from.w / 2 - (now.x + now.w / 2);
   const dy = plan.from.y + plan.from.h / 2 - (now.y + now.h / 2);
   const scale = now.w > 0 ? plan.from.w / now.w : 1;
   const start = `translate(${dx}px, ${dy}px) scale(${scale})`;
-  el.style.zIndex = "30";
-  const done = (): void => {
-    el.style.zIndex = "";
-  };
+  const copy = copyOf(el, now);
+  el.style.visibility = "hidden";
+  let animation: Animation;
   if (!plan.reveal) {
-    el.animate([{ transform: start }, { transform: "none" }], {
+    animation = copy.animate([{ transform: start }, { transform: "none" }], {
       duration: SLIDE_MS,
       easing: EASE,
-    }).onfinish = done;
-    return;
+    });
+  } else {
+    // Lifted to the middle of the screen and shown large, the way a player looks at
+    // a card they have just drawn, then put into the hand.
+    const cx = window.innerWidth / 2 - (now.x + now.w / 2);
+    const cy = window.innerHeight / 2 - (now.y + now.h / 2);
+    const shown = `translate(${cx}px, ${cy}px) scale(2.4)`;
+    animation = copy.animate(
+      [
+        { transform: start, offset: 0 },
+        { transform: shown, offset: 0.25, easing: "ease-out" },
+        { transform: shown, offset: 0.7, easing: EASE },
+        { transform: "none", offset: 1 },
+      ],
+      { duration: REVEAL_MS },
+    );
   }
-  // Lifted to the middle of the screen and shown large, the way a player looks at
-  // a card they have just drawn, then put into the hand.
-  const cx = window.innerWidth / 2 - (now.x + now.w / 2);
-  const cy = window.innerHeight / 2 - (now.y + now.h / 2);
-  const shown = `translate(${cx}px, ${cy}px) scale(2.4)`;
-  el.animate(
-    [
-      { transform: start, offset: 0 },
-      { transform: shown, offset: 0.25, easing: "ease-out" },
-      { transform: shown, offset: 0.7, easing: EASE },
-      { transform: "none", offset: 1 },
-    ],
-    { duration: REVEAL_MS },
-  ).onfinish = done;
+  flights.set(el, { animation, copy });
+  animation.onfinish = () => {
+    if (flights.get(el)?.animation === animation) land(el);
+  };
 }
 
 function ghost(plan: Ghost): void {
@@ -127,8 +172,9 @@ export function useCardMotion(
   useLayoutEffect(() => {
     const el = root.current;
     if (!el) return;
-    const now = measure(el);
     const arrived = primed.current && move !== undefined && move.seq !== seen.current;
+    if (arrived) landAll();
+    const now = measure(el);
     seen.current = move?.seq ?? null;
     primed.current = true;
     // `animate` is missing where there is no real layout (jsdom), and moving
@@ -150,4 +196,6 @@ export function useCardMotion(
     }
     before.current = now.cards;
   });
+
+  useLayoutEffect(() => landAll, []);
 }

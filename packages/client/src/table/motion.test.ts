@@ -101,7 +101,7 @@ describe("planning card movement", () => {
     expect(plans).toEqual([]);
   });
 
-  it("sends no ghost for a seat it cannot find, such as one scrolled out of the strip", () => {
+  it("sends no ghost for a seat with no anchor on the page", () => {
     expect(planMotion(move({ kind: "draw", seat: 4 }), me, new Map(), new Map(), anchors)).toEqual(
       [],
     );

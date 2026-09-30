@@ -4,9 +4,10 @@
  * The approach is FLIP — First, Last, Invert, Play. Every card on screen that can
  * move carries its id (`data-motion`), and the table remembers where each one was.
  * After a move, each card is found where it now is, drawn back at where it was
- * with a transform, and let go, so it slides from the old place to the new. No
- * copy of any card is kept here: the elements that move are the real ones, which
- * is what keeps an animation from ever disagreeing with the table.
+ * with a transform, and let go, so it slides from the old place to the new. What
+ * flies is a copy of the real element, taken the moment it lands, while the real
+ * one waits hidden in place — so an animation never disagrees with the table, and
+ * no scrolling part of the page can clip a card in flight.
  *
  * A card that is new to the screen — just drawn, just taken with the pile, laid
  * down by another player — has no old place, so it comes from where the move
