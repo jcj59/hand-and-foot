@@ -245,17 +245,13 @@ export function HiddenHand({
  * The discard pile, face up, drawn as what it is: one card is one card, two are
  * two — the one beneath peeking out, since it is as public as the top — and three
  * or more are a stack, with only the top card's face showing.
- *
- * `highlight` rings the top card, for a discard that has only just landed.
  */
 export function DiscardPile({
   cards,
   size = "normal",
-  highlight = false,
 }: {
   readonly cards: readonly Card[];
   readonly size?: CardSize;
-  readonly highlight?: boolean;
 }): React.ReactElement {
   const { w } = DIMENSIONS[size];
   const top = cards[cards.length - 1];
@@ -287,7 +283,6 @@ export function DiscardPile({
   // edges of a stack down and to the right.
   const [padX, padY] = cards.length === 1 ? [0, 0] : cards.length === 2 ? [14, 0] : [6, 6];
   const topX = cards.length === 2 ? padX : 0;
-  const stroke = highlight ? "#38bdf8" : "#cbd5e1";
   return (
     <svg
       width={(w * (56 + padX)) / 56}
@@ -316,7 +311,7 @@ export function DiscardPile({
             strokeWidth="1"
           />
         ))}
-      <CardFace card={top} stroke={stroke} strokeWidth={highlight ? 3 : 1} x={topX} />
+      <CardFace card={top} stroke="#cbd5e1" strokeWidth={1} x={topX} />
     </svg>
   );
 }

@@ -2032,7 +2032,7 @@ describe("what just happened", () => {
         ),
       );
       const news = screen.getByRole("status", { name: "Latest move" });
-      expect(news.textContent).toMatch(/ben discarded$/);
+      expect(news.textContent).toMatch(/ben discarded a 7$/);
       expect(within(news).getByRole("img", { name: "Seven of hearts" })).toBeInTheDocument();
       // A room broadcast in the meantime does not keep it up, or bring it back.
       act(() =>

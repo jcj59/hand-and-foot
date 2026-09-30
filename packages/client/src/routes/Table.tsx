@@ -110,7 +110,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
 
   // Other players' discards and pickups announced, and this player's draw marked.
   const newsRoom = latestRoom ?? update?.room;
-  const { news, freshDiscard, drawnId } = useMoveNews(
+  const { news, drawnId } = useMoveNews(
     update?.lastMove,
     update?.view.seat,
     (s) => newsRoom?.players.find((p) => p.seat === s)?.name ?? `Seat ${s}`,
@@ -317,7 +317,6 @@ export function Table({ socket }: TableProps): React.ReactElement {
   // Whether the pile can be taken is decided by a solver over the whole state, so
   // this is the server's answer, not a guess made here.
   const canTake = myTurn && hints.canTakePile && !busy;
-  const top = view.discard[view.discard.length - 1];
 
   const lastLap = view.finalLapRemaining !== null && view.wentOutSeat !== null;
 
@@ -491,11 +490,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
                 </button>
               ) : (
                 <div className="p-1">
-                  <DiscardPile
-                    cards={view.discard}
-                    size={phone ? "normal" : "large"}
-                    highlight={freshDiscard && top !== undefined}
-                  />
+                  <DiscardPile cards={view.discard} size={phone ? "normal" : "large"} />
                 </div>
               )}
               {canTake && <PilePrompt>Pick up the pile</PilePrompt>}
