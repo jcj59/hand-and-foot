@@ -55,3 +55,34 @@ body,
     animation: none;
   }
 }
+/* Grabby Pants: in with a bounce, and out again after a few seconds. */
+@keyframes grabby-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.4) rotate(-8deg);
+  }
+  12% {
+    opacity: 1;
+    transform: scale(1.12) rotate(3deg);
+  }
+  20% {
+    transform: scale(1) rotate(0);
+  }
+  88% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}
+.grabby-pop {
+  /* Must last as long as GRABBY_MS in grabby.tsx. */
+  animation: grabby-pop 4000ms ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .grabby-pop {
+    animation: none;
+  }
+}

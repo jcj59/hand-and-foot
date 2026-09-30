@@ -25,6 +25,7 @@ import {
   scoreRound,
 } from "@hf/engine";
 import type { Clock } from "./clock";
+import { grabbyPants } from "./grabby";
 import { type ActionLog, InMemoryActionLog, StoredActionLog } from "./log";
 import type { RoomRecord, RoomStore, StoredRoom } from "./store";
 
@@ -1061,6 +1062,7 @@ export class Room {
       idlePaused: this.idlePaused,
       savedUntil: this.savedUntil,
       closesAt: this.pauseEndsAt(),
+      grabbyPants: grabbyPants(this.log.entries()),
       config: this.config,
       playAgain: this.players.filter((p) => this.wentOn.has(p.token)).map((p) => p.seat),
       nextRoundReady: this.players.filter((p) => this.ready.has(p.token)).map((p) => p.seat),
