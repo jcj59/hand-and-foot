@@ -14,6 +14,7 @@
  * are underlined, because those can always be laid off and are the ones most
  * worth thinking twice about throwing away.
  */
+import { useLayoutEffect, useState } from "react";
 import { isWild, type Card, type Rank } from "@hf/shared";
 import { PlayingCard } from "../cards/PlayingCard";
 import { isUnplayable, sortForDisplay, type PlayContext } from "../cards/handOrder";
@@ -60,6 +61,7 @@ export function Hand({
   rows = false,
 }: HandProps): React.ReactElement {
   const wildCount = cards.filter((card) => isWild(card.rank)).length;
+  const [rowsRef, rowsWidth] = useWidth<HTMLDivElement>();
 
   if (cards.length === 0) {
     return (
@@ -145,8 +147,8 @@ export function Hand({
       </h2>
       {/* Side by side, never overlapping: every card's whole face is readable. */}
       {rows ? (
-        <div className="flex flex-col gap-1 pt-3">
-          {evenRows(sorted, perRow(window.innerWidth)).map((row) => (
+        <div ref={rowsRef} className="flex flex-col gap-1 pt-3">
+          {evenRows(sorted, perRow(rowsWidth)).map((row) => (
             <div key={row[0]!.id} className="flex gap-1">
               {row.map((card, i) => renderCard(card, i, row.length))}
             </div>
@@ -162,7 +164,26 @@ export function Hand({
 }
 
 /**
- * How many whole cards fit across a screen this wide: a card and its gap are 60
+ * The width an element is actually given, kept current as it changes: the hand
+ * shares its line with the foot pile and the table's padding, and a phone can
+ * turn sideways, so the window's width says neither how much room there is nor
+ * when it changed. Without `ResizeObserver` (jsdom) it is the window's width.
+ */
+function useWidth<T extends HTMLElement>(): [(element: T | null) => void, number] {
+  const [element, setElement] = useState<T | null>(null);
+  const [width, setWidth] = useState(() => window.innerWidth);
+  useLayoutEffect(() => {
+    if (!element || typeof ResizeObserver === "undefined") return;
+    setWidth(element.getBoundingClientRect().width);
+    const observer = new ResizeObserver(([entry]) => setWidth(entry!.contentRect.width));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [element]);
+  return [setElement, width];
+}
+
+/**
+ * How many whole cards fit across a space this wide: a card and its gap are 60
  * pixels, and the table keeps a little margin either side.
  */
 export function perRow(width: number): number {

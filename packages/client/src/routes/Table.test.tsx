@@ -16,7 +16,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { createServerClock } from "../serverTime";
 import { useSession } from "../session";
 import type { HfClientSocket } from "../socket";
-import { evenRows, perRow } from "../table/Hand";
+import { evenRows, Hand, perRow } from "../table/Hand";
 import { PHONE_QUERY } from "../usePhone";
 import { Table } from "./Table";
 
@@ -1884,6 +1884,60 @@ describe("laying a hand out in rows", () => {
     expect(sizes(7)).toEqual([4, 3]);
     expect(sizes(14)).toEqual([5, 5, 4]);
     expect(sizes(15)).toEqual([5, 5, 5]);
+  });
+
+  it("sizes the rows to the room the hand is given, and follows it as it changes", () => {
+    const observers: { fire: (width: number) => void }[] = [];
+    const Real = globalThis.ResizeObserver;
+    const measure = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockReturnValue({ width: 330 } as DOMRect);
+    globalThis.ResizeObserver = class {
+      constructor(private readonly callback: ResizeObserverCallback) {
+        observers.push({
+          fire: (width) =>
+            this.callback(
+              [{ contentRect: { width } } as ResizeObserverEntry],
+              this as unknown as ResizeObserver,
+            ),
+        });
+      }
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    };
+    try {
+      // A 390-wide window, but the foot and the padding leave the hand 330.
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+      const ranks = ["4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A", "4"] as const;
+      const hand = ranks.map((rank, i) => card(rank, i % 2 ? "hearts" : "spades"));
+      render(
+        <Hand
+          cards={hand}
+          interactive={false}
+          stagedIds={new Set()}
+          owedIds={new Set()}
+          meldRanks={new Set()}
+          playContext={{ inFoot: false, blackThreesHeld: 0, hasBlackThreeMeld: false }}
+          onSelect={() => {}}
+          chosenId={null}
+          menu={null}
+          title="Your hand"
+          rows
+        />,
+      );
+      const rowSizes = () =>
+        [...screen.getByRole("region", { name: "Your hand" }).querySelector(".pt-3")!.children].map(
+          (row) => within(row as HTMLElement).getAllByRole("img").length,
+        );
+      expect(rowSizes()).toEqual([4, 4, 4]);
+      act(() => observers.at(-1)!.fire(1_000));
+      expect(rowSizes()).toEqual([12]);
+    } finally {
+      measure.mockRestore();
+      globalThis.ResizeObserver = Real;
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: 1024 });
+    }
   });
 });
 

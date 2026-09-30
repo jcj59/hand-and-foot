@@ -7,6 +7,7 @@ import { EAST_COAST } from "@hf/shared";
 import { canTakePile } from "@hf/engine";
 import { FakeClock } from "./clock";
 import { Room } from "./room";
+import { InMemoryRoomStore } from "./store";
 
 function started(seed = 5): Room {
   let n = 0;
@@ -107,5 +108,35 @@ describe("the latest move in a view", () => {
     for (const s of [0, 1, 2]) room.readyForNextRound(s);
     expect(room.gameState!.roundNumber).toBe(2);
     expect(room.viewFor(0)).not.toHaveProperty("lastMove");
+  });
+
+  it("numbers moves on from where they were after a restart, never repeating one", async () => {
+    const store = new InMemoryRoomStore();
+    let n = 0;
+    const room = new Room("MOVES3", EAST_COAST, {
+      clock: new FakeClock(1_000),
+      seed: 5,
+      newToken: () => `tok-${n++}`,
+      store,
+    });
+    store.saveRoom(room.record());
+    room.join("ana");
+    room.join("ben");
+    room.join("cy");
+    room.start(0);
+    const seat = room.gameState!.currentSeat;
+    room.submitAction(seat, { type: "draw" });
+    const card = room.gameState!.players[seat]!.hand[0]!;
+    room.submitAction(seat, { type: "discard", cardId: card.id });
+    const before = room.viewFor(seat)!.lastMove!.seq;
+    expect(before).toBe(2);
+
+    const [stored] = await store.loadOpen();
+    const restored = Room.restore(stored!, { clock: new FakeClock(1_000), newToken: () => "x" });
+    if (!restored.ok) throw new Error(restored.error);
+    const back = restored.value;
+    const next = back.gameState!.currentSeat;
+    expect(back.submitAction(next, { type: "draw" }).ok).toBe(true);
+    expect(back.viewFor(next)!.lastMove!.seq).toBe(3);
   });
 });

@@ -239,8 +239,6 @@ export class Room {
   private idleTurns = 0;
   /** The latest move, for views; see `noteMove`. Not saved: it is only news. */
   private lastMove: LastMove | null = null;
-  /** Counts every move this process has noted, across rounds, so none repeats. */
-  private moveSeq = 0;
 
   constructor(id: string, config: RulesConfig, deps: RoomDeps) {
     this.id = id;
@@ -728,9 +726,9 @@ export class Room {
     if (!result.ok) return fail(result.error);
 
     if (source === "player") this.idleTurns = 0;
-    this.noteMove(seat, action, state, result.state);
     this.state = result.state;
     this.log.append(seat, action, source, this.deps.clock.now());
+    this.noteMove(seat, action, state, result.state);
     this.afterAction(seat);
     return succeed(undefined);
   }
@@ -975,9 +973,9 @@ export class Room {
     const result = applyAction(state, action);
     /* v8 ignore next -- see the property tests behind defaultAction */
     if (!result.ok) return false;
-    this.noteMove(seat, action, state, result.state);
     this.state = result.state;
     this.log.append(seat, action, source, this.deps.clock.now());
+    this.noteMove(seat, action, state, result.state);
     this.afterAction(seat);
     return true;
   }
@@ -986,10 +984,12 @@ export class Room {
    * Remember what a move did, for the views that follow: the card a draw added to
    * the drawer's hand, the card a discard left on the pile, how many cards the pile
    * or a lay-down moved. Worked out from the states either side, so it cannot
-   * disagree with what the engine actually did.
+   * disagree with what the engine actually did. Numbered by the move's place in the
+   * action log, which is saved and replayed, so a number never repeats across a
+   * restart or a Durable Object waking.
    */
   private noteMove(seat: number, action: Action, before: GameState, after: GameState): void {
-    const seq = ++this.moveSeq;
+    const seq = this.log.length;
     const held = (s: GameState): readonly Card[] => {
       const p = s.players[seat]!;
       return p.inFoot ? p.foot : p.hand;
