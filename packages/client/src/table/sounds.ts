@@ -16,7 +16,20 @@
 import { useEffect, useRef, useState } from "react";
 import type { LastMove, RoundEnded } from "@hf/shared";
 
-export type Sound = "card" | "pile" | "turn" | "round" | "match";
+/** A recorded card sound, one per kind of move; see `public/sounds`. */
+export type CardSound = "draw" | "discard" | "meld" | "pile" | "take-back";
+export type Sound = CardSound | "turn" | "round" | "match";
+
+/** Which recording marks each move. One sound per move, however many cards it moves. */
+const CARD_SOUND: Readonly<Record<LastMove["kind"], CardSound>> = {
+  draw: "draw",
+  discard: "discard",
+  meld: "meld",
+  takePile: "pile",
+  takeBack: "take-back",
+};
+
+export const CARD_SOUNDS: readonly CardSound[] = ["draw", "discard", "meld", "pile", "take-back"];
 
 /** What the table looked like at one moment, as far as sound is concerned. */
 export interface Moment {
@@ -30,8 +43,7 @@ export interface Moment {
 export function soundsFor(before: Moment, now: Moment): Sound[] {
   const sounds: Sound[] = [];
   if (now.moveSeq !== null && now.moveSeq !== before.moveSeq && now.moveKind) {
-    // A pile pickup is a bigger sound than one card: it is a bigger event.
-    sounds.push(now.moveKind === "takePile" ? "pile" : "card");
+    sounds.push(CARD_SOUND[now.moveKind]);
   }
   if (now.result && !before.result) sounds.push(now.result.matchOver ? "match" : "round");
   else if (now.myTurn && !before.myTurn) sounds.push("turn");
@@ -86,6 +98,25 @@ function flick(ctx: AudioContext, at: number, gain: number): void {
   source.start(at);
 }
 
+/**
+ * Fetch and decode the card recordings, served beside the page. A recording that
+ * cannot be had — offline, or a browser that will not decode it — leaves the
+ * synthesized flick in its place.
+ */
+async function loadRecordings(ctx: AudioContext, into: Map<CardSound, AudioBuffer>): Promise<void> {
+  await Promise.all(
+    CARD_SOUNDS.map(async (name) => {
+      try {
+        const response = await fetch(`/sounds/${name}.wav`);
+        if (!response.ok) return;
+        into.set(name, await ctx.decodeAudioData(await response.arrayBuffer()));
+      } catch {
+        // Keep the flick.
+      }
+    }),
+  );
+}
+
 /** One soft sine note. */
 function note(
   ctx: AudioContext,
@@ -107,16 +138,30 @@ function note(
 }
 
 /** Play one sound now. */
-export function play(ctx: AudioContext, sound: Sound): void {
+export function play(
+  ctx: AudioContext,
+  sound: Sound,
+  recordings: ReadonlyMap<CardSound, AudioBuffer>,
+): void {
   const t = ctx.currentTime + 0.01;
   switch (sound) {
-    case "card":
-      flick(ctx, t, 0.5);
-      return;
+    case "draw":
+    case "discard":
+    case "meld":
     case "pile":
-      // A riffle: several cards in quick succession.
-      for (let i = 0; i < 5; i++) flick(ctx, t + i * 0.035, 0.35);
+    case "take-back": {
+      const recording = recordings.get(sound);
+      // Until the recordings have loaded — a moment after the first tap — a
+      // synthesized flick stands in.
+      if (!recording) return flick(ctx, t, 0.5);
+      const source = ctx.createBufferSource();
+      source.buffer = recording;
+      const level = ctx.createGain();
+      level.gain.value = 0.9;
+      source.connect(level).connect(ctx.destination);
+      source.start(t);
       return;
+    }
     case "turn":
       // Up a fourth, bright and short: your move.
       note(ctx, 659.25, t, 0.25);
@@ -145,6 +190,7 @@ export function useTableSounds(now: Moment): {
   const [muted, setMutedState] = useState(readMuted);
   const ctx = useRef<AudioContext | null>(null);
   const before = useRef<Moment | null>(null);
+  const recordings = useRef(new Map<CardSound, AudioBuffer>());
 
   // Audio may only start after the player has done something on the page. A touch
   // counts as a gesture only when it ends, so the unlock listens to both ends of a
@@ -160,6 +206,7 @@ export function useTableSounds(now: Moment): {
         silence.buffer = created.createBuffer(1, 1, created.sampleRate);
         silence.connect(created.destination);
         silence.start(0);
+        void loadRecordings(created, recordings.current);
       }
       if (ctx.current.state !== "running") ctx.current.resume().catch(() => {});
     };
@@ -176,7 +223,7 @@ export function useTableSounds(now: Moment): {
     before.current = now;
     // The first moment is where the page came in, not a change to announce.
     if (!previous || muted || !ctx.current) return;
-    for (const sound of soundsFor(previous, now)) play(ctx.current, sound);
+    for (const sound of soundsFor(previous, now)) play(ctx.current, sound, recordings.current);
   }, [now, muted]);
 
   return {

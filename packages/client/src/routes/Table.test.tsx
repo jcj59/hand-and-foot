@@ -2194,7 +2194,7 @@ describe("sound", () => {
     }
   });
 
-  it("riffles for a pile pickup and plays a phrase at the end of a round and the match", () => {
+  it("plays one sound for a pile pickup, and a phrase at the end of a round and the match", () => {
     const audio = fakeAudio();
     try {
       mount(fakeSocket().socket);
@@ -2204,7 +2204,9 @@ describe("sound", () => {
           .getState()
           .applyUpdate(update({ lastMove: { seq: 3, seat: 1, kind: "takePile", count: 4 } })),
       );
-      expect(audio.noises).toBe(5);
+      // One sound for the whole pile, not one per card. (Here the synthesized
+      // stand-in, since there is no recording to fetch in a test.)
+      expect(audio.noises).toBe(1);
       act(() =>
         useSession.setState({ result: scored([[0, 10]], 0, { matchOver: false, roundNumber: 1 }) }),
       );
