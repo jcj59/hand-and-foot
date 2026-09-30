@@ -460,9 +460,13 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   URL does; Home's Rejoin reads the saved credentials.
 - **Phone layout (post-M5).** `usePhone` (`matchMedia("(max-width: 767px)")`) switches the table to
   a stacked layout: `OpponentStrip` chips with a modal melds sheet, the player's own melds as cards
-  (collapsible to chips, remembered per device), and the hand in even, non-overlapping rows sized to
-  the measured width (`evenRows`/`perRow` in `Hand.tsx`). Desktop markup is unchanged. jsdom has no `matchMedia`, so tests get the desktop layout by
-  default; phone tests define `window.matchMedia` matching `PHONE_QUERY` and delete it afterwards.
+  (collapsible to chips, remembered per device), and the hand in even, non-overlapping rows of
+  46px `medium` cards sized to the measured width (`evenRows`/`perRow` in `Hand.tsx`). The footer
+  holding the hand is capped at `48dvh` and scrolls, so a small phone keeps the piles in view; for
+  that reason a card's menu opens as a bottom sheet portalled to `document.body`, not above the
+  card, where the scrolling footer would clip it. Desktop markup is unchanged. jsdom has no
+  `matchMedia`, so tests get the desktop layout by default; phone tests define
+  `window.matchMedia` matching `PHONE_QUERY` and delete it afterwards.
 - **Take-back and the latest move (post-M5).** `takeBack` (engine `takeBack.ts`) restores
   `GameState.turnBase`, the seat before the turn's first play; `withTurnBase` keeps the *first*
   base, and `withoutTurnBase` (in `core.ts`) clears it at turn end, at go-out, and when a play
