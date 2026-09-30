@@ -14,6 +14,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { OpponentView, RoomInfo, RulesConfig } from "@hf/shared";
 import { classifyBook } from "@hf/engine";
+import { GrabbyIcon } from "./grabby";
 import { Melds } from "./Melds";
 
 export interface OpponentStripProps {
@@ -66,7 +67,7 @@ export function OpponentStrip({
                 type="button"
                 aria-label={chipLabel(nameOf(opponent.seat), opponent, onTurn, clean, books.length)}
                 onClick={() => setOpen(opponent.seat)}
-                className={`flex w-28 flex-col gap-0.5 rounded border px-2 py-1 text-left ${
+                className={`flex max-w-44 min-w-28 flex-col gap-0.5 rounded border px-2 py-1 text-left ${
                   onTurn ? "border-amber-300 bg-amber-300/15" : "border-white/15 bg-black/25"
                 }`}
               >
@@ -77,6 +78,9 @@ export function OpponentStrip({
                       connected ? "bg-emerald-400" : "bg-red-400"
                     }`}
                   />
+                  {room.grabbyPants?.seat === opponent.seat && (
+                    <GrabbyIcon className="h-4 w-4 shrink-0" />
+                  )}
                   <span className="truncate text-sm font-medium">{nameOf(opponent.seat)}</span>
                 </span>
                 <span className="flex items-center gap-1.5 text-xs text-white/70">

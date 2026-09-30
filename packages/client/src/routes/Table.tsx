@@ -40,6 +40,14 @@ import { Hand } from "../table/Hand";
 import { pulseStyle } from "../table/pulse";
 import { Melds } from "../table/Melds";
 import { useCardMotion } from "../table/cardMotion";
+import {
+  GRABBY_NAME,
+  GrabbyAnnouncement,
+  GrabbyIcon,
+  useGrabbyAnnouncement,
+  useUnlockSpeech,
+  withGrabbyName,
+} from "../table/grabby";
 import { useMoveNews } from "../table/moveNews";
 import { useTableSounds } from "../table/sounds";
 import { PauseBar } from "../table/PauseBar";
@@ -111,7 +119,10 @@ export function Table({ socket }: TableProps): React.ReactElement {
   const pilePulse = useMemo(() => (takeable ? pulseStyle() : undefined), [takeable]);
 
   // Other players' discards and pickups announced, and this player's draw marked.
-  const newsRoom = latestRoom ?? update?.room;
+  // Real names, for saying who took the Grabby Pants title from whom.
+  const realRoom = latestRoom ?? update?.room;
+  // Everywhere else at the table, the title holder is Grabby Pants.
+  const newsRoom = realRoom && withGrabbyName(realRoom);
   const { news, drawnId } = useMoveNews(
     update?.lastMove,
     update?.view.seat,
@@ -124,7 +135,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
   // The same, for the other players on a computer: shown in full unless collapsed.
   const [compactSeats, setCompactSeats] = useState(() => readFlag(COMPACT_SEATS_KEY));
 
-  // A flick for every card that moves, a chime when it is this player's turn, and
+  // One card sound for every move, a chime when it is this player's turn, and
   // a phrase when a round or the match ends.
   const { muted, setMuted } = useTableSounds({
     moveSeq: update?.lastMove?.seq ?? null,
@@ -132,6 +143,8 @@ export function Table({ socket }: TableProps): React.ReactElement {
     myTurn: turnOpen,
     result,
   });
+  const grabbyHeadline = useGrabbyAnnouncement(realRoom, muted);
+  useUnlockSpeech();
 
   // Cards slide from where they were to where the latest move put them.
   const tableRef = useRef<HTMLElement>(null);
@@ -149,7 +162,8 @@ export function Table({ socket }: TableProps): React.ReactElement {
   }
 
   const { view, hints, clock } = update;
-  const room = latestRoom ?? update.room;
+  const room = withGrabbyName(latestRoom ?? update.room);
+  const grabby = room.grabbyPants?.seat === view.seat;
   const myTurn = turnOpen;
   const sink = { seat, setNotice };
   // The foot is revealed only once picked up; before that the server sends a count
@@ -701,7 +715,8 @@ export function Table({ socket }: TableProps): React.ReactElement {
               chosenId={chosenId}
               menu={menu}
               onDismiss={closeMenu}
-              title={view.inFoot ? "Your foot" : "Your hand"}
+              title={`${view.inFoot ? "Your foot" : "Your hand"}${grabby ? ` (${GRABBY_NAME})` : ""}`}
+              badge={grabby && <GrabbyIcon className="h-5 w-5" />}
               rows={phone}
               newId={drawnId}
             />
@@ -719,6 +734,8 @@ export function Table({ socket }: TableProps): React.ReactElement {
           )}
         </div>
       </footer>
+
+      {grabbyHeadline && <GrabbyAnnouncement headline={grabbyHeadline} />}
 
       {result && (
         <RoundResult

@@ -6,10 +6,15 @@ const quiet: Moment = { moveSeq: 1, moveKind: "draw", myTurn: false, result: nul
 const ended = (matchOver: boolean) => ({ matchOver }) as unknown as RoundEnded;
 
 describe("which sounds a change makes", () => {
-  it("flicks a card for every new move, and riffles for a pile pickup", () => {
-    expect(soundsFor(quiet, { ...quiet, moveSeq: 2, moveKind: "discard" })).toEqual(["card"]);
-    expect(soundsFor(quiet, { ...quiet, moveSeq: 2, moveKind: "meld" })).toEqual(["card"]);
-    expect(soundsFor(quiet, { ...quiet, moveSeq: 2, moveKind: "takePile" })).toEqual(["pile"]);
+  it("plays one recorded sound for each move, however many cards it moves", () => {
+    const kinds = ["draw", "discard", "meld", "takePile", "takeBack"] as const;
+    expect(kinds.map((moveKind) => soundsFor(quiet, { ...quiet, moveSeq: 2, moveKind }))).toEqual([
+      ["draw"],
+      ["discard"],
+      ["meld"],
+      ["pile"],
+      ["take-back"],
+    ]);
   });
 
   it("says nothing when nothing has moved", () => {
@@ -29,7 +34,7 @@ describe("which sounds a change makes", () => {
     // The last card and the result arrive together: both are heard, card first.
     expect(
       soundsFor(quiet, { ...quiet, moveSeq: 2, moveKind: "discard", result: ended(false) }),
-    ).toEqual(["card", "round"]);
+    ).toEqual(["discard", "round"]);
     // A round's end is not also announced as the next player's turn.
     expect(soundsFor(quiet, { ...quiet, myTurn: true, result: ended(false) })).toEqual(["round"]);
   });

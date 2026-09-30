@@ -2194,7 +2194,7 @@ describe("sound", () => {
     }
   });
 
-  it("riffles for a pile pickup and plays a phrase at the end of a round and the match", () => {
+  it("plays one sound for a pile pickup, and a phrase at the end of a round and the match", () => {
     const audio = fakeAudio();
     try {
       mount(fakeSocket().socket);
@@ -2204,7 +2204,9 @@ describe("sound", () => {
           .getState()
           .applyUpdate(update({ lastMove: { seq: 3, seat: 1, kind: "takePile", count: 4 } })),
       );
-      expect(audio.noises).toBe(5);
+      // One sound for the whole pile, not one per card. (Here the synthesized
+      // stand-in, since there is no recording to fetch in a test.)
+      expect(audio.noises).toBe(1);
       act(() =>
         useSession.setState({ result: scored([[0, 10]], 0, { matchOver: false, roundNumber: 1 }) }),
       );
@@ -2241,6 +2243,172 @@ describe("sound", () => {
       expect(audio.oscillators + audio.noises).toBe(0);
     } finally {
       audio.restore();
+    }
+  });
+});
+
+describe("Grabby Pants", () => {
+  /** A speech engine that remembers what it was asked to say. */
+  function fakeSpeech(options: { voices?: { name: string }[]; events?: boolean } = {}): {
+    said: string[];
+    voices: (string | undefined)[];
+    loadVoices: (names: string[]) => void;
+    restore: () => void;
+  } {
+    const said: string[] = [];
+    const voices: (string | undefined)[] = [];
+    let available = options.voices ?? [];
+    const listeners = new Set<() => void>();
+    class Utterance {
+      pitch = 1;
+      rate = 1;
+      voice: { name: string } | null = null;
+      constructor(readonly text: string) {}
+    }
+    Object.defineProperty(window, "SpeechSynthesisUtterance", {
+      configurable: true,
+      value: Utterance,
+    });
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: {
+        speak: (u: Utterance) => {
+          said.push(u.text);
+          voices.push(u.voice?.name);
+        },
+        cancel: () => {},
+        getVoices: () => available,
+        ...(options.events && {
+          addEventListener: (_: string, fn: () => void) => listeners.add(fn),
+          removeEventListener: (_: string, fn: () => void) => listeners.delete(fn),
+        }),
+      },
+    });
+    return {
+      said,
+      voices,
+      loadVoices: (names) => {
+        available = names.map((name) => ({ name }));
+        for (const fn of [...listeners]) fn();
+      },
+      restore: () => {
+        delete (window as { speechSynthesis?: unknown }).speechSynthesis;
+        delete (window as { SpeechSynthesisUtterance?: unknown }).SpeechSynthesisUtterance;
+      },
+    };
+  }
+
+  afterEach(() => window.localStorage.removeItem("hf.muted"));
+
+  it("announces a new holder to everyone, in a deep voice, and renames them at the table", () => {
+    const speech = fakeSpeech();
+    try {
+      mount(fakeSocket().socket);
+      act(() => useSession.getState().applyRoom(roomInfo({ grabbyPants: { seat: 1, streak: 3 } })));
+      expect(screen.getByRole("status", { name: "Grabby Pants" }).textContent).toBe(
+        "ben is Grabby Pants",
+      );
+      expect(speech.said).toEqual(["Grabby Pants"]);
+      // Renamed wherever the table shows the name, with the grabbing hand beside it.
+      const seat = screen.getByLabelText(/^Grabby Pants, 11 in hand/);
+      expect(seat.querySelector("svg path[fill='#2f5da8']")).not.toBeNull();
+    } finally {
+      speech.restore();
+    }
+  });
+
+  it("picks a male voice, never a female one whose name contains 'male'", () => {
+    const speech = fakeSpeech({
+      voices: [{ name: "Google UK English Female" }, { name: "Google UK English Male" }],
+    });
+    try {
+      mount(fakeSocket().socket);
+      act(() => useSession.getState().applyRoom(roomInfo({ grabbyPants: { seat: 1, streak: 3 } })));
+      expect(speech.voices).toEqual(["Google UK English Male"]);
+    } finally {
+      speech.restore();
+    }
+  });
+
+  it("waits for the device's voices to load before speaking", () => {
+    const speech = fakeSpeech({ events: true });
+    try {
+      mount(fakeSocket().socket);
+      act(() => useSession.getState().applyRoom(roomInfo({ grabbyPants: { seat: 1, streak: 3 } })));
+      expect(speech.said).toEqual([]);
+      speech.loadVoices(["Samantha", "Daniel"]);
+      expect(speech.voices).toEqual(["Daniel"]);
+      speech.loadVoices(["Daniel"]);
+      expect(speech.said).toEqual(["Grabby Pants"]);
+    } finally {
+      speech.restore();
+    }
+  });
+
+  it("speaks with the default voice when none ever load", () => {
+    vi.useFakeTimers();
+    const speech = fakeSpeech({ events: true });
+    try {
+      mount(fakeSocket().socket);
+      act(() => useSession.getState().applyRoom(roomInfo({ grabbyPants: { seat: 1, streak: 3 } })));
+      expect(speech.said).toEqual([]);
+      act(() => vi.advanceTimersByTime(1_000));
+      expect(speech.said).toEqual(["Grabby Pants"]);
+      expect(speech.voices).toEqual([undefined]);
+      speech.loadVoices(["Daniel"]);
+      expect(speech.said).toEqual(["Grabby Pants"]);
+    } finally {
+      speech.restore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("badges the player's own hand when they hold the title", () => {
+    const speech = fakeSpeech();
+    try {
+      mount(fakeSocket().socket);
+      expect(screen.getByRole("region", { name: "Your hand" })).toBeInTheDocument();
+      act(() => useSession.getState().applyRoom(roomInfo({ grabbyPants: { seat: 0, streak: 3 } })));
+      const hand = screen.getByRole("region", { name: "Your hand (Grabby Pants)" });
+      const heading = within(hand).getByRole("heading");
+      expect(heading.textContent).toMatch(/^Your hand \(Grabby Pants\) \(\d+\)/);
+      expect(heading.querySelector("svg path[fill='#2f5da8']")).not.toBeNull();
+    } finally {
+      speech.restore();
+    }
+  });
+
+  it("says who took it from whom", () => {
+    const speech = fakeSpeech();
+    try {
+      mount(fakeSocket().socket, update({ room: { grabbyPants: { seat: 1, streak: 3 } } }));
+      // Already held when the page opened: old news, nothing announced.
+      expect(screen.queryByRole("status", { name: "Grabby Pants" })).toBeNull();
+      act(() =>
+        useSession.getState().applyRoom(roomInfo({ grabbyPants: { seat: 0, streak: 4, from: 1 } })),
+      );
+      expect(screen.getByRole("status", { name: "Grabby Pants" }).textContent).toBe(
+        "ana takes Grabby Pants from ben",
+      );
+    } finally {
+      speech.restore();
+    }
+  });
+
+  it("keeps quiet about the holder going further, and says nothing aloud when muted", () => {
+    const speech = fakeSpeech();
+    try {
+      window.localStorage.setItem("hf.muted", "1");
+      mount(fakeSocket().socket, update({ room: { grabbyPants: { seat: 1, streak: 3 } } }));
+      act(() => useSession.getState().applyRoom(roomInfo({ grabbyPants: { seat: 1, streak: 4 } })));
+      expect(screen.queryByRole("status", { name: "Grabby Pants" })).toBeNull();
+      act(() =>
+        useSession.getState().applyRoom(roomInfo({ grabbyPants: { seat: 0, streak: 5, from: 1 } })),
+      );
+      expect(screen.getByRole("status", { name: "Grabby Pants" })).toBeInTheDocument();
+      expect(speech.said).toEqual([]);
+    } finally {
+      speech.restore();
     }
   });
 });

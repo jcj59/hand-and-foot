@@ -1,0 +1,10 @@
+The card sounds in this directory are from "Casino Audio" (1.1) by Kenney
+(https://kenney.nl/assets/casino-audio), released under Creative Commons Zero
+(CC0, http://creativecommons.org/publicdomain/zero/1.0/). Converted to mono
+22.05 kHz WAV so every browser plays them.
+
+  draw.wav       <- card-slide-1.ogg
+  discard.wav    <- card-place-1.ogg
+  meld.wav       <- card-place-2.ogg
+  pile.wav       <- card-fan-1.ogg
+  take-back.wav  <- card-slide-2.ogg

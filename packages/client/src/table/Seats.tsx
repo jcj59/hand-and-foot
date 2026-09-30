@@ -13,6 +13,7 @@
  */
 import type { OpponentView, RoomInfo, RulesConfig } from "@hf/shared";
 import { FaceDownPile, HiddenHand } from "../cards/PlayingCard";
+import { GrabbyIcon } from "./grabby";
 import { Melds } from "./Melds";
 
 export interface SeatsProps {
@@ -45,6 +46,9 @@ export function Seats({ opponents, room, config, seatToAct }: SeatsProps): React
                   info?.connected ? "bg-emerald-400" : "bg-red-400"
                 }`}
               />
+              {room.grabbyPants?.seat === opponent.seat && (
+                <GrabbyIcon className="h-5 w-5 shrink-0" />
+              )}
               <span className="truncate text-sm font-medium">
                 {info?.name ?? `Seat ${opponent.seat}`}
               </span>
