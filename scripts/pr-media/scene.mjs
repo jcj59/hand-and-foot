@@ -91,10 +91,12 @@ if (process.env.BIG_MELDS) {
     ),
   ];
 }
+const grabbyMe = process.env.GRABBY_ME ? { grabbyPants: { seat: 0, streak: 3 } } : {};
 const room = {
   roomId: "HFDEMO",
   players: names.map((name, seat) => ({ seat, name, connected: seat !== 4 })),
   hostSeat: 0,
+  ...grabbyMe,
   started: true,
   config: {
     rounds: 4,

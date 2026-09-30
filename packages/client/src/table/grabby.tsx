@@ -159,46 +159,96 @@ export function GrabbyAnnouncement({
  * this.
  */
 export function GrabbyIcon({ className }: { readonly className?: string }): React.ReactElement {
+  // The hand is drawn twice — outlines under, fills over — so the fingers and the
+  // palm read as one silhouette with no seams where they join.
+  const hand = (
+    <>
+      {/* Forearm, coming in from the lower right. */}
+      <path d="M45 34l5-5 14 9v10z" />
+      {/* Palm. */}
+      <ellipse cx="44" cy="30" rx="7.5" ry="8" />
+      {/* Five fingers, spread open: thumb, index, middle, ring and little finger. */}
+      <rect
+        x="-2.2"
+        y="-8"
+        width="4.4"
+        height="10"
+        rx="2.2"
+        transform="translate(37.5 32) rotate(-68)"
+      />
+      <rect
+        x="-2.2"
+        y="-10"
+        width="4.4"
+        height="12"
+        rx="2.2"
+        transform="translate(39.5 25) rotate(-24)"
+      />
+      <rect
+        x="-2.2"
+        y="-11"
+        width="4.4"
+        height="13"
+        rx="2.2"
+        transform="translate(43.5 23.5) rotate(-4)"
+      />
+      <rect
+        x="-2.2"
+        y="-10"
+        width="4.4"
+        height="12"
+        rx="2.2"
+        transform="translate(47.5 24) rotate(14)"
+      />
+      <rect
+        x="-2"
+        y="-8"
+        width="4"
+        height="10"
+        rx="2"
+        transform="translate(50.5 26.5) rotate(34)"
+      />
+    </>
+  );
   return (
     <svg viewBox="0 0 64 64" aria-hidden="true" className={className}>
-      {/* Jeans, from behind: waistband, seat, and the two legs. */}
-      <path d="M14 10h36l3 20-6 30H37l-5-22-5 22H17l-6-30z" fill="#2f5da8" />
-      <path d="M14 10h36v5H14z" fill="#244a86" />
-      <path d="M32 15v21" stroke="#1b3866" strokeWidth="1.5" />
-      <rect x="29" y="10" width="6" height="5" rx="1" fill="#244a86" stroke="#1b3866" />
+      {/* Straight-leg jeans, from behind: waistband, seat, and two legs that go
+          straight down. */}
+      <path d="M13 8h38v52H33.5V36h-3v24H13z" fill="#2f5da8" />
+      <path d="M13 8h38v5H13z" fill="#244a86" />
+      <path d="M32 13v23" stroke="#1b3866" strokeWidth="1.5" />
+      <rect x="29" y="8" width="6" height="5" rx="1" fill="#244a86" stroke="#1b3866" />
       {/* Back pockets, with their stitching. */}
       <path
-        d="M17 19h11l-1 9-4.5 2.5L18 28z"
+        d="M16 17h12v10l-6 3-6-3z"
         fill="#28518f"
         stroke="#e8b84a"
         strokeWidth="0.8"
         strokeDasharray="1.5 1"
       />
       <path
-        d="M36 19h11l-1 9-4.5 2.5L37 28z"
+        d="M36 17h12v10l-6 3-6-3z"
         fill="#28518f"
         stroke="#e8b84a"
         strokeWidth="0.8"
         strokeDasharray="1.5 1"
       />
-      {/* The hand, coming in from the right and grabbing a handful. */}
-      <path
-        d="M63 30c-4-2-9-2-13 0l-6 2c-2 1-3 3-2 5 1 1 2 1 3 1-1 1-1 3 0 4 1 1 2 1 3 0 0 2 1 3 3 3 1 0 2-1 2-2 1 1 3 1 4 0 3-2 5-4 6-7z"
-        fill="#f2c29b"
+      {/* An open hand, all five fingers spread, planted on the seat. */}
+      <g
+        fill="#c98d62"
         stroke="#c98d62"
-        strokeWidth="1"
+        strokeWidth="2.4"
         strokeLinejoin="round"
-      />
-      <path
-        d="M45 38c1 0 2-1 3-1M48 42c1 0 2-1 3-1M52 44c1 0 2-1 2-1"
-        stroke="#c98d62"
-        strokeWidth="0.9"
-        fill="none"
-        strokeLinecap="round"
-      />
+        transform="translate(0 7)"
+      >
+        {hand}
+      </g>
+      <g fill="#f2c29b" transform="translate(0 7)">
+        {hand}
+      </g>
       {/* Motion marks: a grab, not a rest. */}
       <path
-        d="M8 6l3 3M4 12l4 1M56 20l3-3"
+        d="M7 5l3 3M3 12l4 1M57 12l3-3M60 18l3-1"
         stroke="#fcd34d"
         strokeWidth="1.8"
         strokeLinecap="round"
