@@ -15,8 +15,10 @@
  * worth thinking twice about throwing away.
  */
 import { useLayoutEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { isWild, type Card, type Rank } from "@hf/shared";
 import { PlayingCard } from "../cards/PlayingCard";
+import { cardLabel } from "../cards/cardText";
 import { isUnplayable, sortForDisplay, type PlayContext } from "../cards/handOrder";
 
 export interface HandProps {
@@ -35,6 +37,8 @@ export interface HandProps {
   /** The card whose menu is open, and the menu itself. */
   readonly chosenId: string | null;
   readonly menu: React.ReactNode;
+  /** Closes the menu; on a phone, a tap anywhere outside its sheet. */
+  readonly onDismiss?: () => void;
   readonly title: string;
   /** The card just drawn, marked so it is obvious what arrived. */
   readonly newId?: string | null;
@@ -56,6 +60,7 @@ export function Hand({
   onSelect,
   chosenId,
   menu,
+  onDismiss,
   title,
   newId = null,
   rows = false,
@@ -75,6 +80,7 @@ export function Hand({
   }
 
   const sorted = sortForDisplay(cards);
+  const chosen = rows && menu ? (sorted.find((card) => card.id === chosenId) ?? null) : null;
 
   function renderCard(card: Card, position: number, rowLength: number): React.ReactElement {
     const owed = owedIds.has(card.id);
@@ -122,7 +128,7 @@ export function Hand({
           aria-hidden="true"
           className={`h-1 w-8 rounded ${melded ? "bg-emerald-400" : "bg-transparent"}`}
         />
-        {chosenId === card.id && menu && (
+        {!rows && chosenId === card.id && menu && (
           // Upward: the hand sits at the bottom of the window.
           <div
             // Opens away from the nearer edge, so a card at either end of its
@@ -154,6 +160,27 @@ export function Hand({
               {row.map((card, i) => renderCard(card, i, row.length))}
             </div>
           ))}
+          {/* A sheet over the bottom of the screen rather than a menu above the card:
+              the phone's hand scrolls, and a scrolling box clips whatever pokes out
+              of it. The card stays lifted, and the sheet names it. */}
+          {chosen &&
+            createPortal(
+              <div
+                className="fixed inset-0 z-40 flex items-end bg-black/30 text-white"
+                onClick={onDismiss}
+              >
+                <div
+                  aria-label={`Actions for ${cardLabel(chosen)}`}
+                  role="group"
+                  onClick={(event) => event.stopPropagation()}
+                  className="flex w-full flex-col items-center gap-2 rounded-t-xl border-t border-white/15 bg-felt-900 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]"
+                >
+                  <p className="text-sm text-white/70">{cardLabel(chosen)}</p>
+                  {menu}
+                </div>
+              </div>,
+              document.body,
+            )}
         </div>
       ) : (
         <div className="flex flex-wrap gap-1 pt-3">

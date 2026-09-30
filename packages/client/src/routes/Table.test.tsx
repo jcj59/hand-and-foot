@@ -1804,7 +1804,7 @@ describe("on a phone", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("opens a card's menu away from the nearer end of its own row", () => {
+  it("offers a card's actions in a sheet over the table, which a tap outside closes", () => {
     asPhone();
     const ranks: Rank[] = ["4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"];
     mount(
@@ -1814,18 +1814,20 @@ describe("on a phone", () => {
         hints: { phase: "play", canDraw: false },
       }),
     );
-    const menuSide = (name: string): string => {
-      fireEvent.click(handCard(name));
-      const place = screen.getByRole("menu").parentElement!;
-      const side = place.classList.contains("left-0") ? "left" : "right";
-      fireEvent.click(screen.getByRole("menuitem", { name: "Cancel" }));
-      return side;
-    };
-    // Eleven cards at 390 wide make rows of six and five: 9 ends the first, 10
-    // starts the second.
-    expect(menuSide("Nine of hearts")).toBe("right");
-    expect(menuSide("Ten of hearts")).toBe("left");
-    expect(menuSide("Four of hearts")).toBe("left");
+    const four = handCard("Four of hearts");
+    fireEvent.click(four);
+    const sheet = screen.getByRole("group", { name: "Actions for Four of hearts" });
+    // Fixed over the screen, not inside the hand's scrolling footer, so nothing clips it.
+    expect(sheet.parentElement).toHaveClass("fixed");
+    expect(sheet.closest("footer")).toBeNull();
+    expect(within(sheet).getByRole("menu", { name: "Card actions" })).toBeInTheDocument();
+    expect(four).toHaveAttribute("aria-pressed", "true");
+    // A tap inside the sheet leaves it open; a tap on the table around it closes it.
+    fireEvent.click(sheet);
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    fireEvent.click(sheet.parentElement!);
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(four).toHaveAttribute("aria-pressed", "false");
   });
 
   it("says who has not gone down, and who is on turn", () => {

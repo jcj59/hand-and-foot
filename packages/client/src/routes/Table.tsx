@@ -649,6 +649,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
               onSelect={onCardSelect}
               chosenId={chosenId}
               menu={menu}
+              onDismiss={closeMenu}
               title={view.inFoot ? "Your foot" : "Your hand"}
               rows={phone}
               newId={drawnId}
