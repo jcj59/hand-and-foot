@@ -2077,3 +2077,86 @@ describe("what just happened", () => {
     );
   });
 });
+
+describe("sound", () => {
+  /** An audio device that counts what it is asked to play. */
+  function fakeAudio(): { oscillators: number; noises: number; restore: () => void } {
+    const counts = { oscillators: 0, noises: 0 };
+    const node = () => ({
+      connect: (n: unknown) => n,
+      gain: {
+        value: 0,
+        setValueAtTime() {},
+        linearRampToValueAtTime() {},
+        exponentialRampToValueAtTime() {},
+      },
+    });
+    class FakeContext {
+      currentTime = 0;
+      sampleRate = 8_000;
+      destination = {};
+      resume = () => Promise.resolve();
+      createGain = node;
+      createBiquadFilter = () => ({
+        ...node(),
+        type: "",
+        frequency: { value: 0 },
+        Q: { value: 0 },
+      });
+      createBuffer = (_: number, length: number) => ({
+        getChannelData: () => new Float32Array(length),
+      });
+      createBufferSource = () => {
+        counts.noises++;
+        return { ...node(), buffer: null, start() {} };
+      };
+      createOscillator = () => {
+        counts.oscillators++;
+        return { ...node(), type: "", frequency: { value: 0 }, start() {}, stop() {} };
+      };
+    }
+    Object.defineProperty(window, "AudioContext", { configurable: true, value: FakeContext });
+    return Object.assign(counts, {
+      restore: () => delete (window as { AudioContext?: unknown }).AudioContext,
+    });
+  }
+
+  afterEach(() => window.localStorage.removeItem("hf.muted"));
+
+  it("chimes when the turn comes round, once the player has touched the page", () => {
+    const audio = fakeAudio();
+    try {
+      mount(fakeSocket().socket, update({ hints: { seatToAct: 1 }, view: { currentSeat: 1 } }));
+      fireEvent.pointerDown(window);
+      act(() => useSession.getState().applyUpdate(update()));
+      expect(audio.oscillators).toBe(2);
+    } finally {
+      audio.restore();
+    }
+  });
+
+  it("stays silent when muted, and remembers the choice", () => {
+    const audio = fakeAudio();
+    try {
+      mount(fakeSocket().socket, update({ hints: { seatToAct: 1 }, view: { currentSeat: 1 } }));
+      fireEvent.pointerDown(window);
+      const toggle = screen.getByRole("button", { name: "Turn sound off" });
+      fireEvent.click(toggle);
+      expect(screen.getByRole("button", { name: "Turn sound on" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(window.localStorage.getItem("hf.muted")).toBe("1");
+      act(() =>
+        useSession
+          .getState()
+          .applyUpdate(
+            update({ lastMove: { seq: 3, seat: 1, kind: "discard", card: card("4", "clubs") } }),
+          ),
+      );
+      expect(audio.oscillators + audio.noises).toBe(0);
+    } finally {
+      audio.restore();
+    }
+  });
+});

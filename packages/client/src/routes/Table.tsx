@@ -41,6 +41,7 @@ import { pulseStyle } from "../table/pulse";
 import { Melds } from "../table/Melds";
 import { useCardMotion } from "../table/cardMotion";
 import { useMoveNews } from "../table/moveNews";
+import { useTableSounds } from "../table/sounds";
 import { PauseBar } from "../table/PauseBar";
 import { OpponentStrip } from "../table/OpponentStrip";
 import { Seats } from "../table/Seats";
@@ -120,6 +121,15 @@ export function Table({ socket }: TableProps): React.ReactElement {
   // On a phone the player's own melds are cards, as on the desktop, unless they
   // choose chips to save room; the choice is remembered on this device.
   const [compactMelds, setCompactMelds] = useState(() => readCompactMelds());
+
+  // A flick for every card that moves, a chime when it is this player's turn, and
+  // a phrase when a round or the match ends.
+  const { muted, setMuted } = useTableSounds({
+    moveSeq: update?.lastMove?.seq ?? null,
+    moveKind: update?.lastMove?.kind ?? null,
+    myTurn: turnOpen,
+    result,
+  });
 
   // Cards slide from where they were to where the latest move put them.
   const tableRef = useRef<HTMLElement>(null);
@@ -392,6 +402,15 @@ export function Table({ socket }: TableProps): React.ReactElement {
               )}
             </div>
           )}
+          <button
+            type="button"
+            aria-label={muted ? "Turn sound on" : "Turn sound off"}
+            aria-pressed={muted}
+            onClick={() => setMuted(!muted)}
+            className="rounded border border-white/25 px-2 py-1 text-sm"
+          >
+            <SpeakerIcon muted={muted} />
+          </button>
           {/* Away from the table without giving up the seat: the main screen offers
               the way back. The clock keeps running meanwhile. */}
           <button
@@ -865,4 +884,22 @@ function writeCompactMelds(compact: boolean): void {
   } catch {
     // Blocked storage: the choice lasts until the page is reloaded.
   }
+}
+
+/** A speaker, struck through when muted: drawn, as not every font has the glyph. */
+function SpeakerIcon({ muted }: { readonly muted: boolean }): React.ReactElement {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16" className="h-4 w-4 fill-none stroke-current">
+      <path d="M2 6h3l4-3v10l-4-3H2z" className="fill-current" strokeWidth="0" />
+      {muted ? (
+        <path d="M11 6l4 4m0-4l-4 4" strokeWidth="1.5" strokeLinecap="round" />
+      ) : (
+        <path
+          d="M11 5.5a3.5 3.5 0 0 1 0 5M12.5 3.5a6 6 0 0 1 0 9"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
+      )}
+    </svg>
+  );
 }
