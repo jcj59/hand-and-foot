@@ -1,7 +1,7 @@
 /**
  * Whether the window is phone-sized, for the parts of the table whose markup —
  * not just whose spacing — differs on a phone: opponents as a strip of chips,
- * melds as chips, the hand as one squeezed fan.
+ * melds optionally as chips, the hand in even rows sized to the screen.
  *
  * Read from `matchMedia` rather than guessed from the user agent, so a narrow
  * desktop window gets the phone layout too, and it follows a rotation. Where

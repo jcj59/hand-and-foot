@@ -441,6 +441,7 @@ work, in order:
 2. A configurable rules editor, since the engine is already fully config-driven.
 3. An interactive tutorial that teaches the game through guided scenarios.
 4. ~~Support for large tables on mobile.~~ Done: below 768px the table stacks vertically, with
-   opponents as a strip of summary chips (tap one for its melds), melds as compact chips, and the
-   hand as an overlapping fan that splits into rows when long.
+   opponents as a strip of summary chips (tap one for its melds), the player's own melds as cards
+   that can be collapsed to compact chips, and the hand in even rows sized to the screen, so no
+   card ever overlaps another.
 5. A competitive layer with accounts, matchmaking, and ranked play.

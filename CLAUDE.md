@@ -459,8 +459,9 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   a notice. Reloading the home screen no longer auto-rejoins a stored seat — only the table's own
   URL does; Home's Rejoin reads the saved credentials.
 - **Phone layout (post-M5).** `usePhone` (`matchMedia("(max-width: 767px)")`) switches the table to
-  a stacked layout: `OpponentStrip` chips with a modal melds sheet, compact meld chips, a fanned
-  hand. Desktop markup is unchanged. jsdom has no `matchMedia`, so tests get the desktop layout by
+  a stacked layout: `OpponentStrip` chips with a modal melds sheet, the player's own melds as cards
+  (collapsible to chips, remembered per device), and the hand in even, non-overlapping rows sized to
+  the measured width (`evenRows`/`perRow` in `Hand.tsx`). Desktop markup is unchanged. jsdom has no `matchMedia`, so tests get the desktop layout by
   default; phone tests define `window.matchMedia` matching `PHONE_QUERY` and delete it afterwards.
 - **Take-back and the latest move (post-M5).** `takeBack` (engine `takeBack.ts`) restores
   `GameState.turnBase`, the seat before the turn's first play; `withTurnBase` keeps the *first*
