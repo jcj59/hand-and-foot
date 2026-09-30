@@ -15,6 +15,13 @@ import { naturalRank, validateMeld } from "./meld";
 import { defaultAction } from "./policy";
 import { project } from "./view";
 
+/**
+ * Each property plays dozens of whole games, which takes a second or two locally
+ * but several times that on a shared CI runner with every test file in parallel.
+ * Vitest's 5s default then fails a correct suite on load alone.
+ */
+const PROPERTY_TIMEOUT_MS = 60_000;
+
 function allCardIds(state: GameState): string[] {
   const ids: string[] = [];
   for (const p of state.players) {
@@ -203,7 +210,7 @@ function assertNoLeak(state: GameState): void {
   expect(leaks).toEqual([]);
 }
 
-describe("engine invariants (property-based)", () => {
+describe("engine invariants (property-based)", { timeout: PROPERTY_TIMEOUT_MS }, () => {
   it("conserves every card across random legal play, with no duplication or loss", () => {
     fc.assert(
       fc.property(
@@ -246,51 +253,55 @@ describe("engine invariants (property-based)", () => {
   });
 });
 
-describe("engine invariants under play that takes the pile", () => {
-  it("conserves every card when takePile and playMelds are in the mix", () => {
-    fc.assert(
-      fc.property(
-        fc.integer({ min: 1, max: 1_000_000 }),
-        fc.integer({ min: 2, max: 6 }),
-        (seed, players) => {
-          const opening = deal(players, EAST_COAST, seed);
-          const shoeSize = allCardIds(opening).length;
-          playRandomGame(seed, players, 300, (state) => {
-            const ids = allCardIds(state);
-            expect(ids.length).toBe(shoeSize);
-            expect(new Set(ids).size).toBe(shoeSize);
-          });
-        },
-      ),
-      { numRuns: 60 },
-    );
-  });
+describe(
+  "engine invariants under play that takes the pile",
+  { timeout: PROPERTY_TIMEOUT_MS },
+  () => {
+    it("conserves every card when takePile and playMelds are in the mix", () => {
+      fc.assert(
+        fc.property(
+          fc.integer({ min: 1, max: 1_000_000 }),
+          fc.integer({ min: 2, max: 6 }),
+          (seed, players) => {
+            const opening = deal(players, EAST_COAST, seed);
+            const shoeSize = allCardIds(opening).length;
+            playRandomGame(seed, players, 300, (state) => {
+              const ids = allCardIds(state);
+              expect(ids.length).toBe(shoeSize);
+              expect(new Set(ids).size).toBe(shoeSize);
+            });
+          },
+        ),
+        { numRuns: 60 },
+      );
+    });
 
-  it("keeps every state structurally well-formed", () => {
-    fc.assert(
-      fc.property(
-        fc.integer({ min: 1, max: 1_000_000 }),
-        fc.integer({ min: 2, max: 6 }),
-        (seed, players) => {
-          playRandomGame(seed, players, 300, (state) => assertWellFormed(state, seed));
-        },
-      ),
-      { numRuns: 60 },
-    );
-  });
+    it("keeps every state structurally well-formed", () => {
+      fc.assert(
+        fc.property(
+          fc.integer({ min: 1, max: 1_000_000 }),
+          fc.integer({ min: 2, max: 6 }),
+          (seed, players) => {
+            playRandomGame(seed, players, 300, (state) => assertWellFormed(state, seed));
+          },
+        ),
+        { numRuns: 60 },
+      );
+    });
 
-  it("actually reaches the pile often enough for these runs to mean something", () => {
-    let totalTakes = 0;
-    for (let seed = 1; seed <= 40; seed++) {
-      totalTakes += playRandomGame(seed, 4, 300).tookPile;
-    }
-    // Guards against the policy silently never taking the pile, which would make
-    // the properties above a re-run of the draw/discard case.
-    expect(totalTakes).toBeGreaterThan(20);
-  });
-});
+    it("actually reaches the pile often enough for these runs to mean something", () => {
+      let totalTakes = 0;
+      for (let seed = 1; seed <= 40; seed++) {
+        totalTakes += playRandomGame(seed, 4, 300).tookPile;
+      }
+      // Guards against the policy silently never taking the pile, which would make
+      // the properties above a re-run of the draw/discard case.
+      expect(totalTakes).toBeGreaterThan(20);
+    });
+  },
+);
 
-describe("the default policy (property-based)", () => {
+describe("the default policy (property-based)", { timeout: PROPERTY_TIMEOUT_MS }, () => {
   /**
    * The guarantee the server leans on: whatever position a player is abandoned
    * in, there is a move to make on their behalf. A default that is merely
@@ -379,7 +390,7 @@ describe("the default policy (property-based)", () => {
   });
 });
 
-describe("view security (property-based)", () => {
+describe("view security (property-based)", { timeout: PROPERTY_TIMEOUT_MS }, () => {
   it("never leaks a hidden card or the stock to any seat, at any point in a game", () => {
     fc.assert(
       fc.property(
