@@ -91,6 +91,23 @@ if (process.env.BIG_MELDS) {
     ),
   ];
 }
+if (process.env.TWO_DISCARDS) view.discard = [c("3", "hearts", 40), c("3", "diamonds", 41)];
+if (process.env.BIG_OPP) {
+  // An opponent with a table full of melds, as tall as a seat gets.
+  view.opponents[0] = {
+    ...view.opponents[0],
+    melds: ["J", "Q", "4", "7", "A", "K", "9", "8", "5"].map((r, i) =>
+      i % 3 === 2
+        ? book(r, i % 2 === 0)
+        : meld(r, [
+            c(r, "hearts", 60 + i),
+            c(r, "clubs", 70 + i),
+            c(r, "spades", 80 + i),
+            c(r, "diamonds", 90 + i),
+          ]),
+    ),
+  };
+}
 const grabbyMe = process.env.GRABBY_ME ? { grabbyPants: { seat: 0, streak: 3 } } : {};
 const room = {
   roomId: "HFDEMO",

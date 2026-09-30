@@ -283,8 +283,11 @@ export function DiscardPile({
   const under = cards[cards.length - 2];
   // Room for what shows beneath the top card: a peeking card to the left, or the
   // edges of a stack down and to the right.
-  const [padX, padY] = cards.length === 1 ? [0, 0] : cards.length === 2 ? [14, 0] : [6, 6];
+  // Two cards: the one beneath is tilted and peeks out to the left, so there is
+  // room left of it (it swings out ~7 units as it turns) and above (~2).
+  const [padX, padY] = cards.length === 1 ? [0, 0] : cards.length === 2 ? [23, 3] : [6, 6];
   const topX = cards.length === 2 ? padX : 0;
+  const topY = cards.length === 2 ? 2 : 0;
   return (
     <svg
       width={(w * (56 + padX)) / 56}
@@ -295,7 +298,7 @@ export function DiscardPile({
       className="block"
     >
       {cards.length === 2 && under && (
-        <g transform="rotate(-6 28 80)">
+        <g transform="translate(9 2) rotate(-6 28 80)">
           <CardFace card={under} stroke="#cbd5e1" strokeWidth={1} />
         </g>
       )}
@@ -313,7 +316,7 @@ export function DiscardPile({
             strokeWidth="1"
           />
         ))}
-      <CardFace card={top} stroke="#cbd5e1" strokeWidth={1} x={topX} />
+      <CardFace card={top} stroke="#cbd5e1" strokeWidth={1} x={topX} y={topY} />
     </svg>
   );
 }
