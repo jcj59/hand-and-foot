@@ -81,6 +81,17 @@ function playRandomGame(
       // The solver promised this lay-down was completable.
       expect(r.ok, `witness plan rejected on seed ${seed}: ${r.ok ? "" : r.error}`).toBe(true);
       pendingPlan = null;
+      // Sometimes change our mind: taking the lay-down back must return the table
+      // to exactly where it was — or be refused, where the play made itself final
+      // by emptying the hand into the foot or ending the turn.
+      if (r.ok && rand() < 0.3) {
+        const back = applyAction(r.state, { type: "takeBack" });
+        if (r.state.turnBase?.seat === state.currentSeat) {
+          expect(back.ok && back.state, `take-back on seed ${seed}`).toEqual(state);
+        } else {
+          expect(back.ok, `take-back of a final play on seed ${seed}`).toBe(false);
+        }
+      }
     }
     if (action.type === "takePile" && r.ok) {
       tookPile++;

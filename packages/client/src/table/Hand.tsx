@@ -35,11 +35,14 @@ export interface HandProps {
   readonly chosenId: string | null;
   readonly menu: React.ReactNode;
   readonly title: string;
+  /** The card just drawn, marked so it is obvious what arrived. */
+  readonly newId?: string | null;
   /**
-   * One row whose cards overlap as much as they must to fit the width, rather than
-   * wrapping: a phone has room for a fan, not for rows of cards.
+   * Even rows sized to the screen, for a phone: cards never overlap, so a hand too
+   * long for one row is split into rows of equal length rather than leaving one
+   * card alone on the last.
    */
-  readonly fan?: boolean;
+  readonly rows?: boolean;
 }
 
 export function Hand({
@@ -53,7 +56,8 @@ export function Hand({
   chosenId,
   menu,
   title,
-  fan = false,
+  newId = null,
+  rows = false,
 }: HandProps): React.ReactElement {
   const wildCount = cards.filter((card) => isWild(card.rank)).length;
 
@@ -71,18 +75,14 @@ export function Hand({
   const sorted = sortForDisplay(cards);
 
   function renderCard(card: Card, position: number, rowLength: number): React.ReactElement {
-    const lastInRow = position === rowLength - 1;
     const owed = owedIds.has(card.id);
     const melded = !isWild(card.rank) && meldRanks.has(card.rank);
     const lifted = stagedIds.has(card.id) || chosenId === card.id;
+    const fresh = card.id === newId;
     return (
       <span
         key={card.id}
-        style={fan ? { flex: lastInRow ? "0 0 auto" : "0 1 56px", minWidth: 0 } : undefined}
-        className={`relative flex flex-col gap-0.5 ${fan ? "items-start" : "items-center"} ${
-          // A card lifted out of the fan is drawn over its neighbours.
-          fan && lifted ? "z-10" : ""
-        }`}
+        className="relative flex flex-col items-center gap-0.5"
         title={
           owed
             ? "taken from the pile — owes a play"
@@ -93,7 +93,21 @@ export function Hand({
       >
         {/* A ring rather than a change of the card's own face: the obligation is
             about where the card came from, not what it is. */}
-        <span className={owed ? "rounded ring-2 ring-sky-300" : undefined}>
+        {fresh && (
+          <span className="absolute -top-2.5 left-1/2 z-10 -translate-x-1/2 rounded bg-sky-300 px-1 text-[10px] font-bold text-black">
+            NEW
+          </span>
+        )}
+        <span
+          className={
+            owed
+              ? "rounded ring-2 ring-sky-300"
+              : fresh
+                ? "rounded ring-2 ring-sky-300 ring-offset-2 ring-offset-felt-900"
+                : undefined
+          }
+          aria-description={fresh ? "just drawn" : undefined}
+        >
           <PlayingCard
             card={card}
             selected={lifted}
@@ -129,20 +143,17 @@ export function Hand({
             collect, so the count is worth stating next to the total. */}
         {wildCount > 0 && <span className="ml-2 font-normal text-white/50">{wildCount} wild</span>}
       </h2>
-      {/* Overlapped, so a full hand stays one row at the bottom of the table. */}
-      {fan ? (
-        // A fan per row: each card but a row's last may shrink to a sliver of
-        // itself, so cards overlap exactly as much as the width requires. Past
-        // FAN_ROW_MAX cards a row is too thin to read a rank, so it splits in two.
-        <div className="flex flex-col gap-1 pt-3 pr-1">
-          {fanRows(sorted).map((row) => (
-            <div key={row[0]!.id} className="flex">
+      {/* Side by side, never overlapping: every card's whole face is readable. */}
+      {rows ? (
+        <div className="flex flex-col gap-1 pt-3">
+          {evenRows(sorted, perRow(window.innerWidth)).map((row) => (
+            <div key={row[0]!.id} className="flex gap-1">
               {row.map((card, i) => renderCard(card, i, row.length))}
             </div>
           ))}
         </div>
       ) : (
-        <div className="flex flex-wrap -space-x-2 pt-2 sm:-space-x-1">
+        <div className="flex flex-wrap gap-1 pt-3">
           {sorted.map((card, i) => renderCard(card, i, sorted.length))}
         </div>
       )}
@@ -150,12 +161,17 @@ export function Hand({
   );
 }
 
-/** The most cards a fanned row holds before the hand splits into two rows. */
-export const FAN_ROW_MAX = 9;
+/**
+ * How many whole cards fit across a screen this wide: a card and its gap are 60
+ * pixels, and the table keeps a little margin either side.
+ */
+export function perRow(width: number): number {
+  return Math.max(3, Math.floor((width - 24) / 60));
+}
 
-/** The hand as fan rows of equal length, as few as keep each row readable. */
-export function fanRows<T>(cards: readonly T[]): T[][] {
-  const count = Math.max(1, Math.ceil(cards.length / FAN_ROW_MAX));
+/** The hand as rows of equal length, as few as fit `max` cards a row. */
+export function evenRows<T>(cards: readonly T[], max: number): T[][] {
+  const count = Math.max(1, Math.ceil(cards.length / max));
   const size = Math.ceil(cards.length / count);
   const rows: T[][] = [];
   for (let i = 0; i < cards.length; i += size) rows.push(cards.slice(i, i + size));

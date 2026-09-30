@@ -22,6 +22,14 @@ export function setActiveCards(p: PlayerState, cards: readonly Card[]): PlayerSt
   return p.inFoot ? { ...p, foot: cards } : { ...p, hand: cards };
 }
 
+/** The state with no turn base: the turn's plays are final; see `applyTakeBack`. */
+export function withoutTurnBase(state: GameState): GameState {
+  if (state.turnBase === undefined) return state;
+  const rest = { ...state };
+  delete rest.turnBase;
+  return rest;
+}
+
 /** Return a copy of the state with one seat's player replaced by fn(player). */
 export function updatePlayer(
   state: GameState,
@@ -51,8 +59,9 @@ export function advanceTurn(state: GameState, seat: number): GameState {
     if (finalLap === 0) roundEnded = true;
   }
   const next = (seat + 1) % state.players.length;
+  // The turn is over, so whatever it played is final.
   const passed: GameState = {
-    ...state,
+    ...withoutTurnBase(state),
     currentSeat: next,
     phase: "draw",
     finalLapRemaining: finalLap,

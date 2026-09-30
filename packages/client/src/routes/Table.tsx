@@ -32,13 +32,14 @@ import {
   stageDraft,
 } from "../actions";
 import { isUnplayable, type PlayContext } from "../cards/handOrder";
-import { FaceDownPile, PlayingCard } from "../cards/PlayingCard";
+import { DiscardPile, FaceDownPile, PlayingCard } from "../cards/PlayingCard";
 import { useSession } from "../session";
 import type { HfClientSocket } from "../socket";
 import { usePhone } from "../usePhone";
 import { Hand } from "../table/Hand";
 import { pulseStyle } from "../table/pulse";
 import { Melds } from "../table/Melds";
+import { useMoveNews } from "../table/moveNews";
 import { PauseBar } from "../table/PauseBar";
 import { OpponentStrip } from "../table/OpponentStrip";
 import { Seats } from "../table/Seats";
@@ -107,6 +108,18 @@ export function Table({ socket }: TableProps): React.ReactElement {
   const takeable = turnOpen && update.hints.canTakePile && !busy;
   const pilePulse = useMemo(() => (takeable ? pulseStyle() : undefined), [takeable]);
 
+  // Other players' discards and pickups announced, and this player's draw marked.
+  const newsRoom = latestRoom ?? update?.room;
+  const { news, freshDiscard, drawnId } = useMoveNews(
+    update?.lastMove,
+    update?.view.seat,
+    (s) => newsRoom?.players.find((p) => p.seat === s)?.name ?? `Seat ${s}`,
+    turnOpen,
+  );
+  // On a phone the player's own melds are cards, as on the desktop, unless they
+  // choose chips to save room; the choice is remembered on this device.
+  const [compactMelds, setCompactMelds] = useState(() => readCompactMelds());
+
   const liveZone = update && (update.view.inFoot ? update.view.foot : update.view.hand);
   useEffect(() => {
     if (liveZone) setStaging((current) => retainCards(current, liveZone));
@@ -156,6 +169,8 @@ export function Table({ socket }: TableProps): React.ReactElement {
   // it available is the play phase with the take-pile obligation settled.
   const canDiscard = myTurn && hints.phase === "play" && !obligationOpen && zone.length > 0;
   const staged = stagedIds(staging);
+  // Played this turn, and so still the player's to take back until they discard.
+  const provisional = new Set(myTurn ? view.playedThisTurn : []);
   const meldRanks = new Set<Rank>(view.melds.map((meld) => meld.rank));
   const playContext: PlayContext = {
     inFoot: view.inFoot,
@@ -178,6 +193,26 @@ export function Table({ socket }: TableProps): React.ReactElement {
     );
     return fits;
   })();
+
+  /**
+   * Take back this turn's melds, and put the same cards straight back into the
+   * lay-down being built, grouped as they were played — so moving a wild is two
+   * taps and a replay, not rebuilding the lay-down from nothing.
+   */
+  function takeBack(): void {
+    let restaged = EMPTY_STAGING;
+    for (const meld of view.melds) {
+      const played = meld.cards.filter((card) => provisional.has(card.id));
+      if (played.length === 0) continue;
+      restaged = focusGroup(restaged, meld.rank);
+      for (const card of played) restaged = stageCard(restaged, card);
+    }
+    void send({ type: "takeBack" }, () => {
+      closeMenu();
+      setStaging(restaged);
+      setMelding(true);
+    });
+  }
 
   function layOffAll(): void {
     const byRank = new Map<Rank, string[]>();
@@ -412,16 +447,31 @@ export function Table({ socket }: TableProps): React.ReactElement {
         <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
           {/* Padded so the glow around a pile that can be taken is never cut off
               by the edge of the scrolling area. */}
+          {/* The middle of the table: what everyone watches, so it is big and centred. */}
           <section
-            className={`flex flex-wrap items-end p-2 ${phone ? "justify-center gap-8" : "gap-6"}`}
+            className={`relative mx-auto flex items-end justify-center rounded-[2rem] bg-black/15 ring-1 ring-white/5 ${
+              phone ? "gap-8 px-5 py-3" : "gap-12 px-10 py-5"
+            }`}
             aria-label="Piles"
           >
+            {news && (
+              <div
+                role="status"
+                aria-label="Latest move"
+                // Fixed over the table rather than placed in it: the middle scrolls,
+                // and news clipped by the edge of a scroll area is news missed.
+                className="fixed top-28 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-full border border-sky-300/60 bg-felt-900/95 py-1 pr-4 pl-1 text-base whitespace-nowrap text-sky-50 shadow-lg shadow-black/40"
+              >
+                {news.card && <PlayingCard card={news.card} size="small" />}
+                <span className={news.card ? "" : "pl-2"}>{news.text}</span>
+              </div>
+            )}
             <div className="flex flex-col items-center gap-1">
               <span className="text-xs text-white/60">Stock</span>
               <FaceDownPile
                 count={view.stockCount}
                 label="Stock"
-                size={phone ? "small" : "normal"}
+                size={phone ? "normal" : "large"}
                 onClick={canDraw ? () => void send({ type: "draw" }) : undefined}
                 actionLabel="Draw a card"
               />
@@ -429,9 +479,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
             </div>
             <div className="flex flex-col items-center gap-1">
               <span className="text-xs text-white/60">Discard ({view.discard.length})</span>
-              {!top ? (
-                <p className="text-xs text-white/40">empty</p>
-              ) : canTake ? (
+              {canTake ? (
                 <button
                   type="button"
                   aria-label={`Take the pile (${view.discard.length} cards)`}
@@ -439,11 +487,15 @@ export function Table({ socket }: TableProps): React.ReactElement {
                   style={pilePulse}
                   className="pile-prompt rounded p-1 ring-2 ring-amber-300 transition hover:bg-white/10"
                 >
-                  <PlayingCard card={top} size={phone ? "small" : "normal"} />
+                  <DiscardPile cards={view.discard} size={phone ? "normal" : "large"} />
                 </button>
               ) : (
                 <div className="p-1">
-                  <PlayingCard card={top} size={phone ? "small" : "normal"} />
+                  <DiscardPile
+                    cards={view.discard}
+                    size={phone ? "normal" : "large"}
+                    highlight={freshDiscard && top !== undefined}
+                  />
                 </div>
               )}
               {canTake && <PilePrompt>Pick up the pile</PilePrompt>}
@@ -466,7 +518,22 @@ export function Table({ socket }: TableProps): React.ReactElement {
           )}
 
           <section className="flex flex-col gap-2" aria-label="Your melds">
-            <h2 className="text-sm font-medium text-white/80">Your melds</h2>
+            <div className="flex items-center gap-3">
+              <h2 className="text-sm font-medium text-white/80">Your melds</h2>
+              {phone && view.melds.length > 0 && (
+                <button
+                  type="button"
+                  aria-pressed={compactMelds}
+                  onClick={() => {
+                    setCompactMelds(!compactMelds);
+                    writeCompactMelds(!compactMelds);
+                  }}
+                  className="rounded border border-white/20 px-2 py-0.5 text-xs text-white/70"
+                >
+                  {compactMelds ? "Show cards" : "Collapse"}
+                </button>
+              )}
+            </div>
             <Melds
               melds={view.melds}
               config={room.config}
@@ -476,7 +543,8 @@ export function Table({ socket }: TableProps): React.ReactElement {
                 canMeld ? (rank) => setStaging((current) => focusGroup(current, rank)) : undefined
               }
               selectedRank={canMeld ? staging.focusedRank : null}
-              chips={phone}
+              chips={phone && compactMelds}
+              provisionalIds={provisional}
             />
           </section>
         </div>
@@ -539,6 +607,18 @@ export function Table({ socket }: TableProps): React.ReactElement {
                     Play melds
                   </button>
                 )}
+                {provisional.size > 0 && (
+                  // Nothing played this turn is final until the discard: this puts
+                  // it all back in the builder, to change and play again.
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={takeBack}
+                    className="rounded border border-sky-300/60 px-3 py-1.5 text-sm text-sky-100 disabled:opacity-40"
+                  >
+                    Take back melds
+                  </button>
+                )}
                 {layOffs.length > 0 && !building && (
                   <button
                     type="button"
@@ -569,7 +649,8 @@ export function Table({ socket }: TableProps): React.ReactElement {
               chosenId={chosenId}
               menu={menu}
               title={view.inFoot ? "Your foot" : "Your hand"}
-              fan={phone}
+              rows={phone}
+              newId={drawnId}
             />
           </div>
           {/* The foot waits beside the hand it will replace. */}
@@ -756,4 +837,22 @@ function PilePrompt({ children }: { readonly children: React.ReactNode }): React
       {children}
     </span>
   );
+}
+
+const COMPACT_MELDS_KEY = "hf.compactMelds";
+
+function readCompactMelds(): boolean {
+  try {
+    return window.localStorage.getItem(COMPACT_MELDS_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeCompactMelds(compact: boolean): void {
+  try {
+    window.localStorage.setItem(COMPACT_MELDS_KEY, compact ? "1" : "0");
+  } catch {
+    // Blocked storage: the choice lasts until the page is reloaded.
+  }
 }

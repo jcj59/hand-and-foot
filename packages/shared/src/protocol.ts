@@ -11,6 +11,7 @@
 import type {
   MeldPlay,
   Action,
+  Card,
   GameMode,
   LegalHints,
   PlayerView,
@@ -93,6 +94,25 @@ export interface RoomInfo {
   readonly nextRoundReady: readonly number[];
 }
 
+/**
+ * The move the table last saw, so a client can say it out loud — a toast for a
+ * discard, a highlight on the card just drawn — rather than leave players to spot
+ * a changed number.
+ *
+ * `card` is the discarded card (public: it is face up on the pile), or, for a
+ * draw, the card drawn — which only the player who drew it is ever sent. Everyone
+ * else learns that a card was drawn, not which.
+ */
+export interface LastMove {
+  /** Increases with every move, so the same move arriving twice is not announced twice. */
+  readonly seq: number;
+  readonly seat: number;
+  readonly kind: "draw" | "takePile" | "meld" | "takeBack" | "discard";
+  readonly card?: Card;
+  /** Cards taken with the pile, or played to melds. */
+  readonly count?: number;
+}
+
 /** The per-player broadcast: one of these goes to each socket after every accepted action. */
 export interface ViewUpdate {
   readonly view: PlayerView;
@@ -109,6 +129,8 @@ export interface ViewUpdate {
    * face-up discard pile.
    */
   readonly hints: LegalHints;
+  /** The table's latest move, as this seat may see it; absent before any. */
+  readonly lastMove?: LastMove;
 }
 
 /** Sent once when a round finishes, to every seat. */

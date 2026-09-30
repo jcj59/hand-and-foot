@@ -462,6 +462,15 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   a stacked layout: `OpponentStrip` chips with a modal melds sheet, compact meld chips, a fanned
   hand. Desktop markup is unchanged. jsdom has no `matchMedia`, so tests get the desktop layout by
   default; phone tests define `window.matchMedia` matching `PHONE_QUERY` and delete it afterwards.
+- **Take-back and the latest move (post-M5).** `takeBack` (engine `takeBack.ts`) restores
+  `GameState.turnBase`, the seat before the turn's first play; `withTurnBase` keeps the *first*
+  base, and `withoutTurnBase` (in `core.ts`) clears it at turn end, at go-out, and when a play
+  empties the hand into the foot (foot cards seen ⇒ earlier plays final). `PlayerView.playedThisTurn`
+  is own-seat only (pinned in `view.test.ts`). Mutation-tested: all killed except one equivalent —
+  `playedThisTurn`'s `state.currentSeat !== seat` guard, since a base only ever exists for the seat
+  on turn. The server's `Room.noteMove` sets `ViewUpdate.lastMove`; the drawn card is stripped for
+  every other seat (pinned in `room.lastmove.test.ts` and over the wire). The client's
+  `useMoveNews` announces others' discards/pickups once per `seq` and marks the player's own draw.
 - **Bot milestone — the RL agent.** The point of the whole project. Design not yet written; the
   section in `DESIGN.md` is a placeholder. Observation = `PlayerView` (by construction the agent
   cannot see more than a human), reward is end-of-round. The evaluation baseline is **not**

@@ -15,7 +15,7 @@ import { cardLabel, rankLabel, suitSymbol } from "./cardText";
 import { pulseStyle } from "../table/pulse";
 import { isDeadWeight, isRedCard } from "./handOrder";
 
-export type CardSize = "normal" | "small";
+export type CardSize = "large" | "normal" | "small";
 
 export interface PlayingCardProps {
   readonly card: Card;
@@ -33,6 +33,8 @@ export interface PlayingCardProps {
 }
 
 const DIMENSIONS: Readonly<Record<CardSize, { readonly w: number; readonly h: number }>> = {
+  // The piles in the middle of the table, which everyone watches.
+  large: { w: 84, h: 120 },
   normal: { w: 56, h: 80 },
   small: { w: 36, h: 52 },
 };
@@ -236,6 +238,86 @@ export function HiddenHand({
       )}
       <span className="text-xs text-white/70">{count}</span>
     </span>
+  );
+}
+
+/**
+ * The discard pile, face up, drawn as what it is: one card is one card, two are
+ * two — the one beneath peeking out, since it is as public as the top — and three
+ * or more are a stack, with only the top card's face showing.
+ *
+ * `highlight` rings the top card, for a discard that has only just landed.
+ */
+export function DiscardPile({
+  cards,
+  size = "normal",
+  highlight = false,
+}: {
+  readonly cards: readonly Card[];
+  readonly size?: CardSize;
+  readonly highlight?: boolean;
+}): React.ReactElement {
+  const { w } = DIMENSIONS[size];
+  const top = cards[cards.length - 1];
+  if (!top) {
+    return (
+      <svg
+        width={w}
+        height={(w * 80) / 56}
+        viewBox="0 0 56 80"
+        role="img"
+        aria-label="Discard pile, empty"
+        className="block"
+      >
+        <rect
+          x="1"
+          y="1"
+          width="54"
+          height="78"
+          rx="5"
+          fill="none"
+          stroke="#ffffff40"
+          strokeDasharray="4 3"
+        />
+      </svg>
+    );
+  }
+  const under = cards[cards.length - 2];
+  // Room for what shows beneath the top card: a peeking card to the left, or the
+  // edges of a stack down and to the right.
+  const [padX, padY] = cards.length === 1 ? [0, 0] : cards.length === 2 ? [14, 0] : [6, 6];
+  const topX = cards.length === 2 ? padX : 0;
+  const stroke = highlight ? "#38bdf8" : "#cbd5e1";
+  return (
+    <svg
+      width={(w * (56 + padX)) / 56}
+      height={(w * (80 + padY)) / 56}
+      viewBox={`0 0 ${56 + padX} ${80 + padY}`}
+      role="img"
+      aria-label={`Discard pile, ${cards.length} card${cards.length === 1 ? "" : "s"}, ${cardLabel(top)} on top`}
+      className="block"
+    >
+      {cards.length === 2 && under && (
+        <g transform="rotate(-6 28 80)">
+          <CardFace card={under} stroke="#cbd5e1" strokeWidth={1} />
+        </g>
+      )}
+      {cards.length >= 3 &&
+        [6, 3].map((d) => (
+          <rect
+            key={d}
+            x={1 + d}
+            y={1 + d}
+            width="54"
+            height="78"
+            rx="5"
+            fill="#f8fafc"
+            stroke="#94a3b8"
+            strokeWidth="1"
+          />
+        ))}
+      <CardFace card={top} stroke={stroke} strokeWidth={highlight ? 3 : 1} x={topX} />
+    </svg>
   );
 }
 
