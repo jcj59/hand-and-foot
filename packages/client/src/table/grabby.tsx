@@ -37,19 +37,54 @@ export function grabbyHeadline(room: RoomInfo): string | null {
 /** How long the announcement stays up. */
 export const GRABBY_MS = 4_000;
 
-/** Say it, deep and slow, with whatever voice the device has. */
+/** How long to wait for the device's voices to load before using its default. */
+export const VOICES_WAIT_MS = 1_000;
+
+/**
+ * A lower voice where the device offers one by name. "Female" contains "male", so
+ * it is ruled out first and "male" only counts as a word of its own.
+ */
+export function pickDeepVoice(
+  voices: readonly SpeechSynthesisVoice[],
+): SpeechSynthesisVoice | undefined {
+  return voices.find(
+    (v) =>
+      !/female/i.test(v.name) &&
+      /\bmale\b|daniel|fred|alex|david|aaron|arthur|george/i.test(v.name),
+  );
+}
+
+/**
+ * Say it, deep and slow, with whatever voice the device has. Chrome lists no
+ * voices until `voiceschanged` fires, so an empty list waits for that once before
+ * settling for the default voice.
+ */
 export function sayGrabbyPants(): void {
   const synth = typeof window !== "undefined" ? window.speechSynthesis : undefined;
   if (!synth || typeof SpeechSynthesisUtterance === "undefined") return;
-  const line = new SpeechSynthesisUtterance("Grabby Pants");
-  line.pitch = 0.1;
-  line.rate = 0.75;
-  // A lower voice where the device offers one by name.
-  const voices = synth.getVoices();
-  const deep = voices.find((v) => /male|daniel|fred|alex|david|aaron|arthur|george/i.test(v.name));
-  if (deep) line.voice = deep;
-  synth.cancel();
-  synth.speak(line);
+  const speak = (): void => {
+    const line = new SpeechSynthesisUtterance("Grabby Pants");
+    line.pitch = 0.1;
+    line.rate = 0.75;
+    const deep = pickDeepVoice(synth.getVoices());
+    if (deep) line.voice = deep;
+    synth.cancel();
+    synth.speak(line);
+  };
+  if (synth.getVoices().length > 0 || typeof synth.addEventListener !== "function") {
+    speak();
+    return;
+  }
+  let done = false;
+  const once = (): void => {
+    if (done) return;
+    done = true;
+    clearTimeout(fallback);
+    synth.removeEventListener("voiceschanged", once);
+    speak();
+  };
+  const fallback = setTimeout(once, VOICES_WAIT_MS);
+  synth.addEventListener("voiceschanged", once);
 }
 
 /**

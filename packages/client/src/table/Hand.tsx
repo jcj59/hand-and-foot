@@ -40,6 +40,8 @@ export interface HandProps {
   /** Closes the menu; on a phone, a tap anywhere outside its sheet. */
   readonly onDismiss?: () => void;
   readonly title: string;
+  /** Shown beside the title, such as the Grabby Pants icon for its holder. */
+  readonly badge?: React.ReactNode;
   /** The card just drawn, marked so it is obvious what arrived. */
   readonly newId?: string | null;
   /**
@@ -62,6 +64,7 @@ export function Hand({
   menu,
   onDismiss,
   title,
+  badge,
   newId = null,
   rows = false,
 }: HandProps): React.ReactElement {
@@ -71,7 +74,10 @@ export function Hand({
   if (cards.length === 0) {
     return (
       <section className="flex flex-col gap-2" aria-label={title} data-zone="hand">
-        <h2 className="text-sm font-medium text-white/80">{title} (0)</h2>
+        <h2 className="flex items-center gap-1 text-sm font-medium text-white/80">
+          {badge}
+          {title} (0)
+        </h2>
         <p className="text-sm text-white/50">
           No cards. You still take a turn: draw, and play from the pile if it fits.
         </p>
@@ -147,7 +153,8 @@ export function Hand({
 
   return (
     <section className="flex flex-col gap-2" aria-label={title} data-zone="hand">
-      <h2 className="text-sm font-medium text-white/80">
+      <h2 className="flex items-center gap-1 text-sm font-medium text-white/80">
+        {badge}
         {title} ({cards.length})
         {/* Wilds are a resource to plan a lay-down around rather than a rank to
             collect, so the count is worth stating next to the total. */}

@@ -41,7 +41,9 @@ import { pulseStyle } from "../table/pulse";
 import { Melds } from "../table/Melds";
 import { useCardMotion } from "../table/cardMotion";
 import {
+  GRABBY_NAME,
   GrabbyAnnouncement,
+  GrabbyIcon,
   useGrabbyAnnouncement,
   useUnlockSpeech,
   withGrabbyName,
@@ -161,6 +163,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
 
   const { view, hints, clock } = update;
   const room = withGrabbyName(latestRoom ?? update.room);
+  const grabby = room.grabbyPants?.seat === view.seat;
   const myTurn = turnOpen;
   const sink = { seat, setNotice };
   // The foot is revealed only once picked up; before that the server sends a count
@@ -712,7 +715,8 @@ export function Table({ socket }: TableProps): React.ReactElement {
               chosenId={chosenId}
               menu={menu}
               onDismiss={closeMenu}
-              title={view.inFoot ? "Your foot" : "Your hand"}
+              title={`${view.inFoot ? "Your foot" : "Your hand"}${grabby ? ` (${GRABBY_NAME})` : ""}`}
+              badge={grabby && <GrabbyIcon className="h-5 w-5" />}
               rows={phone}
               newId={drawnId}
             />
