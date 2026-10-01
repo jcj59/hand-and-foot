@@ -10,11 +10,13 @@
  * was and as it is — so the decision is tested without a speaker, and the audio
  * glue (`useTableSounds`) only plays what it is told.
  *
- * Browsers only allow sound after the player has interacted with the page, so the
- * audio context is created on the first tap or key press rather than at load.
+ * Browsers only allow sound after the player has interacted with the page, and
+ * suspend it when they please; `audio.ts` keeps the page's one context able to
+ * play through all that.
  */
 import { useEffect, useRef, useState } from "react";
 import type { LastMove, RoundEnded } from "@hf/shared";
+import { installAudio, onAudioContext, useAudioBlocked, withAudio } from "./audio";
 
 /** A recorded card sound, one per kind of move; see `public/sounds`. */
 export type CardSound = "draw" | "discard" | "meld" | "take-back";
@@ -53,8 +55,6 @@ export function soundsFor(before: Moment, now: Moment): Sound[] {
 
 const MUTE_KEY = "hf.muted";
 
-const UNLOCK_EVENTS = ["pointerdown", "pointerup", "touchend", "click", "keydown"] as const;
-
 function readMuted(): boolean {
   try {
     return window.localStorage.getItem(MUTE_KEY) === "1";
@@ -69,16 +69,6 @@ function writeMuted(muted: boolean): void {
   } catch {
     // Blocked storage: the choice lasts until the page is reloaded.
   }
-}
-
-type AudioContextCtor = new () => AudioContext;
-
-function audioContextCtor(): AudioContextCtor | null {
-  const w = window as unknown as {
-    AudioContext?: AudioContextCtor;
-    webkitAudioContext?: AudioContextCtor;
-  };
-  return w.AudioContext ?? w.webkitAudioContext ?? null;
 }
 
 /** A card: a few milliseconds of noise, band-passed so it sounds papery, not hissy. */
@@ -107,6 +97,7 @@ function flick(ctx: AudioContext, at: number, gain: number): void {
 async function loadRecordings(ctx: AudioContext, into: Map<CardSound, AudioBuffer>): Promise<void> {
   await Promise.all(
     CARD_SOUNDS.map(async (name) => {
+      if (into.has(name)) return;
       try {
         const response = await fetch(`/sounds/${name}.wav`);
         if (!response.ok) return;
@@ -245,6 +236,12 @@ function airHorn(ctx: AudioContext, at: number): void {
 }
 
 /**
+ * The card recordings, decoded once for the page. A buffer is not tied to the
+ * context that decoded it, so a replacement context plays the same ones.
+ */
+const recordings = new Map<CardSound, AudioBuffer>();
+
+/**
  * Play the table's sounds as it changes. Returns whether sound is muted and a
  * way to change it; the choice is remembered on this device.
  *
@@ -257,46 +254,30 @@ export function useTableSounds(
 ): {
   muted: boolean;
   setMuted: (muted: boolean) => void;
-  /** Play one sound now, outside the table's own changes — unless muted or not yet unlocked. */
+  /** Whether the browser is holding sound back until the player taps. */
+  blocked: boolean;
+  /** Play one sound now, outside the table's own changes — unless muted or not allowed yet. */
   playSound: (sound: Sound) => void;
 } {
   const [muted, setMutedState] = useState(readMuted);
-  const ctx = useRef<AudioContext | null>(null);
+  const blocked = useAudioBlocked();
   const before = useRef<Moment | null>(null);
-  const recordings = useRef(new Map<CardSound, AudioBuffer>());
 
-  // Audio may only start after the player has done something on the page. A touch
-  // counts as a gesture only when it ends, so the unlock listens to both ends of a
-  // press; iOS also wants a sound started inside that gesture, hence the silence.
   useEffect(() => {
-    const Ctor = audioContextCtor();
-    if (!Ctor) return;
-    const unlock = (): void => {
-      if (!ctx.current) {
-        const created = new Ctor();
-        ctx.current = created;
-        const silence = created.createBufferSource();
-        silence.buffer = created.createBuffer(1, 1, created.sampleRate);
-        silence.connect(created.destination);
-        silence.start(0);
-        void loadRecordings(created, recordings.current);
-      }
-      if (ctx.current.state !== "running") ctx.current.resume().catch(() => {});
-    };
-    for (const event of UNLOCK_EVENTS) window.addEventListener(event, unlock);
-    return () => {
-      for (const event of UNLOCK_EVENTS) window.removeEventListener(event, unlock);
-      ctx.current?.close().catch(() => {});
-      ctx.current = null;
-    };
+    installAudio();
+    return onAudioContext((ctx) => void loadRecordings(ctx, recordings));
   }, []);
 
   useEffect(() => {
     const previous = before.current;
     before.current = now;
     // The first moment is where the page came in, not a change to announce.
-    if (!previous || muted || quiet || !ctx.current) return;
-    for (const sound of soundsFor(previous, now)) play(ctx.current, sound, recordings.current);
+    if (!previous || muted || quiet) return;
+    const sounds = soundsFor(previous, now);
+    if (sounds.length === 0) return;
+    withAudio((ctx) => {
+      for (const sound of sounds) play(ctx, sound, recordings);
+    });
   }, [now, muted, quiet]);
 
   return {
@@ -305,8 +286,9 @@ export function useTableSounds(
       setMutedState(next);
       writeMuted(next);
     },
+    blocked,
     playSound: (sound) => {
-      if (!muted && ctx.current) play(ctx.current, sound, recordings.current);
+      if (!muted) withAudio((ctx) => play(ctx, sound, recordings));
     },
   };
 }

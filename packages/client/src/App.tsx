@@ -15,6 +15,7 @@ import { Lobby } from "./routes/Lobby";
 import { Table } from "./routes/Table";
 import { attachSession, useSession } from "./session";
 import type { HfClientSocket } from "./socket";
+import { installAudio } from "./table/audio";
 
 export interface AppProps {
   readonly socket: HfClientSocket;
@@ -59,6 +60,10 @@ export function App({ socket }: AppProps): React.ReactElement {
       }),
     [socket, seat, leave, setNotice],
   );
+
+  // Audio may only start after a gesture; listening from the first screen means
+  // the lobby's clicks count, so a table opens able to make sound.
+  useEffect(installAudio, []);
 
   useEffect(
     () => leaveOnClose(socket, { leave, setNotice, goHome: () => navigate("/") }),

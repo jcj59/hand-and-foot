@@ -5,12 +5,17 @@ import { cleanup } from "@testing-library/react";
 // `expect(el.textContent).toMatch(...)` prints the whole node on failure, while
 // these say which attribute or value was wrong.
 import "@testing-library/jest-dom/vitest";
+import { resetAudioForTests } from "./table/audio";
 
 // Testing Library only unmounts automatically when vitest's globals are enabled,
 // and this package keeps them off to match the rest of the repo. Without this a
 // component from one test stays in the document and the next test's query finds
 // two of everything.
 afterEach(cleanup);
+
+// The audio context belongs to the page, not to a table, so it would outlive a
+// test; each test starts as a fresh page.
+afterEach(resetAudioForTests);
 
 // A saved seat lives in both of the browser's stores (see `browserStore`), and a
 // test that clears only one would leak a seat from the last test into the next.

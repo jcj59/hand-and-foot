@@ -17,6 +17,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { createServerClock } from "../serverTime";
 import { useSession } from "../session";
 import type { HfClientSocket } from "../socket";
+import { STUCK_MS } from "../table/audio";
 import { evenRows, Hand, perRow } from "../table/Hand";
 import { REACTION_COOLDOWN_MS, REACTION_SHOW_MS } from "../table/reactions";
 import { PHONE_QUERY } from "../usePhone";
@@ -2107,9 +2108,21 @@ describe("sound", () => {
     silences: number;
     contexts: number;
     closed: number;
+    resumes: number;
+    refuseResume: boolean;
+    made: { state: string; become: (state: AudioContextState | "interrupted") => void }[];
     restore: () => void;
   } {
-    const counts = { oscillators: 0, noises: 0, silences: 0, contexts: 0, closed: 0 };
+    const counts = {
+      oscillators: 0,
+      noises: 0,
+      silences: 0,
+      contexts: 0,
+      closed: 0,
+      resumes: 0,
+      refuseResume: false,
+      made: [] as { state: string; become: (state: AudioContextState | "interrupted") => void }[],
+    };
     const node = () => ({
       connect: (n: unknown) => n,
       gain: {
@@ -2119,21 +2132,32 @@ describe("sound", () => {
         exponentialRampToValueAtTime() {},
       },
     });
-    class FakeContext {
+    class FakeContext extends EventTarget {
       currentTime = 0;
       sampleRate = 8_000;
       destination = {};
-      state = "suspended";
+      state: AudioContextState | "interrupted" = "suspended";
       constructor() {
+        super();
         counts.contexts++;
+        counts.made.push(this);
+      }
+      /** What the browser does to a page's audio: suspend it, or close it outright. */
+      become(state: AudioContextState | "interrupted"): void {
+        this.state = state;
+        this.dispatchEvent(new Event("statechange"));
       }
       resume = () => {
-        this.state = "running";
+        counts.resumes++;
+        // A browser that will not let it run yet (no gesture, a call in progress)
+        // leaves the promise unsettled.
+        if (counts.refuseResume) return new Promise<void>(() => {});
+        this.become("running");
         return Promise.resolve();
       };
       close = () => {
         counts.closed++;
-        this.state = "closed";
+        this.become("closed");
         return Promise.resolve();
       };
       createGain = node;
@@ -2181,7 +2205,11 @@ describe("sound", () => {
     }
   });
 
-  it("opens one audio context however many gestures unlock it, and closes it on leaving", () => {
+  /** Another player's discard: a move this player hears. */
+  const theirDiscard = (seq: number) =>
+    update({ lastMove: { seq, seat: 1, kind: "discard", card: card("4", "clubs") } });
+
+  it("opens one audio context however many gestures unlock it, and keeps it for the next table", () => {
     const audio = fakeAudio();
     try {
       mount(fakeSocket().socket);
@@ -2190,11 +2218,165 @@ describe("sound", () => {
       fireEvent.keyDown(window, { key: "a" });
       expect(audio.contexts).toBe(1);
       expect(audio.silences).toBe(1);
+      // Leaving one table for the next must not throw the context away: the next
+      // table would be silent until the player happened to tap it.
       cleanup();
-      expect(audio.closed).toBe(1);
+      expect(audio.closed).toBe(0);
+      mount(fakeSocket().socket);
+      act(() => useSession.getState().applyUpdate(theirDiscard(3)));
+      expect(audio.contexts).toBe(1);
+      expect(audio.noises).toBe(1);
     } finally {
       audio.restore();
     }
+  });
+
+  it("is ready at once when the player has already used the page, as in the lobby", () => {
+    const audio = fakeAudio();
+    Object.defineProperty(navigator, "userActivation", {
+      configurable: true,
+      value: { hasBeenActive: true },
+    });
+    try {
+      mount(fakeSocket().socket);
+      // No tap on the table itself, and nothing to ask the player for.
+      expect(audio.contexts).toBe(1);
+      expect(screen.getByRole("button", { name: "Turn sound off" })).toBeInTheDocument();
+      act(() => useSession.getState().applyUpdate(theirDiscard(3)));
+      expect(audio.contexts).toBe(1);
+      expect(audio.noises).toBe(1);
+    } finally {
+      delete (navigator as { userActivation?: unknown }).userActivation;
+      audio.restore();
+    }
+  });
+
+  it("counts a tap on a control that keeps its events to itself", () => {
+    const audio = fakeAudio();
+    const keep = (event: Event) => event.stopPropagation();
+    document.body.addEventListener("pointerup", keep);
+    try {
+      mount(fakeSocket().socket);
+      fireEvent.pointerUp(document.body);
+      expect(audio.contexts).toBe(1);
+    } finally {
+      document.body.removeEventListener("pointerup", keep);
+      audio.restore();
+    }
+  });
+
+  it("comes back by itself when the browser suspends it, with no tap", () => {
+    const audio = fakeAudio();
+    try {
+      mount(fakeSocket().socket);
+      fireEvent.pointerUp(window);
+      // A laptop asleep, a phone call: the browser takes the audio away, and lets
+      // it run again as soon as the page asks.
+      act(() => audio.made[0]!.become("suspended"));
+      expect(audio.made[0]!.state).toBe("running");
+      act(() => useSession.getState().applyUpdate(theirDiscard(3)));
+      expect(audio.noises).toBe(1);
+    } finally {
+      audio.restore();
+    }
+  });
+
+  it("tries again when the tab comes back, and plays nothing into a suspended context", () => {
+    const audio = fakeAudio();
+    try {
+      mount(fakeSocket().socket);
+      fireEvent.pointerUp(window);
+      // While the tab is away the browser will not let it run.
+      audio.refuseResume = true;
+      act(() => audio.made[0]!.become("suspended"));
+      act(() => useSession.getState().applyUpdate(theirDiscard(3)));
+      expect(audio.noises).toBe(0);
+      audio.refuseResume = false;
+      act(() => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      expect(audio.made[0]!.state).toBe("running");
+      act(() => useSession.getState().applyUpdate(theirDiscard(4)));
+      expect(audio.noises).toBe(1);
+    } finally {
+      audio.restore();
+    }
+  });
+
+  it("plays a sound that arrives while suspended once the context resumes", async () => {
+    const audio = fakeAudio();
+    try {
+      mount(fakeSocket().socket);
+      fireEvent.pointerUp(window);
+      // Suspended without saying so, as a browser may leave it.
+      audio.made[0]!.state = "suspended";
+      await act(async () => useSession.getState().applyUpdate(theirDiscard(3)));
+      expect(audio.made[0]!.state).toBe("running");
+      expect(audio.noises).toBe(1);
+    } finally {
+      audio.restore();
+    }
+  });
+
+  it("replaces a context the browser closed, on the next tap", () => {
+    const audio = fakeAudio();
+    try {
+      mount(fakeSocket().socket);
+      fireEvent.pointerUp(window);
+      act(() => audio.made[0]!.become("closed"));
+      fireEvent.pointerUp(window);
+      expect(audio.contexts).toBe(2);
+      act(() => useSession.getState().applyUpdate(theirDiscard(3)));
+      expect(audio.noises).toBe(1);
+    } finally {
+      audio.restore();
+    }
+  });
+
+  it("replaces a context that a tap could not bring back", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const audio = fakeAudio();
+    try {
+      mount(fakeSocket().socket);
+      fireEvent.pointerUp(window);
+      // Safari after a call: interrupted, and no tap gets it running again.
+      audio.refuseResume = true;
+      act(() => audio.made[0]!.become("interrupted"));
+      fireEvent.pointerUp(window);
+      act(() => vi.advanceTimersByTime(STUCK_MS));
+      audio.refuseResume = false;
+      fireEvent.pointerUp(window);
+      expect(audio.contexts).toBe(2);
+      expect(audio.closed).toBe(1);
+      expect(audio.made[1]!.state).toBe("running");
+    } finally {
+      audio.restore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("says when the browser is holding sound back, and a tap on it lets sound play rather than muting", () => {
+    const audio = fakeAudio();
+    try {
+      mount(fakeSocket().socket);
+      const hint = screen.getByRole("button", { name: "Tap to let sound play" });
+      fireEvent.click(hint);
+      expect(screen.getByRole("button", { name: "Turn sound off" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+      expect(window.localStorage.getItem("hf.muted")).toBeNull();
+      act(() => audio.made[0]!.become("suspended"));
+      // Back by itself, so no hint is left behind.
+      expect(screen.getByRole("button", { name: "Turn sound off" })).toBeInTheDocument();
+    } finally {
+      audio.restore();
+    }
+  });
+
+  it("gives no hint where there is no Web Audio to hold back", () => {
+    mount(fakeSocket().socket);
+    expect(screen.getByRole("button", { name: "Turn sound off" })).toBeInTheDocument();
   });
 
   it("plays one sound for a pile pickup, and a phrase at the end of a round and the match", () => {
