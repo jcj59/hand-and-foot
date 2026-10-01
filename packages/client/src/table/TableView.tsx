@@ -188,7 +188,7 @@ export function TableView({
 
   // One card sound for every move, a chime when it is this player's turn, and
   // a phrase when a round or the match ends.
-  const { muted, setMuted, playSound } = useTableSounds(
+  const { muted, setMuted, blocked, playSound } = useTableSounds(
     {
       moveSeq: update.lastMove?.seq ?? null,
       moveKind: update.lastMove?.kind ?? null,
@@ -498,14 +498,32 @@ export function TableView({
               sheet={phone}
             />
           )}
+          {/* Sound on but not allowed yet — the browser waits for a tap after a
+              reload, or took it away while the tab was away — says so: any tap
+              brings it back, this one included, and without the hint silence
+              looks like a broken game. */}
           <button
             type="button"
-            aria-label={muted ? "Turn sound on" : "Turn sound off"}
+            aria-label={
+              muted ? "Turn sound on" : blocked ? "Tap to let sound play" : "Turn sound off"
+            }
+            title={!muted && blocked ? "Tap anywhere to let sound play" : undefined}
             aria-pressed={muted}
-            onClick={() => setMuted(!muted)}
-            className="rounded border border-white/25 px-2 py-1 text-sm"
+            onClick={() => {
+              // A tap that only let the browser start sound should not also mute it.
+              if (muted || !blocked) setMuted(!muted);
+            }}
+            className={`relative rounded border px-2 py-1 text-sm ${
+              !muted && blocked ? "border-amber-300/80 text-amber-200" : "border-white/25"
+            }`}
           >
             <SpeakerIcon muted={muted} />
+            {!muted && blocked && (
+              <span
+                aria-hidden="true"
+                className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-amber-300 motion-safe:animate-pulse"
+              />
+            )}
           </button>
           {/* Away from the table without giving up the seat: the main screen offers
               the way back. The clock keeps running meanwhile. */}

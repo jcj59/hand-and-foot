@@ -500,9 +500,20 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   synthesized flick standing in until they arrive; the chimes are synthesized with Web Audio.
   `soundsFor` (pure, tested) maps a change in `{moveSeq, moveKind, myTurn, result}` to sounds:
   **one** recording per move, by kind, however many cards it moves, a chime when the turn comes to
-  this player, phrases for round and match end. The `AudioContext` is created on the first user
-  gesture (`UNLOCK_EVENTS`; a touch only counts when it ends, so both ends of a press are listened
-  for) per browser autoplay rules, and closed on unmount; mute is per device (`hf.muted`).
+  this player, phrases for round and match end. Mute is per device (`hf.muted`).
+  **The `AudioContext` is page-level, in `table/audio.ts`**, not per table. It used to be made on
+  the first gesture *after the table mounted* and closed on unmount, and nothing resumed it once
+  the browser suspended it (background tab, sleep, a call, an output switch). So a game dealt from
+  the lobby was silent until the player tapped the table, and audio taken away mid-game stayed
+  gone — sounds kept being scheduled into the dead context — until a tap (the mute toggle "fixed"
+  it by being one). Now: `installAudio` (from `App` and `useTableSounds`) listens to gestures in
+  the **capture** phase, makes the context at once if `navigator.userActivation.hasBeenActive`,
+  resumes on `visibilitychange`/`pageshow`/`focus`/`statechange`, replaces a closed context or one
+  a gesture could not resume within `STUCK_MS` (Safari's `interrupted`), and `withAudio` waits at
+  most `LATE_MS` for a resume rather than queueing a burst. `useAudioBlocked` drives the speaker
+  button's amber "Tap to let sound play" state; a tap that only unblocks does not mute. Verified
+  end to end with Playwright under `--autoplay-policy=user-gesture-required`, instrumenting
+  `AudioContext` to count sources started while not `running`.
 - **Grabby Pants.** `engine/src/grabby.ts` (moved from the server in roadmap item 1, so replay and
   the scenario viewer derive the same holder) works out, from the action log, who has taken the pile
   most times running this match: 3 in a row (`GRABBY_STREAK`, pinned) earns the title; taking it
