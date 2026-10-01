@@ -15,6 +15,7 @@ import {
   transferCode,
   type GameMode,
   type RulesPreset,
+  type UserCredentials,
 } from "@hf/shared";
 import { createTable, joinTable } from "../actions";
 import { loadCredentials } from "../credentials";
@@ -23,7 +24,6 @@ import { useSession } from "../session";
 import { serverUrl, type HfClientSocket } from "../socket";
 import {
   adoptTransferCode,
-  ensureIdentity,
   httpPost,
   loadName,
   prepareIdentity,
@@ -199,12 +199,30 @@ export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React
  * the place to paste one from elsewhere. Folded away — most people never need it.
  */
 function IdentityPanel({ post }: { readonly post: Post }): React.ReactElement {
-  const [identity, setIdentity] = useState(ensureIdentity);
+  // Shown only once the server knows it: a code for an identity never registered
+  // would be refused on the other device.
+  const [identity, setIdentity] = useState<UserCredentials | null>(null);
   const [pasted, setPasted] = useState("");
   const [status, setStatus] = useState<string | null>(null);
-  const code = transferCode(identity);
+  const [asked, setAsked] = useState(false);
+
+  const open = (): void => {
+    if (asked) return;
+    setAsked(true);
+    void prepareIdentity(post, loadName()).then((ready) => {
+      // A code adopted while this was in flight is the profile now; keep it.
+      if (ready) setIdentity((current) => current ?? ready);
+      else setStatus("Could not reach the server to set up your profile. Try again later.");
+    });
+  };
+
   return (
-    <details className="rounded border border-white/10 bg-black/15 p-3 text-sm">
+    <details
+      className="rounded border border-white/10 bg-black/15 p-3 text-sm"
+      onToggle={(event) => {
+        if ((event.currentTarget as HTMLDetailsElement).open) open();
+      }}
+    >
       <summary className="cursor-pointer text-white/70">Use your profile on another device</summary>
       <div className="mt-3 flex flex-col gap-3">
         <label className="flex flex-col gap-1">
@@ -214,7 +232,7 @@ function IdentityPanel({ post }: { readonly post: Post }): React.ReactElement {
           </span>
           <input
             readOnly
-            value={code}
+            value={identity ? transferCode(identity) : "…"}
             onFocus={(e) => e.target.select()}
             aria-label="Your transfer code"
             className="rounded border border-white/20 bg-black/30 px-2 py-1 font-mono text-xs"

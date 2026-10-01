@@ -52,7 +52,12 @@ async function readJson(request: Request): Promise<Record<string, unknown> | nul
  */
 async function verified(env: Env, user: unknown): Promise<string | null> {
   if (!isUserCredentials(user)) return null;
-  return env.USERS.getByName(user.userId).verify(user);
+  try {
+    return await env.USERS.getByName(user.userId).verify(user);
+  } catch {
+    // An identity object that cannot answer is no reason to refuse a seat.
+    return null;
+  }
 }
 
 export default {

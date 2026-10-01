@@ -1212,6 +1212,41 @@ describe("quick reactions over the wire", () => {
   });
 });
 
+describe("identities over HTTP, with the database down", () => {
+  it("answers a registration with an error and seats players anyway, without a crash", async () => {
+    const down = {
+      get: async () => {
+        throw new Error("database unreachable");
+      },
+      put: async () => {
+        throw new Error("database unreachable");
+      },
+    };
+    const server = createServer({ users: down });
+    started.push(server);
+    const port = await server.listen(0);
+    const response = await fetch(`http://localhost:${port}/api/users`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ userId: "ana-user-id-0001", secret: "a".repeat(40) }),
+    });
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({
+      ok: false,
+      error: "the server could not answer that; try again",
+    });
+    const host = await connect(port);
+    const created = await new Promise<Ack<SeatCredentials>>((resolve) =>
+      host.emit(
+        "createRoom",
+        { name: "Ana", user: { userId: "ana-user-id-0001", secret: "a".repeat(40) } },
+        resolve,
+      ),
+    );
+    expect(created.ok).toBe(true);
+  });
+});
+
 describe("identities over HTTP", () => {
   const ana = { userId: "ana-user-id-0001", secret: "a".repeat(40) };
   const ben = { userId: "ben-user-id-0002", secret: "b".repeat(40) };

@@ -355,14 +355,18 @@ export class PostgresUserStore implements UserStore {
     };
   }
 
-  async put(record: UserRecord): Promise<void> {
-    await this.sql`
+  async put(record: UserRecord): Promise<boolean> {
+    // The secret is checked in the statement itself: a row held under another
+    // secret is left alone and nothing is returned, so a race cannot be lost quietly.
+    const written = await this.sql`
       insert into users (user_id, secret_hash, name, created_at, updated_at)
       values (${record.userId}, ${record.secretHash}, ${record.name}, ${record.createdAt}, ${record.updatedAt})
       on conflict (user_id) do update set
-        secret_hash = excluded.secret_hash,
         name = excluded.name,
-        updated_at = excluded.updated_at`;
+        updated_at = excluded.updated_at
+      where users.secret_hash = excluded.secret_hash
+      returning user_id`;
+    return written.length === 1;
   }
 }
 

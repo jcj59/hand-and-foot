@@ -20,7 +20,14 @@ export class UserObject extends DurableObject<Env> {
       const record = this.ctx.storage.kv.get<UserRecord>(RECORD);
       return record?.userId === userId ? record : null;
     },
-    put: async (record) => this.ctx.storage.kv.put(RECORD, record),
+    // One object per identity, and an object handles one request at a time, so the
+    // check and the write below cannot be interleaved with another registration.
+    put: async (record) => {
+      const held = this.ctx.storage.kv.get<UserRecord>(RECORD);
+      if (held && held.secretHash !== record.secretHash) return false;
+      this.ctx.storage.kv.put(RECORD, record);
+      return true;
+    },
   };
 
   register(body: unknown, now: number): ReturnType<typeof registerUser> {

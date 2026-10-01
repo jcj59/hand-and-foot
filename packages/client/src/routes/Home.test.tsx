@@ -260,6 +260,13 @@ function fakeHomeSocket(): HfClientSocket {
   return socket;
 }
 
+/** Open the folded profile panel, as a tap on its summary does. */
+function openPanel(): void {
+  const details = screen.getByText(/use your profile on another device/i).closest("details")!;
+  details.open = true;
+  fireEvent(details, new Event("toggle"));
+}
+
 describe("who is sitting down", () => {
   it("offers the name used last time, and remembers a new one", async () => {
     window.localStorage.setItem(NAME_KEY, "Ana");
@@ -293,14 +300,32 @@ describe("who is sitting down", () => {
     expect(sent[0]!.args[0]).not.toHaveProperty("user");
   });
 
-  it("shows this device's transfer code, and takes on another device's", async () => {
+  it("registers this device's profile when the panel opens, then shows its code", async () => {
+    window.localStorage.setItem(NAME_KEY, "Ana");
     const users = fakeUsers();
     mount(fakeSocket().socket, "/", users);
-    fireEvent.click(screen.getByText(/use your profile on another device/i));
+    openPanel();
+    await waitFor(() => expect(screen.getByLabelText("Your transfer code")).not.toHaveValue("…"));
     const mine = JSON.parse(window.localStorage.getItem(IDENTITY_KEY)!);
+    expect(users.sent).toEqual([{ ...mine, name: "Ana" }]);
     expect(screen.getByLabelText("Your transfer code")).toHaveValue(
       `hf1.${mine.userId}.${mine.secret}`,
     );
+  });
+
+  it("shows no code, and says why, when the profile cannot be registered", async () => {
+    mount(fakeSocket().socket, "/", fakeUsers({ ok: false, error: "down" }));
+    openPanel();
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(/could not reach the server/i),
+    );
+    expect(screen.getByLabelText("Your transfer code")).toHaveValue("…");
+  });
+
+  it("takes on another device's profile from its code", async () => {
+    const users = fakeUsers();
+    mount(fakeSocket().socket, "/", users);
+    openPanel();
     const other = { userId: "other-device-user-01", secret: "s".repeat(40) };
     fireEvent.change(screen.getByLabelText("Code from another device"), {
       target: { value: `hf1.${other.userId}.${other.secret}` },
@@ -318,7 +343,8 @@ describe("who is sitting down", () => {
 
   it("refuses a code that is not one, keeping this device's profile", async () => {
     mount(fakeSocket().socket);
-    fireEvent.click(screen.getByText(/use your profile on another device/i));
+    openPanel();
+    await waitFor(() => expect(window.localStorage.getItem(IDENTITY_KEY)).not.toBeNull());
     const before = window.localStorage.getItem(IDENTITY_KEY);
     fireEvent.change(screen.getByLabelText("Code from another device"), {
       target: { value: "not a code" },

@@ -70,6 +70,17 @@ function contract(name: string, open: () => Promise<UserStore>): void {
       expect((await registerUser(store, { ...ana, existing: true }, 3_000)).ok).toBe(true);
     });
 
+    it("will not overwrite an identity held under another secret, in the same step as the write", async () => {
+      const store = await open();
+      await registerUser(store, { ...ana, name: "Ana" }, 1_000);
+      const held = (await store.get(ana.userId))!;
+      const rival = { ...held, secretHash: await hashSecret("b".repeat(40)), name: "Mal" };
+      expect(await store.put(rival)).toBe(false);
+      expect(await store.get(ana.userId)).toEqual(held);
+      expect(await store.put({ ...held, name: "Annie" })).toBe(true);
+      expect((await store.get(ana.userId))!.name).toBe("Annie");
+    });
+
     it("proves an identity only with its own secret", async () => {
       const store = await open();
       await registerUser(store, ana, 1_000);
@@ -84,6 +95,24 @@ function contract(name: string, open: () => Promise<UserStore>): void {
 }
 
 contract("in memory", async () => new InMemoryUserStore());
+
+describe("when the store misbehaves", () => {
+  it("reports a registration that lost a race to another browser", async () => {
+    // The read saw nothing; by the write, someone else held the id.
+    const raced: UserStore = { get: async () => null, put: async () => false };
+    expect(await registerUser(raced, ana, 1)).toEqual({ ok: false, error: IDENTITY_TAKEN });
+  });
+
+  it("proves nothing, rather than failing, when it cannot be read", async () => {
+    const broken: UserStore = {
+      get: async () => {
+        throw new Error("database unreachable");
+      },
+      put: async () => true,
+    };
+    expect(await verifyUser(broken, ana)).toBeNull();
+  });
+});
 
 describe("what counts as an identity", () => {
   it("refuses anything but a long random id and secret", async () => {

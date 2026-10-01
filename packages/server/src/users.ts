@@ -25,7 +25,12 @@ export interface UserRecord {
 
 export interface UserStore {
   get(userId: string): Promise<UserRecord | null>;
-  put(record: UserRecord): Promise<void>;
+  /**
+   * Write the record, unless the id is already held under a different secret —
+   * checked in the same step as the write, so two browsers registering one id at
+   * once cannot both win. Resolves whether it was written.
+   */
+  put(record: UserRecord): Promise<boolean>;
 }
 
 export class InMemoryUserStore implements UserStore {
@@ -33,8 +38,11 @@ export class InMemoryUserStore implements UserStore {
   async get(userId: string): Promise<UserRecord | null> {
     return this.records.get(userId) ?? null;
   }
-  async put(record: UserRecord): Promise<void> {
+  async put(record: UserRecord): Promise<boolean> {
+    const held = this.records.get(record.userId);
+    if (held && held.secretHash !== record.secretHash) return false;
     this.records.set(record.userId, record);
+    return true;
   }
 }
 
@@ -76,7 +84,8 @@ export async function registerUser(
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };
-  await store.put(record);
+  // Someone else registered this id between the read and the write.
+  if (!(await store.put(record))) return { ok: false, error: IDENTITY_TAKEN };
   return { ok: true, data: { userId: record.userId, name: record.name } };
 }
 
@@ -88,9 +97,15 @@ export async function registerUser(
  */
 export async function verifyUser(store: UserStore, credentials: unknown): Promise<string | null> {
   if (!isUserCredentials(credentials)) return null;
-  const existing = await store.get(credentials.userId);
-  if (!existing) return null;
-  return existing.secretHash === (await hashSecret(credentials.secret)) ? existing.userId : null;
+  try {
+    const existing = await store.get(credentials.userId);
+    if (!existing) return null;
+    return existing.secretHash === (await hashSecret(credentials.secret)) ? existing.userId : null;
+  } catch {
+    // A store that cannot answer — a database blip — is no reason to refuse a seat:
+    // the player sits down without an identity this time.
+    return null;
+  }
 }
 
 export type { UserCredentials };

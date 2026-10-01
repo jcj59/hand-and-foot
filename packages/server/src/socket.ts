@@ -87,7 +87,12 @@ export function attachTables(
     !options.cors || origin === undefined || options.cors.includes(origin);
 
   http.on("request", (request, response) => {
-    void route(request, response);
+    // Nothing a request does may take the process down with it: a store that fails
+    // mid-request answers this one request with an error, and every table goes on.
+    route(request, response).catch(() => {
+      if (response.headersSent) return void response.end();
+      json(response, 500, { ok: false, error: "the server could not answer that; try again" });
+    });
   });
 
   async function route(request: IncomingMessage, response: ServerResponse): Promise<void> {

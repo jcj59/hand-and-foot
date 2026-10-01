@@ -540,6 +540,13 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   else's, giving up after `REGISTER_TIMEOUT_MS` 4s rather than blocking), and Home's folded
   "Use your profile on another device" panel shows/accepts transfer codes. Seat tokens remain
   the only authority to act. Server DB tests now drop `users` too when they wipe.
+  `UserStore.put` resolves whether it wrote and refuses to overwrite an id held under another
+  secret in the same step (Postgres: `on conflict ... where users.secret_hash =
+  excluded.secret_hash returning`), so a registration race is reported as taken, not lost.
+  A store that fails never costs a seat: `verifyUser` (and the Worker's `verified`) answer null,
+  and the Node `route` catches any rejection and answers 500 instead of letting an unhandled
+  rejection kill the process. Home's panel registers the profile when opened and shows the code
+  only once the server knows it.
 - **Quick reactions (roadmap item 3).** A fixed list, `REACTIONS` in `@hf/shared/protocol.ts`
   (six emoji, six phrases); only an id crosses the wire (`isReactionId` is the server's check), so
   there is nothing to moderate. `react {id}` → `Room.react` (seat valid, id valid, and a per-seat
