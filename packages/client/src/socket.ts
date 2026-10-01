@@ -7,7 +7,7 @@
  * failing at runtime.
  */
 import { connect as connectTransport, type TableSocket } from "@hf/transport";
-import type { Ack, Action, MeldPlay, RoomOptions, SeatCredentials } from "@hf/shared";
+import type { Ack, Action, MeldPlay, ReactionId, RoomOptions, SeatCredentials } from "@hf/shared";
 
 export type HfClientSocket = TableSocket;
 
@@ -140,6 +140,10 @@ export function setHost(socket: HfClientSocket, seat: number): Promise<Ack<undef
 
 export function setPaused(socket: HfClientSocket, paused: boolean): Promise<Ack<undefined>> {
   return ask((ack) => socket.emit("setPaused", { paused }, ack));
+}
+
+export function react(socket: HfClientSocket, id: ReactionId): Promise<Ack<undefined>> {
+  return ask((ack) => socket.emit("react", { id }, ack));
 }
 
 export function saveForLater(socket: HfClientSocket): Promise<Ack<undefined>> {

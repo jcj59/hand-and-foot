@@ -12,7 +12,7 @@
  * clock offset, because only it knows what its own clock reads.
  */
 import { create } from "zustand";
-import type { RoomInfo, RoundEnded, SeatCredentials, ViewUpdate } from "@hf/shared";
+import type { Reaction, RoomInfo, RoundEnded, SeatCredentials, ViewUpdate } from "@hf/shared";
 import { clearCredentials, saveCredentials } from "./credentials";
 import { createServerClock, type ServerClock } from "./serverTime";
 
@@ -30,6 +30,11 @@ export interface SessionState {
   result: RoundEnded | null;
   /** The last rejection the server sent back, for the UI to surface. */
   notice: string | null;
+  /**
+   * Quick reactions heard at this table, most recent last and only the last few:
+   * they are shown for a moment and forgotten, never part of the game.
+   */
+  reactions: readonly Reaction[];
   readonly clock: ServerClock;
 
   setStatus(status: ConnectionStatus): void;
@@ -46,8 +51,12 @@ export interface SessionState {
   applyRoom(room: RoomInfo): void;
   applyUpdate(update: ViewUpdate): void;
   applyResult(result: RoundEnded): void;
+  applyReaction(reaction: Reaction): void;
   setNotice(notice: string | null): void;
 }
+
+/** How many reactions the store keeps: enough for every seat's latest. */
+export const KEPT_REACTIONS = 16;
 
 export const useSession = create<SessionState>((set, get) => ({
   status: "connecting",
@@ -56,6 +65,7 @@ export const useSession = create<SessionState>((set, get) => ({
   update: null,
   result: null,
   notice: null,
+  reactions: [],
   clock: createServerClock(),
 
   setStatus: (status) => set({ status }),
@@ -65,7 +75,7 @@ export const useSession = create<SessionState>((set, get) => ({
     // A different table: nothing held about the old one — its room, its last view,
     // above all its scoreboard — belongs at this one.
     if (get().credentials?.roomId !== credentials.roomId) {
-      set({ credentials, room: null, update: null, result: null });
+      set({ credentials, room: null, update: null, result: null, reactions: [] });
       return;
     }
     set({ credentials });
@@ -79,7 +89,14 @@ export const useSession = create<SessionState>((set, get) => ({
 
   leave: () => {
     clearCredentials();
-    set({ credentials: null, room: null, update: null, result: null, notice: null });
+    set({
+      credentials: null,
+      room: null,
+      update: null,
+      result: null,
+      notice: null,
+      reactions: [],
+    });
   },
 
   applyRoom: (room) => set({ room }),
@@ -105,6 +122,9 @@ export const useSession = create<SessionState>((set, get) => ({
 
   applyResult: (result) => set({ result }),
 
+  applyReaction: (reaction) =>
+    set({ reactions: [...get().reactions, reaction].slice(-KEPT_REACTIONS) }),
+
   setNotice: (notice) => set({ notice }),
 }));
 
@@ -123,17 +143,19 @@ export interface SessionSocket {
   on(event: "room", handler: (info: RoomInfo) => void): void;
   on(event: "roundEnded", handler: (result: RoundEnded) => void): void;
   on(event: "seat", handler: (seat: number) => void): void;
+  on(event: "reaction", handler: (reaction: Reaction) => void): void;
   off(event: "connect" | "disconnect", handler: () => void): void;
   off(event: "view", handler: (update: ViewUpdate) => void): void;
   off(event: "room", handler: (info: RoomInfo) => void): void;
   off(event: "roundEnded", handler: (result: RoundEnded) => void): void;
   off(event: "seat", handler: (seat: number) => void): void;
+  off(event: "reaction", handler: (reaction: Reaction) => void): void;
 }
 
 /** The subset of the store the wiring writes to. */
 export type SessionSink = Pick<
   SessionState,
-  "setStatus" | "applyRoom" | "applyUpdate" | "applyResult" | "reseat"
+  "setStatus" | "applyRoom" | "applyUpdate" | "applyResult" | "reseat" | "applyReaction"
 >;
 
 /**
@@ -150,6 +172,7 @@ export function attachSession(socket: SessionSocket, sink: SessionSink): () => v
   const onRoom = (info: RoomInfo): void => sink.applyRoom(info);
   const onResult = (result: RoundEnded): void => sink.applyResult(result);
   const onSeat = (seat: number): void => sink.reseat(seat);
+  const onReaction = (reaction: Reaction): void => sink.applyReaction(reaction);
 
   socket.on("connect", onConnect);
   socket.on("disconnect", onDisconnect);
@@ -157,6 +180,7 @@ export function attachSession(socket: SessionSocket, sink: SessionSink): () => v
   socket.on("room", onRoom);
   socket.on("roundEnded", onResult);
   socket.on("seat", onSeat);
+  socket.on("reaction", onReaction);
   // The transport announces itself on its own schedule, which can be before the app
   // has mounted and attached this; asking catches up on what was missed.
   if (socket.connected) sink.setStatus("connected");
@@ -168,5 +192,6 @@ export function attachSession(socket: SessionSocket, sink: SessionSink): () => v
     socket.off("room", onRoom);
     socket.off("roundEnded", onResult);
     socket.off("seat", onSeat);
+    socket.off("reaction", onReaction);
   };
 }

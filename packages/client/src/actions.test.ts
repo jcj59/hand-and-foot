@@ -7,6 +7,7 @@ import {
   closedNotice,
   pauseTable,
   saveTableForLater,
+  sendReaction,
   play,
   reclaimOnReconnect,
   reclaimSeat,
@@ -385,5 +386,27 @@ describe("closedNotice", () => {
       "The saved game was closed after a week without being picked up.",
     );
     expect(closedNotice("abandoned")).toBe("The table was closed because everyone had left.");
+  });
+});
+
+describe("sending a reaction", () => {
+  it("asks the server with the reaction's id, and says whether it went", async () => {
+    const sent: unknown[] = [];
+    const answers = [
+      { ok: true, data: undefined },
+      { ok: false, error: "too many reactions" },
+    ];
+    const socket = {
+      emit: (event: string, payload: unknown, ack: (a: unknown) => void) => {
+        sent.push([event, payload]);
+        ack(answers.shift());
+      },
+    } as unknown as HfClientSocket;
+    expect(await sendReaction(socket, "nice")).toBe(true);
+    expect(await sendReaction(socket, "nice")).toBe(false);
+    expect(sent).toEqual([
+      ["react", { id: "nice" }],
+      ["react", { id: "nice" }],
+    ]);
   });
 });

@@ -9,6 +9,7 @@ import type {
   ServerToClientEvents,
   ViewUpdate,
 } from "./protocol";
+import { REACTIONS, isReactionId } from "./protocol";
 import type { PlayerView } from "./index";
 
 // The protocol is types only, so `tsc` is what really checks it. These pin the
@@ -85,5 +86,23 @@ describe("event maps", () => {
     // mean the server is waiting on a client, which is how a room stalls.
     expectTypeOf<Parameters<ServerToClientEvents["view"]>>().toEqualTypeOf<[ViewUpdate]>();
     expectTypeOf<ReturnType<ServerToClientEvents["room"]>>().toEqualTypeOf<void>();
+  });
+});
+
+describe("quick reactions", () => {
+  it("are a fixed list of unique ids, each with something to show and a name to read", () => {
+    const ids = REACTIONS.map((r) => r.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const r of REACTIONS) {
+      expect(r.text.length).toBeGreaterThan(0);
+      expect(r.label.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("recognize only their own ids, whatever else arrives", () => {
+    for (const r of REACTIONS) expect(isReactionId(r.id)).toBe(true);
+    for (const bad of ["", "Nice!", "nice ", 1, null, undefined, {}, ["nice"]]) {
+      expect(isReactionId(bad)).toBe(false);
+    }
   });
 });

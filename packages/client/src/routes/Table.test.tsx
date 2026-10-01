@@ -7,6 +7,7 @@ import {
   type LegalHints,
   type PlayerView,
   type Rank,
+  type ReactionId,
   type RoomInfo,
   type RoundEnded,
   type Suit,
@@ -17,6 +18,7 @@ import { createServerClock } from "../serverTime";
 import { useSession } from "../session";
 import type { HfClientSocket } from "../socket";
 import { evenRows, Hand, perRow } from "../table/Hand";
+import { REACTION_COOLDOWN_MS, REACTION_SHOW_MS } from "../table/reactions";
 import { PHONE_QUERY } from "../usePhone";
 import { Table } from "./Table";
 
@@ -192,6 +194,7 @@ beforeEach(() => {
     update: null,
     result: null,
     notice: null,
+    reactions: [],
     clock: createServerClock(),
   });
 });
@@ -2436,5 +2439,104 @@ describe("the Marva Rule", () => {
       useSession.getState().applyUpdate(update({ lastMove: { ...marva, marva: undefined } })),
     );
     expect(screen.queryByRole("status", { name: "Marva Rule" })).toBeNull();
+  });
+});
+
+describe("quick reactions", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    window.localStorage.removeItem("hf.muteReactions");
+    delete (window as { matchMedia?: unknown }).matchMedia;
+  });
+
+  const heard = (seq: number, seat: number, id: ReactionId): void =>
+    act(() => useSession.getState().applyReaction({ seq, seat, id }));
+
+  it("sends a reaction by its id from the picker, then rests a moment", () => {
+    vi.useFakeTimers();
+    const { socket, sent } = fakeSocket();
+    mount(socket);
+    fireEvent.click(screen.getByRole("button", { name: "React" }));
+    const picker = screen.getByRole("group", { name: "Reactions" });
+    fireEvent.click(within(picker).getByRole("button", { name: "Nice!" }));
+    expect(sent).toContainEqual({ event: "react", args: [{ id: "nice" }] });
+    // The picker closes, and the button rests so a burst cannot hit the server's limit.
+    expect(screen.queryByRole("group", { name: "Reactions" })).toBeNull();
+    expect(screen.getByRole("button", { name: "React" })).toBeDisabled();
+    act(() => vi.advanceTimersByTime(REACTION_COOLDOWN_MS));
+    expect(screen.getByRole("button", { name: "React" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "React" }));
+    fireEvent.click(screen.getByRole("button", { name: "Thumbs up" }));
+    expect(sent).toContainEqual({ event: "react", args: [{ id: "thumbs-up" }] });
+  });
+
+  it("shows another player's reaction by their seat for a few seconds", () => {
+    vi.useFakeTimers();
+    mount(fakeSocket().socket);
+    heard(1, 1, "hurry");
+    const seat = screen.getByLabelText(/^ben, /);
+    expect(within(seat).getByRole("status", { name: "ben: Hurry up!" })).toHaveTextContent(
+      "Hurry up!",
+    );
+    act(() => vi.advanceTimersByTime(REACTION_SHOW_MS));
+    expect(screen.queryByRole("status", { name: "ben: Hurry up!" })).toBeNull();
+  });
+
+  it("shows my own reaction by my hand, and the latest one only", () => {
+    mount(fakeSocket().socket);
+    heard(1, 0, "laugh");
+    heard(2, 0, "oops");
+    expect(screen.getByRole("status", { name: "ana: Oops" })).toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "ana: Laughing" })).toBeNull();
+  });
+
+  it("does not replay reactions that were already heard before the table opened", () => {
+    useSession.getState().applyReaction({ seq: 1, seat: 1, id: "nice" });
+    mount(fakeSocket().socket);
+    expect(screen.queryByRole("status", { name: "ben: Nice!" })).toBeNull();
+  });
+
+  it("can mute other players' reactions on this device, though not my own", () => {
+    mount(fakeSocket().socket);
+    fireEvent.click(screen.getByRole("button", { name: "React" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Mute other players' reactions" }));
+    expect(window.localStorage.getItem("hf.muteReactions")).toBe("1");
+    heard(1, 1, "nice");
+    heard(2, 0, "party");
+    expect(screen.queryByRole("status", { name: "ben: Nice!" })).toBeNull();
+    expect(screen.getByRole("status", { name: "ana: Party" })).toBeInTheDocument();
+  });
+
+  it("opens its menu towards whichever side of the button has room", () => {
+    mount(fakeSocket().socket);
+    const button = screen.getByRole("button", { name: "React" });
+    const at = (left: number) =>
+      vi.spyOn(button, "getBoundingClientRect").mockReturnValue({ left } as DOMRect);
+    at(10);
+    fireEvent.click(button);
+    expect(screen.getByRole("group", { name: "Reactions" }).className).toContain("left-0");
+    fireEvent.click(button);
+    at(window.innerWidth - 40);
+    fireEvent.click(button);
+    expect(screen.getByRole("group", { name: "Reactions" }).className).toContain("right-0");
+  });
+
+  it("opens as a sheet over the table on a phone", () => {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: (query: string) => ({
+        matches: query === PHONE_QUERY,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }),
+    });
+    const { socket, sent } = fakeSocket();
+    mount(socket);
+    fireEvent.click(screen.getByRole("button", { name: "React" }));
+    const picker = screen.getByRole("group", { name: "Reactions" });
+    // Portalled to the page, so the scrolling table cannot clip it.
+    expect(picker.closest("main")).toBeNull();
+    fireEvent.click(within(picker).getByRole("button", { name: "Good luck" }));
+    expect(sent).toContainEqual({ event: "react", args: [{ id: "good-luck" }] });
   });
 });

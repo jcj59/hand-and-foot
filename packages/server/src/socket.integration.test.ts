@@ -1182,3 +1182,29 @@ describe("the next round over the wire", () => {
     expect(await ready(a)).toEqual({ ok: false, error: "the round is still being played" });
   });
 });
+
+describe("quick reactions over the wire", () => {
+  function react(socket: Client, id: unknown): Promise<Ack<undefined>> {
+    return new Promise((resolve) => socket.emit("react", { id } as never, resolve));
+  }
+
+  it("reach everyone at the table, the sender too, as an id and a seat", async () => {
+    const { host, guest, guestCreds } = await seatTwo();
+    const heardByHost = waitFor(host, "reaction", () => true);
+    const heardByGuest = waitFor(guest, "reaction", () => true);
+    expect((await react(guest, "nice")).ok).toBe(true);
+    const expected = { seq: 1, seat: guestCreds.seat, id: "nice" };
+    expect(await heardByHost).toEqual(expected);
+    expect(await heardByGuest).toEqual(expected);
+  });
+
+  it("are refused as free text, and from a socket holding no seat", async () => {
+    const { port, host } = await seatTwo();
+    expect(await react(host, "you are all terrible")).toEqual({
+      ok: false,
+      error: "that is not a reaction",
+    });
+    const stranger = await connect(port);
+    expect((await react(stranger, "nice")).ok).toBe(false);
+  });
+});

@@ -19,7 +19,7 @@ import type { LastMove, RoundEnded } from "@hf/shared";
 /** A recorded card sound, one per kind of move; see `public/sounds`. */
 export type CardSound = "draw" | "discard" | "meld" | "take-back";
 /** `pile` is the draw's recording played lower and slower: a draw, but more of it. */
-export type Sound = CardSound | "pile" | "turn" | "round" | "match" | "airhorn";
+export type Sound = CardSound | "pile" | "turn" | "round" | "match" | "airhorn" | "reaction";
 
 /** Which recording marks each move. One sound per move, however many cards it moves. */
 const CARD_SOUND: Readonly<Record<LastMove["kind"], Sound>> = {
@@ -182,6 +182,11 @@ export function play(
       return;
     case "airhorn":
       airHorn(ctx, t);
+      return;
+    case "reaction":
+      // A soft, quick upward blip: someone said something.
+      note(ctx, 880, t, 0.09, 0.08);
+      note(ctx, 1_318.5, t + 0.05, 0.12, 0.07);
       return;
   }
 }

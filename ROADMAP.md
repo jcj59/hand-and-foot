@@ -129,7 +129,7 @@ the trigger (fires exactly when the waiver was used, not on an ordinary get-down
 
 ## Phase B — social feel
 
-### 3. Quick reactions
+### ~~3. Quick reactions~~ (#29)
 
 Clash Royale–style reactions: a small fixed set of emojis and pre-set phrases ("Nice!", "Oops",
 "Hurry up!", "Grabby!", "Well played", …) any seated player can send; they appear briefly by the

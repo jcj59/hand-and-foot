@@ -109,3 +109,31 @@ body,
     display: none;
   }
 }
+/* A quick reaction: pops up by its sender's seat, then fades. Lasts REACTION_SHOW_MS. */
+@keyframes reaction-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.6);
+  }
+  10% {
+    opacity: 1;
+    transform: translateY(0) scale(1.08);
+  }
+  18% {
+    transform: scale(1);
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.reaction-pop {
+  animation: reaction-pop 3000ms ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .reaction-pop {
+    animation: none;
+  }
+}

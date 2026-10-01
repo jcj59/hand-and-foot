@@ -154,6 +154,21 @@ const run = async () => {
     isMobile: true,
     hasTouch: true,
   });
+  // Headless Linux Chromium has no colour emoji font, so emoji draw as boxes. With
+  // EMOJI_FONT pointing at a Noto Color Emoji .ttf, the page gets it for emoji code
+  // points only — installing it system-wide makes Chromium use it for digits too.
+  if (process.env.EMOJI_FONT) {
+    await page.route("**/__emoji.ttf", (route) => route.fulfill({ path: process.env.EMOJI_FONT }));
+    await page.addInitScript(() => {
+      document.addEventListener("DOMContentLoaded", () => {
+        const style = document.createElement("style");
+        style.textContent =
+          '@font-face{font-family:"Noto Color Emoji";src:url(/__emoji.ttf);' +
+          "unicode-range:U+1F000-1FAFF,U+2600-27BF,U+2B50,U+FE0F}";
+        document.head.append(style);
+      });
+    });
+  }
   await page.routeWebSocket(/\/api\/rooms\/.*\/socket/, (ws) => {
     ws.onMessage((text) => {
       if (text === "ping") return ws.send("pong");
@@ -292,6 +307,16 @@ const run = async () => {
             700,
           );
         }
+        if (mode === "react") {
+          const reactions = [
+            { seq: 1, seat: 1, id: "nice" },
+            { seq: 2, seat: 2, id: "laugh" },
+            { seq: 3, seat: 0, id: "party" },
+          ];
+          for (const payload of reactions) {
+            setTimeout(() => ws.send(JSON.stringify({ event: "reaction", payload })), 700);
+          }
+        }
         if (mode === "oppdraw") {
           later(700, { ...base, lastMove: { seq: 6, seat: 1, kind: "takePile", count: 3 } });
         }
@@ -320,6 +345,7 @@ const run = async () => {
   await page.goto(`${base}/room/HFDEMO`);
   await page.waitForTimeout(800);
   if (action === "collapse") await page.getByRole("button", { name: "Collapse players" }).click();
+  if (action === "picker") await page.getByRole("button", { name: "React" }).click();
   if (action === "chip") await page.getByRole("button", { name: /^Cyrus/ }).click();
   if (action === "card")
     await page.getByRole("button", { name: /Ten of hearts/i }).click({ position: { x: 8, y: 30 } });
@@ -333,6 +359,7 @@ const run = async () => {
     discard: "Discard (4)",
     oppdraw: "picked up the pile",
     grabby: "is Grabby Pants",
+    react: "Nice!",
   }[mode];
   if (waitText) {
     await page.getByText(waitText).first().waitFor();

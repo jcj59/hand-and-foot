@@ -127,6 +127,7 @@ beforeEach(() => {
     update: null,
     result: null,
     notice: null,
+    reactions: [],
     clock: createServerClock(),
   });
 });
@@ -480,6 +481,7 @@ describe("listener lifecycle", () => {
         "disconnect",
         "room",
         "roundEnded",
+        "reaction",
         "seat",
         "tableClosed",
         "view",

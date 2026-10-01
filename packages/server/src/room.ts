@@ -1,6 +1,7 @@
 import {
   MAX_PLAYERS,
   MIN_PLAYERS,
+  isReactionId,
   type Action,
   type ActionSource,
   type ClockState,
@@ -8,6 +9,7 @@ import {
   type GameState,
   type LastMove,
   type MeldPlay,
+  type Reaction,
   type RoomInfo,
   type RoundEnded,
   type RulesConfig,
@@ -26,6 +28,7 @@ import {
   roundResult,
 } from "@hf/engine";
 import type { Clock } from "./clock";
+import { ReactionLimiter } from "./reactions";
 import { type ActionLog, InMemoryActionLog, StoredActionLog } from "./log";
 import type { RoomRecord, RoomStore, StoredRoom } from "./store";
 
@@ -238,6 +241,9 @@ export class Room {
   private savedUntil: number | null = null;
   /** Turns played for their seats in a row, with nobody at the table moving. */
   private idleTurns = 0;
+  /** Each seat's budget of quick reactions; see `react`. */
+  private readonly reactionLimit: ReactionLimiter;
+  private reactionSeq = 0;
   /** The latest move, for views; see `noteMove`. Not saved: it is only news. */
   private lastMove: LastMove | null = null;
 
@@ -250,6 +256,7 @@ export class Room {
     const log = deps.log ?? new InMemoryActionLog();
     this.log = deps.store ? new StoredActionLog(log, deps.store, this.uid) : log;
     this.createdAt = deps.createdAt ?? deps.clock.now();
+    this.reactionLimit = new ReactionLimiter(deps.clock);
   }
 
   /**
@@ -658,6 +665,18 @@ export class Room {
    * Keep this paused table for days rather than minutes, so the game can be picked
    * up again another time. Family tables only, as pausing is; resuming ends it.
    */
+  /**
+   * A quick reaction from a seat, to be shown to everyone. Only the fixed set, and
+   * only so many: it is ephemeral, so it touches nothing in the game, the log, or
+   * the record — which is also why it survives hibernation trivially.
+   */
+  react(seat: number, id: unknown): RoomResult<Reaction> {
+    if (!this.players[seat]) return fail("no such seat");
+    if (!isReactionId(id)) return fail("that is not a reaction");
+    if (!this.reactionLimit.take(seat)) return fail("too many reactions; wait a moment");
+    return succeed({ seq: ++this.reactionSeq, seat, id });
+  }
+
   saveForLater(seat: number): RoomResult<undefined> {
     if (!this.config.pauseEnabled) return fail("saving a game for later is for family games");
     if (!this.players[seat]) return fail("no such seat");
