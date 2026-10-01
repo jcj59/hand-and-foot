@@ -2355,6 +2355,27 @@ describe("sound", () => {
     }
   });
 
+  it("keeps a context that was given up on but then ran again by itself", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const audio = fakeAudio();
+    try {
+      mount(fakeSocket().socket);
+      fireEvent.pointerUp(window);
+      audio.refuseResume = true;
+      act(() => audio.made[0]!.become("interrupted"));
+      fireEvent.pointerUp(window);
+      act(() => vi.advanceTimersByTime(STUCK_MS));
+      // The call ends and the browser lets it run, with no tap and no new context.
+      act(() => audio.made[0]!.become("running"));
+      fireEvent.pointerUp(window);
+      expect(audio.contexts).toBe(1);
+      expect(audio.closed).toBe(0);
+    } finally {
+      audio.restore();
+      vi.useRealTimers();
+    }
+  });
+
   it("says when the browser is holding sound back, and a tap on it lets sound play rather than muting", () => {
     const audio = fakeAudio();
     try {

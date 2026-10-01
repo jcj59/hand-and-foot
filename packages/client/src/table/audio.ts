@@ -85,6 +85,7 @@ function create(Ctor: AudioContextCtor): AudioContext {
   silence.start(0);
   ctx.addEventListener?.("statechange", () => {
     if (state.ctx !== ctx) return;
+    if (ctx.state === "running") state.stuck = false;
     changed();
     // Safari's "interrupted" (a call, the screen locking) ends on its own terms;
     // when it does the context drops to suspended, and can be asked to run.
@@ -113,7 +114,7 @@ export function wake(gesture: boolean): void {
   const Ctor = ctor();
   if (!Ctor) return;
   const old = state.ctx;
-  if (old && (old.state === "closed" || (gesture && state.stuck))) {
+  if (old && (old.state === "closed" || (gesture && state.stuck && old.state !== "running"))) {
     old.close().catch(() => {});
     state.ctx = null;
   }
