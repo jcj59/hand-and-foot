@@ -11,7 +11,14 @@
  * refused request as a value. A rejection is put on the store as a notice for the
  * interface to surface, and the caller learns whether it worked.
  */
-import type { Action, CloseReason, MeldPlay, RoomOptions, SeatCredentials } from "@hf/shared";
+import type {
+  Action,
+  CloseReason,
+  MeldPlay,
+  ReactionId,
+  RoomOptions,
+  SeatCredentials,
+} from "@hf/shared";
 import { clearCredentials } from "./credentials";
 import { normalizeRoomCode } from "./roomCode";
 import * as wire from "./socket";
@@ -202,6 +209,15 @@ export async function pauseTable(
   }
   sink.setNotice(null);
   return true;
+}
+
+/**
+ * Send a quick reaction. A refusal — sending too many too quickly — is not worth a
+ * notice: the client's own cooldown makes it rare, and the reaction simply does
+ * not appear. Returns whether it went.
+ */
+export async function sendReaction(socket: HfClientSocket, id: ReactionId): Promise<boolean> {
+  return (await wire.react(socket, id)).ok;
 }
 
 /** Keep this paused family table for a week, to be picked up again later. */

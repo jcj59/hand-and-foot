@@ -270,10 +270,54 @@ export interface ClientToServerEvents {
   ) => void;
   setPaused: (payload: { readonly paused: boolean }, ack: (result: Ack) => void) => void;
   /**
+   * Send a quick reaction to everyone at the table. Only an id from `REACTIONS`;
+   * refused when the seat has sent too many too quickly.
+   */
+  react: (payload: { readonly id: ReactionId }, ack: (result: Ack) => void) => void;
+  /**
    * Keep a paused family table for days rather than minutes, so the game can be
    * picked up again later. Only while paused; resuming ends it.
    */
   saveForLater: (ack: (result: Ack) => void) => void;
+}
+
+/**
+ * The quick reactions a seated player can send: a fixed set, so only an id ever
+ * crosses the wire — never free text — and there is nothing to moderate. Each is
+ * shown briefly by the sender's seat on every screen.
+ */
+export const REACTIONS = [
+  { id: "thumbs-up", text: "👍", label: "Thumbs up" },
+  { id: "laugh", text: "😂", label: "Laughing" },
+  { id: "wow", text: "😮", label: "Wow" },
+  { id: "angry", text: "😤", label: "Fuming" },
+  { id: "party", text: "🎉", label: "Party" },
+  { id: "pray", text: "🙏", label: "Please" },
+  { id: "nice", text: "Nice!", label: "Nice!" },
+  { id: "oops", text: "Oops", label: "Oops" },
+  { id: "hurry", text: "Hurry up!", label: "Hurry up!" },
+  { id: "grabby", text: "Grabby!", label: "Grabby!" },
+  { id: "well-played", text: "Well played", label: "Well played" },
+  { id: "good-luck", text: "Good luck", label: "Good luck" },
+] as const;
+
+export type ReactionId = (typeof REACTIONS)[number]["id"];
+
+/** Whether an untyped value is one of the reactions — the server's check on what arrives. */
+export function isReactionId(value: unknown): value is ReactionId {
+  return REACTIONS.some((r) => r.id === value);
+}
+
+/** One reaction, as everyone at the table is told it. Never stored, never logged. */
+export interface Reaction {
+  /**
+   * Increases with each reaction at this table, so a screen can tell them apart —
+   * across a server restart or a Durable Object waking too, which is why it is
+   * taken from the clock (see `Room.react`) rather than counted from one.
+   */
+  readonly seq: number;
+  readonly seat: number;
+  readonly id: ReactionId;
 }
 
 /** Why a table was closed. */
@@ -291,6 +335,8 @@ export interface ServerToClientEvents {
    */
   seat: (seat: number) => void;
   roundEnded: (result: RoundEnded) => void;
+  /** Broadcast: a player's quick reaction, to show by their seat for a moment. */
+  reaction: (reaction: Reaction) => void;
   /** Broadcast: the table has been closed, and why. Nothing more will come. */
   tableClosed: (payload: { readonly reason: CloseReason }) => void;
 }

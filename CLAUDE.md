@@ -522,6 +522,22 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   available, and synthesis needs no asset. `useTableSounds` now returns `playSound` for one-offs.
   Reduced motion hides the confetti and the pop; the announcement stays. `Celebration` takes its
   duration as `--celebration-ms`, which the CSS animation reads.
+- **Quick reactions (roadmap item 3).** A fixed list, `REACTIONS` in `@hf/shared/protocol.ts`
+  (six emoji, six phrases); only an id crosses the wire (`isReactionId` is the server's check), so
+  there is nothing to moderate. `react {id}` → `Room.react` (seat valid, id valid, and a per-seat
+  token bucket in `server/src/reactions.ts`: burst `REACTION_BURST` 3, one more per
+  `REACTION_REFILL_MS` 2s, on the injected clock) → `TableChannel` acks and sends `reaction
+  {seq, seat, id}` to every seated connection, the sender too. Never logged, never in the record:
+  the bucket lives in memory and a wake simply refills it. Client: `session.reactions` keeps the
+  last `KEPT_REACTIONS` (16), reset with the table; `table/reactions.tsx` has the picker (menu on a
+  computer, opening towards the side with room; bottom sheet portalled to `body` on a phone),
+  `REACTION_COOLDOWN_MS` (1.5s) rest after sending, and `useReactionBubbles`, which shows each
+  seat's latest for `REACTION_SHOW_MS` (3s) inside its seat box (the seat lists scroll, so a bubble
+  outside the box would be clipped) and by the player's own hand. Reactions already in the store
+  when the table mounts are not replayed. "Mute other players' reactions" is per device
+  (`hf.muteReactions`) and hides theirs and their blip sound, never your own. A watched table
+  (`controls` null) has no picker. Emoji need a colour emoji font: real devices have one, headless
+  Chromium does not (see `scripts/pr-media/README.md`, `EMOJI_FONT`).
 - **Scenario library and autoplay viewer (roadmap item 1).** Three layers, kept apart on purpose:
   - **Engine, `playback.ts`:** `buildTimeline(GameLog)` takes any `{ config, setup: {seed,
     playerCount} | {state}, actions, names?, moments? }` — a scenario, a golden game, a recorded

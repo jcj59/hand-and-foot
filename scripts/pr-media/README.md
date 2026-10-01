@@ -14,14 +14,19 @@ an animation) in its description, under `## Screenshots`.
      LD_LIBRARY_PATH=~/miniconda3/envs/pwlibs/lib node scene.mjs out.png 390 844 none mine
    ```
 
-   Arguments: `<out.png> <width> <height> <action> <mode>`. Modes stage a state
+   Arguments: `<out.png> <width> <height> <action> <mode>`. Actions include `picker`, which opens
+   the reaction picker. Modes stage a state
    (`mine`, `theirs`) or a change to capture mid-animation (`draw`, `discard`,
-   `oppdraw`, `grabby`, and `stale` — a finished round at one table, then a fresh
+   `oppdraw`, `grabby`, `react` — quick reactions arriving from two opponents and
+   the viewer — and `stale` — a finished round at one table, then a fresh
    deal at another), with `FRAMES=40,120,300` giving the milliseconds after the
    change to capture. `BIG_MELDS=1` adds enough melds that the middle scrolls;
    `GRABBY_ME=1` makes the viewer the Grabby Pants holder; `TWO_DISCARDS=1` puts two
    cards on the discard pile; `BIG_OPP=1` gives an opponent enough melds to fill its box.
-   On this machine Chromium needs nss/nspr/alsa from the `pwlibs` conda env.
+   On this machine Chromium needs nss/nspr/alsa from the `pwlibs` conda env. Emoji (the quick
+   reactions) draw as boxes without a colour emoji font: set `EMOJI_FONT=<path to
+   NotoColorEmoji.ttf>` and the page loads it for emoji only. Do not install it system-wide —
+   fontconfig then hands it digits and spaces too, and every number on the table spreads out.
 
    For "before" shots, build and render the base branch first.
 

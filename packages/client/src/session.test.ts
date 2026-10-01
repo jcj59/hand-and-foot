@@ -2,7 +2,13 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { EAST_COAST, type RoomInfo, type RoundEnded, type ViewUpdate } from "@hf/shared";
 import { clearCredentials, loadCredentials } from "./credentials";
 import { createServerClock } from "./serverTime";
-import { attachSession, useSession, type SessionSink, type SessionSocket } from "./session";
+import {
+  KEPT_REACTIONS,
+  attachSession,
+  useSession,
+  type SessionSink,
+  type SessionSocket,
+} from "./session";
 
 const NO_BREAKDOWN = {
   cleanBooks: 0,
@@ -80,6 +86,7 @@ beforeEach(() => {
     update: null,
     result: null,
     notice: null,
+    reactions: [],
     clock: createServerClock(),
   });
 });
@@ -238,6 +245,7 @@ describe("attachSession", () => {
       applyUpdate: () => calls.push("update"),
       applyResult: () => calls.push("result"),
       reseat: (seat) => calls.push(`seat:${seat}`),
+      applyReaction: (r) => calls.push(`reaction:${r.id}`),
     };
   }
 
@@ -251,6 +259,7 @@ describe("attachSession", () => {
     socket.fire("room", roomInfo());
     socket.fire("roundEnded", { scores: [] });
     socket.fire("seat", 3);
+    socket.fire("reaction", { seq: 1, seat: 1, id: "nice" });
     socket.fire("disconnect");
 
     expect(target.calls).toEqual([
@@ -259,6 +268,7 @@ describe("attachSession", () => {
       "room",
       "result",
       "seat:3",
+      "reaction:nice",
       "status:disconnected",
     ]);
   });
@@ -270,7 +280,7 @@ describe("attachSession", () => {
     const detach = attachSession(socket, sink());
     detach();
     expect(socket.removed.sort()).toEqual(
-      ["connect", "disconnect", "room", "roundEnded", "seat", "view"].sort(),
+      ["connect", "disconnect", "reaction", "room", "roundEnded", "seat", "view"].sort(),
     );
   });
 
@@ -287,14 +297,36 @@ describe("attachSession", () => {
     // End to end through the actual zustand store rather than a spy, so the
     // wiring and the reducers are checked together at least once.
     const socket = fakeSocket();
-    const { setStatus, applyRoom, applyUpdate, applyResult, reseat } = useSession.getState();
-    attachSession(socket, { setStatus, applyRoom, applyUpdate, applyResult, reseat });
+    const { setStatus, applyRoom, applyUpdate, applyResult, reseat, applyReaction } =
+      useSession.getState();
+    attachSession(socket, {
+      setStatus,
+      applyRoom,
+      applyUpdate,
+      applyResult,
+      reseat,
+      applyReaction,
+    });
 
     socket.fire("connect");
     socket.fire("view", viewUpdate());
     expect(useSession.getState().status).toBe("connected");
     expect(useSession.getState().update?.hints.canDraw).toBe(true);
     expect(useSession.getState().room?.started).toBe(true);
+  });
+
+  it("keeps the last few reactions heard, and forgets them with the table", () => {
+    const { applyReaction } = useSession.getState();
+    for (let seq = 1; seq <= KEPT_REACTIONS + 4; seq++) applyReaction({ seq, seat: 0, id: "nice" });
+    const kept = useSession.getState().reactions;
+    expect(kept).toHaveLength(KEPT_REACTIONS);
+    expect(kept.at(-1)!.seq).toBe(KEPT_REACTIONS + 4);
+    expect(KEPT_REACTIONS).toBe(16);
+    useSession.getState().seat({ roomId: "OTHER2", seat: 0, token: "t" });
+    expect(useSession.getState().reactions).toEqual([]);
+    applyReaction({ seq: 1, seat: 0, id: "nice" });
+    useSession.getState().leave();
+    expect(useSession.getState().reactions).toEqual([]);
   });
 
   it("does not apply anything on its own", () => {

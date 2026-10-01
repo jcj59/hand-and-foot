@@ -219,6 +219,15 @@ export class TableChannel {
         this.broadcastViews();
         return;
       }
+      case "react": {
+        if (seated === null) return reply({ ok: false, error: NOT_SEATED });
+        const reacted = this.room.react(seated, payload?.id);
+        if (!reacted.ok) return reply({ ok: false, error: reacted.error });
+        reply({ ok: true, data: undefined });
+        // Everyone, the sender too, so every screen shows it the same way.
+        for (const [other] of this.sessions) this.send(other, "reaction", reacted.value);
+        return;
+      }
       case "saveForLater": {
         if (seated === null) return reply({ ok: false, error: NOT_SEATED });
         const saved = this.room.saveForLater(seated);

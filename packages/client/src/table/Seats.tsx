@@ -11,19 +11,28 @@
  * much as the first: a disconnected seat has its turns played for it once the
  * reconnect grace elapses, so the table should say why moves are happening.
  */
-import type { OpponentView, RoomInfo, RulesConfig } from "@hf/shared";
+import type { OpponentView, Reaction, RoomInfo, RulesConfig } from "@hf/shared";
 import { FaceDownPile, HiddenHand } from "../cards/PlayingCard";
 import { GrabbyIcon } from "./grabby";
 import { Melds } from "./Melds";
+import { ReactionBubble } from "./reactions";
 
 export interface SeatsProps {
   readonly opponents: readonly OpponentView[];
   readonly room: RoomInfo;
   readonly config: RulesConfig;
   readonly seatToAct: number;
+  /** A quick reaction to show by each seat that has one up. */
+  readonly reactions?: ReadonlyMap<number, Reaction>;
 }
 
-export function Seats({ opponents, room, config, seatToAct }: SeatsProps): React.ReactElement {
+export function Seats({
+  opponents,
+  room,
+  config,
+  seatToAct,
+  reactions,
+}: SeatsProps): React.ReactElement {
   return (
     <ul className="flex gap-3 overflow-x-auto">
       {opponents.map((opponent) => {
@@ -37,10 +46,16 @@ export function Seats({ opponents, room, config, seatToAct }: SeatsProps): React
             aria-label={seatLabel(opponent, info?.name ?? `Seat ${opponent.seat}`, onTurn)}
             // Capped, so a player with a table full of melds does not push the
             // middle of the table down the screen; their melds scroll inside.
-            className={`flex max-h-56 min-w-44 flex-col gap-2 rounded border p-2 ${
+            className={`relative flex max-h-56 min-w-44 flex-col gap-2 rounded border p-2 ${
               onTurn ? "border-amber-300 bg-amber-300/10" : "border-white/10 bg-black/20"
             }`}
           >
+            {reactions?.get(opponent.seat) && (
+              <ReactionBubble
+                reaction={reactions.get(opponent.seat)!}
+                name={info?.name ?? `Seat ${opponent.seat}`}
+              />
+            )}
             <div className="flex items-center gap-2">
               <span
                 aria-hidden="true"

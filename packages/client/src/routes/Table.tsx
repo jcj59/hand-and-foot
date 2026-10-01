@@ -12,6 +12,7 @@ import {
   playAgain,
   readyForNextRound,
   saveTableForLater,
+  sendReaction,
   stageDraft,
 } from "../actions";
 import { useSession } from "../session";
@@ -32,6 +33,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
   // and who has gone on to the next game, arrive as room broadcasts with no new view.
   const latestRoom = useSession((s) => s.room);
   const leave = useSession((s) => s.leave);
+  const reactions = useSession((s) => s.reactions);
   const navigate = useNavigate();
 
   // Stable while the socket and store are, since the table re-sends its draft
@@ -51,6 +53,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
           if (roomId) navigate(`/room/${roomId}`);
         }),
       nextRound: () => void readyForNextRound(socket, sink),
+      react: (id) => void sendReaction(socket, id),
     };
   }, [socket, seat, setNotice, leave, navigate]);
 
@@ -68,6 +71,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
       notice={notice}
       controls={controls}
       onMainMenu={() => navigate("/")}
+      reactions={reactions}
     />
   );
 }

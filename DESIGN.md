@@ -190,6 +190,17 @@ hands, and lets a replay show it at exactly the moment the live table did. The a
 is a shared overlay that Grabby Pants also uses, so the awards and tutorial planned later have one
 place to build on.
 
+### Quick reactions
+
+Players at a real table talk, and an online one is quiet without a way to say "nice" or "hurry
+up". Reactions are a fixed set of emoji and short phrases, sent by id; free text would need
+moderation and would turn the table into a chat window, and neither was wanted. They are
+deliberately outside the game: the table relays one to everyone and forgets it, so nothing is
+logged, stored or replayed, and a table that sleeps and wakes has nothing to restore. The server
+limits each seat to a short burst and then one every couple of seconds, which the client's own
+pause after sending keeps anyone from meeting by accident, and each device can mute other players'
+reactions without affecting anyone else.
+
 ### Rules chosen when a room is opened
 
 A table's rules are settled before anyone sits down, so the creator picks them at room creation and

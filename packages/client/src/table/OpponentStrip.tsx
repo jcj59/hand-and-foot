@@ -12,16 +12,19 @@
  * opponents as counts and melds, never cards in hand.
  */
 import { useEffect, useRef, useState } from "react";
-import type { OpponentView, RoomInfo, RulesConfig } from "@hf/shared";
+import type { OpponentView, Reaction, RoomInfo, RulesConfig } from "@hf/shared";
 import { classifyBook } from "@hf/engine";
 import { GrabbyIcon } from "./grabby";
 import { Melds } from "./Melds";
+import { ReactionBubble } from "./reactions";
 
 export interface OpponentStripProps {
   readonly opponents: readonly OpponentView[];
   readonly room: RoomInfo;
   readonly config: RulesConfig;
   readonly seatToAct: number;
+  /** A quick reaction to show by each seat that has one up. */
+  readonly reactions?: ReadonlyMap<number, Reaction>;
 }
 
 export function OpponentStrip({
@@ -29,6 +32,7 @@ export function OpponentStrip({
   room,
   config,
   seatToAct,
+  reactions,
 }: OpponentStripProps): React.ReactElement {
   const [open, setOpen] = useState<number | null>(null);
   const nameOf = (seat: number): string =>
@@ -59,10 +63,16 @@ export function OpponentStrip({
           return (
             <li
               key={opponent.seat}
-              className="shrink-0"
+              className="relative shrink-0"
               data-anchor={`seat-${opponent.seat}`}
               data-zone="seat"
             >
+              {reactions?.get(opponent.seat) && (
+                <ReactionBubble
+                  reaction={reactions.get(opponent.seat)!}
+                  name={nameOf(opponent.seat)}
+                />
+              )}
               <button
                 type="button"
                 aria-label={chipLabel(nameOf(opponent.seat), opponent, onTurn, clean, books.length)}
@@ -84,7 +94,9 @@ export function OpponentStrip({
                   <span className="truncate text-sm font-medium">{nameOf(opponent.seat)}</span>
                 </span>
                 <span className="flex items-center gap-1.5 text-xs text-white/70">
-                  <span>{held} cards</span>
+                  <span>
+                    {held} card{held === 1 ? "" : "s"}
+                  </span>
                   {opponent.inFoot && (
                     <span className="rounded bg-sky-400/25 px-1 text-[10px] font-semibold text-sky-100">
                       FOOT

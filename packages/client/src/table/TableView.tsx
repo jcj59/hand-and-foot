@@ -27,6 +27,8 @@ import {
   type Card,
   type MeldPlay,
   type Rank,
+  type Reaction,
+  type ReactionId,
   type RoomInfo,
   type RoundEnded,
   type ViewUpdate,
@@ -47,6 +49,13 @@ import {
   withGrabbyName,
 } from "./grabby";
 import { MarvaCelebration, useMarvaCelebration } from "./marva";
+import {
+  ReactionBubble,
+  ReactionPicker,
+  readMuteReactions,
+  useReactionBubbles,
+  writeMuteReactions,
+} from "./reactions";
 import { useMoveNews } from "./moveNews";
 import { useTableSounds } from "./sounds";
 import { PauseBar } from "./PauseBar";
@@ -73,6 +82,8 @@ import {
  * watched — a replay, or the scenario player — in which case nothing on it can be
  * clicked and it shows the watched seat's view as that seat would see it.
  */
+const NO_REACTIONS: readonly Reaction[] = [];
+
 export interface TableControls {
   /** Submit a move; resolves whether it was accepted. */
   play(action: Action): Promise<boolean>;
@@ -80,6 +91,8 @@ export interface TableControls {
   stageDraft(melds: readonly MeldPlay[]): void;
   pause(paused: boolean): Promise<unknown>;
   saveForLater(): Promise<unknown>;
+  /** Send a quick reaction to everyone at the table. */
+  react(id: ReactionId): void;
   leave(): void;
   playAgain(): void;
   nextRound(): void;
@@ -102,6 +115,8 @@ export interface TableViewProps {
   readonly quiet?: boolean;
   /** Replaces "Table <code>" at the top. */
   readonly heading?: string;
+  /** Quick reactions heard at the table, most recent last. */
+  readonly reactions?: readonly Reaction[];
 }
 
 /**
@@ -118,6 +133,7 @@ export function TableView({
   onMainMenu,
   quiet = false,
   heading,
+  reactions = NO_REACTIONS,
 }: TableViewProps): React.ReactElement {
   const [staging, setStaging] = useState<Staging>(EMPTY_STAGING);
   // Meld mode: clicks in the hand add to the lay-down instead of opening a menu.
@@ -182,6 +198,10 @@ export function TableView({
     quiet,
   );
   const grabbyHeadline = useGrabbyAnnouncement(realRoom, muted, quiet);
+  const [muteReactions, setMuteReactions] = useState(readMuteReactions);
+  const bubbles = useReactionBubbles(reactions, update.view.seat, muteReactions, (r) => {
+    if (r.seat !== update.view.seat) playSound("reaction");
+  });
   // Real names: the celebration is about the player, not their title.
   const marva = useMarvaCelebration(
     update.lastMove,
@@ -468,6 +488,17 @@ export function TableView({
               )}
             </div>
           )}
+          {controls && (
+            <ReactionPicker
+              onSend={controls.react}
+              muted={muteReactions}
+              onMutedChange={(on) => {
+                setMuteReactions(on);
+                writeMuteReactions(on);
+              }}
+              sheet={phone}
+            />
+          )}
           <button
             type="button"
             aria-label={muted ? "Turn sound on" : "Turn sound off"}
@@ -515,6 +546,7 @@ export function TableView({
             room={room}
             config={room.config}
             seatToAct={hints.seatToAct}
+            reactions={bubbles}
           />
         ) : (
           <Seats
@@ -522,6 +554,7 @@ export function TableView({
             room={room}
             config={room.config}
             seatToAct={hints.seatToAct}
+            reactions={bubbles}
           />
         )}
       </div>
@@ -755,7 +788,10 @@ export function TableView({
           </section>
         )}
         <div className="flex items-end gap-3">
-          <div className="min-w-0 flex-1">
+          <div className="relative min-w-0 flex-1">
+            {bubbles.get(view.seat) && (
+              <ReactionBubble reaction={bubbles.get(view.seat)!} name={watched} />
+            )}
             <Hand
               cards={zone}
               interactive={canMeld || canDiscard}

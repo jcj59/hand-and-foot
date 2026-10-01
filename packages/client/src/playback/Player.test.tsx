@@ -117,6 +117,7 @@ describe("the player, fed a golden game", () => {
     expect(screen.queryByRole("button", { name: "Draw a card" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Pause" })).toBeNull();
     expect(screen.queryByRole("timer")).toBeNull();
+    expect(screen.queryByRole("button", { name: "React" })).toBeNull();
     expect(screen.getByText("Seat 0 to play.")).toBeInTheDocument();
   });
 
