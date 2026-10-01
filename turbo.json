@@ -1,7 +1,11 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "tasks": {
-    "build": { "dependsOn": ["^build"], "outputs": ["dist/**"], "env": ["VITE_SERVER_URL"] },
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"],
+      "env": ["VITE_SERVER_URL", "VITE_SCENARIOS"]
+    },
     "typecheck": {},
     "test": { "env": ["HF_TEST_DATABASE_URL"] },
     "@hf/worker#test": { "dependsOn": ["@hf/client#build"] }

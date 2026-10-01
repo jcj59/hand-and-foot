@@ -3,7 +3,6 @@ import {
   MIN_PLAYERS,
   type Action,
   type ActionSource,
-  type Card,
   type ClockState,
   type CloseReason,
   type GameState,
@@ -18,14 +17,15 @@ import {
   applyAction,
   deal,
   defaultAction,
+  describeMove,
+  grabbyPants,
   isMatchOver,
   legalHints,
-  matchTotals,
+  moveSeenBy,
   project,
-  scoreRound,
+  roundResult,
 } from "@hf/engine";
 import type { Clock } from "./clock";
-import { grabbyPants } from "./grabby";
 import { type ActionLog, InMemoryActionLog, StoredActionLog } from "./log";
 import type { RoomRecord, RoomStore, StoredRoom } from "./store";
 
@@ -990,36 +990,8 @@ export class Room {
    * restart or a Durable Object waking.
    */
   private noteMove(seat: number, action: Action, before: GameState, after: GameState): void {
-    const seq = this.log.length;
-    const held = (s: GameState): readonly Card[] => {
-      const p = s.players[seat]!;
-      return p.inFoot ? p.foot : p.hand;
-    };
-    switch (action.type) {
-      case "draw": {
-        const had = new Set(held(before).map((c) => c.id));
-        const drawn = held(after).find((c) => !had.has(c.id));
-        this.lastMove = { seq, seat, kind: "draw", ...(drawn ? { card: drawn } : {}) };
-        return;
-      }
-      case "takePile":
-        this.lastMove = { seq, seat, kind: "takePile", count: before.discard.length };
-        return;
-      case "playMelds":
-        this.lastMove = {
-          seq,
-          seat,
-          kind: "meld",
-          count: action.melds.reduce((n, m) => n + m.cardIds.length, 0),
-        };
-        return;
-      case "takeBack":
-        this.lastMove = { seq, seat, kind: "takeBack" };
-        return;
-      case "discard":
-        this.lastMove = { seq, seat, kind: "discard", card: after.discard.at(-1)! };
-        return;
-    }
+    const move = describeMove(this.log.length, seat, action, before, after);
+    if (move) this.lastMove = move;
   }
 
   private notify(): void {
@@ -1073,11 +1045,9 @@ export class Room {
   viewFor(seat: number): ViewUpdate | null {
     if (!this.state) return null;
     // A drawn card is its drawer's alone; everyone else is told only that one was.
-    const move = this.lastMove;
-    const lastMove =
-      move && move.kind === "draw" && move.seat !== seat ? { ...move, card: undefined } : move;
+    const lastMove = this.lastMove && moveSeenBy(this.lastMove, seat);
     return {
-      ...(lastMove ? { lastMove: stripUndefined(lastMove) } : {}),
+      ...(lastMove ? { lastMove } : {}),
       view: project(this.state, seat),
       clock: this.clockState(),
       room: this.info(),
@@ -1090,23 +1060,11 @@ export class Room {
 
   /** Final scores, once the round is over. */
   result(): RoundEnded | null {
-    if (!this.state?.roundEnded) return null;
-    return {
-      scores: scoreRound(this.state),
-      wentOutSeat: this.state.wentOutSeat,
-      roundNumber: this.state.roundNumber,
-      totals: matchTotals(this.state),
-      matchOver: isMatchOver(this.state),
-    };
+    return this.state && roundResult(this.state);
   }
 
   /** Whether the last round of the match has been played. */
   get matchOver(): boolean {
     return this.state !== null && isMatchOver(this.state);
   }
-}
-
-/** A copy without undefined fields, so a withheld card leaves no key behind. */
-function stripUndefined<T extends object>(value: T): T {
-  return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as T;
 }

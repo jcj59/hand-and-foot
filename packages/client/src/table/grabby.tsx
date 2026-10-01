@@ -89,9 +89,14 @@ export function sayGrabbyPants(): void {
 
 /**
  * Announce a new holder when one appears. Returns the headline to show, or null.
- * Nothing is announced for the holder the page opened with: that is old news.
+ * Nothing is announced for the holder the page opened with: that is old news —
+ * nor for one reached `quiet`ly, as a replay seeking past the moment does.
  */
-export function useGrabbyAnnouncement(room: RoomInfo | undefined, muted: boolean): string | null {
+export function useGrabbyAnnouncement(
+  room: RoomInfo | undefined,
+  muted: boolean,
+  quiet = false,
+): string | null {
   const [headline, setHeadline] = useState<string | null>(null);
   const seen = useRef<string | null | undefined>(undefined);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -101,14 +106,14 @@ export function useGrabbyAnnouncement(room: RoomInfo | undefined, muted: boolean
     if (!room) return;
     const previous = seen.current;
     seen.current = key;
-    if (previous === undefined || key === null || key === previous) return;
+    if (previous === undefined || key === null || key === previous || quiet) return;
     // The same holder going further keeps the key; only a new holder is news.
     if (previous?.split(":")[0] === key.split(":")[0]) return;
     setHeadline(grabbyHeadline(room));
     if (!muted) sayGrabbyPants();
     clearTimeout(timer.current);
     timer.current = setTimeout(() => setHeadline(null), GRABBY_MS);
-  }, [key, room, muted]);
+  }, [key, room, muted, quiet]);
 
   useEffect(() => () => clearTimeout(timer.current), []);
   return headline;

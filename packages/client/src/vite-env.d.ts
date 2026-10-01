@@ -8,6 +8,8 @@
 interface ImportMetaEnv {
   /** Where the server is. The page's own origin when unset. */
   readonly VITE_SERVER_URL?: string;
+  /** "1" keeps the scenario viewer in a production build; see `scenarios/enabled.ts`. */
+  readonly VITE_SCENARIOS?: string;
 }
 
 interface ImportMeta {

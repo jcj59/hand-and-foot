@@ -19,16 +19,21 @@ export interface RoundResultProps {
   readonly result: RoundEnded;
   readonly room: RoomInfo;
   readonly config: RulesConfig;
+  /** What a seated player can do next; null when the table is only being watched. */
+  readonly actions: RoundResultActions | null;
+  /** This viewer's seat, to know whether they have said ready already. */
+  readonly seat: number;
+  /** A refusal to show where the player is looking, over the table. */
+  readonly notice: string | null;
+}
+
+export interface RoundResultActions {
   /** Get up from the table and go back to the main screen. */
   readonly onLeave: () => void;
   /** Go to the next game's waiting room. Offered once the match is over. */
   readonly onPlayAgain: () => void;
   /** Say ready for the next round of the match. Offered until the last round. */
   readonly onNextRound: () => void;
-  /** This viewer's seat, to know whether they have said ready already. */
-  readonly seat: number;
-  /** A refusal to show where the player is looking, over the table. */
-  readonly notice: string | null;
 }
 
 /** A signed number the way a scoreboard writes one. */
@@ -40,9 +45,7 @@ export function RoundResult({
   result,
   room,
   config,
-  onLeave,
-  onPlayAgain,
-  onNextRound,
+  actions,
   seat: mySeat,
   notice,
 }: RoundResultProps): React.ReactElement {
@@ -67,12 +70,12 @@ export function RoundResult({
       : "The stock ran out.";
   const iAmReady = room.nextRoundReady.includes(mySeat);
   // What to do next stays on screen whether or not the scores are.
-  const choices = (
+  const choices = actions && (
     <>
       {result.matchOver ? (
         <button
           type="button"
-          onClick={onPlayAgain}
+          onClick={actions.onPlayAgain}
           className="rounded bg-amber-300 px-3 py-1.5 text-sm font-medium text-black"
         >
           Play again
@@ -81,7 +84,7 @@ export function RoundResult({
         <button
           type="button"
           disabled={iAmReady}
-          onClick={onNextRound}
+          onClick={actions.onNextRound}
           className="rounded bg-amber-300 px-3 py-1.5 text-sm font-medium text-black disabled:opacity-60"
         >
           {iAmReady ? "Waiting for the others…" : "Next round"}
@@ -89,7 +92,7 @@ export function RoundResult({
       )}
       <button
         type="button"
-        onClick={onLeave}
+        onClick={actions.onLeave}
         className="rounded bg-white px-3 py-1.5 text-sm font-medium text-felt-900"
       >
         Back to the main screen

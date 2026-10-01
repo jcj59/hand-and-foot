@@ -10,7 +10,7 @@ Repo: `~/dev/hand-and-foot`, remote `git@github.com:jcj59/hand-and-foot.git`.
 
 ## Layout
 
-pnpm + Turborepo monorepo, TypeScript everywhere, six workspace packages:
+pnpm + Turborepo monorepo, TypeScript everywhere, seven workspace packages:
 
 | Package | Name | State |
 | --- | --- | --- |
@@ -19,6 +19,7 @@ pnpm + Turborepo monorepo, TypeScript everywhere, six workspace packages:
 | `packages/server` | `@hf/server` | Authoritative table logic (`Room`, `TableChannel`, `RoomStore`) exported host-agnostically from `@hf/server/core`, plus a Node host for it (`ws` sockets, Postgres persistence, restore-on-boot). **Complete (M2, M4, M5).** |
 | `packages/client` | `@hf/client` | React + Vite + Tailwind + Zustand app: lobby, table, SVG cards, meld staging. **Complete (M3).** |
 | `packages/transport` | `@hf/transport` | The client's connection: HTTP to sit down, one WebSocket per table, reconnect with back-off, 25s keep-alive. Keeps Socket.io's `emit`/`on` surface. **M5.** |
+| `packages/scenarios` | `@hf/scenarios` | The scenario library: hand-arranged tables, scripts resolved to actions, an autopilot for filler play. Pure; consumed by the client's dev-only viewer. **Roadmap item 1.** |
 | `packages/worker` | `@hf/worker` | The production host: a Cloudflare Worker serving the client and a `TableObject` Durable Object per table code, hibernatable sockets, storage in the object's own SQLite KV. **M5.** |
 
 The **libraries** are consumed **from source** — each `package.json` points
@@ -499,13 +500,50 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   this player, phrases for round and match end. The `AudioContext` is created on the first user
   gesture (`UNLOCK_EVENTS`; a touch only counts when it ends, so both ends of a press are listened
   for) per browser autoplay rules, and closed on unmount; mute is per device (`hf.muted`).
-- **Grabby Pants.** `server/src/grabby.ts` works out, from the action log, who has taken the pile
+- **Grabby Pants.** `engine/src/grabby.ts` (moved from the server in roadmap item 1, so replay and the scenario viewer derive the same holder) works out, from the action log, who has taken the pile
   most times running this match: 3 in a row (`GRABBY_STREAK`, pinned) earns the title; taking it
   needs a streak longer than the holder's best; another player drawing does not break a streak,
   only someone else taking the pile. Sent as `RoomInfo.grabbyPants {seat, streak, from?}`. The
   client renames the holder "Grabby Pants" with a drawn icon (`table/grabby.tsx`), announces a
   new holder on every screen, and says "Grabby Pants" with the device's speech synthesis at its
   lowest pitch (unless muted; speech is unlocked on the first tap, like audio).
+- **Scenario library and autoplay viewer (roadmap item 1).** Three layers, kept apart on purpose:
+  - **Engine, `playback.ts`:** `buildTimeline(GameLog)` takes any `{ config, setup: {seed,
+    playerCount} | {state}, actions, names?, moments? }` — a scenario, a golden game, a recorded
+    match — replays it once (throwing `TimelineError` naming the step on a refused action), keeps a
+    checkpoint every `CHECKPOINT_EVERY` (32) steps plus the last state asked for, and finds turn and
+    round spans and the automatic moments (`pileTaken`, `gotDown`, `footPickedUp`, `grabbyPants`,
+    `wentOut`, `roundEnded`, `matchOver`) for any input. Step `k` is the state after `k` actions.
+    `describeMove`/`moveSeenBy`/`roundResult` (`lastMove.ts`) and `grabbyPants`/`grabbyHistory`
+    (`grabby.ts`) moved here from the server so live tables and replays say the same thing; the
+    server's `Room` now calls them. Golden-game recorders are exported as `@hf/engine/testing`
+    (excluded from engine coverage: test support, not engine).
+  - **`@hf/scenarios`:** `arrange(TableSpec, config)` builds a position from card shorthand (`KH`,
+    `10S`, `JK`; suits required, so a three is never ambiguous) — named cards are claimed from a real
+    shoe and the rest dealt from the seed, so every card exists exactly once. Scripts
+    (`draw()`, `meld({ K: "KC KD KH" })`, `discard("9S")`, `moment(id, label)`, `autoTurns(n)`,
+    `autoUntil("round" | "match")`) resolve against the active zone of the seat on turn. The
+    autopilot is filler play only (not item 7's bot) and some seeds never finish a round once the
+    shoe is melded out, so `autoUntil` gives up at `AUTO_ACTION_LIMIT` — pick seeds that end.
+  - **Client:** `table/TableView.tsx` is the whole table, driven by props and an optional
+    `TableControls` (null = watching: nothing clickable, no clock, the seat named instead of "your");
+    `routes/Table.tsx` is now only the session/socket wrapper. `playback/` is the reusable player
+    (pure `frameAt`, `playbackReducer`, `navigate.ts`, and `Player.tsx`) with no scenario knowledge;
+    item 5's replay should only need a new data source. A frame goes through `project`,
+    `legalHints` and `moveSeenBy`, and `frame.test.ts` checks no hidden card leaks at any step. A jump
+    (seek, step back, instant speed) carries no `lastMove` and sets `quiet`, so nothing animates,
+    sounds or announces; playing forward numbers each step afresh (`playedAs`). `scenarios/` is the
+    dev route: mounted by `main.tsx` **instead of** the app at `/scenarios` (no socket), only in
+    development or a build with `VITE_SCENARIOS=1` (the screenshot harness; declared on turbo's
+    `build` env). The condition is written inline in `main.tsx` on purpose: imported as a flag from
+    another module, Vite still emitted the viewer's chunk in production. Links: `/scenarios/<id>#moment=<id>`
+    or `#step=n&seat=n&all=1`; `/scenarios/all` (`?moments=1` for windows around named moments).
+  - **Adding a scenario** is one entry in `SCENARIOS` (`packages/scenarios/src/library.ts`): an id,
+    title, description, config, a `TableSpec` or seed, names, a script, and optionally `watch`.
+    `library.test.ts` replays every entry; add an assertion there that the scenario shows what it
+    claims (it is easy to write a script that is legal but demonstrates nothing).
+  - Mutation-tested: all new engine guards killed but one equivalent — the checkpoint cache's
+    `cached.step >= base` bound, which only chooses the shorter of two replays to the same state.
 - **Bot milestone — the RL agent.** The point of the whole project. Design not yet written; the
   section in `DESIGN.md` is a placeholder. Observation = `PlayerView` (by construction the agent
   cannot see more than a human), reward is end-of-round. The evaluation baseline is **not**

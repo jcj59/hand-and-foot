@@ -4,7 +4,6 @@
  * built from these; `index.ts` adds the Node process around them.
  */
 export * from "./clock";
-export * from "./grabby";
 export * from "./log";
 export { configFor, DEFAULT_ABANDONED_ROOM_MS } from "./manager";
 export * from "./room";
