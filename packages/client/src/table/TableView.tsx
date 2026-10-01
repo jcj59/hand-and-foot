@@ -33,7 +33,7 @@ import {
   type RoundEnded,
   type ViewUpdate,
 } from "@hf/shared";
-import { isUnplayable, type PlayContext } from "../cards/handOrder";
+import { canLayOff, isUnplayable, type PlayContext } from "../cards/handOrder";
 import { DiscardPile, FaceDownPile, PlayingCard } from "../cards/PlayingCard";
 import { usePhone } from "../usePhone";
 import { Hand } from "./Hand";
@@ -283,8 +283,7 @@ export function TableView({
   const layOffs = (() => {
     if (!canMeld || !view.isDown) return [];
     const fits = zone.filter(
-      (card) =>
-        !isWild(card.rank) && !outOfPlay(card) && meldRanks.has(card.rank) && !staged.has(card.id),
+      (card) => canLayOff(card, meldRanks, playContext) && !staged.has(card.id),
     );
     return fits;
   })();
@@ -360,7 +359,9 @@ export function TableView({
   /** Why throwing this card away is probably a mistake, if it is. */
   function discardWarning(card: Card): string | null {
     if (isWild(card.rank)) return "That is a wild card.";
-    if (meldRanks.has(card.rank)) return `You have a meld of ${card.rank}s it could go on.`;
+    if (canLayOff(card, meldRanks, playContext)) {
+      return `You have a meld of ${card.rank}s it could go on.`;
+    }
     return null;
   }
 
@@ -373,9 +374,7 @@ export function TableView({
       // A natural of a rank already down goes straight onto that meld: one click,
       // not a lay-down to build and commit.
       layOffTo={
-        canMeld && view.isDown && !isWild(chosen.rank) && meldRanks.has(chosen.rank)
-          ? chosen.rank
-          : null
+        canMeld && view.isDown && canLayOff(chosen, meldRanks, playContext) ? chosen.rank : null
       }
       // A wild has no rank of its own: it goes to the selected meld, named here so
       // the player sees where before it lands.

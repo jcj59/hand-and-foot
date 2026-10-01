@@ -2540,3 +2540,63 @@ describe("quick reactions", () => {
     expect(sent).toContainEqual({ event: "react", args: [{ id: "good-luck" }] });
   });
 });
+
+describe("a book of black threes", () => {
+  // Seven black threes down, from the foot: a red three is still never meldable,
+  // so nothing should suggest it could go on them. Reported from a real game.
+  const blackBook = {
+    rank: "3" as const,
+    cards: Array.from({ length: 7 }, (_, i) => ({
+      id: `b3-${i}`,
+      rank: "3" as const,
+      suit: i % 2 === 0 ? ("clubs" as const) : ("spades" as const),
+    })),
+  };
+  const redThree = { id: "r3", rank: "3" as const, suit: "hearts" as const };
+  function inFootWithBook(): ViewUpdate {
+    return update({
+      view: {
+        isDown: true,
+        inFoot: true,
+        hand: [],
+        foot: [redThree, card("9", "hearts")],
+        footCount: 2,
+        melds: [blackBook],
+        phase: "play",
+      },
+      hints: { phase: "play", canDraw: false },
+    });
+  }
+
+  it("does not underline a red three as if it could go on them", () => {
+    mount(fakeSocket().socket, inFootWithBook());
+    const foot = screen.getByRole("region", { name: /your foot/i });
+    expect(within(foot).queryByTitle(/you have a meld of 3s/i)).toBeNull();
+  });
+
+  it("does not offer to add a red three to them", () => {
+    mount(fakeSocket().socket, inFootWithBook());
+    fireEvent.click(handCard("Three of hearts, penalty"));
+    expect(screen.queryByRole("menuitem", { name: /add to 3s meld/i })).toBeNull();
+  });
+
+  it("discards a red three without warning that it could go on them", async () => {
+    const { socket, sent } = fakeSocket();
+    mount(socket, inFootWithBook());
+    choose("Three of hearts, penalty", /^discard$/i);
+    expect(screen.queryByRole("dialog", { name: /confirm discard/i })).toBeNull();
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0].args[0]).toEqual({ type: "discard", cardId: "r3" });
+  });
+
+  it("still underlines a black three, which can go on them from the foot", () => {
+    const view = inFootWithBook();
+    const blackThree = { id: "b3-extra", rank: "3" as const, suit: "clubs" as const };
+    mount(fakeSocket().socket, {
+      ...view,
+      view: { ...view.view, foot: [blackThree, card("9", "hearts")] },
+    });
+    const foot = screen.getByRole("region", { name: /your foot/i });
+    expect(within(foot).getByTitle(/you have a meld of 3s/i)).toBeInTheDocument();
+  });
+});

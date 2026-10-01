@@ -2,12 +2,14 @@ import { describe, it, expect } from "vitest";
 import type { Card, Rank, Suit } from "@hf/shared";
 import { standardDeck } from "@hf/engine";
 import {
+  canLayOff,
   compareForDisplay,
   displayGroup,
   isDeadWeight,
   isRedCard,
   sortForDisplay,
   isUnplayable,
+  type PlayContext,
 } from "./handOrder";
 
 const card = (rank: Rank, suit: Suit | null): Card => ({ id: `${rank}-${suit}`, rank, suit });
@@ -151,5 +153,38 @@ describe("isUnplayable", () => {
   it("leaves every other card alone", () => {
     expect(isUnplayable(king, inHand)).toBe(false);
     expect(isUnplayable(king, inFoot)).toBe(false);
+  });
+});
+
+describe("what can go straight onto a meld", () => {
+  const ctx = (over: Partial<PlayContext> = {}): PlayContext => ({
+    inFoot: true,
+    blackThreesHeld: 0,
+    hasBlackThreeMeld: true,
+    ...over,
+  });
+  const c = (rank: Card["rank"], suit: Card["suit"]): Card => ({
+    id: `${rank}${suit}`,
+    rank,
+    suit,
+  });
+
+  it("is a natural of a rank already down", () => {
+    expect(canLayOff(c("9", "hearts"), new Set(["9"]), ctx())).toBe(true);
+    expect(canLayOff(c("9", "hearts"), new Set(["K"]), ctx())).toBe(false);
+  });
+
+  it("is never a wild, whose place is a choice", () => {
+    expect(canLayOff(c("2", "clubs"), new Set(["2" as Card["rank"]]), ctx())).toBe(false);
+  });
+
+  it("is never a red three, even beside a book of black threes", () => {
+    expect(canLayOff(c("3", "hearts"), new Set(["3"]), ctx())).toBe(false);
+    expect(canLayOff(c("3", "diamonds"), new Set(["3"]), ctx())).toBe(false);
+  });
+
+  it("is a black three only when black threes are in play: from the foot, onto their book", () => {
+    expect(canLayOff(c("3", "spades"), new Set(["3"]), ctx())).toBe(true);
+    expect(canLayOff(c("3", "spades"), new Set(["3"]), ctx({ inFoot: false }))).toBe(false);
   });
 });

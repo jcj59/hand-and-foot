@@ -31,6 +31,9 @@ import {
   type Post,
 } from "../identity";
 
+/** Development builds, and the screenshot harness's, carry the scenario viewer. */
+const SCENARIOS_LINK = import.meta.env.DEV || import.meta.env.VITE_SCENARIOS === "1";
+
 export interface HomeProps {
   readonly socket: HfClientSocket;
   /** How identities reach the server; the page's own origin unless a test answers it. */
@@ -190,6 +193,14 @@ export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React
       </form>
 
       <IdentityPanel post={post} />
+
+      {SCENARIOS_LINK && (
+        // A full page load, not a route change: the viewer is mounted in place of
+        // the app (see main.tsx), and only in builds that carry it.
+        <a href="/scenarios" className="text-center text-sm text-sky-200 underline">
+          Scenario viewer (development)
+        </a>
+      )}
     </main>
   );
 }

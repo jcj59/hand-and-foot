@@ -91,6 +91,27 @@ if (process.env.BIG_MELDS) {
     ),
   ];
 }
+if (process.env.BLACK_BOOK) {
+  // In the foot with a book of black threes down, holding a red three and a black
+  // one: only the black three may go on the book.
+  view.inFoot = true;
+  view.hand = [];
+  view.foot = [
+    c("3", "hearts", 50),
+    c("3", "clubs", 51),
+    c("9", "spades", 52),
+    c("K", "hearts", 53),
+  ];
+  view.footCount = 4;
+  view.melds = [
+    meld(
+      "3",
+      [...Array(7)].map((_, i) => c("3", i % 2 ? "spades" : "clubs", 30 + i)),
+    ),
+    ...view.melds.slice(0, 2),
+  ];
+  view.playedThisTurn = [];
+}
 if (process.env.TWO_DISCARDS) view.discard = [c("3", "hearts", 40), c("3", "diamonds", 41)];
 if (process.env.BIG_OPP) {
   // An opponent with a table full of melds, as tall as a seat gets.
