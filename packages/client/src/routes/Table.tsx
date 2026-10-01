@@ -444,7 +444,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
         {!phone && (
           // On a computer the other players are shown in full, with their melds;
           // collapsed, they are the phone's strip of chips, a tap from the melds.
-          <div className="flex items-center justify-between px-3 pt-1 text-xs text-white/60">
+          <div className="mb-1.5 flex items-center justify-between px-3 pt-1 text-xs text-white/60">
             <span>Players</span>
             <button
               type="button"

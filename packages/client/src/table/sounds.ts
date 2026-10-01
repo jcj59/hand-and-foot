@@ -17,11 +17,12 @@ import { useEffect, useRef, useState } from "react";
 import type { LastMove, RoundEnded } from "@hf/shared";
 
 /** A recorded card sound, one per kind of move; see `public/sounds`. */
-export type CardSound = "draw" | "discard" | "meld" | "pile" | "take-back";
-export type Sound = CardSound | "turn" | "round" | "match";
+export type CardSound = "draw" | "discard" | "meld" | "take-back";
+/** `pile` is the draw's recording played lower and slower: a draw, but more of it. */
+export type Sound = CardSound | "pile" | "turn" | "round" | "match";
 
 /** Which recording marks each move. One sound per move, however many cards it moves. */
-const CARD_SOUND: Readonly<Record<LastMove["kind"], CardSound>> = {
+const CARD_SOUND: Readonly<Record<LastMove["kind"], Sound>> = {
   draw: "draw",
   discard: "discard",
   meld: "meld",
@@ -29,7 +30,7 @@ const CARD_SOUND: Readonly<Record<LastMove["kind"], CardSound>> = {
   takeBack: "take-back",
 };
 
-export const CARD_SOUNDS: readonly CardSound[] = ["draw", "discard", "meld", "pile", "take-back"];
+export const CARD_SOUNDS: readonly CardSound[] = ["draw", "discard", "meld", "take-back"];
 
 /** What the table looked like at one moment, as far as sound is concerned. */
 export interface Moment {
@@ -148,14 +149,17 @@ export function play(
     case "draw":
     case "discard":
     case "meld":
-    case "pile":
-    case "take-back": {
-      const recording = recordings.get(sound);
+    case "take-back":
+    case "pile": {
+      const recording = recordings.get(sound === "pile" ? "draw" : sound);
       // Until the recordings have loaded — a moment after the first tap — a
       // synthesized flick stands in.
       if (!recording) return flick(ctx, t, 0.5);
       const source = ctx.createBufferSource();
       source.buffer = recording;
+      // The pile is the draw's sound, a little lower and slower: the same motion,
+      // with more cards in it.
+      if (sound === "pile") source.playbackRate.value = 0.8;
       const level = ctx.createGain();
       level.gain.value = 0.9;
       source.connect(level).connect(ctx.destination);

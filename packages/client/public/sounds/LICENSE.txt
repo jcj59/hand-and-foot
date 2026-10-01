@@ -6,5 +6,6 @@ The card sounds in this directory are from "Casino Audio" (1.1) by Kenney
   draw.wav       <- card-slide-1.ogg
   discard.wav    <- card-place-1.ogg
   meld.wav       <- card-place-2.ogg
-  pile.wav       <- card-fan-1.ogg
   take-back.wav  <- card-slide-2.ogg
+
+  (Taking the pile plays draw.wav lower and slower.)

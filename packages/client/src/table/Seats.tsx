@@ -35,7 +35,9 @@ export function Seats({ opponents, room, config, seatToAct }: SeatsProps): React
             data-anchor={`seat-${opponent.seat}`}
             data-zone="seat"
             aria-label={seatLabel(opponent, info?.name ?? `Seat ${opponent.seat}`, onTurn)}
-            className={`flex min-w-44 flex-col gap-2 rounded border p-2 ${
+            // Capped, so a player with a table full of melds does not push the
+            // middle of the table down the screen; their melds scroll inside.
+            className={`flex max-h-56 min-w-44 flex-col gap-2 rounded border p-2 ${
               onTurn ? "border-amber-300 bg-amber-300/10" : "border-white/10 bg-black/20"
             }`}
           >
@@ -68,7 +70,9 @@ export function Seats({ opponents, room, config, seatToAct }: SeatsProps): React
               {opponent.inFoot && <span className="text-xs text-white/60">Foot (in)</span>}
             </div>
 
-            <Melds melds={opponent.melds} config={config} compact />
+            <div className="min-h-0 overflow-y-auto">
+              <Melds melds={opponent.melds} config={config} compact />
+            </div>
           </li>
         );
       })}
