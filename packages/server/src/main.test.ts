@@ -297,7 +297,7 @@ describe.skipIf(process.env.HF_TEST_DATABASE_URL === undefined)("startFromEnv on
   it("connects with nothing injected, keeps rooms across a restart, and says so", async () => {
     const url = await ownDatabase(process.env.HF_TEST_DATABASE_URL!, "hf_test_main");
     const admin = postgres(url, { max: 1, onnotice: () => {} });
-    await admin`drop table if exists actions, rooms, schema_migrations`;
+    await admin`drop table if exists actions, rooms, users, schema_migrations`;
     await admin.end();
 
     const first = await startFromEnv({ PORT: "0", DATABASE_URL: url }, recorder());

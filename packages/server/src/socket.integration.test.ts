@@ -1211,3 +1211,60 @@ describe("quick reactions over the wire", () => {
     expect((await react(stranger, "nice")).ok).toBe(false);
   });
 });
+
+describe("identities over HTTP", () => {
+  const ana = { userId: "ana-user-id-0001", secret: "a".repeat(40) };
+  const ben = { userId: "ben-user-id-0002", secret: "b".repeat(40) };
+
+  async function register(
+    port: number,
+    body: unknown,
+  ): Promise<Ack<{ userId: string; name: string }>> {
+    const response = await fetch(`http://localhost:${port}/api/users`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return (await response.json()) as Ack<{ userId: string; name: string }>;
+  }
+
+  it("registers a browser's identity, and refuses the same id with another secret", async () => {
+    const { port } = await boot();
+    expect(await register(port, { ...ana, name: "Ana" })).toEqual({
+      ok: true,
+      data: { userId: ana.userId, name: "Ana" },
+    });
+    expect((await register(port, { ...ana, secret: "z".repeat(40) })).ok).toBe(false);
+  });
+
+  it("records who sat down when their identity checks out, and seats them anonymously when not", async () => {
+    const { server, port } = await boot();
+    await register(port, { ...ana, name: "Ana" });
+    await register(port, { ...ben, name: "Ben" });
+    const host = await connect(port);
+    const created = await new Promise<Ack<SeatCredentials>>((resolve) =>
+      host.emit("createRoom", { name: "Ana", user: ana }, resolve),
+    );
+    if (!created.ok) throw new Error(created.error);
+    const guest = await connect(port);
+    const joined = await new Promise<Ack<SeatCredentials>>((resolve) =>
+      guest.emit("joinRoom", { roomId: created.data.roomId, name: "Ben", user: ben }, resolve),
+    );
+    expect(joined.ok).toBe(true);
+    const impostor = await connect(port);
+    const forged = await new Promise<Ack<SeatCredentials>>((resolve) =>
+      impostor.emit(
+        "joinRoom",
+        { roomId: created.data.roomId, name: "Mal", user: { ...ana, secret: "z".repeat(40) } },
+        resolve,
+      ),
+    );
+    // Seated all the same — an identity is never a reason to refuse a seat — but as nobody.
+    expect(forged.ok).toBe(true);
+    const seats = server.manager.get(created.data.roomId)!.record().players;
+    expect(seats.map((p) => p.userId)).toEqual([ana.userId, ben.userId, undefined]);
+    // And the identity is not a seat: nothing of it reaches the table's broadcast.
+    const info = JSON.stringify(server.manager.get(created.data.roomId)!.info());
+    expect(info).not.toContain(ana.userId);
+  });
+});

@@ -382,5 +382,6 @@ export interface LegalHints {
   readonly canGoOut: boolean;
 }
 
+export * from "./identity";
 export * from "./protocol";
 export * from "./wire";

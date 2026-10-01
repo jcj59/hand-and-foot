@@ -14,6 +14,7 @@
  * slow or unreachable database costs recoverability, not a player's turn.
  */
 import type { LoggedAction, RulesConfig } from "@hf/shared";
+import type { UserStore } from "./users";
 
 /** One seat, as much of it as outlives a process. Connection state does not. */
 export interface SeatRecord {
@@ -21,6 +22,8 @@ export interface SeatRecord {
   readonly name: string;
   readonly token: string;
   readonly left: boolean;
+  /** Who sat here, when their browser proved an identity. Absent from older records. */
+  readonly userId?: string;
 }
 
 /** A room, minus its game — which the log reconstructs. */
@@ -61,6 +64,11 @@ export interface StoredRoom {
 }
 
 export interface RoomStore {
+  /**
+   * Where identities are kept, for a store that can keep them too — the database
+   * does. Without one the server keeps them in memory.
+   */
+  users?(): UserStore;
   /** Record the room's current seating and status, replacing what was there. */
   saveRoom(room: RoomRecord): void;
   /** Record one accepted action. */

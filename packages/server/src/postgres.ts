@@ -14,6 +14,7 @@
  */
 import postgres from "postgres";
 import type { Action, ActionSource, LoggedAction, RulesConfig } from "@hf/shared";
+import type { UserRecord, UserStore } from "./users";
 import type { RoomRecord, RoomStore, SeatRecord, StoredRoom } from "./store";
 
 /** Just enough of `console` to report through; see `main.ts`. */
@@ -59,6 +60,14 @@ export const MIGRATIONS: readonly string[] = [
   `alter table rooms add column host_token text;`,
   // Between rounds and after the match: who is ready, who went on, and where to.
   `alter table rooms add column waiting jsonb;`,
+  // Identities: a browser's user id, a hash of its secret, and the name it last used.
+  `create table users (
+     user_id text primary key,
+     secret_hash text not null,
+     name text not null,
+     created_at bigint not null,
+     updated_at bigint not null
+   );`,
 ];
 
 /**
@@ -314,9 +323,46 @@ export class PostgresRoomStore implements RoomStore {
     return this.writes.flush();
   }
 
+  /** Identities, in the same database. Read and written directly: a request waits on them. */
+  users(): UserStore {
+    return new PostgresUserStore(this.sql);
+  }
+
   async close(): Promise<void> {
     await this.writes.close(this.shutdownDeadlineMs);
     await this.sql.end({ timeout: 5 });
+  }
+}
+
+/**
+ * Identities in Postgres. Unlike the room log these are not written behind: the
+ * request registering one is waiting for the answer, and nothing in a game is.
+ */
+export class PostgresUserStore implements UserStore {
+  constructor(private readonly sql: postgres.Sql) {}
+
+  async get(userId: string): Promise<UserRecord | null> {
+    const rows = await this.sql`
+      select user_id, secret_hash, name, created_at, updated_at from users where user_id = ${userId}`;
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      userId: row.user_id,
+      secretHash: row.secret_hash,
+      name: row.name,
+      createdAt: Number(row.created_at),
+      updatedAt: Number(row.updated_at),
+    };
+  }
+
+  async put(record: UserRecord): Promise<void> {
+    await this.sql`
+      insert into users (user_id, secret_hash, name, created_at, updated_at)
+      values (${record.userId}, ${record.secretHash}, ${record.name}, ${record.createdAt}, ${record.updatedAt})
+      on conflict (user_id) do update set
+        secret_hash = excluded.secret_hash,
+        name = excluded.name,
+        updated_at = excluded.updated_at`;
   }
 }
 

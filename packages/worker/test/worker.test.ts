@@ -541,3 +541,57 @@ describe("a table", () => {
     expect(await tableOf(code).open(code, EAST_COAST, "eve")).toMatchObject({ ok: true });
   });
 });
+
+describe("identities", () => {
+  const ana = { userId: "ana-user-id-0001", secret: "a".repeat(40) };
+  const ben = { userId: "ben-user-id-0002", secret: "b".repeat(40) };
+
+  async function register(body: unknown): Promise<Ack<{ userId: string; name: string }>> {
+    const response = await SELF.fetch(`${BASE}/api/users`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return (await response.json()) as Ack<{ userId: string; name: string }>;
+  }
+
+  it("registers one, keeps it in its own object, and refuses it to another secret", async () => {
+    expect(await register({ ...ana, name: "Ana" })).toEqual({
+      ok: true,
+      data: { userId: ana.userId, name: "Ana" },
+    });
+    expect(await register({ ...ana, secret: "z".repeat(40) })).toEqual({
+      ok: false,
+      error: "that identity belongs to another browser",
+    });
+    // Nothing that is not an id is used to address an object.
+    expect(await register({ userId: "../../etc", secret: ana.secret })).toEqual({
+      ok: false,
+      error: "that is not an identity",
+    });
+  });
+
+  it("is recorded with the seat when it checks out, and the seat is still given when it does not", async () => {
+    await register({ ...ana, name: "Ana" });
+    await register({ ...ben, name: "Ben" });
+    const host = client();
+    const opened = await ask<SeatCredentials>(host, "createRoom", { name: "Ana", user: ana });
+    if (!opened.ok) throw new Error(opened.error);
+    const guest = client();
+    const joined = await ask<SeatCredentials>(guest, "joinRoom", {
+      roomId: opened.data.roomId,
+      name: "Ben",
+      user: ben,
+    });
+    expect(joined.ok).toBe(true);
+    const stranger = client();
+    const forged = await ask<SeatCredentials>(stranger, "joinRoom", {
+      roomId: opened.data.roomId,
+      name: "Mal",
+      user: { ...ana, secret: "z".repeat(40) },
+    });
+    expect(forged.ok).toBe(true);
+    const ids = await insideTable(opened.data.roomId, (room) => room.seats().map((p) => p.userId));
+    expect(ids).toEqual([ana.userId, ben.userId, undefined]);
+  });
+});

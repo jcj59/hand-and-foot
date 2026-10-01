@@ -522,6 +522,24 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   available, and synthesis needs no asset. `useTableSounds` now returns `playSound` for one-offs.
   Reduced motion hides the confetti and the pop; the announcement stays. `Celebration` takes its
   duration as `--celebration-ms`, which the CSS animation reads.
+- **Identity (roadmap item 4a).** `@hf/shared/identity.ts`: `UserCredentials {userId, secret}`
+  (ids 16–64 and secrets 32–128 URL-safe chars, `isUserCredentials`), `normalizeName`
+  (`MAX_NAME_LENGTH` 24), transfer codes `hf1.<id>.<secret>`. Server `users.ts` (host-agnostic):
+  `UserStore` (`InMemoryUserStore`, `PostgresUserStore` from migration 4, reached through the
+  optional `RoomStore.users()`), only a SHA-256 of the secret is kept, `registerUser` creates or
+  confirms-and-renames (`existing: true` refuses an unknown id — used for transfers so a typo
+  never mints an identity), `verifyUser`. `POST /api/users` on both hosts; create/join bodies may
+  carry `user`, verified before the table sees it, and a failed check **seats the player
+  anyway, anonymously**. `RoomPlayer.userId` / `SeatRecord.userId` persist with the seat (JSON
+  column, no migration), travel to the next game, and are **not** in `RoomInfo`. On Cloudflare
+  each identity is its own `UserObject` Durable Object (`USERS` binding, migration tag `v2`) —
+  chosen over D1 because it needs no resource created by hand and fits the free plan; the Worker
+  checks the id's shape before addressing an object by it. Client `identity.ts`: identity made
+  on first need (`hf.identity`), name remembered (`hf.name`, pre-filled on Home),
+  `prepareIdentity` registers on sit-down (replacing an identity the server says is someone
+  else's, giving up after `REGISTER_TIMEOUT_MS` 4s rather than blocking), and Home's folded
+  "Use your profile on another device" panel shows/accepts transfer codes. Seat tokens remain
+  the only authority to act. Server DB tests now drop `users` too when they wipe.
 - **Quick reactions (roadmap item 3).** A fixed list, `REACTIONS` in `@hf/shared/protocol.ts`
   (six emoji, six phrases); only an id crosses the wire (`isReactionId` is the server's check), so
   there is nothing to moderate. `react {id}` → `Room.react` (seat valid, id valid, and a per-seat

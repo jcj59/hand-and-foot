@@ -10,3 +10,4 @@ export { configFor, DEFAULT_ABANDONED_ROOM_MS } from "./manager";
 export * from "./room";
 export * from "./store";
 export * from "./table";
+export * from "./users";

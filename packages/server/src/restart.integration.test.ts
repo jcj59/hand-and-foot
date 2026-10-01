@@ -209,7 +209,7 @@ if (DATABASE_URL !== undefined) {
     "Postgres",
     async () => {
       const admin = postgres(await url(), { max: 1, onnotice: () => {} });
-      await admin`drop table if exists actions, rooms, schema_migrations`;
+      await admin`drop table if exists actions, rooms, users, schema_migrations`;
       await admin.end();
       return openPostgresStore(await url(), { retryDelaysMs: [] });
     },

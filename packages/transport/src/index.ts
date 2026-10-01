@@ -190,8 +190,8 @@ export class TableSocket {
       case "createRoom":
         return this.sit(ROOMS_PATH, payload);
       case "joinRoom": {
-        const { roomId, name } = payload as { roomId: string; name: string };
-        return this.sit(joinPath(roomId), { name });
+        const { roomId, name, user } = payload as { roomId: string; name: string; user?: unknown };
+        return this.sit(joinPath(roomId), user === undefined ? { name } : { name, user });
       }
       case "resumeSeat": {
         const credentials = payload as SeatCredentials;

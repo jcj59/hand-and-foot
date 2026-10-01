@@ -86,6 +86,12 @@ export interface RoomPlayer {
    */
   readonly token: string;
   connected: boolean;
+  /**
+   * The identity of whoever sat down, when their browser proved one; see `users.ts`.
+   * Who they are, for attributing games later — never what they may do here, which
+   * is the token's.
+   */
+  readonly userId?: string;
   /** When they dropped, so the reconnect grace can be measured. Null while connected. */
   disconnectedAt: number | null;
   /**
@@ -350,6 +356,7 @@ export class Room {
         name: p.name,
         token: p.token,
         left: p.left,
+        ...(p.userId ? { userId: p.userId } : {}),
       })),
       started: this.started,
       pausedSeat: this.pausedSeat ?? null,
@@ -438,13 +445,14 @@ export class Room {
     return this.players.reduce((latest, p) => Math.max(latest, p.disconnectedAt ?? 0), 0);
   }
 
-  join(name: string): RoomResult<RoomPlayer> {
+  join(name: string, userId?: string | null): RoomResult<RoomPlayer> {
     if (this.started) return fail("the game has already started");
     if (this.players.length >= MAX_PLAYERS) return fail(`a table seats at most ${MAX_PLAYERS}`);
     const player: RoomPlayer = {
       seat: this.players.length,
       name,
       token: this.deps.newToken(),
+      ...(userId ? { userId } : {}),
       connected: true,
       disconnectedAt: null,
       left: false,

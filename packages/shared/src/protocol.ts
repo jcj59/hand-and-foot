@@ -17,6 +17,7 @@ import type {
   PlayerView,
   RoundScore,
   RulesConfig,
+  UserCredentials,
 } from "./index";
 
 /** Where an action in the log came from. */
@@ -216,11 +217,16 @@ export interface ClientToServerEvents {
    * belong — don't widen this to a raw config.
    */
   createRoom: (
-    payload: { readonly name: string; readonly options?: RoomOptions },
+    payload: {
+      readonly name: string;
+      readonly options?: RoomOptions;
+      /** Who is sitting down, if the browser has an identity; checked by the server. */
+      readonly user?: UserCredentials;
+    },
     ack: (result: Ack<SeatCredentials>) => void,
   ) => void;
   joinRoom: (
-    payload: { readonly roomId: string; readonly name: string },
+    payload: { readonly roomId: string; readonly name: string; readonly user?: UserCredentials },
     ack: (result: Ack<SeatCredentials>) => void,
   ) => void;
   /**

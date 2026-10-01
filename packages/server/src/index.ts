@@ -3,6 +3,7 @@ import { type Clock, systemClock } from "./clock";
 import { RoomManager } from "./manager";
 import { attachTables, type Tables } from "./socket";
 import type { RoomStore } from "./store";
+import type { UserStore } from "./users";
 
 export * from "./clock";
 export * from "./lobby";
@@ -13,6 +14,7 @@ export * from "./room";
 export * from "./socket";
 export * from "./store";
 export * from "./table";
+export * from "./users";
 
 export interface ServerOptions {
   readonly clock?: Clock;
@@ -32,6 +34,8 @@ export interface ServerOptions {
    * this is a fresh boot.
    */
   readonly store?: RoomStore;
+  /** Where identities are kept; the store's own when it keeps them, else in memory. */
+  readonly users?: UserStore;
 }
 
 export interface HandAndFootServer {
@@ -59,6 +63,8 @@ export function createServer(options: ServerOptions = {}): HandAndFootServer {
   const tables = attachTables(http, manager, {
     cors: options.cors,
     heartbeatMs: options.heartbeatMs,
+    users: options.users ?? options.store?.users?.(),
+    now: () => (options.clock ?? systemClock).now(),
   });
   manager.startSweeping();
 
