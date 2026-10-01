@@ -81,8 +81,10 @@ export function playbackReducer(state: PlaybackState, event: PlaybackEvent): Pla
       return state.step <= 0
         ? state
         : { ...state, step: state.step - 1, playedAs: null, playing: false };
-    case "seek":
-      return { ...state, step: clamp(Math.round(event.step), 0, state.length), playedAs: null };
+    case "seek": {
+      const step = clamp(Math.round(event.step), 0, state.length);
+      return { ...state, step, playedAs: null, playing: state.playing && step < state.to };
+    }
     case "speed":
       return { ...state, speed: event.speed };
   }

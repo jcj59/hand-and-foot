@@ -163,10 +163,11 @@ function RunAll(): React.ReactElement {
   const navigate = useNavigate();
   const momentsOnly = new URLSearchParams(search).get("moments") === "1";
   const items = useMemo(() => playlist(momentsOnly), [momentsOnly]);
-  const [index, setIndex] = useState(0);
+  const [played, setPlayed] = useState(0);
+  const index = played % items.length;
   const [speed, setSpeed] = useState<Speed>(momentsOnly ? 1 : 2);
-  const item = items[index % items.length]!;
-  const next = (): void => setIndex((i) => (i + 1) % items.length);
+  const item = items[index]!;
+  const next = (): void => setPlayed((n) => n + 1);
   return (
     <>
       <ScenarioHeader scenario={item.scenario}>
@@ -183,7 +184,7 @@ function RunAll(): React.ReactElement {
       </ScenarioHeader>
       <div className="min-h-0 flex-1">
         <Player
-          key={index}
+          key={played}
           timeline={timelineOf(item.scenario)}
           title={item.scenario.title}
           start={{ seat: item.scenario.watch ?? 0 }}

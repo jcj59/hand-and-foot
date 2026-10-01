@@ -84,22 +84,25 @@ export function Player({
 
   // Play: wait out the pause before the next move, then make it.
   useEffect(() => {
-    if (!pb.playing) return;
+    if (!pb.playing || pb.step >= pb.to) return;
     const timer = setTimeout(
       () => dispatch({ type: "forward" }),
       delayAt(timeline, pb.step, pb.speed),
     );
     return () => clearTimeout(timer);
-  }, [pb.playing, pb.step, pb.speed, timeline]);
+  }, [pb.playing, pb.step, pb.to, pb.speed, timeline]);
 
   // The end of the range, reached by playing rather than by seeking there.
   const wasPlaying = useRef(pb.playing);
+  const lastTick = useRef(pb.ticks);
   const ended = useRef(onEnd);
   ended.current = onEnd;
   useEffect(() => {
-    if (wasPlaying.current && !pb.playing && pb.step >= pb.to) ended.current?.();
+    const played = pb.ticks !== lastTick.current;
+    if (wasPlaying.current && played && !pb.playing && pb.step >= pb.to) ended.current?.();
     wasPlaying.current = pb.playing;
-  }, [pb.playing, pb.step, pb.to]);
+    lastTick.current = pb.ticks;
+  }, [pb.playing, pb.step, pb.to, pb.ticks]);
 
   const position = useRef(onPositionChange);
   position.current = onPositionChange;

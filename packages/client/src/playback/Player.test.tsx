@@ -137,6 +137,17 @@ describe("the player, fed a golden game", () => {
     expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
   });
 
+  it("stops, without ending the range, when a jump while playing lands at the end", () => {
+    vi.useFakeTimers();
+    const onEnd = vi.fn();
+    mount({ timeline: goldenTimeline, autoplay: true, onEnd });
+    fireEvent.click(screen.getByRole("button", { name: "Jump to the end" }));
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(position()).toMatch(/^Step 150 of 150/);
+    expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
+    expect(onEnd).not.toHaveBeenCalled();
+  });
+
   it("reports where it is, so a caller can keep a link to it", () => {
     const onPositionChange = vi.fn();
     mount({ timeline: goldenTimeline, onPositionChange });

@@ -70,6 +70,15 @@ describe("the playback reducer", () => {
     expect(atEnd).toMatchObject({ step: 2, playing: false });
   });
 
+  it("stops playing when a seek lands at or past the end of its range", () => {
+    const s = initialPlayback(10, { from: 2, to: 6, step: 3, playing: true });
+    expect(run(s, { type: "seek", step: 5 })).toMatchObject({ step: 5, playing: true });
+    expect(run(s, { type: "seek", step: 6 })).toMatchObject({ step: 6, playing: false });
+    expect(run(s, { type: "seek", step: 9 })).toMatchObject({ step: 9, playing: false });
+    expect(run(s, { type: "seek", step: 99 })).toMatchObject({ step: 10, playing: false });
+    expect(run(s, { type: "pause" }, { type: "seek", step: 4 }).playing).toBe(false);
+  });
+
   it("plays from the start of the range again when asked to play at its end", () => {
     const s = run(initialPlayback(10, { from: 2, to: 4, step: 4 }), { type: "play" });
     expect(s).toMatchObject({ step: 2, playing: true, playedAs: null });
