@@ -503,13 +503,15 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   this player, phrases for round and match end. The `AudioContext` is created on the first user
   gesture (`UNLOCK_EVENTS`; a touch only counts when it ends, so both ends of a press are listened
   for) per browser autoplay rules, and closed on unmount; mute is per device (`hf.muted`).
-- **Grabby Pants.** `engine/src/grabby.ts` (moved from the server in roadmap item 1, so replay and the scenario viewer derive the same holder) works out, from the action log, who has taken the pile
+- **Grabby Pants.** `engine/src/grabby.ts` (moved from the server in roadmap item 1, so replay and
+  the scenario viewer derive the same holder) works out, from the action log, who has taken the pile
   most times running this match: 3 in a row (`GRABBY_STREAK`, pinned) earns the title; taking it
   needs a streak longer than the holder's best; another player drawing does not break a streak,
   only someone else taking the pile. Sent as `RoomInfo.grabbyPants {seat, streak, from?}`. The
   client renames the holder "Grabby Pants" with a drawn icon (`table/grabby.tsx`), announces a
-  new holder on every screen (through the shared `table/Celebration.tsx` overlay since item 2), and says "Grabby Pants" with the device's speech synthesis at its
-  lowest pitch (unless muted; speech is unlocked on the first tap, like audio).
+  new holder on every screen (through the shared `table/Celebration.tsx` overlay since item 2), and
+  says "Grabby Pants" with the device's speech synthesis at its lowest pitch (unless muted; speech
+  is unlocked on the first tap, like audio).
 - **Marva Rule celebration (roadmap item 2).** `table/marva.tsx`: `useMarvaCelebration` shows
   `MarvaCelebration` (big "Marva Rule", drawn party horns, 80 pieces of deterministic CSS confetti
   from `Celebration`) when a *new* `lastMove` with `marva` arrives — never for the move the page
