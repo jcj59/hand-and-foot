@@ -25,6 +25,11 @@ an animation) in its description, under `## Screenshots`.
 
    For "before" shots, build and render the base branch first.
 
+   To shoot a real game rather than a mocked state, build with
+   `VITE_SCENARIOS=1 pnpm --filter @hf/client build`: that build also serves the
+   dev-only scenario viewer at `/scenarios/<id>#moment=<id>` (or `#step=n&seat=n`),
+   which plays any scenario on the real table with no server.
+
 2. **Upload.** Convert to JPEG at half size (`ffmpeg -i x.png -vf scale=iw/2:-1
    -q:v 4 x.jpg`), then push them to the `pr-media` branch through the GitHub API —
    never to `main`, and not with `git push` (the no-mistakes gate owns pushes):
