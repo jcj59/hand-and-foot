@@ -381,6 +381,22 @@ export class Room {
     return this.state !== null;
   }
 
+  /** Whether the table is saved for later, waiting for its players to come back. */
+  get saved(): boolean {
+    return this.savedUntil !== null;
+  }
+
+  /**
+   * A saved game is picked back up by its host, once they can see who has come
+   * back for it — not by whoever happens to return first, which would start the
+   * clock on everyone still on their way. A host who has not come back cannot
+   * hold the game hostage, though: then anyone at the table may.
+   */
+  private mayResumeSaved(seat: number): boolean {
+    if (!this.saved) return true;
+    return seat === this.hostSeat || !this.players[this.hostSeat]?.connected;
+  }
+
   get paused(): boolean {
     return this.pausedSeat !== undefined || this.idlePaused;
   }
@@ -493,6 +509,13 @@ export class Room {
       this.save();
       return succeed(player);
     }
+    // Everyone leaving a saved game is the point of saving it: they are coming
+    // back, so the seat is only empty, not given up. A seat marked left would be
+    // played the moment the game resumed, rather than given a reconnect grace.
+    if (this.saved) {
+      this.setConnected(player.seat, false);
+      return succeed(player);
+    }
     player.left = true;
     this.ready.delete(player.token);
     this.setConnected(player.seat, false);
@@ -531,6 +554,7 @@ export class Room {
   readyForNextRound(seat: number): RoomResult<boolean> {
     if (!this.state?.roundEnded) return fail("the round is still being played");
     if (this.matchOver) return fail("that was the last round");
+    if (this.saved) return fail("the game is saved; the host picks it back up");
     const player = this.players[seat];
     /* v8 ignore next -- the transport only ever passes a seat it assigned */
     if (!player) return fail("no such seat");
@@ -627,6 +651,9 @@ export class Room {
     if (!this.players[seat]) return fail("no such seat");
     if (paused && this.paused) return fail("the table is already paused");
     if (!paused && !this.paused) return fail("the table is not paused");
+    if (!paused && !this.mayResumeSaved(seat)) {
+      return fail("only the host can pick a saved game back up");
+    }
     // Any player may pause, including the one on the clock, and any player may
     // resume — a deliberate family-mode choice rather than an oversight. It makes
     // the turn cap soft here and hard in competitive play, where pausing is off.
@@ -686,15 +713,29 @@ export class Room {
   }
 
   /**
-   * Keep this paused table for days rather than minutes, so the game can be picked
-   * up again another time. Family tables only, as pausing is; resuming ends it.
+   * Keep this table for days rather than minutes, so the game can be picked up
+   * again another time — in the middle of a turn or between rounds. A table that
+   * is not paused yet is paused by the same request, since a game being put away
+   * must not have its clock running meanwhile. Family tables only, as pausing is;
+   * resuming ends it.
+   *
+   * Readiness for the next round is forgotten: whoever comes back days later
+   * should see the scores again and say ready afresh, rather than have the round
+   * dealt around them.
    */
   saveForLater(seat: number): RoomResult<undefined> {
     if (!this.config.pauseEnabled) return fail("saving a game for later is for family games");
     if (!this.players[seat]) return fail("no such seat");
     if (!this.started) return fail("the game has not started");
-    if (!this.paused) return fail("pause the table before saving it for later");
+    if (this.matchOver) return fail("the game is over; there is nothing to save");
+    if (!this.paused) {
+      this.pausedSeat = seat;
+      this.pausedAt = this.deps.clock.now();
+      this.pausedSince = this.pausedAt;
+      this.rearm();
+    }
     this.savedUntil = this.deps.clock.now() + SAVED_TABLE_MS;
+    this.ready.clear();
     this.save();
     return succeed(undefined);
   }

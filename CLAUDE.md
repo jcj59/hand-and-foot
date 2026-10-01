@@ -462,7 +462,17 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   paused → `PAUSED_TABLE_MS` (30 min) after `pausedSince`; saved for later (family only, while
   paused) → `SAVED_TABLE_MS` (7 days); else abandoned → `abandonedMs` after the last seat left. A
   full lap of clock-played turns with no player move pauses the table itself (`idlePaused`, any
-  mode, anyone may resume). Clock tests that let the server play many turns opt out with
+  mode, anyone may resume). **Saved games:** `saveForLater` pauses an unpaused table itself (works
+  mid-turn and between rounds; refused once the match is over) and clears next-round readiness;
+  while saved, `leave` only disconnects (never `left`, so the seat gets reconnect grace on resume),
+  `readyForNextRound` is refused, and only the host may resume — or anyone if the host is not
+  connected (`mayResumeSaved`). Client: a started room with `savedUntil` routes to
+  `routes/SavedGame.tsx` (who is back, host's Resume, "Leave for now"); `savedGames.ts` keeps each
+  saved game's own seat in `localStorage` (`hf.savedGames`), updated from every room/view via
+  `noteRoom`, shown as Home's "Saved games" (the Rejoin banner hides a saved table), resumed with
+  `resumeSavedGame` (a refusal forgets only that entry, never the stored seat). Real-server flow in
+  `savedgame.integration.test.ts`. The pause bar sits under the header, above the players.
+  Clock tests that let the server play many turns opt out with
   `RoomDeps.pauseWhenIdle: false`. Closing sends `tableClosed {reason}`; the client goes home with
   a notice. Reloading the home screen no longer auto-rejoins a stored seat — only the table's own
   URL does; Home's Rejoin reads the saved credentials.

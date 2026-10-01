@@ -167,6 +167,17 @@ const room = {
   playAgain: [],
   nextRoundReady: [],
 };
+// A table Ana paused; SAVED=1 has her save it for later too.
+if (process.env.PAUSED || process.env.SAVED) {
+  room.pausedBy = 1;
+  room.closesAt = Date.now() + 25 * 60_000;
+}
+if (process.env.SAVED) {
+  room.savedUntil = Date.now() + 7 * 24 * 60 * 60_000;
+  room.closesAt = room.savedUntil;
+  room.players = room.players.map((p) => ({ ...p, connected: p.seat < 3 }));
+  if (process.env.SAVED_GUEST) room.hostSeat = 1;
+}
 const run = async () => {
   const browser = await chromium.launch();
   const page = await browser.newPage({
@@ -208,7 +219,10 @@ const run = async () => {
         const base = {
           view: v,
           room,
-          clock: { serverNow: now, deadlineAt: now + 71_000, inDiscardGrace: false, paused: false },
+          clock:
+            room.pausedBy === undefined
+              ? { serverNow: now, deadlineAt: now + 71_000, inDiscardGrace: false, paused: false }
+              : { serverNow: now, deadlineAt: null, inDiscardGrace: false, paused: true },
           hints: {
             seatToAct: mine ? 0 : 1,
             phase: mine ? "play" : "draw",
@@ -229,6 +243,30 @@ const run = async () => {
             },
           }),
         );
+        if (process.env.ROUND_OVER) {
+          // Round 2 just ended: the scoreboard between rounds.
+          const bd = {
+            cleanBooks: 1,
+            dirtyBooks: 1,
+            bookBonus: 800,
+            meldedCards: 120,
+            goOutBonus: 0,
+            heldCount: 0,
+            heldPenalty: 0,
+          };
+          ws.send(
+            JSON.stringify({
+              event: "roundEnded",
+              payload: {
+                scores: names.map((_, seat) => ({ seat, score: 900 - seat * 150, breakdown: bd })),
+                wentOutSeat: 2,
+                roundNumber: 2,
+                totals: names.map((_, seat) => 1500 - seat * 200),
+                matchOver: false,
+              },
+            }),
+          );
+        }
         const later = (ms, payload) =>
           setTimeout(() => ws.send(JSON.stringify({ event: "view", payload })), ms);
         const hand = view.hand;
@@ -363,7 +401,33 @@ const run = async () => {
   await page.evaluate(() =>
     localStorage.setItem("hf.seat", JSON.stringify({ roomId: "HFDEMO", seat: 0, token: "t" })),
   );
-  await page.goto(`${base}/room/HFDEMO`);
+  if (process.env.SAVED_LIST) {
+    // Two games this device saved for later, for the home screen.
+    const day = 24 * 60 * 60_000;
+    await page.evaluate(
+      (games) => localStorage.setItem("hf.savedGames", JSON.stringify(games)),
+      [
+        {
+          roomId: "HFDEMO",
+          seat: 0,
+          token: "t",
+          savedUntil: Date.now() + 6 * day,
+          names: ["Jack", "Ana", "Ben", "Cyrus"],
+          round: 2,
+        },
+        {
+          roomId: "KQ7RTX",
+          seat: 1,
+          token: "u",
+          savedUntil: Date.now() + 2 * day,
+          names: ["Grandma", "Jack"],
+          round: 4,
+        },
+      ],
+    );
+  }
+  if (action !== "home") await page.goto(`${base}/room/HFDEMO`);
+  else await page.goto(base);
   await page.waitForTimeout(800);
   if (action === "collapse") await page.getByRole("button", { name: "Collapse players" }).click();
   if (action === "picker") await page.getByRole("button", { name: "React" }).click();

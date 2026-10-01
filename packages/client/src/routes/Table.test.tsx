@@ -1146,19 +1146,16 @@ describe("pausing", () => {
     expect(sent[0]).toEqual({ event: "saveForLater", args: [] });
   });
 
-  it("shows a saved game's date, and offers no second save", () => {
-    const savedUntil = new Date(2026, 9, 6, 12, 0).getTime();
+  it("shows the pause bar under the controls and above the other players", () => {
     mount(
       fakeSocket().socket,
-      update({
-        clock: { serverNow: Date.now(), paused: true, deadlineAt: null },
-        room: { pausedBy: 0, savedUntil, closesAt: savedUntil },
-      }),
+      update({ clock: { paused: true, deadlineAt: null }, room: { pausedBy: 1 } }),
     );
-    expect(screen.getByRole("status", { name: "Paused" }).textContent).toMatch(
-      /Saved for later until Tue, Oct 6\./,
-    );
-    expect(screen.queryByRole("button", { name: "Save for later" })).toBeNull();
+    const bar = screen.getByRole("status", { name: "Paused" });
+    const mainMenu = screen.getByRole("button", { name: "Main menu" });
+    const players = screen.getByRole("button", { name: "Collapse players" });
+    expect(mainMenu.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(bar.compareDocumentPosition(players) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("explains a table that paused itself, and lets a competitive table resume it", async () => {
@@ -1637,6 +1634,39 @@ describe("the controls added from play-testing", () => {
     expect(within(screen.getByRole("dialog")).getByRole("status")).toHaveTextContent(
       "Waiting in the next game: ben (1 of 2)",
     );
+  });
+
+  it("offers to save the match for later between rounds", async () => {
+    const { socket, sent } = fakeSocket();
+    mount(socket);
+    act(() =>
+      useSession.setState({
+        result: scored([[0, 10]], 0, { matchOver: false, roundNumber: 1 }),
+      }),
+    );
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Save for later" }),
+    );
+    await waitFor(() => expect(sent).toEqual([{ event: "saveForLater", args: [] }]));
+  });
+
+  it("offers no save once the match is over, nor at a competitive table", () => {
+    mount(fakeSocket().socket);
+    act(() => useSession.setState({ result: scored([[0, 10]], 0) }));
+    expect(screen.queryByRole("button", { name: "Save for later" })).toBeNull();
+    act(() =>
+      useSession.setState({
+        result: scored([[0, 10]], 0, { matchOver: false, roundNumber: 1 }),
+      }),
+    );
+    act(() =>
+      useSession
+        .getState()
+        .applyRoom(
+          roomInfo({ config: { ...EAST_COAST, mode: "competitive", pauseEnabled: false } }),
+        ),
+    );
+    expect(screen.queryByRole("button", { name: "Save for later" })).toBeNull();
   });
 
   it("says when the stock ran out rather than naming anyone", () => {

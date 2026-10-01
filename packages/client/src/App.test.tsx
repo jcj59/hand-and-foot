@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { EAST_COAST, type Ack, type RoomInfo, type ViewUpdate } from "@hf/shared";
 import { App } from "./App";
 import { CREDENTIALS_KEY, loadCredentials, saveCredentials } from "./credentials";
+import { loadSavedGames, rememberSavedGame } from "./savedGames";
 import { createServerClock } from "./serverTime";
 import { useSession } from "./session";
 import { ACK_TIMEOUT_MS, connect, type HfClientSocket } from "./socket";
@@ -495,5 +496,133 @@ describe("listener lifecycle", () => {
     unmount();
     socket.fire("room", roomInfo());
     expect(useSession.getState().room).toBeNull();
+  });
+});
+
+describe("a game saved for later", () => {
+  const held = { roomId: "ABC234", seat: 0, token: "tok" };
+  const until = new Date(2026, 9, 8, 12, 0).getTime();
+  const savedRoom = (overrides: Partial<RoomInfo> = {}): RoomInfo =>
+    roomInfo({ started: true, pausedBy: 1, savedUntil: until, closesAt: until, ...overrides });
+
+  /** A view at a table, with the server's clock reading the same as this one. */
+  const now = (room: RoomInfo): ViewUpdate => {
+    const update = viewUpdate(room);
+    return { ...update, clock: { ...update.clock, serverNow: Date.now() } };
+  };
+
+  /** Seated at the table, which is then saved by someone. */
+  function atSavedTable(room: RoomInfo = savedRoom()): ReturnType<typeof fakeSocket> {
+    useSession.getState().seat(held);
+    const socket = fakeSocket([{ ok: true, data: held }]);
+    mount(socket.socket, "/room/ABC234");
+    socket.fire("connect");
+    socket.fire("view", now(roomInfo({ started: true })));
+    socket.fire("room", room);
+    return socket;
+  }
+
+  it("turns the table into a waiting room for everyone at it, and remembers the game", () => {
+    atSavedTable();
+    expect(screen.getByRole("heading", { name: "Saved game" })).toBeTruthy();
+    expect(screen.getByText(/Table ABC234 · round 3 of 4 · kept until Thu, Oct 8/)).toBeTruthy();
+    expect(loadSavedGames()).toEqual([
+      { ...held, savedUntil: until, names: ["ana", "ben"], round: 3 },
+    ]);
+  });
+
+  it("is left for now and offered from the home screen, apart from Rejoin", async () => {
+    const socket = atSavedTable();
+    fireEvent.click(screen.getByRole("button", { name: "Leave for now" }));
+    await waitFor(() => expect(screen.getByRole("region", { name: "Saved games" })).toBeTruthy());
+    expect(socket.sent.map((s) => s.event)).toContain("leaveRoom");
+    const saved = screen.getByRole("region", { name: "Saved games" });
+    expect(saved.textContent).toMatch(/ana, ben/);
+    expect(saved.textContent).toMatch(/Table ABC234 · round 3 · kept until Thu, Oct 8/);
+    expect(screen.queryByRole("region", { name: "Your table" })).toBeNull();
+  });
+
+  it("goes from the home screen to the game's waiting room, where the host resumes it", async () => {
+    rememberSavedGame({ ...held, savedUntil: until, names: ["ana", "ben"], round: 3 });
+    const socket = fakeSocket([{ ok: true, data: held }]);
+    mount(socket.socket);
+    socket.fire("connect");
+    fireEvent.click(screen.getByRole("button", { name: "Resume the game at table ABC234" }));
+    await waitFor(() => expect(useSession.getState().credentials).toEqual(held));
+    expect(socket.sent[0]).toEqual({ event: "resumeSeat", args: [held] });
+    // The server sends the table as it is: still saved, and Ben not back yet.
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Saved games" })).toBeNull());
+    socket.fire("view", now(savedRoom()));
+    socket.fire(
+      "room",
+      savedRoom({
+        players: [
+          { seat: 0, name: "ana", connected: true },
+          { seat: 1, name: "ben", connected: false },
+        ],
+      }),
+    );
+    expect(screen.getByRole("heading", { name: "Saved game" })).toBeTruthy();
+    expect(screen.getByText("Back at the table (1/2)")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Resume without ben" }));
+    await waitFor(() =>
+      expect(socket.sent.at(-1)).toEqual({ event: "setPaused", args: [{ paused: false }] }),
+    );
+    // Picked back up: the table again, and nothing left to resume from the home screen.
+    socket.fire("view", now(roomInfo({ started: true })));
+    expect(screen.queryByRole("heading", { name: "Saved game" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Main menu" })).toBeTruthy();
+    expect(loadSavedGames()).toEqual([]);
+  });
+
+  it("leaves resuming to the host while the host is back", () => {
+    atSavedTable(savedRoom({ hostSeat: 1 }));
+    expect(screen.queryByRole("button", { name: /^resume/i })).toBeNull();
+    expect(screen.getByText("Waiting for ben to resume the game.")).toBeTruthy();
+  });
+
+  it("lets anyone resume once it is clear the host is not back", () => {
+    atSavedTable(
+      savedRoom({
+        hostSeat: 1,
+        players: [
+          { seat: 0, name: "ana", connected: true },
+          { seat: 1, name: "ben", connected: false },
+        ],
+      }),
+    );
+    expect(screen.getByText(/ben is not here, so anyone at the table can pick/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Resume without ben" })).toBeTruthy();
+  });
+
+  it("is forgotten, with a notice, when it is no longer there to go back to", async () => {
+    rememberSavedGame({ ...held, savedUntil: until, names: ["ana", "ben"], round: 3 });
+    // Sat down somewhere else since: that seat must survive the refusal.
+    saveCredentials({ roomId: "OTHER2", seat: 1, token: "other" });
+    const socket = fakeSocket([{ ok: false, error: "no room with that code" }]);
+    mount(socket.socket);
+    socket.fire("connect");
+    fireEvent.click(screen.getByRole("button", { name: "Resume the game at table ABC234" }));
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toBe("that saved game is no longer available"),
+    );
+    expect(screen.queryByRole("region", { name: "Saved games" })).toBeNull();
+    expect(loadSavedGames()).toEqual([]);
+    expect(loadCredentials()?.roomId).toBe("OTHER2");
+  });
+
+  it("is not offered once its time is up", () => {
+    rememberSavedGame({ ...held, savedUntil: Date.now() - 1, names: ["ana"], round: 1 });
+    mount(fakeSocket().socket);
+    expect(screen.queryByRole("region", { name: "Saved games" })).toBeNull();
+  });
+
+  it("is forgotten when the server closes it", () => {
+    const socket = atSavedTable();
+    socket.fire("tableClosed", { reason: "saved" });
+    expect(loadSavedGames()).toEqual([]);
+    expect(screen.getByRole("alert").textContent).toBe(
+      "The saved game was closed after a week without being picked up.",
+    );
   });
 });

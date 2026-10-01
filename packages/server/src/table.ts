@@ -232,7 +232,10 @@ export class TableChannel {
         if (seated === null) return reply({ ok: false, error: NOT_SEATED });
         const saved = this.room.saveForLater(seated);
         reply(ackOf(saved));
-        if (saved.ok) this.broadcastRoom();
+        if (!saved.ok) return;
+        this.broadcastRoom();
+        // Saving pauses a table that was not paused, which stops every clock.
+        this.broadcastViews();
         return;
       }
       case "setHost": {

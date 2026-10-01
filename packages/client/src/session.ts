@@ -14,6 +14,7 @@
 import { create } from "zustand";
 import type { Reaction, RoomInfo, RoundEnded, SeatCredentials, ViewUpdate } from "@hf/shared";
 import { clearCredentials, saveCredentials } from "./credentials";
+import { noteRoom } from "./savedGames";
 import { createServerClock, type ServerClock } from "./serverTime";
 
 export type ConnectionStatus = "connecting" | "connected" | "disconnected";
@@ -99,12 +100,16 @@ export const useSession = create<SessionState>((set, get) => ({
     });
   },
 
-  applyRoom: (room) => set({ room }),
+  applyRoom: (room) => {
+    noteRoom(room, get().credentials, get().update?.view.roundNumber ?? null);
+    set({ room });
+  },
 
   applyUpdate: (update) => {
     // Anchor before storing, so the first render of a deadline already has an
     // offset to read it through.
     get().clock.anchor(update.clock.serverNow);
+    noteRoom(update.room, get().credentials, update.view.roundNumber);
     // A `ViewUpdate` carries the room too, and it is at least as fresh as any
     // standalone `room` event, so it wins.
     set({
