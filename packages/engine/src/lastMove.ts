@@ -1,5 +1,6 @@
 import type { Action, GameState, LastMove, RoundEnded } from "@hf/shared";
 import { activeCards } from "./core";
+import { gotDownByMarva } from "./marva";
 import { isMatchOver, matchTotals } from "./nextRound";
 import { scoreRound } from "./scoreRound";
 
@@ -34,6 +35,7 @@ export function describeMove(
         seat,
         kind: "meld",
         count: action.melds.reduce((n, m) => n + m.cardIds.length, 0),
+        ...(gotDownByMarva(before, after, seat) ? { marva: true as const } : {}),
       };
     case "takeBack":
       return { seq, seat, kind: "takeBack" };

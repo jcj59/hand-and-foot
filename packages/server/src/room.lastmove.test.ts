@@ -3,7 +3,7 @@
  * up a drawn card, and never the drawn card to anyone but the player who drew it.
  */
 import { describe, it, expect } from "vitest";
-import { EAST_COAST } from "@hf/shared";
+import { EAST_COAST, type Card } from "@hf/shared";
 import { canTakePile } from "@hf/engine";
 import { FakeClock } from "./clock";
 import { Room } from "./room";
@@ -55,6 +55,42 @@ describe("the latest move in a view", () => {
     const top = state.stock[0]!;
     room.submitAction(seat, { type: "draw" });
     expect(room.viewFor(seat)!.lastMove).toMatchObject({ kind: "draw", card: top });
+  });
+
+  it("tells every seat when a lay-down got its player down by the Marva rule", () => {
+    const room = started();
+    const seat = room.gameState!.currentSeat;
+    room.submitAction(seat, { type: "draw" });
+    // The hand down to three fives: melding them empties it, worth 15 against 60.
+    const state = room.gameState!;
+    const fives: Card[] = [
+      { id: "m5a", rank: "5", suit: "clubs" },
+      { id: "m5b", rank: "5", suit: "hearts" },
+      { id: "m5c", rank: "5", suit: "spades" },
+    ];
+    const internal = room as unknown as { state: object };
+    internal.state = {
+      ...state,
+      players: state.players.map((p, i) => (i === seat ? { ...p, hand: fives } : p)),
+    };
+    const melded = room.submitAction(seat, {
+      type: "playMelds",
+      melds: [{ rank: "5", cardIds: fives.map((c) => c.id) }],
+    });
+    expect(melded.ok).toBe(true);
+    for (const viewer of [0, 1, 2]) {
+      expect(room.viewFor(viewer)!.lastMove).toEqual({
+        seq: 2,
+        seat,
+        kind: "meld",
+        count: 3,
+        marva: true,
+      });
+    }
+    // The next move is news of its own, with no Marva about it.
+    const foot = room.gameState!.players[seat]!.foot[0]!;
+    room.submitAction(seat, { type: "discard", cardId: foot.id });
+    expect(room.viewFor(0)!.lastMove).not.toHaveProperty("marva");
   });
 
   it("shows everyone the discarded card, and counts up with every move", () => {

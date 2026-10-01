@@ -122,6 +122,12 @@ export interface LastMove {
   readonly card?: Card;
   /** Cards taken with the pile, or played to melds. */
   readonly count?: number;
+  /**
+   * Set on a meld that got its player down only through the Marva rule — worth
+   * less than the round minimum, allowed because it emptied the hand — which every
+   * screen celebrates. Public: the lay-down is on the table for all to see.
+   */
+  readonly marva?: true;
 }
 
 /** The per-player broadcast: one of these goes to each socket after every accepted action. */

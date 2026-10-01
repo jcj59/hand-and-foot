@@ -173,6 +173,23 @@ scoring all read melds from the player taking the action. Partnership play would
 team and change each of those, so it is a deliberate decision recorded here rather than an
 assumption to be discovered later.
 
+### The Marva rule, and celebrating it
+
+The Marva rule waives the round minimum for a lay-down that empties the hand: a player down to a
+few cards may meld them all and go to the foot, whatever they are worth. It is played in both
+presets. Since the rule only loosens what is legal, a table saved under the old setting replays its
+log unchanged — and it keeps its own setting anyway, because a table's rules are stored with it.
+
+The family celebrates the rule being used, so the table does too: a full-screen announcement,
+confetti, a deep voice and an air horn on every screen. The one thing the celebration must not do
+is guess. Whether the waiver was actually needed — the lay-down worth less than the minimum, not
+merely one that happened to empty the hand — is decided in the engine by the same arithmetic the
+reducer applied, and the answer travels with the move every seat is already sent. That makes it
+public by construction (the meld is on the table for all to see), keeps it out of the client's
+hands, and lets a replay show it at exactly the moment the live table did. The announcement itself
+is a shared overlay that Grabby Pants also uses, so the awards and tutorial planned later have one
+place to build on.
+
 ### Rules chosen when a room is opened
 
 A table's rules are settled before anyone sits down, so the creator picks them at room creation and

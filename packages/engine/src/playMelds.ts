@@ -18,7 +18,7 @@ import {
   withoutTurnBase,
 } from "./core";
 import { naturalRank, validateMeld } from "./meld";
-import { cardValue, classifyBook } from "./scoring";
+import { layDownValue } from "./marva";
 import { claimsGoOut } from "./goout";
 import { withTurnBase } from "./takeBack";
 
@@ -47,10 +47,8 @@ export function applyPlayMelds(state: GameState, plays: readonly MeldPlay[]): Ap
   const player = state.players[seat];
   let zone: Card[] = [...activeCards(player)];
   const melds = new Map<Rank, Card[]>();
-  const beforeSize = new Map<Rank, number>();
   for (const m of player.melds) {
     melds.set(m.rank, [...m.cards]);
-    beforeSize.set(m.rank, m.cards.length);
   }
 
   const laid: Card[] = [];
@@ -93,17 +91,11 @@ export function applyPlayMelds(state: GameState, plays: readonly MeldPlay[]): Ap
   let down = player.isDown;
   if (!player.isDown) {
     const minimum = state.config.layDownMinimums[state.roundNumber - 1] ?? 0;
-    let value = laid.reduce((sum, c) => sum + cardValue(c, state.config), 0);
-    for (const [rank, cards] of melds) {
-      const before = beforeSize.get(rank) ?? 0;
-      if (cards.length >= 7 && before < 7) {
-        const kind = classifyBook({ rank, cards });
-        value +=
-          kind === "clean"
-            ? state.config.scoring.cleanBookBonus
-            : state.config.scoring.dirtyBookBonus;
-      }
-    }
+    // Not down, so no melds before this play: the melds now are the lay-down.
+    const value = layDownValue(
+      [...melds.entries()].map(([rank, cards]) => ({ rank, cards })),
+      state.config,
+    );
     if (value < minimum && !(state.config.marvaRule && emptiesHand)) {
       return fail(`this lay-down is worth ${value}, below the round minimum of ${minimum}`);
     }

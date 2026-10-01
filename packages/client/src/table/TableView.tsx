@@ -46,6 +46,7 @@ import {
   useUnlockSpeech,
   withGrabbyName,
 } from "./grabby";
+import { MarvaCelebration, useMarvaCelebration } from "./marva";
 import { useMoveNews } from "./moveNews";
 import { useTableSounds } from "./sounds";
 import { PauseBar } from "./PauseBar";
@@ -171,7 +172,7 @@ export function TableView({
 
   // One card sound for every move, a chime when it is this player's turn, and
   // a phrase when a round or the match ends.
-  const { muted, setMuted } = useTableSounds(
+  const { muted, setMuted, playSound } = useTableSounds(
     {
       moveSeq: update.lastMove?.seq ?? null,
       moveKind: update.lastMove?.kind ?? null,
@@ -181,6 +182,14 @@ export function TableView({
     quiet,
   );
   const grabbyHeadline = useGrabbyAnnouncement(realRoom, muted, quiet);
+  // Real names: the celebration is about the player, not their title.
+  const marva = useMarvaCelebration(
+    update.lastMove,
+    (s) => realRoom.players.find((p) => p.seat === s)?.name ?? `Seat ${s}`,
+    muted,
+    quiet,
+    () => playSound("airhorn"),
+  );
   useUnlockSpeech();
 
   // Cards slide from where they were to where the latest move put them.
@@ -779,6 +788,7 @@ export function TableView({
       </footer>
 
       {grabbyHeadline && <GrabbyAnnouncement headline={grabbyHeadline} />}
+      {marva && <MarvaCelebration news={marva} />}
 
       {result && (
         <RoundResult

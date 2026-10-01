@@ -169,13 +169,16 @@ no-op. Don't "fix" these with a test; the state they need cannot be reached thro
 | `plan`: form a new meld from a natural **pair** | The `validateMeld(naturals)` line (the one marked `/* v8 ignore */`) rejects a 2-card meld first. That line is load-bearing despite being unreachable on its own — keep it. |
 | `plan`: treat wilds as naturals | Same guard: an all-wild group fails `validateMeld`, so it is skipped. |
 | `plan`: credit a book bonus the player already had | `value` is only *used* when `!isDown`, and a not-down player holds no melds, so `existing` is empty. |
-| `playMelds`: drop `before < 7` when awarding a book bonus | Same reason — that block only runs under `if (!player.isDown)`, where `beforeSize` is provably empty. |
 | `policy`: drop `c.id !== card.id` from the companion count | Not a shielded branch but an arithmetic no-op: it adds exactly 1 to *every* candidate's `keepScore`, so the ranking — and the card chosen — is unchanged. Keep the clause anyway; "companions" means the *other* cards, and removing it would make the name a lie. |
 
-The last two share a premise: **a not-down player never holds melds.** `assertWellFormed` in
-`invariants.property.test.ts` checks it over thousands of random games. If multi-round play ever
-breaks it, both lines go live *and* they disagree — `plan.ts` adds `cleanBookBonus` (500)
-unconditionally while `playMelds` uses `classifyBook` (300 for a dirty book). Fix them together.
+The `plan` book-bonus row rests on a premise: **a not-down player never holds melds.**
+`assertWellFormed` in `invariants.property.test.ts` checks it over thousands of random games. Since
+roadmap item 2, `playMelds` leans on it openly: the minimum is checked with `layDownValue` (in
+`marva.ts`) over the melds *after* the play, which equal the lay-down only because there were none
+before — and the Marva check (`gotDownByMarva`) uses the same function, so the two cannot disagree.
+(This removed the old `playMelds` "drop `before < 7`" equivalent mutant: the line is gone.) If the
+premise ever breaks, `layDownValue` would count melds laid on earlier turns and `plan.ts` would add
+`cleanBookBonus` (500) where `classifyBook` says dirty (300). Fix them together.
 
 These three moved from `feasibility.ts` to `plan.ts` in M2a, when the lay-down search was extracted
 so `canTakePile` and the default policy could not drift apart. The extraction was behaviour-preserving
@@ -500,13 +503,25 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   this player, phrases for round and match end. The `AudioContext` is created on the first user
   gesture (`UNLOCK_EVENTS`; a touch only counts when it ends, so both ends of a press are listened
   for) per browser autoplay rules, and closed on unmount; mute is per device (`hf.muted`).
-- **Grabby Pants.** `engine/src/grabby.ts` (moved from the server in roadmap item 1, so replay and the scenario viewer derive the same holder) works out, from the action log, who has taken the pile
+- **Grabby Pants.** `engine/src/grabby.ts` (moved from the server in roadmap item 1, so replay and
+  the scenario viewer derive the same holder) works out, from the action log, who has taken the pile
   most times running this match: 3 in a row (`GRABBY_STREAK`, pinned) earns the title; taking it
   needs a streak longer than the holder's best; another player drawing does not break a streak,
   only someone else taking the pile. Sent as `RoomInfo.grabbyPants {seat, streak, from?}`. The
   client renames the holder "Grabby Pants" with a drawn icon (`table/grabby.tsx`), announces a
-  new holder on every screen, and says "Grabby Pants" with the device's speech synthesis at its
-  lowest pitch (unless muted; speech is unlocked on the first tap, like audio).
+  new holder on every screen (through the shared `table/Celebration.tsx` overlay since item 2), and
+  says "Grabby Pants" with the device's speech synthesis at its lowest pitch (unless muted; speech
+  is unlocked on the first tap, like audio).
+- **Marva Rule celebration (roadmap item 2).** `table/marva.tsx`: `useMarvaCelebration` shows
+  `MarvaCelebration` (big "Marva Rule", drawn party horns, 80 pieces of deterministic CSS confetti
+  from `Celebration`) when a *new* `lastMove` with `marva` arrives — never for the move the page
+  opened on, nor on a `quiet` replay jump. Unless muted, `sayDeep("Marva Rule")` (the Grabby voice,
+  generalized in `grabby.tsx`, with a give-up timer because some browsers never fire `onend`) is
+  followed by the `airhorn` sound, which is **synthesized** in `sounds.ts` (detuned saws, soft
+  clipper, band-pass, three stabs and a long blast): no scripted download of a DJ sample was
+  available, and synthesis needs no asset. `useTableSounds` now returns `playSound` for one-offs.
+  Reduced motion hides the confetti and the pop; the announcement stays. `Celebration` takes its
+  duration as `--celebration-ms`, which the CSS animation reads.
 - **Scenario library and autoplay viewer (roadmap item 1).** Three layers, kept apart on purpose:
   - **Engine, `playback.ts`:** `buildTimeline(GameLog)` takes any `{ config, setup: {seed,
     playerCount} | {state}, actions, names?, moments? }` — a scenario, a golden game, a recorded
@@ -585,6 +600,12 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   its input, because the policy discharging a take must find the plan that authorized it — the
   property test now checks that after every take. Exotic lay-downs can still be missed; smarter
   search is bot-milestone work.
+- **The Marva rule is on in both presets (roadmap item 2, 2026-10-01).** `EAST_COAST.marvaRule` is
+  `true` and West Coast inherits it. Tables persisted earlier keep the config stored in their record
+  (`marvaRule: false`) and restore unchanged; their logs also replay under the new preset, since the
+  rule only loosens the minimum — both pinned in `room.restore.test.ts`. A lay-down that got its
+  player down *only* through the waiver is decided by `gotDownByMarva` and carried to every seat as
+  `LastMove.marva`; the timeline marks it as a `marva` moment.
 - **Shedding every card is not going out.** A player may legally play or discard their last foot card
   without the go-out books; they keep no cards, the round continues, and they draw one card per turn
   until the books are complete. So `player.hand.length + player.foot.length === 0` does **not** mean

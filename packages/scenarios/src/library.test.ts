@@ -87,6 +87,8 @@ describe("each scenario shows what it says", () => {
 
   it.each([1, 2, 3, 4])("getting down in round %i reaches that round's minimum", (round) => {
     const id = `getdown-round-${round}`;
+    // An ordinary get-down is no Marva, even with the rule on.
+    expect(timeline(id).moments.some((m) => m.kind === "marva")).toBe(false);
     const before = timeline(id).stateAt(step(id, "getdown") - 1);
     const after = at(id, "getdown");
     expect(after.roundNumber).toBe(round);
@@ -108,6 +110,10 @@ describe("each scenario shows what it says", () => {
     const state = at("marva", "getdown");
     const ana = state.players[0]!;
     expect(state.config.marvaRule).toBe(true);
+    // The engine's own verdict, which the celebration follows.
+    const t = timeline("marva");
+    expect(t.entry(step("marva", "getdown")).move?.marva).toBe(true);
+    expect(t.moments.find((m) => m.kind === "marva")?.step).toBe(step("marva", "getdown"));
     expect(ana.isDown).toBe(true);
     expect(ana.inFoot).toBe(true);
     const value = ana.melds[0]!.cards.reduce((sum, c) => sum + cardValue(c, state.config), 0);
