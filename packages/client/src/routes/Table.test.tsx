@@ -2833,3 +2833,91 @@ describe("a book of black threes", () => {
     expect(within(foot).getByTitle(/you have a meld of 3s/i)).toBeInTheDocument();
   });
 });
+
+describe("your turn, from a background tab", () => {
+  beforeEach(() => {
+    document.title = "Hand and Foot";
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete (window as { Notification?: unknown }).Notification;
+    window.localStorage.removeItem("hf.notifyTurn");
+  });
+
+  it("flashes the title on the player's turn while they are elsewhere, and only then", () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    mount(fakeSocket().socket);
+    expect(document.title).toBe("Your turn!");
+    act(() => useSession.getState().applyUpdate(update({ hints: { seatToAct: 1 } })));
+    expect(document.title).toBe("Hand and Foot");
+  });
+
+  it("leaves the title alone while the player is looking", () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    mount(fakeSocket().socket);
+    expect(document.title).toBe("Hand and Foot");
+  });
+
+  it("offers no notification toggle where the browser has no notifications", () => {
+    mount(fakeSocket().socket);
+    expect(screen.queryByRole("button", { name: /notify me/i })).toBeNull();
+  });
+
+  it("asks for permission only when the toggle is tapped, then shows it on", async () => {
+    let asked = 0;
+    Object.defineProperty(window, "Notification", {
+      configurable: true,
+      value: {
+        permission: "default",
+        requestPermission: () => {
+          asked += 1;
+          return Promise.resolve("granted");
+        },
+      },
+    });
+    mount(fakeSocket().socket);
+    const bell = screen.getByRole("button", { name: "Notify me when it's my turn" });
+    expect(bell).toHaveAttribute("aria-pressed", "false");
+    expect(asked).toBe(0);
+    await act(async () => fireEvent.click(bell));
+    expect(asked).toBe(1);
+    expect(
+      screen.getByRole("button", { name: "Stop notifying me when it's my turn" }),
+    ).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("says so, and cannot be tapped, when the browser has blocked notifications", () => {
+    Object.defineProperty(window, "Notification", {
+      configurable: true,
+      value: { permission: "denied", requestPermission: () => Promise.resolve("denied") },
+    });
+    mount(fakeSocket().socket);
+    expect(
+      screen.getByRole("button", { name: "Turn notifications are blocked by the browser" }),
+    ).toBeDisabled();
+  });
+});
+
+describe("turn notifications on a phone", () => {
+  afterEach(() => {
+    delete (window as { Notification?: unknown }).Notification;
+    delete (window as { matchMedia?: unknown }).matchMedia;
+  });
+
+  it("are not offered, since a page cannot raise one there", () => {
+    Object.defineProperty(window, "Notification", {
+      configurable: true,
+      value: { permission: "default", requestPermission: () => Promise.resolve("granted") },
+    });
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: (query: string) => ({
+        matches: query === PHONE_QUERY,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }),
+    });
+    mount(fakeSocket().socket);
+    expect(screen.queryByRole("button", { name: /notify me/i })).toBeNull();
+  });
+});

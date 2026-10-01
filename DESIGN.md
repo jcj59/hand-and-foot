@@ -568,6 +568,40 @@ common enough to matter, since the stock drains to threes no one can meld. A bot
 absent players would therefore end most abandoned rounds, but not all of them, so the reaper
 stays.
 
+### Calling a player back to the table
+
+A family game is mostly waiting. Between turns a player reads something else in another tab, and
+the turn chime is easy to miss: the sound may be muted, the browser may be holding it back until the
+page is tapped, or the speakers may simply be off. So the tab itself says when the turn has come.
+While it is the player's turn and the page is hidden or another window has focus, the title
+alternates with "Your turn!" once a second and the favicon gains an amber mark; both are put back
+the moment the turn passes or the player returns. A player who has asked their system for reduced
+motion gets the same news standing still: the marked icon and a prefix on the title, with nothing
+blinking. Whether it is the player's turn is not worked out a second time for this. It is the very
+flag the chime is played from, so the tab and the table cannot disagree.
+
+A browser notification can go up as well, but only for a player who has turned it on at the table.
+The browser's permission is asked for from that tap and never on page load, because a prompt nobody
+asked for is usually refused, and a refusal cannot be asked again; once refused, the button says so
+and leaves the browser's settings to undo it. A notification is raised once per turn, never for the
+turn the page opened on, never while the player is looking, and is closed when the turn passes or
+they return, so the notification centre does not fill with stale turns. It is silent when the table
+is muted. The button is not offered on phones: Chrome on Android refuses a notification made by a
+page rather than a service worker, and iOS has notifications only through web push, so the button
+would promise something that never arrives.
+
+The game can also be installed as an app — a manifest, icons, and a theme colour — which on a phone
+puts it on the home screen without the browser's chrome. It ships no service worker. Current
+Chromium offers installation without one (checked directly: Chromium 141 raises its install prompt
+for this manifest with no worker registered, and not for a broken one), and Safari's Add to Home
+Screen never needed one. A worker would earn nothing for a game that cannot be played offline, and
+it would be one more thing able to serve a stale page or come between the page and its socket. The
+files are ordinary client assets, which the Worker serves as it serves the rest of the build; a
+Worker test checks each icon the manifest names is a real file rather than the page the
+single-page fallback would answer with. Telling a player it is their turn while the page is closed
+would need web push and a service worker after all; that is left as a follow-up, to be taken up only
+if it fits the free plan.
+
 ## Testing
 
 The rules engine is the component where correctness matters most, and it receives the majority of
