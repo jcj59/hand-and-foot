@@ -19,7 +19,8 @@ an animation) in its description, under `## Screenshots`.
    `oppdraw`, `grabby`, and `stale` — a finished round at one table, then a fresh
    deal at another), with `FRAMES=40,120,300` giving the milliseconds after the
    change to capture. `BIG_MELDS=1` adds enough melds that the middle scrolls;
-   `GRABBY_ME=1` makes the viewer the Grabby Pants holder.
+   `GRABBY_ME=1` makes the viewer the Grabby Pants holder; `TWO_DISCARDS=1` puts two
+   cards on the discard pile; `BIG_OPP=1` gives an opponent enough melds to fill its box.
    On this machine Chromium needs nss/nspr/alsa from the `pwlibs` conda env.
 
    For "before" shots, build and render the base branch first.
