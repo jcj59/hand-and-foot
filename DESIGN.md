@@ -381,6 +381,39 @@ When the pause began is saved with the table, so neither a restart nor a Durable
 a paused table a fresh half hour. Players still at a table when it closes are told why and sent
 home, rather than finding out on their next click.
 
+### Watching a game back
+
+Every later piece of work changes something a player sees, and most of the situations worth
+checking — the Marva waiver, a black-three book going out, the stock running dry, a cardless player
+taking the pile back — are ones a random deal will practically never produce. So the client has a
+player that runs any game on the real table from the engine alone, with no server: play, pause,
+step either way, scrub, change speed, watch any seat, and jump by turn, by round, or to a moment.
+
+The player takes one input, whatever the game's origin: the rules, a starting position (a seed or
+a state built by hand) and the actions applied to it. A scripted scenario, a golden game from the
+tests and a match the server recorded all reduce to that, which is why replaying stored matches
+later should need a new data source and nothing more. The engine turns the input into a timeline:
+it replays the actions once to check them and records what the player needs — where each turn and
+round begins and ends, and the moments worth stopping at, which are found in any game rather than
+only in the ones someone annotated. Seeking costs little because the engine is a pure reducer: the
+state at any step is the setup with that many actions folded over it, so the timeline keeps a state
+every few dozen steps and replays forward from the nearest.
+
+A watched step is rendered through the same projection a seat is sent, so the player shows a seat
+exactly what it saw and nothing more; showing every hand is an extra panel drawn on top, not a
+looser view. A move played forward is shown as a move, with its animation, sound and
+announcement, while a jump lands silently, because nothing happened at the table — only the
+position changed. For the same reason the facts the server used to derive on its own, such as who
+holds Grabby Pants and what a move announced, moved into the engine as pure functions of the log,
+so the live table and a replay cannot disagree about them.
+
+Scenarios themselves are data in their own package: a table arranged from card shorthand, with
+everything not named dealt from a real shoe so that every card exists exactly once, and a script of
+intentions — "meld these kings", "discard the nine of clubs", "play on until the round ends" —
+resolved into actions by playing it. Every scenario is replayed in continuous integration, so a
+rules change that breaks one fails the build by name. The viewer is a development tool and is left
+out of production builds; the player it uses is not tied to it.
+
 ## Testing
 
 The rules engine is the component where correctness matters most, and it receives the majority of

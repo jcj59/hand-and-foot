@@ -186,8 +186,14 @@ export function play(
 /**
  * Play the table's sounds as it changes. Returns whether sound is muted and a
  * way to change it; the choice is remembered on this device.
+ *
+ * A `quiet` change is taken note of but not heard: a replay seeking to a new
+ * point has not had anything happen, so it should not sound as if it had.
  */
-export function useTableSounds(now: Moment): {
+export function useTableSounds(
+  now: Moment,
+  quiet = false,
+): {
   muted: boolean;
   setMuted: (muted: boolean) => void;
 } {
@@ -226,9 +232,9 @@ export function useTableSounds(now: Moment): {
     const previous = before.current;
     before.current = now;
     // The first moment is where the page came in, not a change to announce.
-    if (!previous || muted || !ctx.current) return;
+    if (!previous || muted || quiet || !ctx.current) return;
     for (const sound of soundsFor(previous, now)) play(ctx.current, sound, recordings.current);
-  }, [now, muted]);
+  }, [now, muted, quiet]);
 
   return {
     muted,

@@ -16,6 +16,9 @@ export * from "./goout";
 export * from "./legal";
 export * from "./replay";
 export * from "./takeBack";
+export * from "./grabby";
+export * from "./lastMove";
+export * from "./playback";
 
 export const defaultConfig: RulesConfig = EAST_COAST;
 

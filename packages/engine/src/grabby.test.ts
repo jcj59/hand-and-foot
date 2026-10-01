@@ -1,13 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { EAST_COAST, type Action, type LoggedAction } from "@hf/shared";
-import { FakeClock } from "./clock";
-import { InMemoryActionLog } from "./log";
-import { Room } from "./room";
-import { GRABBY_STREAK, grabbyPants } from "./grabby";
+import type { Action } from "@hf/shared";
+import { GRABBY_STREAK, grabbyHistory, grabbyPants, type SeatedAction } from "./grabby";
 
-let seq = 0;
 /** A log of moves, each `[seat, "take" | "draw" | "discard"]`. */
-function log(...moves: [number, "take" | "draw" | "discard"][]): LoggedAction[] {
+function log(...moves: [number, "take" | "draw" | "discard"][]): SeatedAction[] {
   return moves.map(([seat, kind]) => {
     const action: Action =
       kind === "take"
@@ -15,7 +11,7 @@ function log(...moves: [number, "take" | "draw" | "discard"][]): LoggedAction[] 
         : kind === "draw"
           ? { type: "draw" }
           : { type: "discard", cardId: "x" };
-    return { seq: seq++, seat, action, source: "player", at: 0 };
+    return { seat, action };
   });
 }
 /** Seat `seat` takes the pile `n` times, with the others only drawing in between. */
@@ -72,20 +68,17 @@ describe("Grabby Pants", () => {
   });
 });
 
-describe("Grabby Pants at the table", () => {
-  it("is told to every seat with the room", () => {
-    const room = new Room("GRABBY", EAST_COAST, {
-      clock: new FakeClock(0),
-      seed: 1,
-      newToken: () => "t",
-      log: new InMemoryActionLog(log(...takes(1, 3))),
-    });
-    expect(room.info().grabbyPants).toEqual({ seat: 1, streak: 3 });
-    const quiet = new Room("QUIET1", EAST_COAST, {
-      clock: new FakeClock(0),
-      seed: 1,
-      newToken: () => "t",
-    });
-    expect(quiet.info().grabbyPants).toBeNull();
+describe("Grabby Pants over the course of a match", () => {
+  it("gives the holder after every prefix of the log", () => {
+    const moves = log(...takes(0, 3), ...takes(1, 4));
+    const history = grabbyHistory(moves);
+    expect(history).toHaveLength(moves.length + 1);
+    expect(history[0]).toBeNull();
+    // Every entry agrees with working the title out from that prefix alone.
+    history.forEach((holder, k) => expect(holder).toEqual(grabbyPants(moves.slice(0, k))));
+    // Earned on the third take (the fifth action), and taken on Ben's fourth.
+    expect(history[4]).toBeNull();
+    expect(history[5]).toEqual({ seat: 0, streak: 3 });
+    expect(history.at(-1)).toEqual({ seat: 1, streak: 4, from: 0 });
   });
 });
