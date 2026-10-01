@@ -1,6 +1,8 @@
 // Shared domain types and constants for Hand and Foot.
 // Imported by the engine, the server, and the client so the contract stays in one place.
 
+import type { RulesPreset } from "./rules";
+
 export type Suit = "clubs" | "diamonds" | "hearts" | "spades";
 
 export type Rank =
@@ -122,46 +124,13 @@ export interface RulesConfig {
    */
   readonly pauseEnabled: boolean;
   readonly timers: TurnTimers;
+  /**
+   * The preset these rules started from, so a table can show which of its rules
+   * were changed. Absent on tables opened before the rules editor; see `presetOf`.
+   * Nothing in the engine reads it.
+   */
+  readonly preset?: RulesPreset;
 }
-
-/** East Coast preset (default): naturals must strictly outnumber wilds; Family-paced. */
-export const EAST_COAST: RulesConfig = {
-  rounds: 4,
-  layDownMinimums: [60, 90, 120, 150],
-  wildRatio: "naturals-exceed-wilds",
-  marvaRule: true,
-  goOutCleanBooks: 1,
-  goOutDirtyBooks: 2,
-  handSize: 14,
-  footSize: 14,
-  extraDecks: 1,
-  initialDiscardFlip: true,
-  stockExhaustion: "reshuffle",
-  scoring: {
-    joker: 50,
-    two: 20,
-    ace: 15,
-    tenToKing: 10,
-    fourToNine: 5,
-    blackThree: 5,
-    redThree: -500,
-    cleanBookBonus: 500,
-    dirtyBookBonus: 300,
-    goOutBonus: 100,
-  },
-  mode: "family",
-  pauseEnabled: true,
-  timers: { baseMs: 90_000, incrementMs: 10_000, capMs: 180_000, discardGraceMs: 20_000 },
-};
-
-/**
- * West Coast preset: wilds may equal naturals. Otherwise identical for now — the
- * Marva rule included, which both coasts play.
- */
-export const WEST_COAST: RulesConfig = {
-  ...EAST_COAST,
-  wildRatio: "naturals-equal-wilds",
-};
 
 export type Zone = "hand" | "foot";
 
@@ -383,5 +352,6 @@ export interface LegalHints {
 }
 
 export * from "./identity";
+export * from "./rules";
 export * from "./protocol";
 export * from "./wire";

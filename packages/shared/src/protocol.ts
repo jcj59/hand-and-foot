@@ -12,9 +12,9 @@ import type {
   MeldPlay,
   Action,
   Card,
-  GameMode,
   LegalHints,
   PlayerView,
+  RoomOptions,
   RoundScore,
   RulesConfig,
   UserCredentials,
@@ -183,38 +183,13 @@ export interface SeatCredentials {
   readonly token: string;
 }
 
-/** Rules preset a room is opened with. */
-export type RulesPreset = "east-coast" | "west-coast";
-
-/**
- * What the room creator chooses when opening a table.
- *
- * Both fields are optional and both are unions: omitting them gives the East
- * Coast family game this was built for. The set is deliberately small and
- * closed so the server can coerce an unrecognized value to a safe default
- * without a validator — this type only constrains callers TypeScript checks;
- * a value arriving over the wire is untyped JSON and is normalized on the
- * server rather than trusted. `mode` carries pausing with it — a competitive
- * table is exactly one where the clock cannot be stopped — so the two never
- * drift apart.
- */
-export interface RoomOptions {
-  readonly preset?: RulesPreset;
-  readonly mode?: GameMode;
-}
-
 export interface ClientToServerEvents {
   /**
    * Open a new room. The creator picks the house rules here, because the table's
-   * rules are settled before anyone sits down, not changed mid-game.
-   *
-   * Deliberately a small set of named choices rather than a `Partial<RulesConfig>`:
-   * every field below is a union, so the server can normalize whatever arrives
-   * over the wire to a known value without a validator to get wrong — the union
-   * only constrains typed callers, not the untyped JSON a socket actually
-   * delivers. The full rules surface gets exposed by the configurable rules
-   * editor (DESIGN.md roadmap item 2), which is where arbitrary overrides
-   * belong — don't widen this to a raw config.
+   * rules are settled before anyone sits down, not changed mid-game: a preset, a
+   * mode, and any changes to the preset's rules. Whatever arrives is untyped JSON
+   * and the server checks all of it (`resolveRules`), refusing the table with the
+   * reason rather than quietly playing something else.
    */
   createRoom: (
     payload: {

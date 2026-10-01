@@ -17,7 +17,6 @@ import {
   USERS_PATH,
   type Ack,
   type ClientFrame,
-  type RoomOptions,
 } from "@hf/shared";
 import { nextTableFor, openTable, sitAt } from "./lobby";
 import { InMemoryUserStore, registerUser, verifyUser, type UserStore } from "./users";
@@ -128,11 +127,7 @@ export function attachTables(
     // Who is sitting down, if their browser proved an identity; anonymous otherwise.
     const userId = await verifyUser(users, body.user);
     if (path === ROOMS_PATH) {
-      return json(
-        response,
-        200,
-        openTable(manager, body.name, body.options as RoomOptions, userId),
-      );
+      return json(response, 200, openTable(manager, body.name, body.options, userId));
     }
     const target = parseRoomPath(path);
     if (target?.what === "join") {

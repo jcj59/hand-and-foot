@@ -16,9 +16,11 @@ import { defaultAction } from "@hf/engine";
 import { PAUSED_TABLE_MS, type Room, type TableChannel } from "@hf/server/core";
 import {
   EAST_COAST,
+  WEST_COAST,
   PING,
   PONG,
   type Ack,
+  type RoomOptions,
   type SeatCredentials,
   type ViewUpdate,
 } from "@hf/shared";
@@ -115,7 +117,7 @@ async function until(check: () => boolean | Promise<boolean>): Promise<void> {
 }
 
 /** Two players at a dealt table, each holding their own socket. */
-async function dealtTable(): Promise<{
+async function dealtTable(options: RoomOptions = { mode: "family" }): Promise<{
   ana: TableSocket;
   ben: TableSocket;
   anaSeat: SeatCredentials;
@@ -125,10 +127,7 @@ async function dealtTable(): Promise<{
 }> {
   const ana = client();
   const ben = client();
-  const opened = await ask<SeatCredentials>(ana, "createRoom", {
-    name: "ana",
-    options: { mode: "family" },
-  });
+  const opened = await ask<SeatCredentials>(ana, "createRoom", { name: "ana", options });
   if (!opened.ok) throw new Error(opened.error);
   const joined = await ask<SeatCredentials>(ben, "joinRoom", {
     roomId: opened.data.roomId.toLowerCase(),
@@ -539,6 +538,52 @@ describe("a table", () => {
     });
     // And a new table can be opened under it.
     expect(await tableOf(code).open(code, EAST_COAST, "eve")).toMatchObject({ ok: true });
+  });
+});
+
+describe("a table's rules", () => {
+  it("are checked by the Worker, which refuses rules that do not make a game and says why", async () => {
+    const post = async (options: unknown): Promise<unknown> =>
+      (
+        await SELF.fetch(`${BASE}/api/rooms`, {
+          method: "POST",
+          body: JSON.stringify({ name: "ana", options }),
+        })
+      ).json();
+    expect(await post({ rules: { handSize: 99 } })).toEqual({
+      ok: false,
+      error: "the hand size must be between 5 and 20",
+    });
+    expect(await post({ mode: "competitive", rules: { pauseEnabled: true } })).toEqual({
+      ok: false,
+      error: "a competitive table cannot be paused; choose the family mode to allow pausing",
+    });
+    expect(await post({ rules: { wilds: 4 } })).toEqual({
+      ok: false,
+      error: 'there is no rule called "wilds"',
+    });
+  });
+
+  it("are dealt by, shown to everyone, and kept through a restart", async () => {
+    const options: RoomOptions = {
+      preset: "west-coast",
+      rules: { handSize: 8, footSize: 6, rounds: 1, layDownMinimums: [45], extraDecks: 0 },
+    };
+    const { ana, anaSeat, benView } = await dealtTable(options);
+    const expected = { ...WEST_COAST, ...options.rules };
+    expect(benView.room.config).toEqual(expected);
+    expect(benView.view.hand).toHaveLength(8);
+    expect(benView.view.footCount).toBe(6);
+
+    await insideTable(anaSeat.roomId, stopClock);
+    let dropped = 0;
+    ana.on("disconnect", () => dropped++);
+    await evictDurableObject(tableOf(anaSeat.roomId), { webSockets: "close" });
+    await until(() => dropped > 0 && ana.connected);
+    const back = nextView(ana);
+    expect((await ask<SeatCredentials>(ana, "resumeSeat", anaSeat)).ok).toBe(true);
+    expect((await back).room.config).toEqual(expected);
+    expect(await insideTable(anaSeat.roomId, (room) => room.config)).toEqual(expected);
   });
 });
 

@@ -9,7 +9,13 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import postgres from "postgres";
-import { EAST_COAST, WEST_COAST, type LoggedAction } from "@hf/shared";
+import {
+  EAST_COAST,
+  resolveRules,
+  WEST_COAST,
+  type LoggedAction,
+  type RulesConfig,
+} from "@hf/shared";
 import { migrate, MIGRATIONS, openPostgresStore, PostgresRoomStore } from "./postgres";
 import { ownDatabase } from "./testDatabase";
 import { InMemoryRoomStore, type RoomRecord, type RoomStore } from "./store";
@@ -74,6 +80,24 @@ function contract(name: string, open: () => Promise<RoomStore>): void {
           actions: [row(0), row(1, { action: { type: "takePile" }, source: "disconnect" }), melds],
         },
       ]);
+    });
+
+    it("gives back a table's own rules whole, and rules stored before they named a preset", async () => {
+      const custom = resolveRules({
+        preset: "west-coast",
+        mode: "competitive",
+        rules: { rounds: 2, layDownMinimums: [0, 500], scoring: { redThree: -1000 } },
+      });
+      if (!custom.ok) throw new Error(custom.error);
+      const old = JSON.parse(JSON.stringify({ ...EAST_COAST, preset: undefined })) as RulesConfig;
+      store.saveRoom(record({ config: custom.data }));
+      store.saveRoom(
+        record({ uid: "uid-2", id: "OLD234", config: old, createdAt: 1_700_000_000_999 }),
+      );
+      await store.flush();
+      const loaded = await store.loadOpen();
+      expect(loaded.map((r) => r.room.config)).toEqual([custom.data, old]);
+      expect(loaded[1]!.room.config).not.toHaveProperty("preset");
     });
 
     it("gives back what the table is waiting on between rounds and after the match", async () => {

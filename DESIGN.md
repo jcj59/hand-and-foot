@@ -225,12 +225,44 @@ reactions without affecting anyone else.
 ### Rules chosen when a room is opened
 
 A table's rules are settled before anyone sits down, so the creator picks them at room creation and
-they do not change mid-game. The choice is a small set of named options — which preset, and family
-versus competitive — rather than an arbitrary partial rules object. Every option is a union, so
-anything that arrives over the wire is valid by construction and there is no validator to get wrong,
-and the mode carries pausing with it because a competitive table is precisely one where the clock
-cannot be stopped. Exposing the full rules surface belongs with the configurable rules editor
-(roadmap item 2), which can present and validate it properly.
+they do not change mid-game. The engine was config-driven from the start; what the creator could
+reach of it began as a small set of named options — which preset, and family versus competitive.
+Every option was a union, so anything that arrived over the wire could be coerced to a known value
+with no validator to get wrong. That was the right trade while the options were two switches, and
+the wrong one once a family wanted shorter turns or a smaller foot.
+
+The creator now starts from a preset and a mode and may change any rule the engine reads: the turn
+clock, the minimum for each round and the number of rounds, the wild ratio, the Marva rule, the
+books needed to go out, hand and foot size, extra decks, the first discard, what happens when the
+stock runs out, every score, and whether the table may be paused. What travels is a partial
+config — only the changes — and the server checks every field of it before a table exists. That
+gives up "valid by construction" for a validator, which is a real cost: it is code that can be
+wrong, and whatever it lets through is a game the engine has to play. So it is kept strict rather
+than forgiving. Each value has a range wide enough for any house variant and narrow enough that a
+table cannot be opened into one that never ends or never starts: no turn of a few seconds, no
+minimum nobody could make, no deal larger than the decks. Values that are each in range but do not
+make a game together are refused too — a minimum missing for one of the rounds, a turn whose ceiling
+sits below where it starts, going out with no books at all, a competitive table that can be paused.
+An unknown rule is refused rather than ignored, because a misspelt rule dropped in silence is a
+table playing rules nobody chose, and only known fields are copied into the result, so nothing else
+a request carries can reach the stored config. Every refusal names the rule in words a player can
+act on.
+
+The check lives in the shared package rather than the server, and the editor runs it on every
+keystroke, so the reason a table would be refused is on screen before it is asked for. That is the
+same argument as for legality hints: one implementation, asked in two places, cannot disagree with
+itself. The server's answer is still the only one that counts, since a form is a convenience and
+the endpoint takes whatever is posted to it.
+
+The mode still carries pausing with it as a default — a competitive table is precisely one where
+the clock cannot be stopped — and a family table may now turn pausing off, but a competitive one
+may not turn it on. The resolved config records which preset it started from, so every player in
+the lobby sees the table's rules with whatever was changed marked against the preset's own value;
+a table stored before that was recorded is read by its wild ratio, which was all that ever told the
+presets apart. The full config was already stored with each room, so a restored table replays
+under exactly the rules it was opened with, and nothing about storage changed. The creator's last
+choice is remembered on the device for now; it belongs with the player's identity and moves there
+once identities carry settings.
 
 ### Transport
 
@@ -593,7 +625,9 @@ work, in order:
    60, 90, 120 and 150, the first turn rotating each round, and the next round dealt once every
    player still at the table is ready. Moving to the next round is an action like any other, so a
    match replays from its log across all its rounds.
-2. A configurable rules editor, since the engine is already fully config-driven.
+2. ~~A configurable rules editor, since the engine is already fully config-driven.~~ Done: start
+   from a preset and change any rule; the server checks the changes, and the lobby shows every
+   player what was changed. See "Rules chosen when a room is opened".
 3. An interactive tutorial that teaches the game through guided scenarios.
 4. ~~Support for large tables on mobile.~~ Done: below 768px the table stacks vertically, with
    opponents as a strip of summary chips (tap one for its melds), the player's own melds as cards

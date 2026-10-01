@@ -10,7 +10,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import postgres from "postgres";
 import { connect as connectTransport, type TableSocket } from "@hf/transport";
-import type { Ack, Action, SeatCredentials, ViewUpdate } from "@hf/shared";
+import type { Ack, Action, RoomInfo, RoomOptions, SeatCredentials, ViewUpdate } from "@hf/shared";
 import { defaultAction } from "@hf/engine";
 import { createServer, type HandAndFootServer } from "./index";
 import { openPostgresStore } from "./postgres";
@@ -64,6 +64,7 @@ function viewOf(socket: Client): Promise<ViewUpdate> {
 async function playATable(
   server: HandAndFootServer,
   url: string,
+  options: RoomOptions = { mode: "family" },
 ): Promise<{
   seats: SeatCredentials[];
   sockets: Client[];
@@ -71,7 +72,7 @@ async function playATable(
 }> {
   const sockets = [await connect(url), await connect(url), await connect(url)];
   const created = await ask<SeatCredentials>((ack) =>
-    sockets[0]!.emit("createRoom", { name: "ana", options: { mode: "family" } }, ack),
+    sockets[0]!.emit("createRoom", { name: "ana", options }, ack),
   );
   if (!created.ok) throw new Error(created.error);
   const seats = [created.data];
@@ -180,6 +181,33 @@ function scenarios(
       );
       expect(joined).toMatchObject({ ok: true, data: { seat: 1 } });
       expect((await ask((ack) => returning.emit("startGame", ack))).ok).toBe(true);
+    });
+
+    it("brings a table opened with rules of its own back under the same rules", async () => {
+      const options: RoomOptions = {
+        preset: "west-coast",
+        mode: "competitive",
+        rules: { handSize: 12, footSize: 10, rounds: 1, layDownMinimums: [75], marvaRule: false },
+      };
+      const first = await boot(await freshStore());
+      const { seats, sockets } = await playATable(first.server, first.url, options);
+      const before = first.server.manager.get(seats[0]!.roomId)!;
+      const configBefore = before.config;
+      expect(configBefore).toMatchObject({ preset: "west-coast", handSize: 12, rounds: 1 });
+      const stateBefore = before.gameState;
+      for (const socket of sockets) socket.disconnect();
+
+      await shutDown(first.server);
+      const second = await boot(await reopen());
+      const restored = second.server.manager.get(seats[0]!.roomId)!;
+      expect(restored.config).toEqual(configBefore);
+      expect(restored.gameState).toEqual(stateBefore);
+
+      // And the players are told those rules when they come back.
+      const socket = await connect(second.url);
+      const info = new Promise<RoomInfo>((resolve) => socket.once("room", resolve));
+      expect((await ask((ack) => socket.emit("resumeSeat", seats[1]!, ack))).ok).toBe(true);
+      expect((await info).config).toEqual(configBefore);
     });
 
     it("does not bring back a room that was reaped before the restart", async () => {

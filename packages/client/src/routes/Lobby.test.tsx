@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { EAST_COAST, type Ack, type RoomInfo } from "@hf/shared";
+import { EAST_COAST, WEST_COAST, type Ack, type RoomInfo, type RulesConfig } from "@hf/shared";
 import { CREDENTIALS_KEY, loadCredentials } from "../credentials";
 import { createServerClock } from "../serverTime";
 import { useSession } from "../session";
@@ -251,16 +251,58 @@ describe("leaving", () => {
 });
 
 describe("the rules summary", () => {
-  it("names the mode the table was opened with", () => {
-    seated(0, roomInfo({ config: { ...EAST_COAST, mode: "competitive" } }));
+  const rules = (): HTMLElement => screen.getByRole("region", { name: "Table rules" });
+
+  it("names the preset and mode the table was opened with", () => {
+    seated(0, roomInfo({ config: { ...WEST_COAST, mode: "competitive", pauseEnabled: false } }));
     mount(fakeSocket().socket);
-    expect(screen.getByText(/competitive rules/i)).toBeInTheDocument();
+    expect(within(rules()).getByRole("heading", { level: 2 })).toHaveTextContent(
+      /^Rules: West Coast · Competitive$/,
+    );
   });
 
-  it("names the family mode too", () => {
+  it("names the family mode too, and lists nothing as changed for a preset as it comes", () => {
     seated(0);
     mount(fakeSocket().socket);
-    expect(screen.getByText(/family rules/i)).toBeInTheDocument();
+    expect(within(rules()).getByRole("heading", { level: 2 })).toHaveTextContent(
+      /^Rules: East Coast · Family$/,
+    );
+    expect(within(rules()).queryByRole("list", { name: "Changed from the preset" })).toBeNull();
+    expect(rules().querySelectorAll("[data-changed]")).toHaveLength(0);
+  });
+
+  it("shows every player what was changed, each beside the preset's value", () => {
+    const config = {
+      ...EAST_COAST,
+      handSize: 11,
+      marvaRule: false,
+      scoring: { ...EAST_COAST.scoring, redThree: -300 },
+      timers: { ...EAST_COAST.timers, baseMs: 45_000 },
+    };
+    seated(1, roomInfo({ config }));
+    mount(fakeSocket().socket);
+    expect(within(rules()).getByText("4 changed")).toBeInTheDocument();
+    const changed = within(rules()).getByRole("list", { name: "Changed from the preset" });
+    expect(
+      within(changed)
+        .getAllByRole("listitem")
+        .map((li) => li.textContent),
+    ).toEqual([
+      "Marva ruleOff, the preset has On",
+      "Hand11 cards, the preset has 14 cards",
+      "Red three−300, the preset has −500",
+      "Time per turn45 s, the preset has 1 min 30 s",
+    ]);
+    // And the full list marks the same four.
+    expect(rules().querySelectorAll("details [data-changed]")).toHaveLength(4);
+  });
+
+  it("reads a table opened before the editor as the preset it was opened with", () => {
+    const old = JSON.parse(JSON.stringify({ ...WEST_COAST, preset: undefined })) as RulesConfig;
+    seated(0, roomInfo({ config: old }));
+    mount(fakeSocket().socket);
+    expect(within(rules()).getByRole("heading", { level: 2 })).toHaveTextContent(/West Coast/);
+    expect(rules().querySelectorAll("[data-changed]")).toHaveLength(0);
   });
 });
 

@@ -1,5 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { EAST_COAST, type Action, type MeldPlay, type RulesConfig } from "@hf/shared";
+import {
+  changedRules,
+  EAST_COAST,
+  presetOf,
+  resolveRules,
+  WEST_COAST,
+  type Action,
+  type MeldPlay,
+  type RulesConfig,
+} from "@hf/shared";
 import { canTakePile, defaultAction, prng } from "@hf/engine";
 import { FakeClock } from "./clock";
 import { DEFAULT_RECONNECT_GRACE_MS, Room } from "./room";
@@ -467,5 +476,79 @@ describe("a table opened before the Marva rule was on in the presets", () => {
     const renewed = { ...entry, room: { ...entry.room, config: FAMILY } };
     const back = restore(renewed, new FakeClock(), store);
     expect(back.gameState!.players).toEqual(room.gameState!.players);
+  });
+});
+
+describe("a table opened with rules of its own", () => {
+  const custom = resolveRules({
+    preset: "west-coast",
+    rules: {
+      rounds: 2,
+      layDownMinimums: [40, 70],
+      handSize: 11,
+      footSize: 9,
+      extraDecks: 0,
+      scoring: { joker: 40, redThree: -300 },
+      timers: { baseMs: 45_000, capMs: 120_000 },
+    },
+  });
+  if (!custom.ok) throw new Error(custom.error);
+  const CUSTOM = custom.data;
+
+  it("restores under exactly those rules, its whole log replaying", async () => {
+    const store = new InMemoryRoomStore();
+    const room = openRoom(store, new FakeClock(), CUSTOM);
+    seat(room, ["ana", "ben", "cy"]);
+    room.start(0);
+    // Dealt by the table's own rules, not the preset's.
+    expect(room.gameState!.players.map((p) => [p.hand.length, p.foot.length])).toEqual([
+      [11, 9],
+      [11, 9],
+      [11, 9],
+    ]);
+    playRich(room, 40);
+    const back = restore(await onlyRoom(store), new FakeClock(), store);
+    expect(back.config).toEqual(CUSTOM);
+    expect(back.info().config).toEqual(CUSTOM);
+    expect(back.gameState).toEqual(room.gameState);
+    expect(changedRules(back.info().config)).toEqual(
+      new Set([
+        "rounds",
+        "layDownMinimums",
+        "handSize",
+        "footSize",
+        "extraDecks",
+        "scoring.joker",
+        "scoring.redThree",
+        "timers.baseMs",
+        "timers.capMs",
+      ]),
+    );
+  });
+});
+
+describe("a table stored before the rules editor", () => {
+  it("restores, and reads as the preset it was opened with, unchanged", async () => {
+    // A record as it was written then: its config names no preset.
+    const store = new InMemoryRoomStore();
+    const old = JSON.parse(
+      JSON.stringify({
+        ...WEST_COAST,
+        mode: "competitive",
+        pauseEnabled: false,
+        preset: undefined,
+      }),
+    ) as RulesConfig;
+    const room = openRoom(store, new FakeClock(), old);
+    seat(room, ["ana", "ben"]);
+    room.start(0);
+    playRich(room, 30);
+    const entry = await onlyRoom(store);
+    expect(entry.room.config).not.toHaveProperty("preset");
+    const back = restore(entry, new FakeClock(), store);
+    expect(back.gameState).toEqual(room.gameState);
+    expect(back.info().config).toEqual(old);
+    expect(presetOf(back.info().config)).toBe("west-coast");
+    expect(changedRules(back.info().config).size).toBe(0);
   });
 });

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   EAST_COAST,
+  resolveRules,
   type Action,
   type Card,
   type GameState,
@@ -115,6 +116,24 @@ describe("the Marva rule being used", () => {
       players: [player({ isDown: true, melds: [{ rank: "5", cards: fives }] }), before.players[1]!],
     };
     expect(gotDownByMarva(before, after, 0)).toBe(false);
+  });
+
+  it("follows a custom table's own minimum and card values, not a preset's", () => {
+    // Keyed to the rule being on and used, never to a preset's name or numbers.
+    const rules = (over: object): RulesConfig => {
+      const r = resolveRules({ preset: "west-coast", mode: "competitive", rules: over });
+      if (!r.ok) throw new Error(r.error);
+      return r.data;
+    };
+    const minimums = (first: number) => ({ layDownMinimums: [first, 90, 120, 150] });
+    const fives = cards("5", 4); // 20 points at the preset's values
+    const marva = (config: RulesConfig) =>
+      play(table(player({ hand: fives }), config), meldAll(["5", fives])).marva;
+    expect(marva(rules(minimums(30)))).toBe(true);
+    expect(marva(rules(minimums(20)))).toBe(false);
+    expect(marva(rules({ ...minimums(30), scoring: { fourToNine: 10 } }))).toBe(false);
+    expect(marva(rules({ ...minimums(41), scoring: { fourToNine: 10 } }))).toBe(true);
+    expect(() => marva(rules({ ...minimums(30), marvaRule: false }))).toThrow();
   });
 
   it("is not anything that leaves the player still not down, such as a draw", () => {

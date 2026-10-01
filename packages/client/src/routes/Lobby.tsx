@@ -11,6 +11,7 @@ import { useNavigate } from "react-router-dom";
 import { MAX_PLAYERS, MIN_PLAYERS } from "@hf/shared";
 import { leaveTable, makeHost, startTable } from "../actions";
 import { roomLink } from "../roomCode";
+import { RulesSummary } from "../rules/RulesSummary";
 import { useSession } from "../session";
 import type { HfClientSocket } from "../socket";
 
@@ -58,9 +59,7 @@ export function Lobby({ socket }: LobbyProps): React.ReactElement {
       <header className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold">Table {room.roomId}</h1>
         <p className="text-sm text-white/60">
-          {room.config.mode === "competitive" ? "Competitive" : "Family"} rules,{" "}
-          {room.config.layDownMinimums.length} round
-          {room.config.layDownMinimums.length === 1 ? "" : "s"}.
+          {room.config.rounds} round{room.config.rounds === 1 ? "" : "s"}.
         </p>
       </header>
 
@@ -128,6 +127,8 @@ export function Lobby({ socket }: LobbyProps): React.ReactElement {
           ))}
         </ul>
       </section>
+
+      <RulesSummary config={room.config} />
 
       {notice && (
         <p role="alert" className="rounded bg-red-600/20 px-3 py-2 text-sm text-red-200">

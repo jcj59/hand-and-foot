@@ -4,9 +4,9 @@
  * family table can be saved for later to be kept for a week instead.
  */
 import { describe, it, expect } from "vitest";
-import { EAST_COAST, type RulesConfig } from "@hf/shared";
+import { baseRules, EAST_COAST, type RulesConfig } from "@hf/shared";
 import { FakeClock } from "./clock";
-import { configFor, RoomManager } from "./manager";
+import { RoomManager } from "./manager";
 import { PAUSED_TABLE_MS, Room, SAVED_TABLE_MS } from "./room";
 import { InMemoryRoomStore } from "./store";
 
@@ -14,7 +14,7 @@ const T0 = 1_700_000_000_000;
 const { baseMs, discardGraceMs } = EAST_COAST.timers;
 /** Long enough for the seat on turn to run out of time, grace and all. */
 const WHOLE_TURN = baseMs + discardGraceMs;
-const COMPETITIVE: RulesConfig = configFor({ mode: "competitive" });
+const COMPETITIVE: RulesConfig = baseRules("east-coast", "competitive");
 
 function started(
   config: RulesConfig = EAST_COAST,

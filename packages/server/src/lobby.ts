@@ -6,8 +6,8 @@
  * because until then no connection speaks for it: the player is expected on the
  * table's socket at once, and until they arrive nothing is holding the seat.
  */
-import type { Ack, RoomOptions, SeatCredentials } from "@hf/shared";
-import { configFor, type RoomManager } from "./manager";
+import { resolveRules, type Ack, type SeatCredentials } from "@hf/shared";
+import type { RoomManager } from "./manager";
 import type { Room, RoomPlayer, RoomResult } from "./room";
 
 function seatAt(room: Room, player: RoomPlayer): SeatCredentials {
@@ -15,14 +15,20 @@ function seatAt(room: Room, player: RoomPlayer): SeatCredentials {
   return { roomId: room.id, seat: player.seat, token: player.token };
 }
 
-/** Open a table with the creator's choice of rules and seat them at it. */
+/**
+ * Open a table with the creator's choice of rules and seat them at it. `options`
+ * is whatever the request carried; rules that do not check out refuse the table,
+ * with the reason, before anything is created.
+ */
 export function openTable(
   manager: RoomManager,
   name: unknown,
-  options: RoomOptions | undefined,
+  options: unknown,
   userId?: string | null,
 ): Ack<SeatCredentials> {
-  const room = manager.create(configFor(options));
+  const rules = resolveRules(options);
+  if (!rules.ok) return rules;
+  const room = manager.create(rules.data);
   const joined = room.join(String(name ?? ""), userId);
   /* v8 ignore next -- a room created one statement ago cannot be full or started */
   if (!joined.ok) return { ok: false, error: joined.error };
