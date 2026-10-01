@@ -236,7 +236,8 @@ describe("the running total", () => {
 describe("whether it would be accepted", () => {
   it("refuses a lay-down below the minimum, in the engine's words", () => {
     const fours = cards("4", 3);
-    const result = preview({ staging: stageAll(fours), zone: fours });
+    // A card left in hand: emptying it would be a Marva, which the preset now plays.
+    const result = preview({ staging: stageAll(fours), zone: [...fours, card("9", "clubs")] });
     expect(result.ok).toBe(false);
     expect(result.problems.join(" ")).toMatch(/below the round minimum of 60/);
   });

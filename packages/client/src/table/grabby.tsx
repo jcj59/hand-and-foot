@@ -9,6 +9,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { RoomInfo } from "@hf/shared";
+import { Celebration } from "./Celebration";
 
 /** The holder's name at the table, for the rest of the match. */
 export const GRABBY_NAME = "Grabby Pants";
@@ -55,36 +56,57 @@ export function pickDeepVoice(
 }
 
 /**
- * Say it, deep and slow, with whatever voice the device has. Chrome lists no
- * voices until `voiceschanged` fires, so an empty list waits for that once before
- * settling for the default voice.
+ * Say a line deep and slow, with whatever voice the device has, then call `after`
+ * — once, whether the line finished, could not be said, or the device never says
+ * when it is done. Chrome lists no voices until `voiceschanged` fires, so an empty
+ * list waits for that once before settling for the default voice.
  */
-export function sayGrabbyPants(): void {
+export function sayDeep(text: string, after?: () => void): void {
+  let finished = false;
+  const done = (): void => {
+    if (finished) return;
+    finished = true;
+    after?.();
+  };
   const synth = typeof window !== "undefined" ? window.speechSynthesis : undefined;
-  if (!synth || typeof SpeechSynthesisUtterance === "undefined") return;
+  if (!synth || typeof SpeechSynthesisUtterance === "undefined") {
+    done();
+    return;
+  }
   const speak = (): void => {
-    const line = new SpeechSynthesisUtterance("Grabby Pants");
+    const line = new SpeechSynthesisUtterance(text);
     line.pitch = 0.1;
     line.rate = 0.75;
     const deep = pickDeepVoice(synth.getVoices());
     if (deep) line.voice = deep;
+    line.onend = done;
+    line.onerror = done;
     synth.cancel();
     synth.speak(line);
+    // Some browsers never report the end of a line; don't let that swallow `after`.
+    setTimeout(done, SPEECH_GIVE_UP_MS);
   };
   if (synth.getVoices().length > 0 || typeof synth.addEventListener !== "function") {
     speak();
     return;
   }
-  let done = false;
+  let started = false;
   const once = (): void => {
-    if (done) return;
-    done = true;
+    if (started) return;
+    started = true;
     clearTimeout(fallback);
     synth.removeEventListener("voiceschanged", once);
     speak();
   };
   const fallback = setTimeout(once, VOICES_WAIT_MS);
   synth.addEventListener("voiceschanged", once);
+}
+
+/** How long a spoken line may take before whatever follows it goes ahead anyway. */
+export const SPEECH_GIVE_UP_MS = 3_000;
+
+export function sayGrabbyPants(): void {
+  sayDeep("Grabby Pants");
 }
 
 /**
@@ -148,14 +170,10 @@ export function GrabbyAnnouncement({
   readonly headline: string;
 }): React.ReactElement {
   return (
-    <div
-      role="status"
-      aria-label="Grabby Pants"
-      className="grabby-pop pointer-events-none fixed inset-x-0 top-1/4 z-50 mx-auto flex w-fit max-w-[90vw] flex-col items-center gap-2 rounded-3xl border-2 border-amber-300 bg-felt-900/95 px-8 py-5 text-center shadow-2xl shadow-black/60"
-    >
+    <Celebration label="Grabby Pants" ms={GRABBY_MS}>
       <GrabbyIcon className="h-28 w-28" />
       <p className="text-2xl font-extrabold tracking-wide text-amber-200 sm:text-3xl">{headline}</p>
-    </div>
+    </Celebration>
   );
 }
 

@@ -93,7 +93,7 @@ changes to the player itself (prove this with a test that feeds it a golden game
 `replay.test.ts`). Document how to add one in
 `CLAUDE.md`.
 
-### 2. Marva rule on in both presets, and the Marva Rule celebration
+### ~~2. Marva rule on in both presets, and the Marva Rule celebration~~ (#28)
 
 **Depends on** 1 (so the celebration can be shown and verified).
 

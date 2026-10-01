@@ -54,6 +54,7 @@ export interface GameLog {
 export type MomentKind =
   | "named"
   | "gotDown"
+  | "marva"
   | "pileTaken"
   | "footPickedUp"
   | "grabbyPants"
@@ -186,6 +187,9 @@ export function buildTimeline(log: GameLog): Timeline {
       next.players.forEach((after, s) => {
         const before = state.players[s]!;
         if (after.isDown && !before.isDown) note("gotDown", step, `${nameOf(s)} got down`, s);
+        if (s === seat && entries.at(-1)!.move?.marva) {
+          note("marva", step, `Marva Rule: ${nameOf(s)} got down by emptying the hand`, s);
+        }
         if (after.inFoot && !before.inFoot) {
           note("footPickedUp", step, `${nameOf(s)} picked up the foot`, s);
         }
@@ -258,6 +262,7 @@ export function buildTimeline(log: GameLog): Timeline {
     named: 0,
     pileTaken: 1,
     gotDown: 2,
+    marva: 3,
     footPickedUp: 3,
     grabbyPants: 4,
     wentOut: 5,

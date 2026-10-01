@@ -9,6 +9,7 @@ import {
   type Suit,
 } from "@hf/shared";
 import { deal } from "./deal";
+import { moveSeenBy } from "./lastMove";
 import { project } from "./view";
 import { buildShoe } from "./deck";
 
@@ -286,5 +287,12 @@ describe("what can be taken back, in a view", () => {
     expect(project(s, 1)).not.toHaveProperty("turnBase");
     // And the opponent's view carries no trace of the base: no hand before, no field.
     expect(JSON.stringify(project(s, 1))).not.toContain(before.hand[3]!.id);
+  });
+});
+
+describe("the latest move as each seat sees it", () => {
+  it("passes a Marva get-down to every seat: the lay-down is on the table for all", () => {
+    const move = { seq: 3, seat: 0, kind: "meld" as const, count: 4, marva: true as const };
+    for (const seat of [0, 1, 2, 3]) expect(moveSeenBy(move, seat)).toEqual(move);
   });
 });

@@ -129,7 +129,7 @@ export const EAST_COAST: RulesConfig = {
   rounds: 4,
   layDownMinimums: [60, 90, 120, 150],
   wildRatio: "naturals-exceed-wilds",
-  marvaRule: false,
+  marvaRule: true,
   goOutCleanBooks: 1,
   goOutDirtyBooks: 2,
   handSize: 14,
@@ -154,7 +154,10 @@ export const EAST_COAST: RulesConfig = {
   timers: { baseMs: 90_000, incrementMs: 10_000, capMs: 180_000, discardGraceMs: 20_000 },
 };
 
-/** West Coast preset: wilds may equal naturals. Otherwise identical for now. */
+/**
+ * West Coast preset: wilds may equal naturals. Otherwise identical for now — the
+ * Marva rule included, which both coasts play.
+ */
 export const WEST_COAST: RulesConfig = {
   ...EAST_COAST,
   wildRatio: "naturals-equal-wilds",

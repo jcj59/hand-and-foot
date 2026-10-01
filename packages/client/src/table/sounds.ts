@@ -19,7 +19,7 @@ import type { LastMove, RoundEnded } from "@hf/shared";
 /** A recorded card sound, one per kind of move; see `public/sounds`. */
 export type CardSound = "draw" | "discard" | "meld" | "take-back";
 /** `pile` is the draw's recording played lower and slower: a draw, but more of it. */
-export type Sound = CardSound | "pile" | "turn" | "round" | "match";
+export type Sound = CardSound | "pile" | "turn" | "round" | "match" | "airhorn";
 
 /** Which recording marks each move. One sound per move, however many cards it moves. */
 const CARD_SOUND: Readonly<Record<LastMove["kind"], Sound>> = {
@@ -180,6 +180,62 @@ export function play(
       [523.25, 659.25, 783.99, 1_046.5].forEach((f, i) => note(ctx, f, t + i * 0.14, 0.5));
       note(ctx, 1_046.5, t + 0.56, 1.1, 0.14);
       return;
+    case "airhorn":
+      airHorn(ctx, t);
+      return;
+  }
+}
+
+/** The DJ air horn's rhythm: three stabs and a long blast, as [start, length] in seconds. */
+export const AIR_HORN_BLASTS: readonly (readonly [number, number])[] = [
+  [0, 0.11],
+  [0.16, 0.11],
+  [0.32, 0.11],
+  [0.5, 0.95],
+];
+
+/**
+ * A DJ air horn, synthesized: a stack of slightly detuned sawtooths (the horn's
+ * reedy beating), pushed through a soft clipper and a band-pass around the honk,
+ * stuttered into the classic three stabs and a long blast. Synthesized rather than
+ * recorded so there is no asset to fetch before the first Marva.
+ */
+function airHorn(ctx: AudioContext, at: number): void {
+  const shaper = ctx.createWaveShaper();
+  const curve = new Float32Array(1024);
+  for (let i = 0; i < curve.length; i++) {
+    const x = (i / (curve.length - 1)) * 2 - 1;
+    curve[i] = Math.tanh(3 * x);
+  }
+  shaper.curve = curve;
+  const band = ctx.createBiquadFilter();
+  band.type = "bandpass";
+  band.frequency.value = 1_400;
+  band.Q.value = 0.8;
+  const level = ctx.createGain();
+  level.gain.value = 0;
+  shaper.connect(band).connect(level).connect(ctx.destination);
+
+  const end = at + AIR_HORN_BLASTS.reduce((last, [s, d]) => Math.max(last, s + d), 0) + 0.1;
+  for (const detune of [-14, -5, 0, 6, 13]) {
+    const osc = ctx.createOscillator();
+    osc.type = "sawtooth";
+    // A little scoop up into pitch at the start, as a real horn has.
+    osc.frequency.setValueAtTime(400, at);
+    osc.frequency.linearRampToValueAtTime(466, at + 0.05);
+    osc.detune.value = detune;
+    const voice = ctx.createGain();
+    voice.gain.value = 0.12;
+    osc.connect(voice).connect(shaper);
+    osc.start(at);
+    osc.stop(end);
+  }
+  for (const [start, length] of AIR_HORN_BLASTS) {
+    const on = at + start;
+    level.gain.setValueAtTime(0, on);
+    level.gain.linearRampToValueAtTime(0.35, on + 0.012);
+    level.gain.setValueAtTime(0.35, on + length - 0.03);
+    level.gain.linearRampToValueAtTime(0, on + length);
   }
 }
 
@@ -196,6 +252,8 @@ export function useTableSounds(
 ): {
   muted: boolean;
   setMuted: (muted: boolean) => void;
+  /** Play one sound now, outside the table's own changes — unless muted or not yet unlocked. */
+  playSound: (sound: Sound) => void;
 } {
   const [muted, setMutedState] = useState(readMuted);
   const ctx = useRef<AudioContext | null>(null);
@@ -241,6 +299,9 @@ export function useTableSounds(
     setMuted: (next) => {
       setMutedState(next);
       writeMuted(next);
+    },
+    playSound: (sound) => {
+      if (!muted && ctx.current) play(ctx.current, sound, recordings.current);
     },
   };
 }

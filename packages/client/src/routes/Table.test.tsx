@@ -2412,3 +2412,29 @@ describe("Grabby Pants", () => {
     }
   });
 });
+
+describe("the Marva Rule", () => {
+  const marva = { seq: 9, seat: 1, kind: "meld" as const, count: 4, marva: true as const };
+
+  it("is celebrated on every screen when a lay-down arrives that the rule got down", () => {
+    mount(fakeSocket().socket, update({ lastMove: { seq: 8, seat: 1, kind: "draw" } }));
+    expect(screen.queryByRole("status", { name: "Marva Rule" })).toBeNull();
+    act(() => useSession.getState().applyUpdate(update({ lastMove: marva })));
+    expect(screen.getByRole("status", { name: "Marva Rule" })).toHaveTextContent(
+      "ben got down by emptying the hand",
+    );
+  });
+
+  it("is not celebrated again on reload, for the move the table was already showing", () => {
+    mount(fakeSocket().socket, update({ lastMove: marva }));
+    expect(screen.queryByRole("status", { name: "Marva Rule" })).toBeNull();
+  });
+
+  it("is not set off by an ordinary lay-down", () => {
+    mount(fakeSocket().socket, update({ lastMove: { seq: 8, seat: 1, kind: "draw" } }));
+    act(() =>
+      useSession.getState().applyUpdate(update({ lastMove: { ...marva, marva: undefined } })),
+    );
+    expect(screen.queryByRole("status", { name: "Marva Rule" })).toBeNull();
+  });
+});

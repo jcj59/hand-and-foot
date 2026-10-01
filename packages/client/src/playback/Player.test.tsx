@@ -188,6 +188,21 @@ describe("the player's moments", () => {
     );
   });
 
+  it("celebrates the Marva Rule when playing reaches it, and not when a jump lands on it", () => {
+    const t = scenario("marva");
+    const marva = t.moments.find((m) => m.kind === "marva")!;
+    const { unmount } = mount({ timeline: t, start: { step: marva.step - 1 } });
+    fireEvent.change(screen.getByLabelText("Timeline"), { target: { value: String(marva.step) } });
+    expect(screen.queryByRole("status", { name: "Marva Rule" })).toBeNull();
+    unmount();
+
+    mount({ timeline: t, start: { step: marva.step - 1 } });
+    fireEvent.click(screen.getByRole("button", { name: "Step forward" }));
+    expect(screen.getByRole("status", { name: "Marva Rule" })).toHaveTextContent(
+      "Ana got down by emptying the hand",
+    );
+  });
+
   it("shows the round's scores when a round has ended, with nothing to click", () => {
     const t = scenario("black-three-book");
     mount({ timeline: t, start: { step: t.length } });

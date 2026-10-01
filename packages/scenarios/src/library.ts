@@ -6,12 +6,11 @@
  * Hands are written out only where the situation depends on them. Everyone else is
  * dealt from the rest of a real shoe, so the table looks like a game in progress.
  */
-import { EAST_COAST, type RulesConfig } from "@hf/shared";
+import { EAST_COAST } from "@hf/shared";
 import type { Scenario } from "./scenario";
 import { autoTurns, autoUntil, discard, draw, meld, moment, takeBack, takePile } from "./script";
 
 const NAMES = ["Ana", "Ben", "Cal"] as const;
-const MARVA: RulesConfig = { ...EAST_COAST, marvaRule: true };
 
 /** The books East Coast needs to go out: one clean, two dirty. */
 const GO_OUT_BOOKS = {
@@ -102,8 +101,8 @@ export const SCENARIOS: readonly Scenario[] = [
     id: "marva",
     title: "The Marva rule",
     description:
-      "With the Marva rule on, a lay-down that empties the hand gets down whatever its value: Ana melds four fives, worth 20 against a minimum of 60, and picks up her foot.",
-    config: MARVA,
+      "Under the Marva rule, which both presets play, a lay-down that empties the hand gets down whatever its value: Ana melds four fives, worth 20 against a minimum of 60, picks up her foot, and the table celebrates.",
+    config: EAST_COAST,
     setup: { seed: 7, seats: [{ hand: "5C 5D 5H" }, {}, {}], stockTop: "5S" },
     names: NAMES,
     script: [

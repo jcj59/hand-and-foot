@@ -143,7 +143,9 @@ describe("rule presets", () => {
     expect(EAST_COAST.rounds).toBe(4);
     expect(EAST_COAST.layDownMinimums).toEqual([60, 90, 120, 150]);
     expect(EAST_COAST.stockExhaustion).toBe("reshuffle");
-    expect(EAST_COAST.marvaRule).toBe(false);
+    // Both coasts play the Marva rule (roadmap item 2); West Coast inherits it.
+    expect(EAST_COAST.marvaRule).toBe(true);
+    expect(WEST_COAST.marvaRule).toBe(true);
   });
 
   // A red three has to be the only negative entry, because `scoreRound` subtracts

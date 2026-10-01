@@ -440,3 +440,32 @@ describe("restoring who hosts", () => {
     expect(restored.hostSeat).toBe(0);
   });
 });
+
+describe("a table opened before the Marva rule was on in the presets", () => {
+  it("restores under the rules it was opened with, its whole log replaying", async () => {
+    // The stored record carries its config, so the preset changing under it does
+    // not change the game: an old table keeps marvaRule off, and every logged move
+    // was legal under those rules.
+    const store = new InMemoryRoomStore();
+    const old: RulesConfig = { ...FAMILY, marvaRule: false };
+    const room = openRoom(store, new FakeClock(), old);
+    seat(room, ["ana", "ben", "cy"]);
+    room.start(0);
+    playRich(room, 40);
+    const back = restore(await onlyRoom(store), new FakeClock(), store);
+    expect(back.gameState).toEqual(room.gameState);
+    expect(back.gameState!.config.marvaRule).toBe(false);
+  });
+
+  it("and the same log replays under the new preset too, since Marva only loosens a rule", async () => {
+    const store = new InMemoryRoomStore();
+    const room = openRoom(store, new FakeClock(), { ...FAMILY, marvaRule: false });
+    seat(room, ["ana", "ben", "cy"]);
+    room.start(0);
+    playRich(room, 40);
+    const entry = await onlyRoom(store);
+    const renewed = { ...entry, room: { ...entry.room, config: FAMILY } };
+    const back = restore(renewed, new FakeClock(), store);
+    expect(back.gameState!.players).toEqual(room.gameState!.players);
+  });
+});
