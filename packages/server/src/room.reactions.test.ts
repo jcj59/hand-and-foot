@@ -21,14 +21,39 @@ function room(clock = new FakeClock(0), store?: InMemoryRoomStore): Room {
 describe("a quick reaction", () => {
   it("is one of the fixed set, from a seat at the table, numbered as it comes", () => {
     const r = room();
-    expect(r.react(1, "nice")).toEqual({ ok: true, value: { seq: 1, seat: 1, id: "nice" } });
-    expect(r.react(0, "laugh")).toEqual({ ok: true, value: { seq: 2, seat: 0, id: "laugh" } });
+    const first = r.react(1, "nice");
+    const second = r.react(0, "laugh");
+    expect(first).toEqual({ ok: true, value: { seq: expect.any(Number), seat: 1, id: "nice" } });
+    expect(second).toEqual({ ok: true, value: { seq: expect.any(Number), seat: 0, id: "laugh" } });
+    if (!first.ok || !second.ok) throw new Error("unreachable");
+    expect(second.value.seq).toBeGreaterThan(first.value.seq);
     expect(r.react(5, "nice")).toEqual({ ok: false, error: "no such seat" });
     // Free text, or anything else, never crosses: only ids from the list.
     for (const bad of ["you stink", "", 3, null, undefined, { id: "nice" }]) {
       expect(r.react(0, bad)).toEqual({ ok: false, error: "that is not a reaction" });
     }
     expect(REACTIONS.length).toBeGreaterThan(8);
+  });
+
+  it("is numbered past every earlier one even by a room rebuilt later, as on a wake", () => {
+    const clock = new FakeClock(1_000);
+    const before = room(clock);
+    const seen: number[] = [];
+    for (let i = 0; i < REACTION_BURST; i++) {
+      const sent = before.react(0, "nice");
+      if (!sent.ok) throw new Error(sent.error);
+      seen.push(sent.value.seq);
+    }
+    expect(seen).toEqual([...seen].sort((a, b) => a - b));
+    expect(new Set(seen).size).toBe(seen.length);
+    // Nothing about reactions is saved, so the rebuilt room starts with no memory
+    // of the numbers it gave out; a screen still holding the highest must see more.
+    // A table only hibernates after sitting idle, so the wake comes later on the clock.
+    clock.advance(10_000);
+    const after = room(clock);
+    const next = after.react(1, "laugh");
+    if (!next.ok) throw new Error(next.error);
+    expect(next.value.seq).toBeGreaterThan(Math.max(...seen));
   });
 
   it("touches nothing in the game, the log, or the stored record", () => {

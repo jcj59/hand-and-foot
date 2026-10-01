@@ -310,7 +310,11 @@ export function isReactionId(value: unknown): value is ReactionId {
 
 /** One reaction, as everyone at the table is told it. Never stored, never logged. */
 export interface Reaction {
-  /** Increases with each reaction at this table, so a screen can tell them apart. */
+  /**
+   * Increases with each reaction at this table, so a screen can tell them apart —
+   * across a server restart or a Durable Object waking too, which is why it is
+   * taken from the clock (see `Room.react`) rather than counted from one.
+   */
   readonly seq: number;
   readonly seat: number;
   readonly id: ReactionId;

@@ -662,21 +662,25 @@ export class Room {
   }
 
   /**
-   * Keep this paused table for days rather than minutes, so the game can be picked
-   * up again another time. Family tables only, as pausing is; resuming ends it.
-   */
-  /**
    * A quick reaction from a seat, to be shown to everyone. Only the fixed set, and
    * only so many: it is ephemeral, so it touches nothing in the game, the log, or
-   * the record — which is also why it survives hibernation trivially.
+   * the record. Its number is `max(previous + 1, now)` on the room's clock rather
+   * than a count from one, because nothing about it is saved: a Durable Object
+   * that hibernates and wakes builds a fresh `Room`, and a counter restarting at
+   * one would hand out numbers screens have already seen, so they would drop them.
    */
   react(seat: number, id: unknown): RoomResult<Reaction> {
     if (!this.players[seat]) return fail("no such seat");
     if (!isReactionId(id)) return fail("that is not a reaction");
     if (!this.reactionLimit.take(seat)) return fail("too many reactions; wait a moment");
-    return succeed({ seq: ++this.reactionSeq, seat, id });
+    this.reactionSeq = Math.max(this.reactionSeq + 1, this.deps.clock.now());
+    return succeed({ seq: this.reactionSeq, seat, id });
   }
 
+  /**
+   * Keep this paused table for days rather than minutes, so the game can be picked
+   * up again another time. Family tables only, as pausing is; resuming ends it.
+   */
   saveForLater(seat: number): RoomResult<undefined> {
     if (!this.config.pauseEnabled) return fail("saving a game for later is for family games");
     if (!this.players[seat]) return fail("no such seat");

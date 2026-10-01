@@ -1193,9 +1193,12 @@ describe("quick reactions over the wire", () => {
     const heardByHost = waitFor(host, "reaction", () => true);
     const heardByGuest = waitFor(guest, "reaction", () => true);
     expect((await react(guest, "nice")).ok).toBe(true);
-    const expected = { seq: 1, seat: guestCreds.seat, id: "nice" };
-    expect(await heardByHost).toEqual(expected);
-    expect(await heardByGuest).toEqual(expected);
+    const toHost = await heardByHost;
+    expect(toHost).toEqual({ seq: expect.any(Number), seat: guestCreds.seat, id: "nice" });
+    expect(await heardByGuest).toEqual(toHost);
+    const later = waitFor(host, "reaction", (r) => r.seq !== toHost.seq);
+    expect((await react(host, "laugh")).ok).toBe(true);
+    expect((await later).seq).toBeGreaterThan(toHost.seq);
   });
 
   it("are refused as free text, and from a socket holding no seat", async () => {
