@@ -6,6 +6,7 @@ import { CREDENTIALS_KEY } from "../credentials";
 import { createServerClock } from "../serverTime";
 import { useSession } from "../session";
 import type { HfClientSocket } from "../socket";
+import { IDENTITY_KEY, NAME_KEY, type Post } from "../identity";
 import { Home } from "./Home";
 
 /** A socket that answers each request from a queue and records what was sent. */
@@ -27,13 +28,28 @@ function fakeSocket(answers: Ack<unknown>[] = []): {
 }
 
 /** Render at a path, capturing where the app navigates to. */
-function mount(socket: HfClientSocket, path = "/"): { readonly landed: () => string | null } {
+/** An identity server that accepts everything, and remembers what it was sent. */
+function fakeUsers(answer: Ack<unknown> = { ok: true, data: {} }): Post & { sent: unknown[] } {
+  const sent: unknown[] = [];
+  const post = (async (_path: string, body: unknown) => {
+    sent.push(body);
+    return answer;
+  }) as Post & { sent: unknown[] };
+  post.sent = sent;
+  return post;
+}
+
+function mount(
+  socket: HfClientSocket,
+  path = "/",
+  post: Post = fakeUsers(),
+): { readonly landed: () => string | null } {
   let landed: string | null = null;
   render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route path="/" element={<Home socket={socket} />} />
-        <Route path="/room/:roomId" element={<Home socket={socket} />} />
+        <Route path="/" element={<Home socket={socket} post={post} />} />
+        <Route path="/room/:roomId" element={<Home socket={socket} post={post} />} />
       </Routes>
       <Landing onRender={(p) => (landed = p)} />
     </MemoryRouter>,
@@ -54,6 +70,8 @@ const createButton = (): HTMLElement => screen.getByRole("button", { name: /open
 
 beforeEach(() => {
   window.localStorage.removeItem(CREDENTIALS_KEY);
+  window.localStorage.removeItem(NAME_KEY);
+  window.localStorage.removeItem(IDENTITY_KEY);
   useSession.setState({
     status: "connected",
     credentials: null,
@@ -96,7 +114,13 @@ describe("opening a table", () => {
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0]).toEqual({
       event: "createRoom",
-      args: [{ name: "ana", options: { preset: "west-coast", mode: "competitive" } }],
+      args: [
+        {
+          name: "ana",
+          options: { preset: "west-coast", mode: "competitive" },
+          user: JSON.parse(window.localStorage.getItem(IDENTITY_KEY)!),
+        },
+      ],
     });
   });
 
@@ -138,7 +162,16 @@ describe("joining a table", () => {
     expect(joinButton()).not.toBeDisabled();
     fireEvent.click(joinButton());
     await waitFor(() => expect(sent).toHaveLength(1));
-    expect(sent[0]).toEqual({ event: "joinRoom", args: [{ roomId: "ABC234", name: "ben" }] });
+    expect(sent[0]).toEqual({
+      event: "joinRoom",
+      args: [
+        {
+          roomId: "ABC234",
+          name: "ben",
+          user: JSON.parse(window.localStorage.getItem(IDENTITY_KEY)!),
+        },
+      ],
+    });
   });
 
   it("leaves room in the code box for a typed or pasted separator", () => {
@@ -201,7 +234,7 @@ describe("a seat this tab still holds", () => {
     render(
       <MemoryRouter initialEntries={["/"]}>
         <Routes>
-          <Route path="/" element={<Home socket={fakeHomeSocket()} />} />
+          <Route path="/" element={<Home socket={fakeHomeSocket()} post={fakeUsers()} />} />
           <Route path="/room/:roomId" element={<p>at the table</p>} />
         </Routes>
       </MemoryRouter>,
@@ -215,7 +248,7 @@ describe("a seat this tab still holds", () => {
     useSession.setState({ credentials: null });
     render(
       <MemoryRouter>
-        <Home socket={fakeHomeSocket()} />
+        <Home socket={fakeHomeSocket()} post={fakeUsers()} />
       </MemoryRouter>,
     );
     expect(screen.queryByLabelText(/your table/i)).toBeNull();
@@ -226,3 +259,100 @@ function fakeHomeSocket(): HfClientSocket {
   const socket = { emit: () => socket } as unknown as HfClientSocket;
   return socket;
 }
+
+/** Open the folded profile panel, as a tap on its summary does. */
+function openPanel(): void {
+  const details = screen.getByText(/use your profile on another device/i).closest("details")!;
+  details.open = true;
+  fireEvent(details, new Event("toggle"));
+}
+
+describe("who is sitting down", () => {
+  it("offers the name used last time, and remembers a new one", async () => {
+    window.localStorage.setItem(NAME_KEY, "Ana");
+    const { socket } = fakeSocket();
+    mount(socket);
+    expect(nameBox()).toHaveValue("Ana");
+    fireEvent.change(nameBox(), { target: { value: "Annie" } });
+    fireEvent.click(createButton());
+    await waitFor(() => expect(window.localStorage.getItem(NAME_KEY)).toBe("Annie"));
+  });
+
+  it("registers this browser's identity under the name, and sits down with it", async () => {
+    const { socket, sent } = fakeSocket();
+    const users = fakeUsers();
+    mount(socket, "/", users);
+    fireEvent.change(nameBox(), { target: { value: "ana" } });
+    fireEvent.click(createButton());
+    await waitFor(() => expect(sent).toHaveLength(1));
+    const identity = JSON.parse(window.localStorage.getItem(IDENTITY_KEY)!);
+    expect(users.sent).toEqual([{ ...identity, name: "ana" }]);
+    expect(sent[0]!.args[0]).toMatchObject({ name: "ana", user: identity });
+  });
+
+  it("sits down without one when the server will not register it", async () => {
+    const { socket, sent } = fakeSocket();
+    mount(socket, "/", fakeUsers({ ok: false, error: "no" }));
+    fireEvent.change(nameBox(), { target: { value: "ana" } });
+    fireEvent.change(codeBox(), { target: { value: "ABC234" } });
+    fireEvent.click(joinButton());
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]!.args[0]).not.toHaveProperty("user");
+  });
+
+  it("registers this device's profile when the panel opens, then shows its code", async () => {
+    window.localStorage.setItem(NAME_KEY, "Ana");
+    const users = fakeUsers();
+    mount(fakeSocket().socket, "/", users);
+    openPanel();
+    await waitFor(() => expect(screen.getByLabelText("Your transfer code")).not.toHaveValue("…"));
+    const mine = JSON.parse(window.localStorage.getItem(IDENTITY_KEY)!);
+    expect(users.sent).toEqual([{ ...mine, name: "Ana" }]);
+    expect(screen.getByLabelText("Your transfer code")).toHaveValue(
+      `hf1.${mine.userId}.${mine.secret}`,
+    );
+  });
+
+  it("shows no code, and says why, when the profile cannot be registered", async () => {
+    mount(fakeSocket().socket, "/", fakeUsers({ ok: false, error: "down" }));
+    openPanel();
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(/could not reach the server/i),
+    );
+    expect(screen.getByLabelText("Your transfer code")).toHaveValue("…");
+  });
+
+  it("takes on another device's profile from its code", async () => {
+    const users = fakeUsers();
+    mount(fakeSocket().socket, "/", users);
+    openPanel();
+    const other = { userId: "other-device-user-01", secret: "s".repeat(40) };
+    fireEvent.change(screen.getByLabelText("Code from another device"), {
+      target: { value: `hf1.${other.userId}.${other.secret}` },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Use it" }));
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("This device now uses that profile."),
+    );
+    expect(JSON.parse(window.localStorage.getItem(IDENTITY_KEY)!)).toEqual(other);
+    expect(users.sent.at(-1)).toEqual({ ...other, existing: true });
+    expect(screen.getByLabelText("Your transfer code")).toHaveValue(
+      `hf1.${other.userId}.${other.secret}`,
+    );
+  });
+
+  it("refuses a code that is not one, keeping this device's profile", async () => {
+    mount(fakeSocket().socket);
+    openPanel();
+    await waitFor(() => expect(window.localStorage.getItem(IDENTITY_KEY)).not.toBeNull());
+    const before = window.localStorage.getItem(IDENTITY_KEY);
+    fireEvent.change(screen.getByLabelText("Code from another device"), {
+      target: { value: "not a code" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Use it" }));
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(/not a transfer code/),
+    );
+    expect(window.localStorage.getItem(IDENTITY_KEY)).toBe(before);
+  });
+});

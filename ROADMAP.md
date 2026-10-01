@@ -144,6 +144,9 @@ sender's seat on every screen, with an optional short sound.
 
 ### 4. Identity and avatars *(may split: 4a identity, 4b avatars)*
 
+*4a (identity) done in #30; 4b (avatars) next. The store ended up as a Durable Object per identity
+rather than D1 — see DESIGN.md, "Identity without accounts".*
+
 A lightweight notion of a **user** without accounts or passwords.
 
 - An anonymous device identity: a random user id plus a secret, created on first visit, kept in

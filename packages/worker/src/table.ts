@@ -119,6 +119,7 @@ export class TableObject extends DurableObject<Env> {
     code: string,
     config: RulesConfig,
     name: string,
+    userId: string | null = null,
   ): Promise<Ack<SeatCredentials> | typeof TAKEN> {
     if (this.channel) return TAKEN;
     // Sockets still open from a table closed under this code belong to that one.
@@ -132,14 +133,14 @@ export class TableObject extends DurableObject<Env> {
     });
     this.store.saveRoom(room.record());
     this.install(room);
-    return this.sit(name);
+    return this.sit(name, userId);
   }
 
-  /** Sit down at this table. */
-  async sit(name: string): Promise<Ack<SeatCredentials>> {
+  /** Sit down at this table, as the identity the Worker verified, if any. */
+  async sit(name: string, userId: string | null = null): Promise<Ack<SeatCredentials>> {
     const room = this.channel?.room;
     if (!room) return { ok: false, error: "no room with that code" };
-    const joined = room.join(name);
+    const joined = room.join(name, userId);
     if (!joined.ok) return { ok: false, error: joined.error };
     // No socket speaks for the seat until the player's client presents the token.
     room.setConnected(joined.value.seat, false);
@@ -151,11 +152,11 @@ export class TableObject extends DurableObject<Env> {
   }
 
   /** Sit down at this table as the next game of another, which is refused once dealt. */
-  async sitNext(name: string): Promise<Ack<SeatCredentials>> {
+  async sitNext(name: string, userId: string | null = null): Promise<Ack<SeatCredentials>> {
     if (this.channel?.room.started) {
       return { ok: false, error: "the next game has already started without you" };
     }
-    return this.sit(name);
+    return this.sit(name, userId);
   }
 
   // ------------------------------------------------------------------ socket ---
@@ -297,13 +298,21 @@ export class TableObject extends DurableObject<Env> {
   ): Promise<RoomResult<SeatCredentials>> {
     const answer = async (): Promise<Ack<SeatCredentials>> => {
       if (room.nextRoomId !== null) {
-        const seated = await this.env.TABLES.getByName(room.nextRoomId).sitNext(player.name);
+        const seated = await this.env.TABLES.getByName(room.nextRoomId).sitNext(
+          player.name,
+          player.userId ?? null,
+        );
         // Reaped since: open a fresh one below instead.
         if (seated.ok || seated.error !== "no room with that code") return seated;
       }
       for (;;) {
         const code = newCode();
-        const opened = await this.env.TABLES.getByName(code).open(code, room.config, player.name);
+        const opened = await this.env.TABLES.getByName(code).open(
+          code,
+          room.config,
+          player.name,
+          player.userId ?? null,
+        );
         if (opened === TAKEN) continue;
         if (opened.ok) room.nextRoomId = code;
         return opened;

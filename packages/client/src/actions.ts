@@ -18,6 +18,7 @@ import type {
   ReactionId,
   RoomOptions,
   SeatCredentials,
+  UserCredentials,
 } from "@hf/shared";
 import { clearCredentials } from "./credentials";
 import { normalizeRoomCode } from "./roomCode";
@@ -41,8 +42,9 @@ export async function createTable(
   name: string,
   options: RoomOptions,
   sink: ActionSink,
+  user?: UserCredentials | null,
 ): Promise<string | null> {
-  const result = await wire.createRoom(socket, name.trim(), options);
+  const result = await wire.createRoom(socket, name.trim(), options, user);
   if (!result.ok) {
     sink.setNotice(result.error);
     return null;
@@ -58,8 +60,9 @@ export async function joinTable(
   roomId: string,
   name: string,
   sink: ActionSink,
+  user?: UserCredentials | null,
 ): Promise<string | null> {
-  const result = await wire.joinRoom(socket, normalizeRoomCode(roomId), name.trim());
+  const result = await wire.joinRoom(socket, normalizeRoomCode(roomId), name.trim(), user);
   if (!result.ok) {
     sink.setNotice(result.error);
     return null;

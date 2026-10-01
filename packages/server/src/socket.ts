@@ -14,11 +14,13 @@ import {
   PING,
   PONG,
   ROOMS_PATH,
+  USERS_PATH,
   type Ack,
   type ClientFrame,
   type RoomOptions,
 } from "@hf/shared";
 import { nextTableFor, openTable, sitAt } from "./lobby";
+import { InMemoryUserStore, registerUser, verifyUser, type UserStore } from "./users";
 import type { RoomManager } from "./manager";
 import type { Room } from "./room";
 import { refusal, TableChannel } from "./table";
@@ -33,6 +35,10 @@ export interface TransportOptions {
    * up on the connection, which can take many minutes.
    */
   readonly heartbeatMs?: number;
+  /** Where identities are kept; in memory when unset. */
+  readonly users?: UserStore;
+  /** The time an identity was registered or updated; the system clock when unset. */
+  readonly now?: () => number;
 }
 
 export const DEFAULT_HEARTBEAT_MS = 25_000;
@@ -56,6 +62,8 @@ export function attachTables(
   manager: RoomManager,
   options: TransportOptions = {},
 ): Tables {
+  const users = options.users ?? new InMemoryUserStore();
+  const now = options.now ?? Date.now;
   const channels = new Map<string, TableChannel>();
   const channelFor = (room: Room): TableChannel => {
     const existing = channels.get(room.id);
@@ -79,7 +87,12 @@ export function attachTables(
     !options.cors || origin === undefined || options.cors.includes(origin);
 
   http.on("request", (request, response) => {
-    void route(request, response);
+    // Nothing a request does may take the process down with it: a store that fails
+    // mid-request answers this one request with an error, and every table goes on.
+    route(request, response).catch(() => {
+      if (response.headersSent) return void response.end();
+      json(response, 500, { ok: false, error: "the server could not answer that; try again" });
+    });
   });
 
   async function route(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -109,14 +122,23 @@ export function attachTables(
     const body = await readJson(request);
     if (body === null)
       return json(response, 400, { ok: false, error: "that request was not JSON" });
+    if (path === USERS_PATH) {
+      return json(response, 200, await registerUser(users, body, now()));
+    }
+    // Who is sitting down, if their browser proved an identity; anonymous otherwise.
+    const userId = await verifyUser(users, body.user);
     if (path === ROOMS_PATH) {
-      return json(response, 200, openTable(manager, body.name, body.options as RoomOptions));
+      return json(
+        response,
+        200,
+        openTable(manager, body.name, body.options as RoomOptions, userId),
+      );
     }
     const target = parseRoomPath(path);
     if (target?.what === "join") {
       // No broadcast yet: the table hears of the newcomer when their socket claims
       // the seat, which is the moment they are actually there.
-      return json(response, 200, sitAt(manager, target.roomId, body.name));
+      return json(response, 200, sitAt(manager, target.roomId, body.name, userId));
     }
     response.writeHead(404).end();
   }

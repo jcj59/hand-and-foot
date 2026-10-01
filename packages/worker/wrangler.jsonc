@@ -15,10 +15,17 @@
     "run_worker_first": ["/api/*"],
   },
   "durable_objects": {
-    "bindings": [{ "name": "TABLES", "class_name": "TableObject" }],
+    "bindings": [
+      { "name": "TABLES", "class_name": "TableObject" },
+      { "name": "USERS", "class_name": "UserObject" },
+    ],
   },
   // SQLite-backed, which is what the free plan provides and what the synchronous
   // key-value storage the tables use needs.
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TableObject"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["TableObject"] },
+    // Identities: one object per user id (roadmap item 4).
+    { "tag": "v2", "new_sqlite_classes": ["UserObject"] },
+  ],
   "observability": { "enabled": true },
 }

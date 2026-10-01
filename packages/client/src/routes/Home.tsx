@@ -9,18 +9,35 @@
  */
 import { useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ROOM_CODE_LENGTH, type GameMode, type RulesPreset } from "@hf/shared";
+import {
+  MAX_NAME_LENGTH,
+  ROOM_CODE_LENGTH,
+  transferCode,
+  type GameMode,
+  type RulesPreset,
+  type UserCredentials,
+} from "@hf/shared";
 import { createTable, joinTable } from "../actions";
 import { loadCredentials } from "../credentials";
 import { isPossibleRoomCode, normalizeRoomCode } from "../roomCode";
 import { useSession } from "../session";
-import type { HfClientSocket } from "../socket";
+import { serverUrl, type HfClientSocket } from "../socket";
+import {
+  adoptTransferCode,
+  httpPost,
+  loadName,
+  prepareIdentity,
+  rememberName,
+  type Post,
+} from "../identity";
 
 export interface HomeProps {
   readonly socket: HfClientSocket;
+  /** How identities reach the server; the page's own origin unless a test answers it. */
+  readonly post?: Post;
 }
 
-export function Home({ socket }: HomeProps): React.ReactElement {
+export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React.ReactElement {
   const navigate = useNavigate();
   const { roomId: fromLink } = useParams<{ roomId?: string }>();
   const seat = useSession((s) => s.seat);
@@ -32,7 +49,8 @@ export function Home({ socket }: HomeProps): React.ReactElement {
   // reclaimed: reloading the home screen leaves it unclaimed until Rejoin.
   const held = useSession((s) => s.credentials) ?? loadCredentials();
 
-  const [name, setName] = useState("");
+  // The name this player went by last time, ready to use again or change.
+  const [name, setName] = useState(loadName);
   const [code, setCode] = useState(fromLink ? normalizeRoomCode(fromLink) : "");
   const [preset, setPreset] = useState<RulesPreset>("east-coast");
   const [mode, setMode] = useState<GameMode>("family");
@@ -48,9 +66,13 @@ export function Home({ socket }: HomeProps): React.ReactElement {
     if (busy || !named) return;
     setBusy(true);
     try {
+      rememberName(name);
+      // Who is sitting down, for attributing games later. Without an answer in
+      // time the player sits down anyway, as nobody in particular.
+      const user = await prepareIdentity(post, name.trim());
       const roomId = join
-        ? await joinTable(socket, code, name, sink)
-        : await createTable(socket, name, { preset, mode }, sink);
+        ? await joinTable(socket, code, name, sink, user)
+        : await createTable(socket, name, { preset, mode }, sink, user);
       if (roomId) navigate(`/room/${roomId}`);
     } finally {
       // Cleared even on refusal, so a wrong code can be corrected and retried.
@@ -91,7 +113,7 @@ export function Home({ socket }: HomeProps): React.ReactElement {
           placeholder="e.g. Ana"
           // First either way, and from a shared link it is the only thing missing.
           autoFocus
-          maxLength={24}
+          maxLength={MAX_NAME_LENGTH}
         />
       </label>
 
@@ -166,6 +188,92 @@ export function Home({ socket }: HomeProps): React.ReactElement {
           Open a new table
         </button>
       </form>
+
+      <IdentityPanel post={post} />
     </main>
+  );
+}
+
+/**
+ * Moving this player's identity to another device: the code to copy here, and
+ * the place to paste one from elsewhere. Folded away — most people never need it.
+ */
+function IdentityPanel({ post }: { readonly post: Post }): React.ReactElement {
+  // Shown only once the server knows it: a code for an identity never registered
+  // would be refused on the other device.
+  const [identity, setIdentity] = useState<UserCredentials | null>(null);
+  const [pasted, setPasted] = useState("");
+  const [status, setStatus] = useState<string | null>(null);
+  const [asked, setAsked] = useState(false);
+
+  const open = (): void => {
+    if (asked) return;
+    setAsked(true);
+    void prepareIdentity(post, loadName()).then((ready) => {
+      // A code adopted while this was in flight is the profile now; keep it.
+      if (ready) setIdentity((current) => current ?? ready);
+      else setStatus("Could not reach the server to set up your profile. Try again later.");
+    });
+  };
+
+  return (
+    <details
+      className="rounded border border-white/10 bg-black/15 p-3 text-sm"
+      onToggle={(event) => {
+        if ((event.currentTarget as HTMLDetailsElement).open) open();
+      }}
+    >
+      <summary className="cursor-pointer text-white/70">Use your profile on another device</summary>
+      <div className="mt-3 flex flex-col gap-3">
+        <label className="flex flex-col gap-1">
+          <span className="text-white/70">
+            This device&rsquo;s code. Paste it on the other device to be the same player there. Keep
+            it to yourself: it is your profile.
+          </span>
+          <input
+            readOnly
+            value={identity ? transferCode(identity) : "…"}
+            onFocus={(e) => e.target.select()}
+            aria-label="Your transfer code"
+            className="rounded border border-white/20 bg-black/30 px-2 py-1 font-mono text-xs"
+          />
+        </label>
+        <form
+          className="flex flex-col gap-1"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void adoptTransferCode(post, pasted).then((result) => {
+              if (!result.ok) return setStatus(result.error);
+              setIdentity(result.data);
+              setPasted("");
+              setStatus("This device now uses that profile.");
+            });
+          }}
+        >
+          <span className="text-white/70">Or use a code from another device</span>
+          <div className="flex gap-2">
+            <input
+              value={pasted}
+              onChange={(e) => setPasted(e.target.value)}
+              aria-label="Code from another device"
+              placeholder="hf1.…"
+              className="min-w-0 flex-1 rounded border border-white/20 bg-black/30 px-2 py-1 font-mono text-xs"
+            />
+            <button
+              type="submit"
+              disabled={pasted.trim() === ""}
+              className="rounded border border-white/30 px-3 py-1 disabled:opacity-40"
+            >
+              Use it
+            </button>
+          </div>
+        </form>
+        {status && (
+          <p role="status" className="text-white/80">
+            {status}
+          </p>
+        )}
+      </div>
+    </details>
   );
 }

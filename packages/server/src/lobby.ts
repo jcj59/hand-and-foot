@@ -20,17 +20,23 @@ export function openTable(
   manager: RoomManager,
   name: unknown,
   options: RoomOptions | undefined,
+  userId?: string | null,
 ): Ack<SeatCredentials> {
   const room = manager.create(configFor(options));
-  const joined = room.join(String(name ?? ""));
+  const joined = room.join(String(name ?? ""), userId);
   /* v8 ignore next -- a room created one statement ago cannot be full or started */
   if (!joined.ok) return { ok: false, error: joined.error };
   return { ok: true, data: seatAt(room, joined.value) };
 }
 
 /** Sit down at the table with this code. */
-export function sitAt(manager: RoomManager, roomId: string, name: unknown): Ack<SeatCredentials> {
-  const joined = manager.join(roomId, String(name ?? ""));
+export function sitAt(
+  manager: RoomManager,
+  roomId: string,
+  name: unknown,
+  userId?: string | null,
+): Ack<SeatCredentials> {
+  const joined = manager.join(roomId, String(name ?? ""), userId);
   if (!joined.ok) return { ok: false, error: joined.error };
   const player = joined.value.room.seatOf(joined.value.token)!;
   return { ok: true, data: seatAt(joined.value.room, player) };
@@ -52,7 +58,8 @@ export function nextTableFor(
     next = manager.create(room.config);
     room.nextRoomId = next.id;
   }
-  const joined = next.join(player.name);
+  // The same person at the next game: they carry their identity with them.
+  const joined = next.join(player.name, player.userId);
   if (!joined.ok) return { ok: false, error: joined.error };
   return { ok: true, value: seatAt(next, joined.value) };
 }

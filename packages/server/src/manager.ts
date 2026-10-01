@@ -158,10 +158,14 @@ export class RoomManager {
   }
 
   /** Room codes are matched case-insensitively; nobody types a link exactly. */
-  join(roomId: string, name: string): RoomResult<{ room: Room; seat: number; token: string }> {
+  join(
+    roomId: string,
+    name: string,
+    userId?: string | null,
+  ): RoomResult<{ room: Room; seat: number; token: string }> {
     const room = this.get(roomId);
     if (!room) return { ok: false, error: "no room with that code" };
-    const joined = room.join(name);
+    const joined = room.join(name, userId);
     if (!joined.ok) return joined;
     return { ok: true, value: { room, seat: joined.value.seat, token: joined.value.token } };
   }

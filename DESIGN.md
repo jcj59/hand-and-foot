@@ -190,6 +190,27 @@ hands, and lets a replay show it at exactly the moment the live table did. The a
 is a shared overlay that Grabby Pants also uses, so the awards and tutorial planned later have one
 place to build on.
 
+### Identity without accounts
+
+Stats, match history and remembered names all need to know that the player at today's table is
+the one from last week, and none of that justifies passwords for a family game. So each browser
+makes up an identity the first time it is needed — a random user id and a random secret, kept in
+its own storage — and registers it with the server, which keeps only a hash of the secret.
+Presenting both again proves it is the same browser. Clearing storage simply makes a new one, and
+a short code moves an identity to another device; a real sign-in can be layered on later by
+attaching an account to an existing identity rather than migrating anything.
+
+An identity says who someone is, never what they may do. Sitting down with one records it against
+the seat, but the seat token remains the only thing that lets a connection act at a table, and
+credentials that do not check out still get a seat, just an anonymous one: a table is never
+refused over who someone claims to be. The identity is not broadcast with the room, since nothing
+a player sees needs it yet.
+
+On Cloudflare each identity is a Durable Object of its own, addressed by its id. Nothing ever
+reads across identities, so a single database would add a resource to create and bind without
+answering any question an object per identity cannot; on the Node host the same records sit in
+a table beside the rooms.
+
 ### Quick reactions
 
 Players at a real table talk, and an online one is quiet without a way to say "nice" or "hurry
