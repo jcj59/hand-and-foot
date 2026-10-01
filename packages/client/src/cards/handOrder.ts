@@ -100,6 +100,18 @@ export function isUnplayable(card: Card, context: PlayContext): boolean {
   return !(context.inFoot && (context.blackThreesHeld >= 7 || context.hasBlackThreeMeld));
 }
 
+/**
+ * Whether a card from the hand can go straight onto one of the player's melds:
+ * a natural of a rank they have down, that is in play at all. The rank alone is
+ * not enough — a red three shares its rank with a book of black threes and still
+ * can never be melded — so this is the one test the underline, the discard
+ * warning and the card's menu all use. Wilds are left out: where one goes is a
+ * choice, not a lay-off.
+ */
+export function canLayOff(card: Card, meldRanks: ReadonlySet<Rank>, context: PlayContext): boolean {
+  return !isWild(card.rank) && !isUnplayable(card, context) && meldRanks.has(card.rank);
+}
+
 /** Red for hearts and diamonds, as on a real card. */
 export function isRedCard(card: Card): boolean {
   return isRed(card);

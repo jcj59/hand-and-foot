@@ -19,7 +19,7 @@ import { createPortal } from "react-dom";
 import { isWild, type Card, type Rank } from "@hf/shared";
 import { PlayingCard } from "../cards/PlayingCard";
 import { cardLabel } from "../cards/cardText";
-import { isUnplayable, sortForDisplay, type PlayContext } from "../cards/handOrder";
+import { canLayOff, isUnplayable, sortForDisplay, type PlayContext } from "../cards/handOrder";
 
 export interface HandProps {
   readonly cards: readonly Card[];
@@ -90,7 +90,7 @@ export function Hand({
 
   function renderCard(card: Card, position: number, rowLength: number): React.ReactElement {
     const owed = owedIds.has(card.id);
-    const melded = !isWild(card.rank) && meldRanks.has(card.rank);
+    const melded = canLayOff(card, meldRanks, playContext);
     const lifted = stagedIds.has(card.id) || chosenId === card.id;
     const fresh = card.id === newId;
     return (

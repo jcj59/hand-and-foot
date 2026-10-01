@@ -356,3 +356,13 @@ describe("who is sitting down", () => {
     expect(window.localStorage.getItem(IDENTITY_KEY)).toBe(before);
   });
 });
+
+describe("the scenario viewer", () => {
+  it("is a link from the home screen in a development build", () => {
+    mount(fakeSocket().socket);
+    expect(screen.getByRole("link", { name: /scenario viewer/i })).toHaveAttribute(
+      "href",
+      "/scenarios",
+    );
+  });
+});
