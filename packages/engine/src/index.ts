@@ -20,6 +20,7 @@ export * from "./grabby";
 export * from "./lastMove";
 export * from "./playback";
 export * from "./marva";
+export * from "./arena";
 
 export const defaultConfig: RulesConfig = EAST_COAST;
 

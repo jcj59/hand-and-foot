@@ -39,12 +39,17 @@ Run from the repo root. These are exactly what CI runs, in this order:
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm typecheck        # turbo run typecheck -> tsc --noEmit per package
+pnpm typecheck        # turbo run typecheck -> tsc --noEmit per package, then scripts/bot-eval
 pnpm lint             # eslint . (flat config, typescript-eslint recommended)
 pnpm test             # turbo run test -> vitest run per package
 pnpm format:check     # prettier --check .
 pnpm format           # prettier --write . (use this rather than hand-formatting)
 ```
+
+The heuristic bot's headless measurement (not part of CI; about a minute at the default 500
+matches per row) is `pnpm bot:measure`, with `--matches N`, `--seed S` and `--preset east|west`.
+It runs `scripts/bot-eval/measure.ts` through `tsx`, which is why the root carries `tsx` and
+`@types/node`; the script has its own `tsconfig.json`, typechecked by the root `typecheck`.
 
 The server's database tests (store contract, migrations, restart over real sockets, the real
 opener in `main.ts`) run only when `HF_TEST_DATABASE_URL` is set, and skip otherwise. Each such
@@ -159,9 +164,10 @@ other 6 proven equivalent**, and **20/20 shared**.
 If you add engine behavior, validate it the same way rather than trusting coverage: break the new
 guard, confirm the intended test fails, restore, and confirm `git diff` is empty.
 
-The 6 surviving engine mutants are *equivalent*. Five are unreachable because a second guard shields
-them, each proven by removing that guard too and watching the suite fail; the sixth is an arithmetic
-no-op. Don't "fix" these with a test; the state they need cannot be reached through `applyAction`:
+The 6 surviving engine mutants are *equivalent* (a seventh came with roadmap item 7a; see the
+last row). Five are unreachable because a second guard shields them, each proven by removing that
+guard too and watching the suite fail; the sixth is an arithmetic no-op. Don't "fix" these with a
+test; the state they need cannot be reached through `applyAction`:
 
 | Mutation | Why it is unobservable |
 | --- | --- |
@@ -170,6 +176,7 @@ no-op. Don't "fix" these with a test; the state they need cannot be reached thro
 | `plan`: treat wilds as naturals | Same guard: an all-wild group fails `validateMeld`, so it is skipped. |
 | `plan`: credit a book bonus the player already had | `value` is only *used* when `!isDown`, and a not-down player holds no melds, so `existing` is empty. |
 | `policy`: drop `c.id !== card.id` from the companion count | Not a shielded branch but an arithmetic no-op: it adds exactly 1 to *every* candidate's `keepScore`, so the ranking — and the card chosen — is unchanged. Keep the clause anyway; "companions" means the *other* cards, and removing it would make the name a lie. |
+| `policy`: `heuristicAction` discards with `discardFrom(zone, [], …)` instead of its melds | By the time the heuristic discards, every natural of a melded rank has already been played onto its meld (a natural never breaks the wild ratio), so no card left in the zone has a meld to join and `hasMeld` is false either way. Keep the melds: they are `discardFrom`'s contract, and passing `[]` would be correct only by accident. |
 
 The `plan` book-bonus row rests on a premise: **a not-down player never holds melds.**
 `assertWellFormed` in `invariants.property.test.ts` checks it over thousands of random games. Since
@@ -625,9 +632,35 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   section in `DESIGN.md` is a placeholder. Observation = `PlayerView` (by construction the agent
   cannot see more than a human), reward is end-of-round. The evaluation baseline is **not**
   `defaultAction`: that is a safe timeout default that never melds, so it never scores and never ends
-  a round. A playing heuristic strong enough to be a baseline is separate work; it belongs beside
-  `defaultAction` in `policy.ts` and should reuse `chooseDiscard`. `LoggedAction.source` marks which
-  moves were forced, so timeouts can be filtered out of any imitation-learning corpus.
+  a round. The baseline is `heuristicAction` (roadmap item 7a, below). `LoggedAction.source` marks
+  which moves were forced, so timeouts can be filtered out of any imitation-learning corpus.
+- **Heuristic bot policy (roadmap item 7a).** `heuristicAction(view, config)` in `policy.ts`, beside
+  `defaultAction`, plays to win: take the pile when `greedyLayDown` says the reducer would allow it
+  and it holds at most `MAX_PILE_RED_THREES` (2, pinned) red threes; get down as soon as the
+  lay-down reaches the minimum, or melds the whole hand under the Marva rule; once down, lay every
+  natural that joins or opens a meld; spend wilds by `placeWilds`; otherwise discard by
+  `discardFrom` (`chooseDiscard`'s judgement over a zone and melds rather than a `GameState` seat —
+  the refactor that let the heuristic share it). It takes a **`PlayerView`**, not a `GameState`, so
+  it cannot read a hidden card by construction; the property test also re-deals every card the seat
+  cannot see and checks the move does not change (a peeking mutant was confirmed caught).
+  Deterministic, no rng. Wilds: never on a clean book or on the clean meld nearest a book while a
+  clean book is still owed; spent from the hand only to complete a book; from the foot also onto a
+  *spare* clean book (more clean books than going out needs, too few dirty), then the unfinished
+  meld nearest seven, then a dirty book. The spare-clean rule exists because without it a seat
+  melded seven clean books, ran out of cards for a dirty one, and drew and discarded threes forever.
+  `arena.ts` has `playMatch(policies, config, seed, roundActionLimit)` (a seat per policy,
+  `nextRound` dealt as the table would, **throws** on a refused or missing move, calls a round
+  stalled after `ROUND_ACTION_LIMIT` 5,000 actions), `winners`, and
+  `heuristicPolicy`/`defaultPolicy`. Tests: `reducer.heuristic.test.ts` (through `applyAction`),
+  `arena.test.ts`, `heuristic.property.test.ts` (~650 random matches at 2–6 seats on both presets,
+  plus mixed tables, plus 300 fixed-seed matches asserting >99% of rounds end, all by going out).
+  Mutation: 68 mutants over the heuristic, `discardFrom` and the arena, 67 killed, 1 equivalent
+  (table above). Measured (`pnpm bot:measure`, 500 matches per row, East Coast): beats
+  `defaultAction` in 99.5% / 96.8% / 86.8% of 2- / 3- / 4-player matches; against itself the seats
+  split about evenly; every round of bot-only play ends but 2 in some 6,000. Tuning was done head to
+  head (two copies, seats swapped): a red-three limit of 2 beat 1, 3 and 4; the clean-book guard is
+  worth about ten points of win rate; spending wilds from the hand too, and avoiding discards an
+  opponent's meld could use, made no measurable difference, so neither is in.
 
 ## Known wrinkles and open questions
 
@@ -685,6 +718,15 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   requires that `wentOutSeat` is still unset. Otherwise a player who sheds their last card during the
   final lap while holding the books steals the go-out (and, via `playMelds`, restarts the final lap).
   `reducer.shedall.test.ts` covers this.
+- **A round can deadlock, with any players.** Under `stockExhaustion: "reshuffle"` nothing ends a
+  round but someone going out, and going out can become impossible: every card that could finish a
+  seat's missing book is already melded or held for good, the stock is reshuffled from discarded
+  threes forever, and the round never ends. Heuristic tables hit it about once in 3,000 rounds. A
+  heuristic among defaults hits it far more (about one round in six at four seats), as defaults
+  never meld or throw a wild, so the stock drains to threes and the bot's hand of unmeldable threes
+  cannot shrink. So a bot taking over absent seats (item 7b) would make an abandoned table end
+  *most* rounds, not all: keep the reaper. A rules answer (end the round after N reshuffles, say)
+  would be a new decision for `DESIGN.md`, not a bot fix.
 - **Local pnpm drift — resolved, but stay alert (as of 2026-09-26).** The local pnpm is 9.15.9 and
   matches `packageManager`, so `pnpm install` is currently safe and leaves the lockfile alone. The
   hazard that caused the earlier drift has not gone away: a globally installed pnpm 12 self-pins on
