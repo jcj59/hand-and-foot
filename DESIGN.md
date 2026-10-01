@@ -415,9 +415,9 @@ paused one morning was still open that evening. So a table's lifetime is now dec
 
 - A paused table is closed half an hour after it was paused, whoever is still connected. A pause is
   for a break; a tab left open on a paused table is not somebody playing.
-- A family table can be saved for later while paused, which keeps it for a week instead, and it is
-  not closed for being empty in the meantime, since everyone leaving is the point. Anyone who comes
-  back resumes it, and resuming makes it an ordinary table again.
+- A family table can be saved for later, mid-turn or between rounds, which pauses it if it was not
+  paused and keeps it for a week instead. It is not closed for being empty in the meantime, since
+  everyone leaving is the point; see "Finishing a game another day" below.
 - A table nobody is playing pauses itself, once a whole lap of turns has been played by the clock
   with nobody at the table moving; then the pause's half hour applies. Without this a forgotten,
   unpaused table would be played by the server forever, since the default policy never melds and so
@@ -429,6 +429,32 @@ paused one morning was still open that evening. So a table's lifetime is now dec
 When the pause began is saved with the table, so neither a restart nor a Durable Object waking gives
 a paused table a fresh half hour. Players still at a table when it closes are told why and sent
 home, rather than finding out on their next click.
+
+### Finishing a game another day
+
+A pause is for a break; a saved game is for a group that wants to stop tonight and finish the match
+another evening. Three things make that different from leaving a paused table open.
+
+Leaving a saved game does not give up the seat. After the deal, leaving normally marks a seat as
+gone for good, so that the server plays it at once rather than stalling the table; for a saved game
+that would have every player who went home played the moment it resumed. The seat is only left
+empty, so a player who has not come back gets the ordinary reconnect grace from the resume.
+
+Coming back leads to a waiting room rather than straight to the cards. Everyone at a saved table
+sees who has returned, and the host picks the game back up once they are satisfied the table is
+there — or anyone may, if the host is the one who has not come back, so that one absence cannot
+hold the game. Until then nothing can be played, and nobody can be dealt the next round: whoever
+said they were ready before the game was put away says so again after it resumes, having seen the
+scores a second time.
+
+The way back is kept on the device rather than in the seat the browser remembers. That seat is
+replaced by whichever table the player sits at next, which in a week of other games is almost
+certain, so each saved game keeps its own seat in a list the home screen shows apart from the
+ordinary Rejoin. The list follows what the server says — a table is remembered while it is saved
+and forgotten when it resumes or closes — and is never the authority on whether a game still
+exists: the seat token is, and a refused one simply drops the entry. The list is per device; moving
+a saved game to another device would mean finding a player's seats by their identity, which the
+server already records with each seat but does not yet offer as a lookup.
 
 ### Watching a game back
 

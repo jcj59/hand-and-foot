@@ -209,7 +209,7 @@ describe("closing a table that was left", () => {
   });
 });
 
-describe("saving a paused game for later", () => {
+describe("saving a game for later", () => {
   it("is asked for over the channel, and everyone sees until when", async () => {
     const { channel, room } = table(["ana", "ben"]);
     const [ana, ben] = [peer(), peer()];
@@ -217,17 +217,24 @@ describe("saving a paused game for later", () => {
     const b = channel.connect(ben);
     await ask(channel, a, "resumeSeat", { roomId: "TBL234", token: "tok-0" });
     await ask(channel, b, "resumeSeat", { roomId: "TBL234", token: "tok-1" });
-    await ask(channel, a, "startGame");
     await ask(channel, a, "saveForLater");
     expect(ana.frames.at(-1)).toMatchObject({
-      result: { ok: false, error: "pause the table before saving it for later" },
+      result: { ok: false, error: "the game has not started" },
     });
-    await ask(channel, a, "setPaused", { paused: true });
+    await ask(channel, a, "startGame");
+    // Mid-turn, with no pause first: saving pauses it too.
     await ask(channel, b, "saveForLater");
     expect(ben.frames.filter((f) => "ack" in f).at(-1)).toMatchObject({ result: { ok: true } });
     const savedUntil = room.info().savedUntil;
     expect(savedUntil).not.toBeNull();
-    expect(ana.frames.at(-1)).toMatchObject({ event: "room", payload: { savedUntil } });
+    expect(ana.frames).toContainEqual(
+      expect.objectContaining({ event: "room", payload: expect.objectContaining({ savedUntil }) }),
+    );
+    // The clock everyone sees stops with it.
+    expect(ana.frames.at(-1)).toMatchObject({
+      event: "view",
+      payload: { clock: { paused: true, deadlineAt: null }, room: { savedUntil } },
+    });
     // A connection holding no seat cannot.
     const nobody = peer();
     await ask(channel, channel.connect(nobody), "saveForLater");

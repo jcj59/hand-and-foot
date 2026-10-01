@@ -10,8 +10,10 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-
 import { leaveOnClose, reclaimOnReconnect, reclaimSeat } from "./actions";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { loadCredentials } from "./credentials";
+import { forgetSavedGame } from "./savedGames";
 import { Home } from "./routes/Home";
 import { Lobby } from "./routes/Lobby";
+import { SavedGame } from "./routes/SavedGame";
 import { Table } from "./routes/Table";
 import { attachSession, useSession } from "./session";
 import type { HfClientSocket } from "./socket";
@@ -66,7 +68,17 @@ export function App({ socket }: AppProps): React.ReactElement {
   useEffect(installAudio, []);
 
   useEffect(
-    () => leaveOnClose(socket, { leave, setNotice, goHome: () => navigate("/") }),
+    () =>
+      leaveOnClose(socket, {
+        leave: () => {
+          // A closed table is gone for good, saved or not: nothing to come back to.
+          const closed = useSession.getState().credentials?.roomId;
+          if (closed) forgetSavedGame(closed);
+          leave();
+        },
+        setNotice,
+        goHome: () => navigate("/"),
+      }),
     [socket, leave, setNotice, navigate],
   );
 
@@ -155,13 +167,16 @@ function ResumeSeat({ socket }: { readonly socket: HfClientSocket }): null {
  * A visitor with no seat gets the join form with the code already filled in, which
  * is what arriving from a shared link looks like. Once seated, the room's own
  * `started` flag decides between the lobby and the table — the server owns that
- * transition, so the client reads it rather than tracking it.
+ * transition, so the client reads it rather than tracking it. A game saved for
+ * later is a waiting room of its own until the host picks it back up, whether the
+ * player was at the table when it was saved or came back to it days later.
  */
 function RoomRoute({ socket }: { readonly socket: HfClientSocket }): React.ReactElement {
   const credentials = useSession((s) => s.credentials);
   const room = useSession((s) => s.room);
 
   if (!credentials) return <Home socket={socket} />;
+  if (room?.started && room.savedUntil != null) return <SavedGame socket={socket} />;
   if (room?.started) return <Table socket={socket} />;
   return <Lobby socket={socket} />;
 }

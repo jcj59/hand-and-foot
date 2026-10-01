@@ -11,11 +11,14 @@ import {
   play,
   reclaimOnReconnect,
   reclaimSeat,
+  resumeSavedGame,
+  SAVED_GAME_GONE,
   startTable,
   type ActionSink,
 } from "./actions";
 import { CREDENTIALS_KEY, loadCredentials, saveCredentials } from "./credentials";
-import { ACK_TIMEOUT_MS, type HfClientSocket } from "./socket";
+import { loadSavedGames, rememberSavedGame } from "./savedGames";
+import { ACK_TIMEOUT_MS, NO_RESPONSE, type HfClientSocket } from "./socket";
 
 /** A socket that records what was sent and answers with a queued ack. */
 function fakeSocket(answers: Ack<unknown>[]): {
@@ -179,6 +182,48 @@ describe("reclaimSeat", () => {
     const { socket } = fakeSocket([{ ok: false, error: "no room with that code" }]);
     expect(await reclaimSeat(socket, credentials, sink())).toBe("gone");
     expect(loadCredentials()).toBeNull();
+  });
+});
+
+describe("resumeSavedGame", () => {
+  const game = { ...credentials, savedUntil: 9e15, names: ["ana"], round: 2 };
+
+  it("sends only the seat, and sits in the one the server resolved", async () => {
+    const resolved = { ...credentials, seat: 1 };
+    const { socket, sent } = fakeSocket([{ ok: true, data: resolved }]);
+    const target = sink();
+    expect(await resumeSavedGame(socket, game, target)).toBe(true);
+    expect(sent).toEqual([{ event: "resumeSeat", args: [credentials] }]);
+    expect(target.seated).toEqual([resolved]);
+    expect(target.notices).toEqual([null]);
+  });
+
+  it("keeps a saved game the server did not answer about, and says so", async () => {
+    rememberSavedGame(game);
+    vi.useFakeTimers();
+    try {
+      const silent = { emit: () => silent } as unknown as HfClientSocket;
+      const target = sink();
+      const pending = resumeSavedGame(silent, game, target);
+      await vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS);
+      expect(await pending).toBe(false);
+      expect(target.notices).toEqual([NO_RESPONSE]);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(loadSavedGames()).toEqual([game]);
+  });
+
+  it("forgets a saved game that is gone, and only that, not the stored seat", async () => {
+    rememberSavedGame(game);
+    const elsewhere = { roomId: "OTHER2", seat: 0, token: "x" };
+    saveCredentials(elsewhere);
+    const { socket } = fakeSocket([{ ok: false, error: "no room with that code" }]);
+    const target = sink();
+    expect(await resumeSavedGame(socket, game, target)).toBe(false);
+    expect(target.notices).toEqual([SAVED_GAME_GONE]);
+    expect(loadSavedGames()).toEqual([]);
+    expect(loadCredentials()).toEqual(elsewhere);
   });
 });
 

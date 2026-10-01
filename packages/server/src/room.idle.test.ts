@@ -173,7 +173,7 @@ describe("how long a table is kept", () => {
     expect(room.info().savedUntil).toBeNull();
   });
 
-  it("will only save a paused family game", () => {
+  it("will only save a started family game", () => {
     const lobby = new Room("LOBBY2", EAST_COAST, {
       clock: new FakeClock(T0),
       seed: 1,
@@ -182,10 +182,6 @@ describe("how long a table is kept", () => {
     lobby.join("ana");
     expect(lobby.saveForLater(0)).toEqual({ ok: false, error: "the game has not started" });
     const { room } = started();
-    expect(room.saveForLater(0)).toEqual({
-      ok: false,
-      error: "pause the table before saving it for later",
-    });
     expect(room.saveForLater(5)).toEqual({ ok: false, error: "no such seat" });
     const competitive = started(COMPETITIVE).room;
     expect(competitive.saveForLater(0)).toEqual({

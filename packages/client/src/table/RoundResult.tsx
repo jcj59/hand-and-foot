@@ -34,6 +34,11 @@ export interface RoundResultActions {
   readonly onPlayAgain: () => void;
   /** Say ready for the next round of the match. Offered until the last round. */
   readonly onNextRound: () => void;
+  /**
+   * Put the match away between rounds, to be finished another day. Offered until
+   * the last round, at family tables, as pausing is.
+   */
+  readonly onSaveForLater: () => void;
 }
 
 /** A signed number the way a scoreboard writes one. */
@@ -88,6 +93,15 @@ export function RoundResult({
           className="rounded bg-amber-300 px-3 py-1.5 text-sm font-medium text-black disabled:opacity-60"
         >
           {iAmReady ? "Waiting for the others…" : "Next round"}
+        </button>
+      )}
+      {!result.matchOver && room.config.pauseEnabled && (
+        <button
+          type="button"
+          onClick={actions.onSaveForLater}
+          className="rounded border border-sky-200/60 px-3 py-1.5 text-sm text-sky-100"
+        >
+          Save for later
         </button>
       )}
       <button

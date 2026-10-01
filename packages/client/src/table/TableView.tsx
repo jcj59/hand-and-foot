@@ -538,6 +538,23 @@ export function TableView({
         </div>
       </header>
 
+      {/* Straight under the controls, above everything it holds still: a paused
+          table is the first thing to know about it, and below the players it was
+          pushed out of sight whenever their boxes were tall. */}
+      <PauseBar
+        room={room}
+        nameOf={nameOf}
+        busy={busy}
+        onResume={() => {
+          setBusy(true);
+          void controls?.pause(false).finally(() => setBusy(false));
+        }}
+        onSaveForLater={() => {
+          setBusy(true);
+          void controls?.saveForLater().finally(() => setBusy(false));
+        }}
+      />
+
       <div className="shrink-0">
         {!phone && (
           // On a computer the other players are shown in full, with their melds;
@@ -575,20 +592,6 @@ export function TableView({
           />
         )}
       </div>
-
-      <PauseBar
-        room={room}
-        nameOf={nameOf}
-        busy={busy}
-        onResume={() => {
-          setBusy(true);
-          void controls?.pause(false).finally(() => setBusy(false));
-        }}
-        onSaveForLater={() => {
-          setBusy(true);
-          void controls?.saveForLater().finally(() => setBusy(false));
-        }}
-      />
 
       {lastLap && !result && (
         // Loud on purpose: a player who misses this plays their last turn as if the
@@ -853,6 +856,7 @@ export function TableView({
               onLeave: controls.leave,
               onPlayAgain: controls.playAgain,
               onNextRound: controls.nextRound,
+              onSaveForLater: () => void controls.saveForLater(),
             }
           }
           notice={notice}

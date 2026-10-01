@@ -6,6 +6,10 @@
  * the only thing missing is a name. When that happens the join half is filled in
  * and focused, and the create half stays available for someone who followed a link
  * to a table that has since gone.
+ *
+ * Games saved for later have a section of their own, apart from the one table this
+ * tab still has a seat at: going back to a saved game is not rejoining a table in
+ * progress, it is the start of a gathering, so it leads to that game's waiting room.
  */
 import { useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -17,9 +21,10 @@ import {
   type RulesPreset,
   type UserCredentials,
 } from "@hf/shared";
-import { createTable, joinTable } from "../actions";
+import { createTable, joinTable, resumeSavedGame } from "../actions";
 import { loadCredentials } from "../credentials";
 import { isPossibleRoomCode, normalizeRoomCode } from "../roomCode";
+import { loadSavedGames, type SavedGame } from "../savedGames";
 import { useSession } from "../session";
 import { serverUrl, type HfClientSocket } from "../socket";
 import {
@@ -50,7 +55,13 @@ export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React
   // without leaving it — and the way back to it.
   // A seat held in this tab, or one saved by an earlier visit that has not been
   // reclaimed: reloading the home screen leaves it unclaimed until Rejoin.
-  const held = useSession((s) => s.credentials) ?? loadCredentials();
+  const stored = useSession((s) => s.credentials) ?? loadCredentials();
+  // Kept until their tables close; one past that is only clutter.
+  const [savedGames, setSavedGames] = useState(() =>
+    loadSavedGames().filter((g) => g.savedUntil > Date.now()),
+  );
+  // A seat at a saved game is offered as that, below, not as a table to rejoin.
+  const held = stored && !savedGames.some((g) => g.roomId === stored.roomId) ? stored : null;
 
   // The name this player went by last time, ready to use again or change.
   const [name, setName] = useState(loadName);
@@ -63,6 +74,18 @@ export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React
 
   const named = name.trim() !== "";
   const sink = { seat, setNotice };
+
+  async function resume(game: SavedGame): Promise<void> {
+    if (busy) return;
+    setBusy(true);
+    try {
+      if (await resumeSavedGame(socket, game, sink)) navigate(`/room/${game.roomId}`);
+      // A game that turned out to be gone has been forgotten; stop offering it.
+      else setSavedGames(loadSavedGames().filter((g) => g.savedUntil > Date.now()));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function submit(event: FormEvent, join: boolean): Promise<void> {
     event.preventDefault();
@@ -98,6 +121,36 @@ export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React
           >
             Rejoin
           </button>
+        </section>
+      )}
+      {savedGames.length > 0 && (
+        <section aria-label="Saved games" className="flex flex-col gap-2">
+          <h2 className="text-sm font-medium text-sky-100">Saved games</h2>
+          <ul className="flex flex-col gap-2">
+            {savedGames.map((game) => (
+              <li
+                key={game.roomId}
+                className="flex items-center justify-between gap-3 rounded border border-sky-300/50 bg-sky-500/10 p-3"
+              >
+                <div className="min-w-0 text-sm">
+                  <p className="truncate">{game.names.join(", ")}</p>
+                  <p className="text-xs text-white/60">
+                    Table {game.roomId} · round {game.round} · kept until{" "}
+                    {formatDay(game.savedUntil)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void resume(game)}
+                  aria-label={`Resume the game at table ${game.roomId}`}
+                  className="shrink-0 rounded bg-sky-300 px-3 py-1.5 text-sm font-medium text-black disabled:opacity-40"
+                >
+                  Resume
+                </button>
+              </li>
+            ))}
+          </ul>
         </section>
       )}
       <header>
@@ -287,4 +340,8 @@ function IdentityPanel({ post }: { readonly post: Post }): React.ReactElement {
       </div>
     </details>
   );
+}
+
+function formatDay(at: number): string {
+  return new Date(at).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
 }

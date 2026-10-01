@@ -21,6 +21,7 @@ import type {
   UserCredentials,
 } from "@hf/shared";
 import { clearCredentials } from "./credentials";
+import { forgetSavedGame } from "./savedGames";
 import { normalizeRoomCode } from "./roomCode";
 import * as wire from "./socket";
 import type { HfClientSocket } from "./socket";
@@ -101,6 +102,40 @@ export async function reclaimSeat(
   if (result.error === wire.NO_RESPONSE) return "unreachable";
   clearCredentials();
   return "gone";
+}
+
+/** Shown when a game saved for later is no longer there to go back to. */
+export const SAVED_GAME_GONE = "that saved game is no longer available";
+
+/**
+ * Go back to a game saved for later, from the home screen's list.
+ *
+ * Not `reclaimSeat`: that discards the stored seat on a refusal, and the seat
+ * stored is not necessarily this game's — the player may have sat down somewhere
+ * else since saving it. A refusal here forgets only this saved game.
+ */
+export async function resumeSavedGame(
+  socket: HfClientSocket,
+  game: SeatCredentials,
+  sink: ActionSink,
+): Promise<boolean> {
+  const result = await wire.resumeSeat(socket, {
+    roomId: game.roomId,
+    seat: game.seat,
+    token: game.token,
+  });
+  if (result.ok) {
+    sink.seat(result.data);
+    sink.setNotice(null);
+    return true;
+  }
+  if (result.error === wire.NO_RESPONSE) {
+    sink.setNotice(result.error);
+    return false;
+  }
+  forgetSavedGame(game.roomId);
+  sink.setNotice(SAVED_GAME_GONE);
+  return false;
 }
 
 /** What `reclaimOnReconnect` needs from the store. */
@@ -223,7 +258,11 @@ export async function sendReaction(socket: HfClientSocket, id: ReactionId): Prom
   return (await wire.react(socket, id)).ok;
 }
 
-/** Keep this paused family table for a week, to be picked up again later. */
+/**
+ * Keep this family table for a week, to be picked up again later. The server
+ * pauses it too if it was not paused already, so this works mid-turn and between
+ * rounds alike.
+ */
 export async function saveTableForLater(
   socket: HfClientSocket,
   sink: ActionSink,
