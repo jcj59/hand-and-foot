@@ -307,7 +307,12 @@ export class TableObject extends DurableObject<Env> {
       }
       for (;;) {
         const code = newCode();
-        const opened = await this.env.TABLES.getByName(code).open(code, room.config, player.name);
+        const opened = await this.env.TABLES.getByName(code).open(
+          code,
+          room.config,
+          player.name,
+          player.userId ?? null,
+        );
         if (opened === TAKEN) continue;
         if (opened.ok) room.nextRoomId = code;
         return opened;

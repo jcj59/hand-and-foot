@@ -9,9 +9,11 @@
  * a server that cannot be reached means sitting down without one this time.
  */
 import {
+  IDENTITY_TAKEN,
   isUserCredentials,
   normalizeName,
   parseTransferCode,
+  UNKNOWN_IDENTITY,
   USERS_PATH,
   type Ack,
   type UserCredentials,
@@ -104,8 +106,8 @@ export function httpPost(base: string): Post {
  * Register this browser's identity under `name`, and return the credentials to sit
  * down with — or null if the server could not be asked in time, in which case the
  * player sits down without an identity rather than not at all. An identity the
- * server will not accept (someone else's, after storage was copied) is replaced
- * with a fresh one.
+ * server says is someone else's (after storage was copied) is replaced with a fresh
+ * one; any other refusal — a server whose store failed — keeps it for next time.
  */
 export async function prepareIdentity(
   post: Post,
@@ -115,7 +117,7 @@ export async function prepareIdentity(
   const attempt = async (): Promise<UserCredentials | null> => {
     let identity = ensureIdentity();
     let answer = await post(USERS_PATH, { ...identity, name });
-    if (!answer.ok) {
+    if (!answer.ok && answer.error === IDENTITY_TAKEN) {
       identity = newIdentity();
       saveIdentity(identity);
       answer = await post(USERS_PATH, { ...identity, name });
@@ -143,7 +145,15 @@ export async function adoptTransferCode(post: Post, code: string): Promise<Ack<U
   if (!identity) return { ok: false, error: "that is not a transfer code" };
   try {
     const answer = await post(USERS_PATH, { ...identity, existing: true });
-    if (!answer.ok) return { ok: false, error: "that code is not a known identity" };
+    if (!answer.ok) {
+      const unknown = answer.error === UNKNOWN_IDENTITY || answer.error === IDENTITY_TAKEN;
+      return {
+        ok: false,
+        error: unknown
+          ? "that code is not a known identity"
+          : "could not check that code; try again",
+      };
+    }
   } catch {
     return { ok: false, error: "could not reach the server; try again" };
   }

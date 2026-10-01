@@ -17,6 +17,11 @@ export interface UserCredentials {
 /** Register an identity, or confirm one and update its name: POST `{ userId, secret, name }`. */
 export const USERS_PATH = "/api/users";
 
+/** The server's refusals of a registration, which the client tells apart. */
+export const NOT_AN_IDENTITY = "that is not an identity";
+export const IDENTITY_TAKEN = "that identity belongs to another browser";
+export const UNKNOWN_IDENTITY = "there is no such identity";
+
 /**
  * Generated ids and secrets are long random strings from this alphabet; anything
  * else is refused before it reaches storage.

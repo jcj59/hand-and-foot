@@ -11,7 +11,17 @@
  * An identity says who someone is, never what they may do: the seat token is
  * still the only thing that lets a connection act at a table.
  */
-import { isUserCredentials, normalizeName, type Ack, type UserCredentials } from "@hf/shared";
+import {
+  IDENTITY_TAKEN,
+  isUserCredentials,
+  normalizeName,
+  NOT_AN_IDENTITY,
+  UNKNOWN_IDENTITY,
+  type Ack,
+  type UserCredentials,
+} from "@hf/shared";
+
+export { IDENTITY_TAKEN, NOT_AN_IDENTITY, UNKNOWN_IDENTITY };
 
 export interface UserRecord {
   readonly userId: string;
@@ -51,10 +61,6 @@ export async function hashSecret(secret: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
-
-export const NOT_AN_IDENTITY = "that is not an identity";
-export const IDENTITY_TAKEN = "that identity belongs to another browser";
-export const UNKNOWN_IDENTITY = "there is no such identity";
 
 /**
  * Register an identity, or confirm one and remember the name it now goes by. The

@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
-import type { Ack } from "@hf/shared";
+import { IDENTITY_TAKEN, UNKNOWN_IDENTITY, type Ack } from "@hf/shared";
 import {
   IDENTITY_KEY,
   NAME_KEY,
@@ -86,7 +86,7 @@ describe("registering before sitting down", () => {
 
   it("makes a fresh identity when the server says this one belongs to someone else", async () => {
     const before = ensureIdentity();
-    const post = answering({ ok: false, error: "that identity belongs to another browser" });
+    const post = answering({ ok: false, error: IDENTITY_TAKEN });
     const identity = await prepareIdentity(post, "Ana");
     expect(identity).not.toEqual(before);
     expect(loadIdentity()).toEqual(identity);
@@ -98,13 +98,24 @@ describe("registering before sitting down", () => {
       throw new Error("offline");
     };
     expect(await prepareIdentity(failing, "Ana")).toBeNull();
-    const refusing = answering({ ok: false, error: "x" }, { ok: false, error: "x" });
+    const refusing = answering(
+      { ok: false, error: IDENTITY_TAKEN },
+      { ok: false, error: IDENTITY_TAKEN },
+    );
     expect(await prepareIdentity(refusing, "Ana")).toBeNull();
     vi.useFakeTimers();
     const silent: Post = () => new Promise(() => {});
     const pending = prepareIdentity(silent, "Ana");
     vi.advanceTimersByTime(REGISTER_TIMEOUT_MS);
     expect(await pending).toBeNull();
+  });
+
+  it("keeps the identity it has when the server refuses for any other reason", async () => {
+    const before = ensureIdentity();
+    const post = answering({ ok: false, error: "the server could not answer that; try again" });
+    expect(await prepareIdentity(post, "Ana")).toBeNull();
+    expect(loadIdentity()).toEqual(before);
+    expect(post.sent).toEqual([{ ...before, name: "Ana" }]);
   });
 });
 
@@ -128,7 +139,18 @@ describe("moving an identity from another device", () => {
       error: "that is not a transfer code",
     });
     const code = `hf1.${other.userId}.${other.secret}`;
-    expect((await adoptTransferCode(answering({ ok: false, error: "no" }), code)).ok).toBe(false);
+    expect(
+      await adoptTransferCode(answering({ ok: false, error: UNKNOWN_IDENTITY }), code),
+    ).toEqual({
+      ok: false,
+      error: "that code is not a known identity",
+    });
+    expect(
+      await adoptTransferCode(
+        answering({ ok: false, error: "the server could not answer that; try again" }),
+        code,
+      ),
+    ).toEqual({ ok: false, error: "could not check that code; try again" });
     const offline: Post = async () => {
       throw new Error("offline");
     };

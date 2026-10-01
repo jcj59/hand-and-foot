@@ -9,6 +9,7 @@ import { configFor } from "@hf/server/core";
 import {
   HEALTH_PATH,
   isUserCredentials,
+  NOT_AN_IDENTITY,
   parseRoomPath,
   ROOMS_PATH,
   USERS_PATH,
@@ -69,7 +70,7 @@ export default {
     if (pathname === USERS_PATH && request.method === "POST") {
       const body = await readJson(request);
       if (!body) return json({ ok: false, error: "that request was not JSON" }, 400);
-      if (!isUserCredentials(body)) return json({ ok: false, error: "that is not an identity" });
+      if (!isUserCredentials(body)) return json({ ok: false, error: NOT_AN_IDENTITY });
       return json(await env.USERS.getByName(body.userId).register(body, Date.now()));
     }
 

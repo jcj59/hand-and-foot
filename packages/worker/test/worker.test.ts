@@ -594,4 +594,26 @@ describe("identities", () => {
     const ids = await insideTable(opened.data.roomId, (room) => room.seats().map((p) => p.userId));
     expect(ids).toEqual([ana.userId, ben.userId, undefined]);
   });
+
+  it("travels with each player to the next game, the first to go on included", async () => {
+    await register({ ...ana, name: "Ana" });
+    await register({ ...ben, name: "Ben" });
+    const host = client();
+    const guest = client();
+    const opened = await ask<SeatCredentials>(host, "createRoom", { name: "Ana", user: ana });
+    if (!opened.ok) throw new Error(opened.error);
+    await ask(guest, "joinRoom", { roomId: opened.data.roomId, name: "Ben", user: ben });
+    const dealt = nextView(host);
+    await ask(host, "startGame");
+    await dealt;
+    await insideTable(opened.data.roomId, (room) => {
+      const internal = room as unknown as { state: object };
+      internal.state = { ...room.gameState!, roundEnded: true, roundNumber: room.config.rounds };
+    });
+    const first = await ask<SeatCredentials>(host, "playAgain");
+    if (!first.ok) throw new Error(first.error);
+    expect((await ask<SeatCredentials>(guest, "playAgain")).ok).toBe(true);
+    const ids = await insideTable(first.data.roomId, (room) => room.seats().map((p) => p.userId));
+    expect(ids).toEqual([ana.userId, ben.userId]);
+  });
 });
