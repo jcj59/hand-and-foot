@@ -2770,6 +2770,13 @@ describe("quick reactions", () => {
     // Five seconds, so someone who glanced away can still read it. Pinned as a
     // literal: the symbolic advances below would move with the constant.
     expect(REACTION_SHOW_MS).toBe(5_000);
+    // And the bubble's fade runs that long too: the CSS animation used to be fixed at
+    // three seconds, leaving it invisible for the last two.
+    expect(
+      within(seat)
+        .getByRole("status", { name: "ben: Hurry up!" })
+        .style.getPropertyValue("--reaction-ms"),
+    ).toBe("5000ms");
     act(() => vi.advanceTimersByTime(REACTION_SHOW_MS - 100));
     expect(screen.getByRole("status", { name: "ben: Hurry up!" })).toBeInTheDocument();
     act(() => vi.advanceTimersByTime(100));

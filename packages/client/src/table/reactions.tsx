@@ -8,7 +8,7 @@
  * running into that limit by accident. Each device can mute other players'
  * reactions, which hides them and silences their sound.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { REACTIONS, type Reaction, type ReactionId } from "@hf/shared";
 
@@ -114,6 +114,8 @@ export function ReactionBubble({
     <span
       role="status"
       aria-label={`${name}: ${def.label}`}
+      // The fade lasts as long as the bubble is shown; see `.reaction-pop`.
+      style={{ "--reaction-ms": `${REACTION_SHOW_MS}ms` } as CSSProperties}
       className={`reaction-pop pointer-events-none absolute top-1 right-1 z-10 rounded-2xl rounded-br-sm bg-white font-semibold whitespace-nowrap text-felt-900 shadow-lg shadow-black/40 ${
         emoji ? "px-1.5 py-0.5 text-2xl leading-none" : "px-2 py-1 text-sm"
       }`}
