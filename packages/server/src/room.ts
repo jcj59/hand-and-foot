@@ -1,5 +1,6 @@
 import {
   CARRIED_ON_WITHOUT_YOU,
+  defaultAvatar,
   MAX_PLAYERS,
   MIN_PLAYERS,
   isReactionId,
@@ -22,6 +23,7 @@ import {
   deal,
   firstSeatFor,
   defaultAction,
+  heuristicPolicy,
   describeMove,
   grabbyPants,
   isMatchOver,
@@ -48,7 +50,33 @@ export { MAX_PLAYERS, MIN_PLAYERS };
  * margin exists only so a future rule change turns into a stuck turn we can see
  * rather than a loop that pins a core.
  */
-const MAX_FORCED_MOVES_PER_TURN = 12;
+const MAX_FORCED_MOVES_PER_TURN = 40;
+
+/**
+ * How long a computer player takes over each move: long enough that the people at
+ * the table can see what it did — a draw, a lay-down, a discard — one at a time,
+ * as they would watch a person play, and short enough not to keep them waiting.
+ */
+export const BOT_MOVE_MS = 1_200;
+
+/** Names for the computer players a host adds, in the order they are handed out. */
+export const BOT_NAMES = [
+  "Robo Rita",
+  "Robo Ray",
+  "Robo Rosa",
+  "Robo Rex",
+  "Robo Ruby",
+  "Robo Rudy",
+  "Robo Rhea",
+] as const;
+
+/**
+ * The move a computer plays for a seat: the heuristic, given only that seat's view,
+ * and the safe default should it ever have nothing to offer.
+ */
+function botMove(state: GameState, seat: number): Action | null {
+  return heuristicPolicy(state, seat) ?? defaultAction(state);
+}
 
 /**
  * Ceiling on how many staged groups the timeout will search combinations of. A
@@ -99,6 +127,12 @@ export interface RoomPlayer {
   readonly userId?: string;
   /** The picture they sat down with, if they chose one. Public: it is in `RoomInfo`. */
   readonly avatar?: Avatar;
+  /**
+   * A computer player the host added. It has a token like anyone, which never
+   * leaves the server; it is always connected and always ready, and the server
+   * plays its moves with the heuristic.
+   */
+  readonly bot?: true;
   /** When they dropped, so the reconnect grace can be measured. Null while connected. */
   disconnectedAt: number | null;
   /**
@@ -340,7 +374,12 @@ export class Room {
     });
     const now = deps.clock.now();
     for (const seat of record.players) {
-      room.players.push({ ...seat, connected: false, disconnectedAt: now });
+      // A computer player is back the moment its table is: it never had a socket.
+      room.players.push(
+        seat.bot
+          ? { ...seat, connected: true, disconnectedAt: null }
+          : { ...seat, connected: false, disconnectedAt: now },
+      );
     }
     // Rooms saved before hosting could be handed on have no host recorded; the
     // first seat hosted them.
@@ -375,6 +414,7 @@ export class Room {
         left: p.left,
         ...(p.userId ? { userId: p.userId } : {}),
         ...(p.avatar ? { avatar: p.avatar } : {}),
+        ...(p.bot ? { bot: true as const } : {}),
       })),
       started: this.started,
       ...(this.state ? { firstSeat: this.state.firstSeat ?? 0 } : {}),
@@ -463,7 +503,13 @@ export class Room {
 
   /** True once every seat has dropped — the signal for the manager to reap it. */
   get abandoned(): boolean {
-    return this.players.length > 0 && this.players.every((p) => !p.connected);
+    const people = this.people();
+    return people.length > 0 && people.every((p) => !p.connected);
+  }
+
+  /** The seats people sit in, not computer players: the ones a table is kept open for. */
+  private people(): RoomPlayer[] {
+    return this.players.filter((p) => !p.bot);
   }
 
   /**
@@ -472,12 +518,13 @@ export class Room {
    * generated and never used is reaped on the same schedule.
    */
   get abandonedSince(): number | null {
-    if (this.players.length === 0) return this.createdAt;
+    // A table of nobody, or of computer players alone, is as good as never used.
+    if (this.people().length === 0) return this.createdAt;
     if (!this.abandoned) return null;
-    // The last person to leave is when the room actually went quiet. Every seat
+    // The last person to leave is when the room actually went quiet. Every person
     // is disconnected here, so every one of them carries a timestamp.
     /* v8 ignore next */
-    return this.players.reduce((latest, p) => Math.max(latest, p.disconnectedAt ?? 0), 0);
+    return this.people().reduce((latest, p) => Math.max(latest, p.disconnectedAt ?? 0), 0);
   }
 
   join(name: string, { userId, avatar }: SeatProfile = {}): RoomResult<RoomPlayer> {
@@ -498,6 +545,41 @@ export class Room {
     this.hostToken ??= player.token;
     this.save();
     return succeed(player);
+  }
+
+  /**
+   * Sit a computer player at the table, so a person can play alone or fill a short
+   * table. The host's to do, before the deal, while there is a seat free. It takes
+   * the first name not already at the table and the picture drawn from that name.
+   */
+  addBot(bySeat: number): RoomResult<RoomPlayer> {
+    if (this.started) return fail("computer players can only be added before the deal");
+    if (bySeat !== this.hostSeat) return fail("only the host can add a computer player");
+    if (this.players.length >= MAX_PLAYERS) return fail(`a table seats at most ${MAX_PLAYERS}`);
+    const taken = new Set(this.players.map((p) => p.name));
+    const name = BOT_NAMES.find((n) => !taken.has(n)) ?? `Robo ${this.players.length + 1}`;
+    const bot: RoomPlayer = {
+      seat: this.players.length,
+      name,
+      token: this.deps.newToken(),
+      avatar: defaultAvatar(name),
+      bot: true,
+      connected: true,
+      disconnectedAt: null,
+      left: false,
+    };
+    this.players.push(bot);
+    this.save();
+    return succeed(bot);
+  }
+
+  /** Take a computer player away before the deal; the seats after it close up, as for a leave. */
+  removeBot(bySeat: number, seat: number): RoomResult<RoomPlayer> {
+    if (this.started) return fail("computer players can only be taken away before the deal");
+    if (bySeat !== this.hostSeat) return fail("only the host can take a computer player away");
+    const bot = this.players[seat];
+    if (!bot?.bot) return fail("there is no computer player in that seat");
+    return this.leave(bot.token);
   }
 
   /**
@@ -527,8 +609,9 @@ export class Room {
       // nobody else is holding it.
       if (pauser === player) this.unpause();
       else if (pauser) this.pausedSeat = pauser.seat;
-      // A departing host hands the table to whoever is now first in line.
-      if (this.hostToken === player.token) this.hostToken = this.players[0]?.token ?? null;
+      // A departing host hands the table to whoever is now first in line — a
+      // person, since a computer player cannot deal or carry on without anyone.
+      if (this.hostToken === player.token) this.hostToken = this.people()[0]?.token ?? null;
       this.save();
       return succeed(player);
     }
@@ -563,7 +646,8 @@ export class Room {
     const player = this.players[seat];
     if (!player || !isSeated(state, seat)) return fail("there is no such player");
     if (seat === bySeat) return fail("to leave the game yourself, leave the table");
-    if (player.connected) return fail(`${player.name} is still at the table`);
+    // A computer player is always at the table, and the host may still let it go.
+    if (player.connected && !player.bot) return fail(`${player.name} is still at the table`);
     const removed = this.remove(seat);
     if (!removed.ok) return removed;
     this.save();
@@ -593,8 +677,10 @@ export class Room {
     if (player.connected) this.setConnected(seat, false);
     if (this.hostToken === player.token) {
       // Hosting passes to the next player on from them who is still playing.
-      const next = this.players.find((p) => p.seat > seat && isSeated(removed.state, p.seat));
-      this.hostToken = (next ?? this.players.find((p) => isSeated(removed.state, p.seat)))!.token;
+      const candidates = this.people().filter((p) => isSeated(removed.state, p.seat));
+      const next = candidates.find((p) => p.seat > seat) ?? candidates[0];
+      // A table left with only computer players keeps its host: nobody can act on it.
+      if (next) this.hostToken = next.token;
     }
     // A pause belongs to the player who made it; it goes with them, as it does when
     // someone leaves the lobby. Not a saved game's: that pause is the whole table's.
@@ -661,8 +747,9 @@ export class Room {
   private dealNextRoundIfReady(): boolean {
     const state = this.state;
     if (!state?.roundEnded || this.matchOver) return false;
-    // A player taken out of the match is always marked left too.
-    const staying = this.players.filter((p) => !p.left);
+    // A player taken out of the match is always marked left too, and a computer
+    // player is always ready.
+    const staying = this.players.filter((p) => !p.left && !p.bot);
     if (!staying.every((p) => this.ready.has(p.token))) return false;
     // An ordinary action, logged like any other, so a restart replays the match
     // across its rounds.
@@ -743,6 +830,7 @@ export class Room {
     if (bySeat !== this.hostSeat) return fail("only the host can hand hosting to someone else");
     const target = this.players[toSeat];
     if (!target) return fail("no such seat");
+    if (target.bot) return fail("a computer player cannot host");
     this.hostToken = target.token;
     this.save();
     return succeed(undefined);
@@ -991,6 +1079,13 @@ export class Room {
     // quiet instead and let the manager reap the room.
     if (this.abandoned) return;
 
+    // A computer player moves at a person's pace, one move at a time, so the table
+    // can follow what it does.
+    if (this.players[state.currentSeat]?.bot) {
+      this.cancelTimer = this.deps.clock.setTimer(BOT_MOVE_MS, () => this.playBotMove());
+      return;
+    }
+
     // A player who is known gone does not get their clock burned every round:
     // one dropout would otherwise make a six-player table unplayable.
     if (this.seatIsAbsent(state.currentSeat)) {
@@ -1015,6 +1110,35 @@ export class Room {
 
     const delay = Math.max(0, wakeAt - this.deps.clock.now());
     this.cancelTimer = this.deps.clock.setTimer(delay, () => this.onTick());
+  }
+
+  /**
+   * One move by the computer player on turn, through the same path as a forced
+   * move, then the next is scheduled by `rearm` as for any accepted action. Its
+   * turn counts towards the table pausing itself: a lap of nothing but computer
+   * players and played-for seats is a table nobody is watching.
+   */
+  private playBotMove(): void {
+    this.cancelTimer = null;
+    const state = this.state;
+    /* v8 ignore next -- the timer is cancelled whenever the game stops being live */
+    if (!state || state.roundEnded) return;
+    const seat = state.currentSeat;
+    const action = botMove(state, seat);
+    /* v8 ignore next 2 -- the heuristic and the default are proven legal by the engine's property tests */
+    if (action === null || !this.apply(seat, action, "bot")) {
+      if (!this.applyFallback(seat)) return;
+    }
+    if (this.state?.currentSeat !== seat || this.state.roundEnded) this.afterForcedTurn();
+    else this.notify();
+  }
+
+  /* v8 ignore next 6 -- only reached if the heuristic offered a move the reducer refused */
+  private applyFallback(seat: number): boolean {
+    const state = this.state;
+    if (!state) return false;
+    const action = defaultAction(state);
+    return action !== null && this.apply(seat, action, "bot");
   }
 
   /** Whichever deadline came first has arrived; work out which one it was. */
@@ -1133,12 +1257,21 @@ export class Room {
       /* v8 ignore next */
       if (!state || state.roundEnded) break;
       if (state.currentSeat !== startedSeat) break;
-      const action = defaultAction(state);
+      // A player who has gone is played for properly, by the heuristic, so the
+      // round they are part of still gets played; one who is only out of time keeps
+      // the safe default, which commits them to nothing they did not choose.
+      const action =
+        source === "disconnect" ? botMove(state, state.currentSeat) : defaultAction(state);
       /* v8 ignore next */
       if (action === null) break;
       /* v8 ignore next */
       if (!this.apply(state.currentSeat, action, source)) break;
     }
+    this.afterForcedTurn();
+  }
+
+  /** A turn nobody at the table played is over: count it, and pause after a whole lap of them. */
+  private afterForcedTurn(): void {
     this.idleTurns++;
     const idle =
       this.deps.pauseWhenIdle !== false &&
@@ -1212,6 +1345,7 @@ export class Room {
         connected: p.connected,
         ...(p.avatar ? { avatar: p.avatar } : {}),
         ...(this.state && !isSeated(this.state, p.seat) ? { departed: true as const } : {}),
+        ...(p.bot ? { bot: true as const } : {}),
       })),
       hostSeat: this.hostSeat,
       started: this.started,

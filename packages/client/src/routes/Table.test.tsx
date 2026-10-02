@@ -3230,3 +3230,49 @@ describe("carrying on without a player", () => {
     );
   });
 });
+
+describe("a computer player at the table", () => {
+  const room = roomInfo({
+    players: [
+      { seat: 0, name: "ana", connected: true },
+      { seat: 1, name: "Robo Rita", connected: true, bot: true },
+      { seat: 2, name: "cy", connected: true },
+    ],
+  });
+
+  it("is labelled as a computer in its seat", () => {
+    mount(
+      fakeSocket().socket,
+      update({
+        room,
+        view: {
+          opponents: [
+            { seat: 1, handCount: 11, footCount: 11, melds: [], isDown: false, inFoot: false },
+            { seat: 2, handCount: 11, footCount: 11, melds: [], isDown: false, inFoot: false },
+          ],
+        },
+      }),
+    );
+    expect(screen.getByRole("listitem", { name: /^Robo Rita/ })).toHaveTextContent("computer");
+    expect(screen.getByRole("listitem", { name: /^cy/ })).not.toHaveTextContent("computer");
+  });
+
+  it("is not waited on for the next round", () => {
+    mount(fakeSocket().socket, update({ room }));
+    act(() =>
+      useSession.setState({
+        result: scored(
+          [
+            [0, 10],
+            [1, 20],
+            [2, 30],
+          ],
+          2,
+          { matchOver: false, roundNumber: 1 },
+        ),
+      }),
+    );
+    act(() => useSession.getState().applyRoom({ ...room, nextRoundReady: [0] }));
+    expect(screen.getByRole("status")).toHaveTextContent("(1 of 2)");
+  });
+});

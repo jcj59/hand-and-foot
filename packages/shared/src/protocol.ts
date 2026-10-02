@@ -23,7 +23,7 @@ import type {
 import type { Avatar } from "./avatar";
 
 /** Where an action in the log came from. */
-export type ActionSource = "player" | "timeout" | "disconnect";
+export type ActionSource = "player" | "timeout" | "disconnect" | "bot";
 
 /**
  * One entry in a room's append-only action log.
@@ -71,6 +71,8 @@ export interface RoomPlayerInfo {
   readonly connected: boolean;
   /** The picture they chose, if any; without one a seat is drawn from its name (`defaultAvatar`). */
   readonly avatar?: Avatar;
+  /** A computer player the host added. Always at the table; absent for people. */
+  readonly bot?: true;
   /**
    * Left the match between rounds: the seat is kept, for its scores, but no longer
    * plays. Absent for everyone still playing.
@@ -251,6 +253,10 @@ export interface ClientToServerEvents {
    * is for the smaller table.
    */
   removePlayer: (payload: { readonly seat: number }, ack: (result: Ack) => void) => void;
+  /** Sit a computer player at the table. Only the host may, and only before the deal. */
+  addBot: (ack: (result: Ack) => void) => void;
+  /** Take a computer player away again, before the deal. The host's call. */
+  removeBot: (payload: { readonly seat: number }, ack: (result: Ack) => void) => void;
   submitAction: (action: Action, ack: (result: Ack) => void) => void;
   /**
    * Once the round is over, get up from this table and into a waiting room for a

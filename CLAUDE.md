@@ -779,6 +779,29 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   with 1 equivalent — choosing the next host with `p.seat >= seat` rather than `>`, since the
   departing seat is not seated and so never chosen.
 
+- **Computer players (roadmap item 7b).** `RoomPlayer.bot` / `SeatRecord.bot` /
+  `RoomPlayerInfo.bot` (players JSON column, no migration). `Room.addBot(bySeat)` (host, before the
+  deal, a free seat; names from `BOT_NAMES`, picture `defaultAvatar(name)`) and
+  `Room.removeBot(bySeat, seat)` (host, before the deal, through the lobby `leave`, so seats close up
+  and the channel sends `seat` to anyone moved); requests `addBot` / `removeBot {seat}`. A bot is
+  always `connected` (restore brings it back connected), never waited on for the next round, never
+  host (`setHost` refuses; a departing host passes to a person, `people()`), and `abandoned` /
+  `abandonedSince` count people only — so the reaper still closes a table of bots. `rearm` gives a
+  bot seat a `BOT_MOVE_MS` (1200, pinned) timer per action → `playBotMove` →
+  `botMove` = `heuristicPolicy(state, seat) ?? defaultAction(state)`, applied through `apply` with
+  `ActionSource` **`"bot"`**; a bot's finished turn counts toward the idle pause
+  (`afterForcedTurn`). **Absent people are now played by `botMove` too** (`forceTurn("disconnect")`),
+  while a timeout keeps `defaultAction`; `MAX_FORCED_MOVES_PER_TURN` went to 40 since a heuristic
+  turn can take more moves. The host may `removePlayer` a bot between rounds although it is
+  connected. Client: Lobby "Add a computer player" / "Remove" (host), a "computer" label and a sky
+  dot instead of the connection dot in the lobby, seat boxes and phone chips; ready counts and the
+  saved-game list leave bots out. `room.idle.test.ts`'s round-end fixture now times both players
+  out rather than disconnecting one, because the heuristic may take the pile instead of drawing the
+  last card. Item 5's records should mark bot seats and keep them out of people's stats (the user's
+  decision, 2026-10-02). Mutation-tested: 24/24 server mutants killed; one only after the idle
+  test was sharpened to pause after exactly one lap (a bot turn not counting still paused, a lap
+  later).
+
 ## Known wrinkles and open questions
 
 ### Settled rules decisions (2026-08-04) — don't relitigate these
@@ -873,8 +896,8 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   threes forever, and the round never ends. Heuristic tables hit it about once in 3,000 rounds. A
   heuristic among defaults hits it far more (about one round in six at four seats), as defaults
   never meld or throw a wild, so the stock drains to threes and the bot's hand of unmeldable threes
-  cannot shrink. So a bot taking over absent seats (item 7b) would make an abandoned table end
-  *most* rounds, not all: keep the reaper. A rules answer (end the round after N reshuffles, say)
+  cannot shrink. So the heuristic taking over absent seats (item 7b, now done) makes an abandoned
+  table end *most* rounds, not all: keep the reaper. A rules answer (end the round after N reshuffles, say)
   would be a new decision for `DESIGN.md`, not a bot fix.
 - **Local pnpm drift — resolved, but stay alert (as of 2026-09-26).** The local pnpm is 9.15.9 and
   matches `packageManager`, so `pnpm install` is currently safe and leaves the lockfile alone. The

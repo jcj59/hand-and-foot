@@ -245,6 +245,23 @@ export class TableChannel {
         if (changed.ok) this.broadcastRoom();
         return;
       }
+      case "addBot": {
+        if (seated === null) return reply({ ok: false, error: NOT_SEATED });
+        const added = this.room.addBot(seated);
+        reply(added.ok ? { ok: true, data: undefined } : { ok: false, error: added.error });
+        if (added.ok) this.broadcastRoom();
+        return;
+      }
+      case "removeBot": {
+        if (seated === null) return reply({ ok: false, error: NOT_SEATED });
+        const before = new Map(this.room.seats().map((p) => [p.token, p.seat]));
+        const removed = this.room.removeBot(seated, Number(payload?.seat));
+        reply(removed.ok ? { ok: true, data: undefined } : { ok: false, error: removed.error });
+        if (!removed.ok) return;
+        this.tellMoved(before);
+        this.broadcastRoom();
+        return;
+      }
       case "removePlayer": {
         if (seated === null) return reply({ ok: false, error: NOT_SEATED });
         const removed = this.room.removePlayer(seated, Number(payload?.seat));

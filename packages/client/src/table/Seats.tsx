@@ -63,7 +63,7 @@ export function Seats({
               <span
                 aria-hidden="true"
                 className={`h-2 w-2 shrink-0 rounded-full ${
-                  info?.connected ? "bg-emerald-400" : "bg-red-400"
+                  info?.bot ? "bg-sky-300" : info?.connected ? "bg-emerald-400" : "bg-red-400"
                 }`}
               />
               {info && <AvatarFace avatar={faceOf(info)} size={24} />}
@@ -73,6 +73,7 @@ export function Seats({
               <span className="truncate text-sm font-medium">
                 {info?.name ?? `Seat ${opponent.seat}`}
               </span>
+              {info?.bot && <span className="text-xs text-sky-200/80">computer</span>}
               {onTurn && <span className="ml-auto text-xs text-amber-200">to play</span>}
             </div>
 

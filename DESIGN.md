@@ -349,7 +349,8 @@ default move on their behalf. That default is a pure function in the engine, so 
 replays exactly like a chosen one. It is deliberately conservative — it draws, settles a take-pile
 obligation if one is open, and otherwise discards by heuristic, but it never melds voluntarily,
 because laying a player's cards down while they are away commits them to a position they never
-chose. (A lay-down the player had staged themselves is different: they did choose it, so it is
+chose. (A player who has *gone* — past the reconnect grace, or left — is the exception, played by
+the heuristic; see "Computer players".) (A lay-down the player had staged themselves is different: they did choose it, so it is
 played before the default takes over.) One consequence matters for the server: a table of nothing
 but defaults never ends a round, so an abandoned room is reaped rather than left to finish. The
 heuristic that plays to win, and serves as the agent's evaluation baseline, is a separate function
@@ -658,6 +659,31 @@ Among heuristic players it is rare. Beside defaults, which hoard their wilds and
 common enough to matter, since the stock drains to threes no one can meld. A bot standing in for
 absent players would therefore end most abandoned rounds, but not all of them, so the reaper
 stays.
+
+### Computer players
+
+The heuristic also sits at the table. The host can add computer players in the lobby, so one
+person can play alone or a short table can be filled. Each is an ordinary seat with a token that
+never leaves the server, a name from a short list, and the picture drawn from that name. It is
+always connected and always ready for the next round, and it never hosts: a table is kept open for
+the people at it, so it counts as abandoned once every person has gone, whatever computers are left,
+and a computer cannot carry on without anyone or deal.
+
+A computer plays through exactly the path a timed-out move takes: the server asks the heuristic,
+given only that seat's view, and applies the action through the reducer and the log, where its
+source is recorded as `bot` so that imitation learning can leave it out. It moves at a person's pace,
+one action every 1.2 seconds, because a whole turn applied at once would leave the table nothing to
+watch but a changed position. Its turns count towards the table pausing itself, so a lap of
+computers and played-for seats with nobody moving is still a table nobody is playing.
+
+The same heuristic now plays for a person who has gone — past the reconnect grace, or left
+mid-round — where the safe default did before. That is a deliberate change to how an absent seat is
+treated. The default was chosen so that a player's cards were never committed to a lay-down they did
+not choose; but a player who has gone is not coming back to object, and a seat that only draws and
+discards spoils the round for everyone still playing it, and with several such seats a round never
+ends. A player who is present but out of time still gets the default, after their own staged
+lay-down, since they are there to see what is done with their cards. As above, this ends most
+abandoned rounds but not all, so the reaper stays.
 
 ### Calling a player back to the table
 

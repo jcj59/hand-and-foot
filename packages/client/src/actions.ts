@@ -351,6 +351,35 @@ export async function playAgain(
   return result.data.roomId;
 }
 
+/** Sit a computer player at the table. Only the host's client offers this. A refusal is a notice. */
+export async function addComputerPlayer(
+  socket: HfClientSocket,
+  sink: ActionSink,
+): Promise<boolean> {
+  const result = await wire.addBot(socket);
+  if (!result.ok) {
+    sink.setNotice(result.error);
+    return false;
+  }
+  sink.setNotice(null);
+  return true;
+}
+
+/** Take a computer player away again, before the deal. A refusal is a notice. */
+export async function removeComputerPlayer(
+  socket: HfClientSocket,
+  seat: number,
+  sink: ActionSink,
+): Promise<boolean> {
+  const result = await wire.removeBot(socket, seat);
+  if (!result.ok) {
+    sink.setNotice(result.error);
+    return false;
+  }
+  sink.setNotice(null);
+  return true;
+}
+
 /**
  * Carry on without a player who has gone, between rounds. Only the host's client
  * offers this. A refusal is a notice.

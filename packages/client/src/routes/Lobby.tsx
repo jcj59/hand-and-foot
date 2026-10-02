@@ -11,7 +11,13 @@ import { useNavigate } from "react-router-dom";
 import { MAX_PLAYERS, MIN_PLAYERS } from "@hf/shared";
 import { AvatarFace } from "../profile/Avatar";
 import { faceOf } from "../profile/avatarStore";
-import { leaveTable, makeHost, startTable } from "../actions";
+import {
+  addComputerPlayer,
+  leaveTable,
+  makeHost,
+  removeComputerPlayer,
+  startTable,
+} from "../actions";
 import { roomLink } from "../roomCode";
 import { RulesSummary } from "../rules/RulesSummary";
 import { useSession } from "../session";
@@ -42,6 +48,12 @@ export function Lobby({ socket }: LobbyProps): React.ReactElement {
 
   const isHost = credentials?.seat === room.hostSeat;
   const enough = room.players.length >= MIN_PLAYERS;
+  const full = room.players.length >= MAX_PLAYERS;
+  /** Run a request with the buttons held, so a double click does not send it twice. */
+  const hold = (request: Promise<unknown>): void => {
+    setBusy(true);
+    void request.finally(() => setBusy(false));
+  };
   const link = roomLink(room.roomId, window.location.origin);
 
   async function copy(): Promise<void> {
@@ -94,20 +106,39 @@ export function Lobby({ socket }: LobbyProps): React.ReactElement {
               key={player.seat}
               className="flex items-center gap-2 rounded bg-black/20 px-3 py-2 text-sm"
             >
-              <span
-                // Connection state is shown in the lobby because it matters later:
-                // once dealt, a seat that has dropped has its turns played for it.
-                aria-label={player.connected ? "connected" : "disconnected"}
-                className={`h-2 w-2 rounded-full ${
-                  player.connected ? "bg-emerald-400" : "bg-red-400"
-                }`}
-              />
+              {player.bot ? (
+                // A computer player is always there; a dot would only invite the question.
+                <span aria-hidden="true" className="h-2 w-2" />
+              ) : (
+                <span
+                  // Connection state is shown in the lobby because it matters later:
+                  // once dealt, a seat that has dropped has its turns played for it.
+                  aria-label={player.connected ? "connected" : "disconnected"}
+                  className={`h-2 w-2 rounded-full ${
+                    player.connected ? "bg-emerald-400" : "bg-red-400"
+                  }`}
+                />
+              )}
               <AvatarFace avatar={faceOf(player)} size={28} />
               <span className="flex-1">{player.name}</span>
+              {player.bot && <span className="text-xs text-sky-200/80">computer</span>}
               {player.seat === room.hostSeat && <span className="text-xs text-white/40">host</span>}
+              {isHost && player.bot && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    hold(removeComputerPlayer(socket, player.seat, { seat, setNotice }))
+                  }
+                  aria-label={`Take ${player.name} away`}
+                  className="rounded border border-white/25 px-2 py-0.5 text-xs text-white/70 disabled:opacity-40"
+                >
+                  Remove
+                </button>
+              )}
               {/* The host can hand the deal to someone else — the person who will
                   actually be at the keyboard when everyone is ready, say. */}
-              {isHost && player.seat !== room.hostSeat && (
+              {isHost && player.seat !== room.hostSeat && !player.bot && (
                 <button
                   type="button"
                   disabled={busy}
@@ -129,6 +160,16 @@ export function Lobby({ socket }: LobbyProps): React.ReactElement {
             </li>
           ))}
         </ul>
+        {isHost && (
+          <button
+            type="button"
+            disabled={busy || full}
+            onClick={() => hold(addComputerPlayer(socket, { seat, setNotice }))}
+            className="self-start rounded border border-sky-200/50 px-3 py-1.5 text-sm text-sky-100 disabled:opacity-40"
+          >
+            Add a computer player
+          </button>
+        )}
       </section>
 
       <RulesSummary config={room.config} />

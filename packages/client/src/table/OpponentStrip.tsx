@@ -62,6 +62,7 @@ export function OpponentStrip({
       <ul aria-label="Other players" className="-mx-2 flex gap-2 overflow-x-auto px-2 pb-1">
         {opponents.map((opponent) => {
           const connected = room.players.find((p) => p.seat === opponent.seat)?.connected;
+          const bot = room.players.find((p) => p.seat === opponent.seat)?.bot;
           const onTurn = opponent.seat === seatToAct;
           const books = opponent.melds.map(classifyBook).filter((kind) => kind !== "incomplete");
           const clean = books.filter((kind) => kind === "clean").length;
@@ -92,7 +93,7 @@ export function OpponentStrip({
                   <span
                     aria-hidden="true"
                     className={`h-2 w-2 shrink-0 rounded-full ${
-                      connected ? "bg-emerald-400" : "bg-red-400"
+                      bot ? "bg-sky-300" : connected ? "bg-emerald-400" : "bg-red-400"
                     }`}
                   />
                   {faceAt(opponent.seat) && (
