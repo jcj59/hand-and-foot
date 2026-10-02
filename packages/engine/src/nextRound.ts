@@ -5,14 +5,21 @@ import { scoreRound } from "./scoreRound";
 
 /**
  * Deal the next round of a match: a fresh shoe from that round's seed, the first
- * turn one seat further on, and the finished round's scores kept in `pastRounds`,
+ * turn one seat further on than last round's (rotating from the match's own first
+ * seat), and the finished round's scores kept in `pastRounds`,
  * which is what running totals are added up from. Refused while a round is still
  * being played, and after the last one, when the match is over.
  */
 export function applyNextRound(state: GameState): ApplyResult {
   if (!state.roundEnded) return fail("the round is still being played");
   if (isMatchOver(state)) return fail("that was the last round");
-  const next = deal(state.players.length, state.config, state.seed, state.roundNumber + 1);
+  const next = deal(
+    state.players.length,
+    state.config,
+    state.seed,
+    state.roundNumber + 1,
+    state.firstSeat,
+  );
   return ok({ ...next, pastRounds: [...(state.pastRounds ?? []), scoreRound(state)] });
 }
 

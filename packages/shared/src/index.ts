@@ -177,6 +177,12 @@ export interface GameState {
    * only this seat earns the go-out bonus.
    */
   readonly wentOutSeat?: number;
+  /**
+   * The seat that took the first turn of round 1; every later round starts one
+   * seat further on from it. Chosen at random for a new match (`firstSeatFor`).
+   * Absent means seat 0, as every match recorded before the choice was random was.
+   */
+  readonly firstSeat?: number;
   /** Every finished round's scores, oldest first; the current round is not in it. */
   readonly pastRounds?: readonly (readonly RoundScore[])[];
   /**

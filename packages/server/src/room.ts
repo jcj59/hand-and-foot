@@ -18,6 +18,7 @@ import {
 import {
   applyAction,
   deal,
+  firstSeatFor,
   defaultAction,
   describeMove,
   grabbyPants,
@@ -302,7 +303,11 @@ export class Room {
 
     let state: GameState | null = null;
     if (record.started) {
-      state = deal(record.players.length, record.config, record.seed);
+      const firstSeat = record.firstSeat ?? 0;
+      if (!Number.isInteger(firstSeat) || firstSeat < 0 || firstSeat >= record.players.length) {
+        return fail(`room ${record.id}: started by a seat that does not exist`);
+      }
+      state = deal(record.players.length, record.config, record.seed, 1, firstSeat);
       for (const row of actions) {
         if (row.seat !== state.currentSeat) {
           return fail(`room ${record.id}: action ${row.seq} is out of turn`);
@@ -359,6 +364,7 @@ export class Room {
         ...(p.userId ? { userId: p.userId } : {}),
       })),
       started: this.started,
+      ...(this.state ? { firstSeat: this.state.firstSeat ?? 0 } : {}),
       pausedSeat: this.pausedSeat ?? null,
       hostToken: this.hostToken,
       // What the table is waiting on between rounds and after the match, so a
@@ -614,7 +620,14 @@ export class Room {
     if (this.players.length < MIN_PLAYERS) {
       return fail(`a game needs at least ${MIN_PLAYERS} players`);
     }
-    this.state = deal(this.players.length, this.config, this.deps.seed);
+    // Whoever opened the table used to go first every time; now the seed picks.
+    this.state = deal(
+      this.players.length,
+      this.config,
+      this.deps.seed,
+      1,
+      firstSeatFor(this.deps.seed, this.players.length),
+    );
     this.save();
     this.beginTurn(this.state.currentSeat);
     return succeed(this.state);

@@ -19,7 +19,7 @@ function newRoom(
     { ...EAST_COAST, ...over },
     {
       clock,
-      seed: 7,
+      seed: 5,
       newToken: () => `tok-${tokens++}`,
       reconnectGraceMs,
       // These tests let the server play every seat for many turns on purpose;

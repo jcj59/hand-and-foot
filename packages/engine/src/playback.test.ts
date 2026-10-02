@@ -160,6 +160,19 @@ describe("a timeline over a golden game", () => {
   });
 });
 
+describe("a deal that did not start at seat 0", () => {
+  it("starts at the seat its setup names, and at seat 0 when it names none", () => {
+    const from = (firstSeat?: number) =>
+      buildTimeline({
+        config: EAST_COAST,
+        setup: { seed: 8, playerCount: 3, firstSeat },
+        actions: [],
+      });
+    expect(from(2).stateAt(0).currentSeat).toBe(2);
+    expect(from(undefined).stateAt(0).currentSeat).toBe(0);
+  });
+});
+
 describe("moments found in any game", () => {
   it("marks a foot picked up by melding the hand away, mid-turn", () => {
     const kings = cards("K", 3);

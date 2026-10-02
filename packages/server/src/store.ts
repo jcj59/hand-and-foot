@@ -40,6 +40,12 @@ export interface RoomRecord {
   readonly createdAt: number;
   readonly players: readonly SeatRecord[];
   readonly started: boolean;
+  /**
+   * The seat that took the first turn of the match, once dealt. Absent from
+   * records saved before it was chosen at random, whose matches all started at
+   * seat 0 — and their logs replay only from there.
+   */
+  readonly firstSeat?: number;
   readonly pausedSeat: number | null;
   /** Token of the player who hosts. Absent from records saved before it could change. */
   readonly hostToken?: string | null;

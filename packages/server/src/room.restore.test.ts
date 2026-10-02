@@ -6,10 +6,12 @@ import {
   resolveRules,
   WEST_COAST,
   type Action,
+  type GameState,
+  type LoggedAction,
   type MeldPlay,
   type RulesConfig,
 } from "@hf/shared";
-import { canTakePile, defaultAction, prng } from "@hf/engine";
+import { applyAction, canTakePile, deal, defaultAction, firstSeatFor, prng } from "@hf/engine";
 import { FakeClock } from "./clock";
 import { DEFAULT_RECONNECT_GRACE_MS, Room } from "./room";
 import { InMemoryRoomStore, type StoredRoom } from "./store";
@@ -393,6 +395,21 @@ describe("refusing a stored room that does not add up", () => {
     expect(refusal({ ...entry, room: { ...entry.room, players } })).toMatch(/seats/);
   });
 
+  it("a first seat that does not exist", async () => {
+    const entry = await stored();
+    for (const firstSeat of [3, -1, 1.5]) {
+      expect(refusal({ ...entry, room: { ...entry.room, firstSeat } })).toMatch(
+        /started by a seat that does not exist/,
+      );
+    }
+  });
+
+  it("a log that does not start at its first seat", async () => {
+    const entry = await stored();
+    const firstSeat = (entry.room.firstSeat! + 1) % 3;
+    expect(refusal({ ...entry, room: { ...entry.room, firstSeat } })).toMatch(/out of turn/);
+  });
+
   it("a pause held by a seat that does not exist", async () => {
     const entry = await stored();
     expect(refusal({ ...entry, room: { ...entry.room, pausedSeat: 7 } })).toMatch(/paused by/);
@@ -447,6 +464,67 @@ describe("restoring who hosts", () => {
     expect(restored.nextRoomId).toBeNull();
     expect(restored.join("cy").ok).toBe(true);
     expect(restored.hostSeat).toBe(0);
+  });
+});
+
+describe("who went first", () => {
+  it("starts a new match at the seat its seed picks, and records it", async () => {
+    const store = new InMemoryRoomStore();
+    // Seed 3 picks the last of three seats, so this is not the old seat 0.
+    const room = openRoom(store, new FakeClock(), FAMILY, 3);
+    seat(room, ["ana", "ben", "cy"]);
+    expect(room.start(0).ok).toBe(true);
+    expect(firstSeatFor(3, 3)).toBe(2);
+    expect(room.gameState!.currentSeat).toBe(2);
+    expect((await onlyRoom(store)).room.firstSeat).toBe(2);
+  });
+
+  it("keeps no first seat for a table that has not dealt", async () => {
+    const store = new InMemoryRoomStore();
+    seat(openRoom(store), ["ana", "ben"]);
+    expect((await onlyRoom(store)).room).not.toHaveProperty("firstSeat");
+  });
+
+  it("restores a match that started past seat 0 exactly, and it plays on", async () => {
+    const store = new InMemoryRoomStore();
+    const room = openRoom(store, new FakeClock(), FAMILY, 3);
+    seat(room, ["ana", "ben", "cy"]);
+    room.start(0);
+    playRich(room, 40);
+    const back = restore(await onlyRoom(store), new FakeClock(), store);
+    expect(back.gameState).toEqual(room.gameState);
+    expect(back.gameState!.firstSeat).toBe(2);
+    playRich(back, 10);
+  });
+
+  it("restores a record saved before the first seat was kept, from seat 0", async () => {
+    // Every table dealt before the choice was random started at seat 0 whatever
+    // its seed, and its log replays only from there. Such a record is rebuilt
+    // here the way it was made: a deal from seat 0, played through the engine.
+    const store = new InMemoryRoomStore();
+    const room = openRoom(store, new FakeClock(), FAMILY, 3);
+    seat(room, ["ana", "ben", "cy"]);
+    const { room: record } = await onlyRoom(store);
+    let state = deal(3, FAMILY, 3);
+    const actions: LoggedAction[] = [];
+    for (let seq = 0; seq < 30; seq++) {
+      const action = defaultAction(state)!;
+      actions.push({ seq, seat: state.currentSeat, action, source: "player", at: 0 });
+      const next = applyAction(state, action);
+      if (!next.ok) throw new Error(next.error);
+      state = next.state;
+    }
+    const older: StoredRoom = { room: { ...record, started: true }, actions };
+    expect(older.room).not.toHaveProperty("firstSeat");
+
+    const back = restore(older, new FakeClock(), store);
+    expect(back.gameState).toEqual(state);
+    expect(back.gameState!.firstSeat).toBeUndefined();
+    // And it carries on as it would have, recording seat 0 as the first seat.
+    const move = defaultAction(state)!;
+    expect(back.submitAction(state.currentSeat, move).ok).toBe(true);
+    expect(back.gameState).toEqual((applyAction(state, move) as { state: GameState }).state);
+    expect(back.record().firstSeat).toBe(0);
   });
 });
 
