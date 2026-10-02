@@ -1,7 +1,14 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { EAST_COAST, WEST_COAST, type Ack, type RoomInfo, type RulesConfig } from "@hf/shared";
+import {
+  defaultAvatar,
+  EAST_COAST,
+  WEST_COAST,
+  type Ack,
+  type RoomInfo,
+  type RulesConfig,
+} from "@hf/shared";
 import { CREDENTIALS_KEY, loadCredentials } from "../credentials";
 import { createServerClock } from "../serverTime";
 import { useSession } from "../session";
@@ -331,5 +338,34 @@ describe("handing hosting on", () => {
     mount(socket.socket);
     fireEvent.click(screen.getByRole("button", { name: "Make ben the host" }));
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/before the deal/));
+  });
+});
+
+describe("pictures in the lobby", () => {
+  it("shows each player's face: the one they chose, or the one their name gives", () => {
+    const ana = {
+      background: "rose",
+      skin: "sand",
+      eyes: "wink",
+      mouth: "grin",
+      top: "crown",
+    } as const;
+    seated(
+      0,
+      roomInfo({
+        players: [
+          { seat: 0, name: "ana", connected: true, avatar: ana },
+          { seat: 1, name: "ben", connected: true },
+        ],
+      }),
+    );
+    mount(fakeSocket().socket);
+    const faces = [...document.querySelectorAll("li [data-avatar]")].map((f) =>
+      f.getAttribute("data-avatar"),
+    );
+    expect(faces).toEqual([
+      "rose sand wink grin crown",
+      Object.values(defaultAvatar("ben")).join(" "),
+    ]);
   });
 });

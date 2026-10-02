@@ -357,6 +357,7 @@ export interface LegalHints {
   readonly canGoOut: boolean;
 }
 
+export * from "./avatar";
 export * from "./identity";
 export * from "./rules";
 export * from "./protocol";

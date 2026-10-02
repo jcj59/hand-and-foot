@@ -4,6 +4,7 @@ import {
   isReactionId,
   type Action,
   type ActionSource,
+  type Avatar,
   type ClockState,
   type CloseReason,
   type GameState,
@@ -93,6 +94,8 @@ export interface RoomPlayer {
    * is the token's.
    */
   readonly userId?: string;
+  /** The picture they sat down with, if they chose one. Public: it is in `RoomInfo`. */
+  readonly avatar?: Avatar;
   /** When they dropped, so the reconnect grace can be measured. Null while connected. */
   disconnectedAt: number | null;
   /**
@@ -101,6 +104,12 @@ export interface RoomPlayer {
    * the same token resumes it.
    */
   left: boolean;
+}
+
+/** Who is sitting down, beyond the name: what their browser proved, and the picture they chose. */
+export interface SeatProfile {
+  readonly userId?: string | null;
+  readonly avatar?: Avatar | null;
 }
 
 export type RoomResult<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -362,6 +371,7 @@ export class Room {
         token: p.token,
         left: p.left,
         ...(p.userId ? { userId: p.userId } : {}),
+        ...(p.avatar ? { avatar: p.avatar } : {}),
       })),
       started: this.started,
       ...(this.state ? { firstSeat: this.state.firstSeat ?? 0 } : {}),
@@ -467,7 +477,7 @@ export class Room {
     return this.players.reduce((latest, p) => Math.max(latest, p.disconnectedAt ?? 0), 0);
   }
 
-  join(name: string, userId?: string | null): RoomResult<RoomPlayer> {
+  join(name: string, { userId, avatar }: SeatProfile = {}): RoomResult<RoomPlayer> {
     if (this.started) return fail("the game has already started");
     if (this.players.length >= MAX_PLAYERS) return fail(`a table seats at most ${MAX_PLAYERS}`);
     const player: RoomPlayer = {
@@ -475,6 +485,7 @@ export class Room {
       name,
       token: this.deps.newToken(),
       ...(userId ? { userId } : {}),
+      ...(avatar ? { avatar } : {}),
       connected: true,
       disconnectedAt: null,
       left: false,
@@ -1112,6 +1123,7 @@ export class Room {
         seat: p.seat,
         name: p.name,
         connected: p.connected,
+        ...(p.avatar ? { avatar: p.avatar } : {}),
       })),
       hostSeat: this.hostSeat,
       started: this.started,

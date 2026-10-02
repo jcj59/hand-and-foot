@@ -23,6 +23,8 @@ import {
   type UserCredentials,
 } from "@hf/shared";
 import { createTable, joinTable, resumeSavedGame } from "../actions";
+import { loadAvatar, saveAvatar } from "../profile/avatarStore";
+import { AvatarEditor } from "../profile/AvatarEditor";
 import { loadCredentials } from "../credentials";
 import { isPossibleRoomCode, normalizeRoomCode } from "../roomCode";
 import { loadSavedGames, type SavedGame } from "../savedGames";
@@ -74,6 +76,8 @@ export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React
 
   // The name this player went by last time, ready to use again or change.
   const [name, setName] = useState(loadName);
+  // The picture this device chose, if any; changed here, kept at once.
+  const [avatar, setAvatar] = useState(loadAvatar);
   const [code, setCode] = useState(fromLink ? normalizeRoomCode(fromLink) : "");
   // The rules this device last opened a table with, ready to use again or change.
   const [choice, setChoice] = useState<RulesChoice>(loadRulesChoice);
@@ -110,8 +114,8 @@ export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React
       // time the player sits down anyway, as nobody in particular.
       const user = await prepareIdentity(post, name.trim());
       const roomId = join
-        ? await joinTable(socket, code, name, sink, user)
-        : await createTable(socket, name, choice, sink, user);
+        ? await joinTable(socket, code, name, sink, user, avatar)
+        : await createTable(socket, name, choice, sink, user, avatar);
       // Remembered once a table has actually been opened with them.
       if (roomId && !join) rememberRulesChoice(choice);
       if (roomId) navigate(`/room/${roomId}`);
@@ -187,6 +191,15 @@ export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React
           maxLength={MAX_NAME_LENGTH}
         />
       </label>
+
+      <AvatarEditor
+        name={name}
+        avatar={avatar}
+        onChange={(next) => {
+          setAvatar(next);
+          saveAvatar(next);
+        }}
+      />
 
       {notice && (
         <p role="alert" className="rounded bg-red-600/20 px-3 py-2 text-sm text-red-200">

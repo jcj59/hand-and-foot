@@ -584,6 +584,24 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   and the Node `route` catches any rejection and answers 500 instead of letting an unhandled
   rejection kill the process. Home's panel registers the profile when opened and shows the code
   only once the server knows it.
+- **Avatars (roadmap item 4b).** `@hf/shared/avatar.ts`: `AVATAR_PARTS` (background, skin, eyes,
+  mouth, top; **only ever add** ids — the whole table is pinned in `avatar.test.ts`),
+  `isAvatar` (exactly the five known parts, nothing else, not an array), `parseAvatar` (copies part
+  by part, null otherwise), `defaultAvatar(seed)` (FNV-1a + per-part mix of a name). Create/join
+  bodies may carry `avatar`; both hosts `parseAvatar` it and an invalid one seats the player
+  without, never refuses. The server threads `SeatProfile {userId?, avatar?}` through
+  `Room.join` / `RoomManager.join` / `openTable` / `sitAt` / the Worker's `open`/`sit`/`sitNext`
+  (replacing the bare `userId` argument). `RoomPlayer.avatar` / `SeatRecord.avatar` persist with the
+  seat (players JSON column — no migration), travel to the next game, and **are** in
+  `RoomPlayerInfo` (public; absent rather than undefined when none). Client: `profile/avatarStore.ts`
+  (`hf.avatar` per device, `faceOf(player)` = chosen or `defaultAvatar(name)`; named apart from
+  `Avatar.tsx` because the two differ only by case), `profile/Avatar.tsx` (`AvatarFace`, SVG, a
+  `useId` clip per face, `data-avatar` lists the part ids for tests), `profile/AvatarEditor.tsx` on
+  Home (preview, "Change picture" opens a row per part drawn as whole faces, Shuffle, "Use the one
+  from my name"). Shown in the lobby, seat boxes, phone strip chips, and reaction bubbles (own
+  too). `withGrabbyName` sets `avatar: faceOf(p)` so the renamed holder keeps the face of their real
+  name. **Per device, not on the identity** (like `hf.rules`): storing it on the identity needed a
+  users migration and a transfer that carries it, which waits for accounts (item 15).
 - **Quick reactions (roadmap item 3).** A fixed list, `REACTIONS` in `@hf/shared/protocol.ts`
   (twelve emoji, thirteen phrases since P2; **only ever add** — an id may be in flight to an older
   client — pinned in `protocol.test.ts`, along with a cap of 30; the picker tells a phrase from an

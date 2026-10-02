@@ -9,6 +9,7 @@ import {
   HEALTH_PATH,
   isUserCredentials,
   NOT_AN_IDENTITY,
+  parseAvatar,
   parseRoomPath,
   resolveRules,
   ROOMS_PATH,
@@ -81,11 +82,11 @@ export default {
       if (!rules.ok) return json(rules);
       const config = rules.data;
       const name = String(body.name ?? "");
-      const userId = await verified(env, body.user);
+      const profile = { userId: await verified(env, body.user), avatar: parseAvatar(body.avatar) };
       // Each code is its own object; one already in use says so, and another is drawn.
       for (;;) {
         const code = newCode();
-        const opened = await env.TABLES.getByName(code).open(code, config, name, userId);
+        const opened = await env.TABLES.getByName(code).open(code, config, name, profile);
         if (opened !== TAKEN) return json(opened);
       }
     }
@@ -98,7 +99,12 @@ export default {
       if (request.method !== "POST") return new Response(null, { status: 405 });
       const body = await readJson(request);
       if (!body) return json({ ok: false, error: "that request was not JSON" }, 400);
-      return json(await table.sit(String(body.name ?? ""), await verified(env, body.user)));
+      return json(
+        await table.sit(String(body.name ?? ""), {
+          userId: await verified(env, body.user),
+          avatar: parseAvatar(body.avatar),
+        }),
+      );
     }
 
     if (pathname.startsWith("/api/")) return new Response(null, { status: 404 });

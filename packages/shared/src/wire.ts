@@ -32,10 +32,13 @@ export interface EventFrame {
 
 export type ServerFrame = AckFrame | EventFrame;
 
-/** Open a table and take its first seat: POST `{ name, options }`. */
+/**
+ * Open a table and take its first seat: POST `{ name, options }`, and optionally
+ * `user` (identity credentials) and `avatar` (the player's picture), as for joining.
+ */
 export const ROOMS_PATH = "/api/rooms";
 
-/** Sit down at an existing table: POST `{ name }`. */
+/** Sit down at an existing table: POST `{ name }`, optionally with `user` and `avatar`. */
 export function joinPath(roomId: string): string {
   return `${ROOMS_PATH}/${encodeURIComponent(roomId)}/join`;
 }

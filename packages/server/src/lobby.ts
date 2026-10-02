@@ -8,7 +8,7 @@
  */
 import { resolveRules, type Ack, type SeatCredentials } from "@hf/shared";
 import type { RoomManager } from "./manager";
-import type { Room, RoomPlayer, RoomResult } from "./room";
+import type { Room, RoomPlayer, RoomResult, SeatProfile } from "./room";
 
 function seatAt(room: Room, player: RoomPlayer): SeatCredentials {
   room.setConnected(player.seat, false);
@@ -24,12 +24,12 @@ export function openTable(
   manager: RoomManager,
   name: unknown,
   options: unknown,
-  userId?: string | null,
+  profile: SeatProfile = {},
 ): Ack<SeatCredentials> {
   const rules = resolveRules(options);
   if (!rules.ok) return rules;
   const room = manager.create(rules.data);
-  const joined = room.join(String(name ?? ""), userId);
+  const joined = room.join(String(name ?? ""), profile);
   /* v8 ignore next -- a room created one statement ago cannot be full or started */
   if (!joined.ok) return { ok: false, error: joined.error };
   return { ok: true, data: seatAt(room, joined.value) };
@@ -40,9 +40,9 @@ export function sitAt(
   manager: RoomManager,
   roomId: string,
   name: unknown,
-  userId?: string | null,
+  profile: SeatProfile = {},
 ): Ack<SeatCredentials> {
-  const joined = manager.join(roomId, String(name ?? ""), userId);
+  const joined = manager.join(roomId, String(name ?? ""), profile);
   if (!joined.ok) return { ok: false, error: joined.error };
   const player = joined.value.room.seatOf(joined.value.token)!;
   return { ok: true, data: seatAt(joined.value.room, player) };
@@ -64,8 +64,8 @@ export function nextTableFor(
     next = manager.create(room.config);
     room.nextRoomId = next.id;
   }
-  // The same person at the next game: they carry their identity with them.
-  const joined = next.join(player.name, player.userId);
+  // The same person at the next game: they carry their identity and picture with them.
+  const joined = next.join(player.name, { userId: player.userId, avatar: player.avatar });
   if (!joined.ok) return { ok: false, error: joined.error };
   return { ok: true, value: seatAt(next, joined.value) };
 }

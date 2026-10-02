@@ -13,7 +13,7 @@
  * the game has already moved on, and nothing on the hot path waits for one: a
  * slow or unreachable database costs recoverability, not a player's turn.
  */
-import type { LoggedAction, RulesConfig } from "@hf/shared";
+import type { Avatar, LoggedAction, RulesConfig } from "@hf/shared";
 import type { UserStore } from "./users";
 
 /** One seat, as much of it as outlives a process. Connection state does not. */
@@ -24,6 +24,8 @@ export interface SeatRecord {
   readonly left: boolean;
   /** Who sat here, when their browser proved an identity. Absent from older records. */
   readonly userId?: string;
+  /** The picture they chose. Absent from older records, and for anyone who chose none. */
+  readonly avatar?: Avatar;
 }
 
 /** A room, minus its game — which the log reconstructs. */
