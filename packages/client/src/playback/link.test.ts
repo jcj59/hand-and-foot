@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { scenarioById } from "@hf/scenarios";
-import { timelineOf } from "./catalog";
+import { timelineOf } from "../scenarios/catalog";
 import { formatLink, parseLink, stepFor } from "./link";
 
 const marva = timelineOf(scenarioById("marva")!);

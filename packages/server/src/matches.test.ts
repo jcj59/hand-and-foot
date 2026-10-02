@@ -8,7 +8,7 @@ import { EAST_COAST, type MatchRecord, type RulesConfig } from "@hf/shared";
 import { defaultAction } from "@hf/engine";
 import { FakeClock } from "./clock";
 import { RoomManager } from "./manager";
-import { InMemoryMatchStore, keptFor, matchHistory, type MatchStore } from "./matches";
+import { InMemoryMatchStore, keptFor, matchHistory, matchReplay, type MatchStore } from "./matches";
 import { openPostgresStore, type PostgresRoomStore } from "./postgres";
 import { BOT_MOVE_MS, Room } from "./room";
 import { ownDatabase } from "./testDatabase";
@@ -72,6 +72,15 @@ function contract(name: string, make: () => Promise<MatchStore>): void {
       const finished = { ...record("m1", 3_000, ["u-a"]), roomId: "XYZ234" };
       await store.save(finished);
       expect(await store.forUser("u-a")).toEqual([finished]);
+    });
+
+    it("gives one match back by id, only to an identity that played it", async () => {
+      const store = await make();
+      const m = record("m1", 2_000, ["u-a", "u-b"]);
+      await store.save(m);
+      expect(await store.get("u-a", "m1")).toEqual(m);
+      expect(await store.get("u-c", "m1")).toBeNull();
+      expect(await store.get("u-a", "m2")).toBeNull();
     });
 
     it("keeps every match, newest first where the store orders them", async () => {
@@ -370,17 +379,71 @@ describe("a player's history over HTTP", () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
       const history = (await post("/api/users/matches", { user })) as {
         ok: true;
-        data: { stats: { played: number }; recent: { roomId: string; players: unknown[] }[] };
+        data: {
+          stats: { played: number };
+          recent: { id: string; roomId: string; players: unknown[] }[];
+        };
       };
       expect(history.ok).toBe(true);
       expect(history.data.stats.played).toBe(1);
       expect(history.data.recent[0]!.roomId).toBe(opened.data.roomId);
       expect(history.data.recent[0]!.players).toHaveLength(2);
+      const replay = (await post("/api/users/match", { user, id: history.data.recent[0]!.id })) as {
+        ok: true;
+        data: { seat: number; log: unknown[] };
+      };
+      expect(replay.ok).toBe(true);
+      expect(replay.data.seat).toBe(0);
+      expect(replay.data.log).toHaveLength(room.log.length);
       expect(
         await post("/api/users/matches", { user: { ...user, secret: "z".repeat(32) } }),
       ).toEqual({ ok: false, error: "that is not an identity" });
     } finally {
       await server.close();
     }
+  });
+});
+
+describe("one match, to watch again", () => {
+  const ana = { userId: "a".repeat(16), secret: "s".repeat(32) };
+  const ben = { userId: "b".repeat(16), secret: "t".repeat(32) };
+
+  async function setUp() {
+    const users = new InMemoryUserStore();
+    await registerUser(users, { ...ana, name: "ana" }, 1);
+    await registerUser(users, { ...ben, name: "ben" }, 1);
+    const matches = new InMemoryMatchStore();
+    await matches.save(record("m1", 2_000, [undefined, ana.userId, "u-other"]));
+    return { users, matches };
+  }
+
+  it("is the whole record, with the player's own seat and nobody's identity", async () => {
+    const { users, matches } = await setUp();
+    const answer = await matchReplay(users, matches, { user: ana, id: "m1" });
+    if (!answer.ok) throw new Error(answer.error);
+    expect(answer.data.seat).toBe(1);
+    expect(answer.data.log).toEqual(record("m1", 2_000, []).log);
+    expect(answer.data.seats.map((s) => s.name)).toEqual(["p0", "p1", "p2"]);
+    expect(JSON.stringify(answer.data)).not.toContain(ana.userId);
+    expect(JSON.stringify(answer.data)).not.toContain("u-other");
+  });
+
+  it("opens nothing for a player who was not in it, nor for an id that is not one", async () => {
+    const { users, matches } = await setUp();
+    const notYours = { ok: false, error: "that game is not one of yours" };
+    expect(await matchReplay(users, matches, { user: ben, id: "m1" })).toEqual(notYours);
+    expect(await matchReplay(users, matches, { user: ana, id: "m9" })).toEqual(notYours);
+    expect(await matchReplay(users, matches, { user: ana, id: 7 })).toEqual(notYours);
+    expect(await matchReplay(users, matches, { user: ana })).toEqual(notYours);
+  });
+
+  it("is refused to credentials that do not prove an identity", async () => {
+    const { users, matches } = await setUp();
+    const refused = { ok: false, error: "that is not an identity" };
+    expect(
+      await matchReplay(users, matches, { user: { ...ana, secret: "x".repeat(32) }, id: "m1" }),
+    ).toEqual(refused);
+    expect(await matchReplay(users, matches, { id: "m1" })).toEqual(refused);
+    expect(await matchReplay(users, matches, null)).toEqual(refused);
   });
 });
