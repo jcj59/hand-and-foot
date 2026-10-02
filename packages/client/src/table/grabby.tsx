@@ -11,7 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import type { RoomInfo } from "@hf/shared";
 import { Celebration } from "./Celebration";
 
-/** The holder's name at the table, for the rest of the match. */
+/** The holder's name at the table, while they hold the title: until someone else takes it, or the round ends. */
 export const GRABBY_NAME = "Grabby Pants";
 
 /** The room with the title holder renamed, for everything that shows names. */

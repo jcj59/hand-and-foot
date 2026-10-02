@@ -26,7 +26,7 @@ function table(names: readonly string[], store = new InMemoryRoomStore()) {
   let n = 0;
   const room = new Room("TBL234", EAST_COAST, {
     clock: new FakeClock(),
-    seed: 3,
+    seed: 1,
     newToken: () => `tok-${n++}`,
     store,
   });

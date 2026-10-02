@@ -1,14 +1,18 @@
 /**
- * Grabby Pants: the table's title for whoever takes the discard pile the most
+ * Grabby Pants: the table's title for whoever last took the discard pile three
  * times running.
  *
  * A streak is a player's pile pickups with nobody else picking up the pile in
  * between — other players drawing and discarding does not break it, only someone
- * else grabbing the pile does. Three in a row earns the title; to take it from its
- * holder, another player needs a longer streak than the holder's best. It lasts
- * the match, so it is worked out from the whole action log: nothing is stored,
- * a restart or a Durable Object waking gets the same answer, and every seat sees
- * the same holder.
+ * else grabbing the pile does. Three in a row earns the title, from nobody or
+ * from whoever held it: there is no bar to clear beyond the three. It lasts the
+ * round. Each new round starts with nobody holding it and no streak carried
+ * over, so it is a title for how a round is being played, not a record for the
+ * match.
+ *
+ * It is worked out from the action log, the round boundary included — the
+ * `nextRound` action is the reset — so nothing is stored, a restart or a Durable
+ * Object waking gets the same answer, and every seat sees the same holder.
  *
  * It lives in the engine rather than the server because it is a pure function of
  * the log, and the server is not its only reader: the replay and scenario player
@@ -35,22 +39,19 @@ interface Tally {
 const START: Tally = { holder: null, streakSeat: null, streak: 0 };
 
 function step(tally: Tally, entry: SeatedAction): Tally {
+  // A new round: nobody holds the title, and no streak runs on into it.
+  if (entry.action.type === "nextRound") return START;
   if (entry.action.type !== "takePile") return tally;
   const streak = entry.seat === tally.streakSeat ? tally.streak + 1 : 1;
   const next = { ...tally, streakSeat: entry.seat, streak };
   if (streak < GRABBY_STREAK) return next;
   const holder = tally.holder;
-  if (holder?.seat === entry.seat) {
-    // The holder extending their own streak raises the bar for everyone else.
-    return streak > holder.streak ? { ...next, holder: { ...holder, streak } } : next;
-  }
-  if (!holder || streak > holder.streak) {
-    return {
-      ...next,
-      holder: { seat: entry.seat, streak, ...(holder ? { from: holder.seat } : {}) },
-    };
-  }
-  return next;
+  // The holder going on keeps it, with the streak counted up.
+  if (holder?.seat === entry.seat) return { ...next, holder: { ...holder, streak } };
+  return {
+    ...next,
+    holder: { seat: entry.seat, streak, ...(holder ? { from: holder.seat } : {}) },
+  };
 }
 
 /** Who holds the title after the whole log. */

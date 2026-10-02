@@ -40,7 +40,7 @@ export function canTakePile(state: GameState, seat: number): Feasibility {
     player.melds,
     new Set(pile.map((c) => c.id)),
     state.config,
-    minimum,
+    { minimum, inFoot: player.inFoot },
   );
 
   if (!plan.usesRequired) {

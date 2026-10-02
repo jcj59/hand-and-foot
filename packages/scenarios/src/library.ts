@@ -8,7 +8,17 @@
  */
 import { EAST_COAST } from "@hf/shared";
 import type { Scenario } from "./scenario";
-import { autoTurns, autoUntil, discard, draw, meld, moment, takeBack, takePile } from "./script";
+import {
+  autoTurns,
+  autoUntil,
+  discard,
+  draw,
+  meld,
+  moment,
+  nextRound,
+  takeBack,
+  takePile,
+} from "./script";
 
 const NAMES = ["Ana", "Ben", "Cal"] as const;
 
@@ -150,6 +160,29 @@ export const SCENARIOS: readonly Scenario[] = [
       takePile(),
       moment("taken", "Ana takes the pile with one eight and a wild"),
       meld({ "8": "8C 8H 2S" }),
+      discard(),
+      autoTurns(2),
+    ],
+  },
+  {
+    id: "pile-black-three",
+    title: "Taking the pile with a seventh black three",
+    description:
+      "Ana is in her foot with six black threes. Cal throws a seventh, and the pile is hers: black threes meld only from the foot, as a book of seven, and that is exactly what this one makes.",
+    config: EAST_COAST,
+    setup: {
+      seed: 15,
+      // Seven black threes need four decks, so three seats.
+      seats: [{ inFoot: true, melds: { K: "KC KD KH" }, foot: "3C 3S 3C 3S 3C 3S 9D 8H" }, {}, {}],
+      discard: "4H 6S 3S",
+    },
+    names: NAMES,
+    script: [
+      moment("offered", "Six black threes in Ana's foot, and the seventh on the pile"),
+      takePile(),
+      moment("taken", "Ana takes the pile"),
+      meld({ "3": "3C 3C 3C 3S 3S 3S 3S" }),
+      moment("book", "Seven black threes: a book"),
       discard(),
       autoTurns(2),
     ],
@@ -369,7 +402,7 @@ export const SCENARIOS: readonly Scenario[] = [
     id: "grabby-pants",
     title: "Grabby Pants",
     description:
-      "Ana takes the pile three times running and becomes Grabby Pants. Ben then takes it four times running — Ana's draws in between do not break his run — and the title is his.",
+      "Ana takes the pile three times running and becomes Grabby Pants. Ben then takes it three times running — Ana's draws in between do not break his run — and the title is his; a fourth keeps it. When the round ends, the title lapses: the next round starts with nobody holding it.",
     config: EAST_COAST,
     setup: {
       seed: 14,
@@ -402,13 +435,17 @@ export const SCENARIOS: readonly Scenario[] = [
       discard("9D"),
       ...[1, 2, 3, 4].flatMap((n) => [
         takePile(),
-        ...(n === 4 ? [moment("taken", "Ben's fourth pile in a row beats Ana's three")] : []),
+        ...(n === 3 ? [moment("taken", "Ben's third pile in a row takes it from Ana")] : []),
+        ...(n === 4 ? [moment("kept", "A fourth keeps it")] : []),
         meld({ "9": n < 3 ? "9D" : "9H" }),
         discard(n === 1 ? "5H" : "5S"),
         draw(),
         discard(),
         ...(n < 4 ? [draw(), discard(n < 2 ? "9D" : "9H")] : []),
       ]),
+      autoUntil("round"),
+      nextRound(),
+      moment("lapsed", "A new round, and nobody is Grabby Pants"),
     ],
   },
   {

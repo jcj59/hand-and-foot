@@ -23,9 +23,14 @@ import { describeMove } from "./lastMove";
 import { isMatchOver } from "./nextRound";
 import { applyAction } from "./reducer";
 
-/** Where a game starts: a fresh deal from a seed, or a position built by hand. */
+/**
+ * Where a game starts: a fresh deal from a seed, or a position built by hand. A
+ * deal starts at `firstSeat`, seat 0 when absent, as every match recorded before
+ * the first player was chosen at random did.
+ */
 export type GameSetup =
-  { readonly seed: number; readonly playerCount: number } | { readonly state: GameState };
+  | { readonly seed: number; readonly playerCount: number; readonly firstSeat?: number }
+  | { readonly state: GameState };
 
 /** A point someone marked by hand as the reason to watch: "Marva get-down". */
 export interface MarkedMoment {
@@ -132,7 +137,7 @@ export interface Timeline {
 
 function initialState(log: GameLog): GameState {
   if ("state" in log.setup) return { ...log.setup.state, config: log.config };
-  return deal(log.setup.playerCount, log.config, log.setup.seed);
+  return deal(log.setup.playerCount, log.config, log.setup.seed, 1, log.setup.firstSeat);
 }
 
 /**

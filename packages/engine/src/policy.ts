@@ -126,13 +126,10 @@ export function defaultAction(state: GameState): Action | null {
     // The same search, over the same cards, with the same minimum as the take was
     // authorized under — so it finds the plan that authorized it.
     const minimum = layDownMinimum(state, seat);
-    const plan = greedyLayDown(
-      activeCards(player),
-      player.melds,
-      new Set(owed),
-      state.config,
+    const plan = greedyLayDown(activeCards(player), player.melds, new Set(owed), state.config, {
       minimum,
-    );
+      inFoot: player.inFoot,
+    });
     // Unreachable: taking the pile required a plan over these same cards, and a
     // lay-down that skipped the obligation can only have consumed naturals of a
     // rank it then melded — which leaves that rank extendable by the one pile
@@ -191,7 +188,7 @@ function wantsPile(view: PlayerView, config: RulesConfig, minimum: number): bool
     view.melds,
     new Set(pile.map((c) => c.id)),
     config,
-    minimum,
+    { minimum, inFoot: view.inFoot },
   );
   return plan.usesRequired && plan.value >= minimum;
 }
@@ -337,7 +334,10 @@ export function heuristicAction(view: PlayerView, config: RulesConfig): Action |
   }
 
   if (view.pickedUp.length > 0) {
-    const plan = greedyLayDown(zone, view.melds, new Set(view.pickedUp), config, minimum);
+    const plan = greedyLayDown(zone, view.melds, new Set(view.pickedUp), config, {
+      minimum,
+      inFoot: view.inFoot,
+    });
     // Unreachable for the reason it is in `defaultAction`: the take was authorized
     // by this search over these cards.
     /* v8 ignore next */
@@ -346,7 +346,7 @@ export function heuristicAction(view: PlayerView, config: RulesConfig): Action |
   }
 
   if (!view.isDown) {
-    const plan = greedyLayDown(zone, [], new Set(), config, minimum);
+    const plan = greedyLayDown(zone, [], new Set(), config, { minimum, inFoot: view.inFoot });
     const laid = plan.plays.reduce((n, play) => n + play.cardIds.length, 0);
     // Melding the whole hand gets a seat down below the minimum under the Marva
     // rule. A seat out of its foot always still has the foot to pick up, so
@@ -373,7 +373,9 @@ export function heuristicAction(view: PlayerView, config: RulesConfig): Action |
  * wilds `placeWilds` assigns over the melds that leaves.
  */
 function downPlays(zone: readonly Card[], view: PlayerView, config: RulesConfig): MeldPlay[] {
-  const naturals = greedyLayDown(zone, view.melds, new Set(), config, 0).plays;
+  const naturals = greedyLayDown(zone, view.melds, new Set(), config, {
+    inFoot: view.inFoot,
+  }).plays;
   const byId = new Map(zone.map((c) => [c.id, c] as const));
   const melds = new Map<Rank, Card[]>(view.melds.map((m) => [m.rank, [...m.cards]]));
   for (const play of naturals) {

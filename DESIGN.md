@@ -98,6 +98,15 @@ and it supports several capabilities at once: replaying a game to reproduce a de
 reference games as regression tests, low-cost durable persistence, and a corpus of recorded games
 for the agent.
 
+A log reproduces a game only if everything that shaped the deal is recorded beside it, and the seat
+that takes the first turn proved to be one such input. It used to be implied: seat 0, whoever opened
+the table. Choosing it at random could not be done by deriving it from the seed inside the deal,
+because every match already recorded assumes seat 0 whatever its seed, and would stop replaying. So
+the seat is chosen from the seed when a match is dealt, which keeps the engine free of any outside
+source of randomness, and is then stored with the room as a fact of its own; a record written before
+it existed has none, and is read as seat 0. The rule this follows is that a new input to the deal is
+recorded rather than recomputed, so changing how it is chosen never rewrites a game already played.
+
 ### Authoritative server with per-player view filtering
 
 The server never trusts client-submitted state, only validated actions. Before broadcasting, it
@@ -189,6 +198,18 @@ public by construction (the meld is on the table for all to see), keeps it out o
 hands, and lets a replay show it at exactly the moment the live table did. The announcement itself
 is a shared overlay that Grabby Pants also uses, so the awards and tutorial planned later have one
 place to build on.
+
+### Grabby Pants
+
+Grabby Pants is the table's title for a player who takes the discard pile three times running, with
+nobody else taking it in between. It started as a title for the match, which a longer streak was
+needed to take away; in play that meant one early run of luck settled it for an hour. It now lasts a
+round, and anyone else's three in a row takes it: the joke is about who is grabbing now, not a record
+to beat. The title is a pure function of the action log, with the next-round action as the reset, so
+nothing about it is stored and the live table, a restart and a replay always name the same holder.
+That also made the rule change cheap: no saved game stopped replaying, because what changed was only
+what the table says about a game, never the game. Statistics that count it count each earning of the
+title, not who held it when a match ended.
 
 ### Identity without accounts
 
@@ -609,6 +630,10 @@ the test effort.
 
 - Unit tests cover each rule in isolation: melds, wild-card ratios, the special threes, the foot
   transition, go-out conditions, per-round minimums, taking the discard pile, and scoring.
+- Some positions are too rare for random games to reach. A black three on the pile in front of a
+  player with six more in their foot — found in a real game, where the pile was wrongly refused — is
+  one; so those positions are generated directly, and the guarantee that a pile the rules allow can
+  always be settled is asserted over them as well as over random play.
 - Property-based tests assert invariants across large numbers of randomized game sequences, for
   example that cards are conserved and that any legal action applied to a legal state yields a legal
   state.

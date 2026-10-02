@@ -454,3 +454,39 @@ describe("heuristicAction — going out", () => {
     expect(after.players[0].melds[0].cards).toHaveLength(4);
   });
 });
+
+describe("the heuristic with black threes in its foot", () => {
+  const threes = (n: number): Card[] =>
+    Array.from({ length: n }, (_, i) => card("3", i % 2 ? "spades" : "clubs"));
+
+  it("melds seven of them as a book, the only way to stop them costing points", () => {
+    const book = threes(7);
+    const s = table(seat({ isDown: true, inFoot: true, foot: [...book, card("9"), card("K")] }));
+    const { action } = step(s);
+    expect(action).toEqual({
+      type: "playMelds",
+      melds: [{ rank: "3", cardIds: expect.arrayContaining(book.map((c) => c.id)) }],
+    });
+  });
+
+  it("gets down with them, when it reached the foot by discarding before it was down", () => {
+    const book = threes(7);
+    const s = table(seat({ inFoot: true, foot: [...book, card("9"), card("K")] }));
+    const { action, state } = step(s);
+    expect(action.type).toBe("playMelds");
+    expect(state.players[0].isDown).toBe(true);
+    expect(state.players[0].melds.map((m) => m.rank)).toEqual(["3"]);
+  });
+
+  it("keeps six, which cannot be melded", () => {
+    const s = table(
+      seat({ isDown: true, inFoot: true, foot: [...threes(6), card("9"), card("K")] }),
+    );
+    expect(choose(s)?.type).toBe("discard");
+  });
+
+  it("never melds them from the hand", () => {
+    const s = table(seat({ isDown: true, hand: [...threes(7), card("9"), card("K")] }));
+    expect(choose(s)?.type).toBe("discard");
+  });
+});

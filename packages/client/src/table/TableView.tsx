@@ -276,6 +276,7 @@ export function TableView({
   const playContext: PlayContext = {
     inFoot: view.inFoot,
     blackThreesHeld: zone.filter(isBlackThree).length,
+    wildsHeld: zone.filter((card) => isWild(card.rank)).length,
     hasBlackThreeMeld: meldRanks.has("3"),
   };
   const outOfPlay = (card: Card): boolean => isUnplayable(card, playContext);

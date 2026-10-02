@@ -60,6 +60,17 @@ describe("the scenario autopilot", () => {
     expect(action.melds.flatMap((m) => m.cardIds)).toHaveLength(1);
   });
 
+  it("melds seven black threes from the foot as a book", () => {
+    const state = playing({
+      seed: 1,
+      // Seven black threes need four decks, so three seats.
+      seats: [{ inFoot: true, melds: BOOKS, foot: "3C 3S 3C 3S 3C 3S 3C 9D 8H" }, {}, {}],
+    });
+    const action = autopilotAction(state)! as Extract<Action, { type: "playMelds" }>;
+    expect(action.type).toBe("playMelds");
+    expect(action.melds.map((m) => m.rank)).toEqual(["3"]);
+  });
+
   it("discards instead when no play would leave it a card", () => {
     const state = playing({
       seed: 1,

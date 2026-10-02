@@ -68,6 +68,9 @@ export const MIGRATIONS: readonly string[] = [
      created_at bigint not null,
      updated_at bigint not null
    );`,
+  // The seat that took the first turn, chosen at random since P1. Null on rows
+  // written before: those matches started at seat 0.
+  `alter table rooms add column first_seat integer;`,
 ];
 
 /**
@@ -239,13 +242,14 @@ export class PostgresRoomStore implements RoomStore {
         savedUntil,
       } as postgres.JSONValue);
       return sql`
-        insert into rooms (uid, code, config, seed, created_at, players, started, paused_seat, host_token, waiting)
+        insert into rooms (uid, code, config, seed, created_at, players, started, paused_seat, host_token, waiting, first_seat)
         values (${room.uid}, ${room.id}, ${sql.json(room.config as unknown as postgres.JSONValue)},
                 ${room.seed}, ${room.createdAt}, ${players}, ${room.started}, ${room.pausedSeat},
-                ${room.hostToken ?? null}, ${waiting})
+                ${room.hostToken ?? null}, ${waiting}, ${room.firstSeat ?? null})
         on conflict (uid) do update set
           players = excluded.players,
           started = excluded.started,
+          first_seat = excluded.first_seat,
           paused_seat = excluded.paused_seat,
           host_token = excluded.host_token,
           waiting = excluded.waiting`;
@@ -275,7 +279,8 @@ export class PostgresRoomStore implements RoomStore {
   async loadOpen(): Promise<readonly StoredRoom[]> {
     const { sql } = this;
     const rooms = await sql`
-      select uid, code, config, seed, created_at, players, started, paused_seat, host_token, waiting
+      select uid, code, config, seed, created_at, players, started, paused_seat, host_token, waiting,
+             first_seat
       from rooms where closed_at is null order by created_at`;
     if (rooms.length === 0) return [];
     const actions = await sql`
@@ -309,6 +314,7 @@ export class PostgresRoomStore implements RoomStore {
         started: row.started,
         pausedSeat: row.paused_seat,
         hostToken: row.host_token,
+        ...(row.first_seat !== null ? { firstSeat: row.first_seat } : {}),
         // Null on a row written before the column existed: nothing was pending.
         ...((row.waiting ?? {}) as Pick<
           RoomRecord,

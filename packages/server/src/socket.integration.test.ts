@@ -13,6 +13,7 @@ import {
 } from "@hf/shared";
 import { defaultAction } from "@hf/engine";
 import { createServer, FakeClock, MAX_PLAYERS, type HandAndFootServer } from "./index";
+import type { Room } from "./room";
 
 type Client = TableSocket;
 
@@ -146,6 +147,32 @@ async function seatTwo(): Promise<{
     hostCreds: created.data,
     guestCreds: joined.data,
   };
+}
+
+/**
+ * The first turn goes to a seat chosen at random, so a test that needs a seat on
+ * turn plays the others' turns for them — on the room, not over a socket, so no
+ * view a test is waiting for gets ahead of it.
+ */
+function turnTo(room: Room, seat: number): void {
+  while (room.gameState!.currentSeat !== seat) {
+    const onTurn = room.gameState!.currentSeat;
+    expect(room.submitAction(onTurn, { type: "draw" }).ok).toBe(true);
+    const card = room.gameState!.players[onTurn]!.hand[0]!;
+    expect(room.submitAction(onTurn, { type: "discard", cardId: card.id }).ok).toBe(true);
+  }
+}
+
+/** Which of two seated sockets is on turn once dealt, and which is waiting. */
+function byTurn(
+  room: Room,
+  host: Client,
+  guest: Client,
+): { actor: Client; observer: Client; actorSeat: number } {
+  const actorSeat = room.gameState!.currentSeat;
+  return actorSeat === 0
+    ? { actor: host, observer: guest, actorSeat }
+    : { actor: guest, observer: host, actorSeat };
 }
 
 describe("lobby over the wire", () => {
@@ -371,53 +398,58 @@ describe("view security across the transport", () => {
 
   it("delivers each socket the hints for its own seat", async () => {
     // Same reasoning as the hand: project() being right says nothing about which
-    // socket the payload reaches. Seat 0 opens the round, so the two sockets must
+    // socket the payload reaches. One seat opens the round, so the two sockets must
     // receive visibly different hints, and each the ones meant for it.
-    const { host, guest } = await seatTwo();
+    const { server, host, guest, roomId } = await seatTwo();
     const hostView = next(host, "view");
     const guestView = next(guest, "view");
     await startGame(host);
+    const first = server.manager.get(roomId)!.gameState!.currentSeat;
 
-    const mine = await hostView;
-    const theirs = await guestView;
-    expect(mine.hints.seatToAct).toBe(0);
-    expect(theirs.hints.seatToAct).toBe(0);
-    expect(mine.hints.canDraw).toBe(true);
-    expect(theirs.hints.canDraw).toBe(false);
+    const views = [await hostView, await guestView];
+    const [mine, theirs] = first === 0 ? views : [views[1]!, views[0]!];
+    expect(mine!.hints.seatToAct).toBe(first);
+    expect(theirs!.hints.seatToAct).toBe(first);
+    expect(mine!.hints.canDraw).toBe(true);
+    expect(theirs!.hints.canDraw).toBe(false);
     // Hints are booleans, a seat and ranks — never cards.
-    expect(JSON.stringify(mine.hints)).not.toContain([...theirs.view.hand.map((c) => c.id)][0]);
+    expect(JSON.stringify(mine!.hints)).not.toContain([...theirs!.view.hand.map((c) => c.id)][0]);
   });
 });
 
 describe("playing over the wire", () => {
   it("accepts a legal action and pushes a fresh view to both seats", async () => {
-    const { host, guest } = await seatTwo();
-    const hostBox = trackViews(host);
-    const guestBox = trackViews(guest);
+    const { server, host, guest, roomId } = await seatTwo();
+    const dealt = [next(host, "view"), next(guest, "view")];
     await startGame(host);
+    await Promise.all(dealt);
+    const { actor, observer } = byTurn(server.manager.get(roomId)!, host, guest);
+    const actorBox = trackViews(actor);
+    const observerBox = trackViews(observer);
 
-    const before = hostBox.last!.view.hand.length;
-    const mine = waitFor(host, "view", (u) => u.view.hand.length === before + 1);
-    const theirs = waitFor(guest, "view", (u) => u.view.opponents[0].handCount === before + 1);
-    expect((await submit(host, { type: "draw" })).ok).toBe(true);
+    const before = EAST_COAST.handSize;
+    const mine = waitFor(actor, "view", (u) => u.view.hand.length === before + 1);
+    const theirs = waitFor(observer, "view", (u) => u.view.opponents[0].handCount === before + 1);
+    expect((await submit(actor, { type: "draw" })).ok).toBe(true);
     await mine;
     await theirs;
 
-    expect(hostBox.last!.view.hand.length).toBe(before + 1);
+    expect(actorBox.last!.view.hand.length).toBe(before + 1);
     // The opponent learns the count changed, never which card arrived.
-    const opponent = guestBox.last!.view.opponents[0];
+    const opponent = observerBox.last!.view.opponents[0];
     expect(opponent.handCount).toBe(before + 1);
-    expect(JSON.stringify(opponent)).not.toContain(hostBox.last!.view.hand[before].id);
+    expect(JSON.stringify(opponent)).not.toContain(actorBox.last!.view.hand[before].id);
   });
 
   it("tells only the drawer which card they drew, and everyone that a card was drawn", async () => {
-    const { host, guest } = await seatTwo();
+    const { server, host, guest, roomId } = await seatTwo();
     trackViews(host);
     trackViews(guest);
     await startGame(host);
-    const mine = waitFor(host, "view", (u) => u.lastMove?.kind === "draw");
-    const theirs = waitFor(guest, "view", (u) => u.lastMove?.kind === "draw");
-    expect((await submit(host, { type: "draw" })).ok).toBe(true);
+    const { actor, observer } = byTurn(server.manager.get(roomId)!, host, guest);
+    const mine = waitFor(actor, "view", (u) => u.lastMove?.kind === "draw");
+    const theirs = waitFor(observer, "view", (u) => u.lastMove?.kind === "draw");
+    expect((await submit(actor, { type: "draw" })).ok).toBe(true);
     const [own, other] = await Promise.all([mine, theirs]);
     const drawn = own.lastMove!.card!;
     expect(own.view.hand.map((c) => c.id)).toContain(drawn.id);
@@ -429,7 +461,8 @@ describe("playing over the wire", () => {
   it("rejects an out-of-turn action and leaves the game untouched", async () => {
     const { server, host, guest, roomId } = await seatTwo();
     await startGame(host);
-    const rejected = await submit(guest, { type: "draw" });
+    const { observer } = byTurn(server.manager.get(roomId)!, host, guest);
+    const rejected = await submit(observer, { type: "draw" });
     expect(rejected.ok).toBe(false);
     expect(server.manager.get(roomId)!.log.length).toBe(0);
   });
@@ -443,15 +476,16 @@ describe("playing over the wire", () => {
   });
 
   it("pauses and resumes the table for everyone", async () => {
-    const { host, guest } = await seatTwo();
+    const { server, host, guest, roomId } = await seatTwo();
     await startGame(host);
+    const { actor } = byTurn(server.manager.get(roomId)!, host, guest);
     const paused = waitFor(guest, "room", (info) => info.pausedBy === 1);
     expect((await setPaused(guest, true)).ok).toBe(true);
     expect((await paused).pausedBy).toBe(1);
 
-    expect((await submit(host, { type: "draw" })).ok).toBe(false);
+    expect((await submit(actor, { type: "draw" })).ok).toBe(false);
     expect((await setPaused(host, false)).ok).toBe(true);
-    expect((await submit(host, { type: "draw" })).ok).toBe(true);
+    expect((await submit(actor, { type: "draw" })).ok).toBe(true);
   });
 });
 
@@ -488,6 +522,7 @@ describe("reconnection", () => {
     const { server, port, host, guest, roomId, guestCreds } = await seatTwo();
     await startGame(host);
     const room = server.manager.get(roomId)!;
+    turnTo(room, 0);
 
     guest.disconnect();
     const back = await connect(port);
@@ -525,6 +560,7 @@ describe("reconnection", () => {
     if (!joined.ok) throw new Error(joined.error);
     await startGame(host);
     const room = server.manager.get(created.data.roomId)!;
+    turnTo(room, 0);
 
     const fresh = await connect(port);
     expect((await resumeSeat(fresh, joined.data)).ok).toBe(true);
@@ -698,11 +734,12 @@ describe("leaving over the wire", () => {
     await joinRoom(guest, created.data.roomId, "ben");
     await startGame(host);
     const room = server.manager.get(created.data.roomId)!;
-    expect(room.gameState!.currentSeat).toBe(0);
+    // The seat on turn leaves, whichever that is, and the other watches it played.
+    const { actor, observer, actorSeat } = byTurn(room, host, guest);
 
-    const played = waitFor(guest, "view", (u) => u.view.currentSeat === 1);
-    const dropped = waitFor(guest, "room", (i) => i.players[0].connected === false);
-    expect((await leaveRoom(host)).ok).toBe(true);
+    const played = waitFor(observer, "view", (u) => u.view.currentSeat === 1 - actorSeat);
+    const dropped = waitFor(observer, "room", (i) => i.players[actorSeat].connected === false);
+    expect((await leaveRoom(actor)).ok).toBe(true);
     await dropped;
     // No time passes beyond the zero-delay wake-up: the grace is not waited on.
     clock.advance(0);

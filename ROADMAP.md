@@ -28,6 +28,126 @@ does.
 
 ---
 
+## Priority — take these before the numbered items
+
+Found while playing real games. Each is one PR, labelled `P1`–`P3` so they sit outside the numbered
+order; take them lowest first, ahead of everything else, whatever the numbered items' dependencies.
+`P1` and `P2` touch different packages and can run in parallel; `P3` should wait for `P1`.
+
+### ~~P1. Take-pile bug with a seventh black three, a random first player, and per-round Grabby Pants~~
+
+*Engine and server, with the viewer's announcement following. Three small rules changes, shipped together because they share the replay-safety care.*
+
+**Bug: the pile cannot be taken when the card on top completes a black-three meld.** Reported from a
+real game: six black threes in hand, a seventh was discarded, and the pile could not be taken even
+though the player could have melded all seven. Likely cause, to be confirmed rather than assumed:
+`canTakePile` (`feasibility.ts`) decides through `greedyLayDown`, which skips black threes entirely
+(`plan.ts`, `if (isRedThree(c) || isBlackThree(c)) continue`), so a black three on the pile never
+counts as a playable pile card, while `meldableRanks` (`legal.ts`) does allow the seven-black-three
+meld from the foot.
+- Reproduce it first as a seed + action sequence or a focused `reducer.takepile.test.ts` case through
+  `applyAction`, and watch it fail for the reason above. Then check the rules before choosing the
+  fix: what is a black three on the pile allowed to do for a player who holds six (and what about
+  five plus a wild, or a player not yet in the foot)? Record the decision in `CLAUDE.md`'s
+  "settled rules decisions" with its reasoning.
+- The fix must keep `canTakePile`, `applyTakePile` and the policy agreeing (the existing property
+  test checks that the policy can discharge every take it is allowed). Extend it to cover black-three
+  melds, and mutation-test the new branch.
+- Surface the legality hint to the client unchanged (`LegalHints` already carries `canTakePile`);
+  add a scenario for it to the library, with a moment, so the viewer shows the fix.
+
+**Random first player.** The first turn of round 1 always goes to seat 0 (`deal.ts`:
+`currentSeat: (roundNumber - 1) % playerCount`), which is whoever opened the table. Pick it at
+random for a new match; later rounds keep rotating one seat from there.
+- Engine purity holds: derive the choice from the match seed (an `Rng` from `prng(seed)`), never
+  `Math.random()`.
+- **Replay safety is the real work.** Every action log recorded before this change assumes seat 0
+  starts. Persisted tables restore by replaying their log, and `Room.restore` refuses a log that does
+  not replay, so changing the default would close every saved game and break the golden games in
+  `replay.test.ts`. Store the starting seat explicitly (in the setup / room record, as
+  `nextRoundReady` was), treat its absence as seat 0, and add a restore test over an old record.
+  `roundSeed` for round 1 must still equal the match seed.
+- The lobby/table should make clear who starts (the existing turn indicator is enough if it is
+  visible at deal), and the scenario library keeps its hand-built positions as they are.
+
+**Grabby Pants: per round, and simply three in a row.** Today (`grabby.ts`) the title lasts the whole
+match and, once held, can only be taken by a streak *longer than the holder's best*. Change both:
+- It resets at the start of every round: nobody holds it, and no streak carries over the round
+  boundary. The `nextRound` action in the log is the reset point (`step` handles it like a new
+  tally), so it stays a pure function of the log and replay, restart and the scenario viewer still
+  agree.
+- Anyone who takes the pile three times in a row (`GRABBY_STREAK`, still pinned) with nobody else
+  taking it in between holds the title — no "longer than the holder's best" bar. If another player
+  then does the same, it changes hands (`from` stays set). Drawing and discarding by others still do
+  not break a streak, only someone else taking the pile. Taking it a fourth time keeps the title
+  and needs no special case.
+- This only changes a *derived display*, not game state, so no log stops replaying; but the
+  scenarios, golden-game moments and the "Grabby Pants being earned and changing hands" scenario
+  change, and `playback.ts`'s `grabbyPants` moments follow the new rule automatically. Update the
+  tests that pin the old behaviour deliberately (do not just delete them), mutation-test the
+  reset and the changed bar, and make sure the client's announcement fires for a new holder in a
+  later round and not for the title simply lapsing at round start.
+- Roadmap items 5 and 11 count "times as Grabby Pants" and "most Grabby Pants": with a per-round
+  title, count each *earning* (a holder appearing or changing), not the match-end holder. Note it in
+  those items' implementation, and update the Grabby Pants entry in `CLAUDE.md`.
+
+**Done when.** The reported situation is a regression test and a scenario; a new match starts on a
+random seat, a restored pre-change table still restores and plays identically, Grabby Pants resets
+each round and changes hands on any new three-in-a-row, and the CI sequence passes. Update `CLAUDE.md` and `DESIGN.md`.
+
+### P2. Table tweaks: longer, richer reactions and a deeper discard pile
+
+*Client, plus the reaction list in `@hf/shared`. No rules or server changes beyond the new ids.*
+
+- **Reactions stay up longer.** `REACTION_SHOW_MS` (`table/reactions.tsx`) is 3s; raise it by a
+  second or two (about 5s) so a reaction can be read by someone glancing away. Pin the new value as a
+  literal in the test, per the constant-on-both-sides note in `CLAUDE.md`. Do not lengthen the sender's
+  cooldown unless it needs to follow.
+- **More reactions.** Add to `REACTIONS` (`protocol.ts`) in the existing register: "Oof", and a
+  handful alongside it ("Ouch", "Yikes", "Phew", "Ha!", "GG", "Close one"), a few emoji for the
+  mood the text ones cannot carry. Keep it a fixed list of ids — never free text. Check the picker
+  still fits on a phone (a bottom sheet that scrolls rather than clips) and that the list stays
+  small enough to find one quickly. Ids already stored or in flight must keep working; only add.
+- **The discard pile always shows two cards.** Today the pile shows only its top card unless it has
+  exactly two cards, in which case the card beneath peeks out. Make that the permanent look: the
+  top card, with the one beneath it showing, and edges or an offset stack behind them so a large pile
+  still reads as large and a one-card pile still reads as one. The whole discard is public
+  (`view.discard` is the full pile), so this needs no change to the view or the anti-cheat tests —
+  but check that the card beneath is the real second card, and that card animations
+  (`table/cardMotion.ts`, `data-motion`/`data-anchor="discard"`) still fly cards to and from the right
+  place on desktop and phone, including a take-the-pile and an emptied pile.
+
+This changes what players see, so it carries before/after screenshots (frames for the pile
+animation), desktop and phone. Update `CLAUDE.md`.
+
+### P3. Remove a player between rounds (family mode)
+
+**Depends on** P1. *Engine, server, client; may split `a` (engine and server) / `b` (client).*
+
+In family mode, someone should be able to leave between rounds and everyone else carries on, rather
+than the leaver's seat being played by the default policy until the table is closed. Today a player
+who leaves after the deal is marked `left` and auto-played (`seatIsAbsent`); this replaces that
+between rounds.
+
+- Who may do it: the player leaving themselves, and the host removing someone who has gone. Only
+  between rounds (after a round ends and before the next deal) and only in family mode; refused
+  during a round, in an online/competitive table, and when it would leave fewer than `MIN_PLAYERS`.
+- **It must be an engine concern, not just a seat flag.** The shoe is sized from the player count
+  (`buildShoe(playerCount, extraDecks)` in `deal.ts`) and the first turn rotates by seat, so the next
+  deal has to be dealt for the smaller table and logged as an action the way `nextRound` is, so a
+  restart replays the same match. Decide how the removed player's seat number, past round scores and
+  `matchTotals` are kept (the scoreboard should still show what they scored, marked as having left,
+  without counting them for the win) and write it into `DESIGN.md`.
+- Readiness (`nextRoundReady`) must stop waiting for them; the saved-game flow and "play again"
+  must handle a table that is now smaller than it started. The removed player is sent home with a
+  notice and their stored seat is forgotten.
+- Anti-cheat: removing a player must not expose their hidden cards or the stock order to anyone.
+  Their cards simply leave the game, since the next round is a fresh deal.
+- Tests through `applyAction` and over the wire against a real server; mutation-test the engine
+  guards. Add a scenario (a match losing a player after round 1) and screenshots for the UI.
+
+---
+
 ## Phase A — make every situation visible
 
 ### ~~1. Scenario library and autoplay viewer~~ (#27)
@@ -172,9 +292,12 @@ A lightweight notion of a **user** without accounts or passwords.
   ids and names, the action log, per-round scores, and outcome. The log is a few KB, so storing it whole
   is the design — replay reconstructs everything else.
 - The home screen shows the user's stats (games played, wins, average score, best round, times as
-  Grabby Pants, Marva Rules invoked, …) and a list of recent matches.
+  Grabby Pants, Marva Rules invoked, …) and a list of recent matches. Since P1 the title lasts a
+  round and changes hands on any three in a row, so "times as Grabby Pants" counts each *earning*
+  (a holder appearing or changing in `grabbyHistory`), not who held it when the match ended.
 - **Replay**: open any past match in the item 1 player, which was built for this — the work here is
-  loading a stored match into its `{ config, setup, actions }` input and adding a production route, not
+  loading a stored match into its `{ config, setup, actions }` input (with `setup.firstSeat` from the
+  record — since P1 a match need not start at seat 0) and adding a production route, not
   building playback. All of its controls come for free: fast forward, scrubbing, step back, jump to a
   turn or round, and the automatic moments (pile takes, foot pickups, Marva, Grabby Pants, going out).
   Because the match is over, replay may show every hand or follow one seat. If something about
@@ -251,8 +374,9 @@ the page is closed is a follow-up only if it fits the free plan.
 ### 11. Round recap and match awards
 
 At round end, a short recap (who went out, books made, biggest swing). At match end, awards built on
-the celebration overlay: most Grabby Pants, Marva Rules invoked, most clean books, most red threes
-eaten, and similar. Feed the counts into item 5's stats.
+the celebration overlay: most Grabby Pants (counting each earning of the per-round title, since
+P1), Marva Rules invoked, most clean books, most red threes eaten, and similar. Feed the counts into
+item 5's stats.
 
 ### 12. Rematch and spectators
 

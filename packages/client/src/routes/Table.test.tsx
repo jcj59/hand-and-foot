@@ -1976,7 +1976,12 @@ describe("laying a hand out in rows", () => {
           stagedIds={new Set()}
           owedIds={new Set()}
           meldRanks={new Set()}
-          playContext={{ inFoot: false, blackThreesHeld: 0, hasBlackThreeMeld: false }}
+          playContext={{
+            inFoot: false,
+            blackThreesHeld: 0,
+            wildsHeld: 0,
+            hasBlackThreeMeld: false,
+          }}
           onSelect={() => {}}
           chosenId={null}
           menu={null}
@@ -2643,6 +2648,26 @@ describe("Grabby Pants", () => {
       );
       expect(screen.getByRole("status", { name: "Grabby Pants" })).toBeInTheDocument();
       expect(speech.said).toEqual([]);
+    } finally {
+      speech.restore();
+    }
+  });
+
+  it("says nothing when the title lapses at a new round, and announces it earned again", () => {
+    const speech = fakeSpeech();
+    try {
+      mount(fakeSocket().socket, update({ room: { grabbyPants: { seat: 1, streak: 3 } } }));
+      // The next round is dealt: nobody holds it. That is not news.
+      act(() => useSession.getState().applyRoom(roomInfo({ grabbyPants: null })));
+      expect(screen.queryByRole("status", { name: "Grabby Pants" })).toBeNull();
+      expect(screen.queryByLabelText(/^Grabby Pants, /)).toBeNull();
+      expect(speech.said).toEqual([]);
+      // Ben earns it afresh: the same player, but a new earning, so it is announced.
+      act(() => useSession.getState().applyRoom(roomInfo({ grabbyPants: { seat: 1, streak: 3 } })));
+      expect(screen.getByRole("status", { name: "Grabby Pants" }).textContent).toBe(
+        "ben is Grabby Pants",
+      );
+      expect(speech.said).toEqual(["Grabby Pants"]);
     } finally {
       speech.restore();
     }

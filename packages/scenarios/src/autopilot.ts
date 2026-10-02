@@ -49,7 +49,10 @@ function meldPlays(state: GameState, zone: readonly Card[]): MeldPlay[] | null {
   const seat = state.currentSeat;
   const player = state.players[seat]!;
   const minimum = layDownMinimum(state, seat);
-  const plan = greedyLayDown(zone, player.melds, new Set(), state.config, minimum);
+  const plan = greedyLayDown(zone, player.melds, new Set(), state.config, {
+    minimum,
+    inFoot: player.inFoot,
+  });
   const candidates: MeldPlay[][] = [];
   if (plan.plays.length > 0 && plan.value >= minimum) candidates.push([...plan.plays]);
   if (player.isDown) {

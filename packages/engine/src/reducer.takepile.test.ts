@@ -12,6 +12,7 @@ import { applyAction } from "./reducer";
 import { canTakePile } from "./feasibility";
 import { legalHints } from "./legal";
 import { deal } from "./deal";
+import { defaultAction } from "./policy";
 
 let idc = 0;
 function card(rank: Rank, suit: Suit = "clubs"): Card {
@@ -333,5 +334,81 @@ describe("taking the pile on the opening turn", () => {
     }
     // Opening takes are rare; if none occurred the sweep proves nothing.
     expect(feasible).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * A black three on the pile is a pile card like any other when the player can
+ * meld it straight away — and they can only do that from the foot, as part of a
+ * black-three book of seven or more (`applyPlayMelds`). Found in a real game: six
+ * black threes in the foot, a seventh discarded, and the pile refused.
+ */
+describe("taking the pile with a black three on it", () => {
+  const blackThrees = (n: number): Card[] =>
+    Array.from({ length: n }, (_, i) => card("3", i % 2 ? "spades" : "clubs"));
+
+  /** Take the pile, let the default policy settle the obligation, and check the reducer agrees. */
+  function takeAndSettle(s: GameState): GameState {
+    const took = applyAction(s, { type: "takePile" });
+    expect(took.ok, took.ok ? "" : took.error).toBe(true);
+    if (!took.ok) throw new Error(took.error);
+    const settle = defaultAction(took.state);
+    expect(settle?.type).toBe("playMelds");
+    const settled = applyAction(took.state, settle!);
+    expect(settled.ok, settled.ok ? "" : settled.error).toBe(true);
+    if (!settled.ok) throw new Error(settled.error);
+    expect(settled.state.players[0].pickedUp).toEqual([]);
+    return settled.state;
+  }
+
+  it("is allowed from the foot when it makes a seventh black three (the reported game)", () => {
+    const six = blackThrees(6);
+    const seventh = card("3", "spades");
+    const s = state({ isDown: true, inFoot: true, hand: [], foot: [...six, card("9")] }, [
+      card("8"),
+      seventh,
+    ]);
+    expect(canTakePile(s, 0).feasible).toBe(true);
+    expect(legalHints(s, 0).canTakePile).toBe(true);
+
+    const after = takeAndSettle(s);
+    const book = after.players[0].melds.find((m) => m.rank === "3");
+    expect(book?.cards.map((c) => c.id).sort()).toEqual([...six, seventh].map((c) => c.id).sort());
+  });
+
+  it("is allowed onto a black-three book already down", () => {
+    const book = { rank: "3" as Rank, cards: blackThrees(7) };
+    const s = state({ isDown: true, inFoot: true, foot: [card("9")], melds: [book] }, [
+      card("3", "spades"),
+    ]);
+    expect(canTakePile(s, 0).feasible).toBe(true);
+    const after = takeAndSettle(s);
+    expect(after.players[0].melds.find((m) => m.rank === "3")?.cards).toHaveLength(8);
+  });
+
+  it("is allowed with a wild making up the seven, as a lay-down would be", () => {
+    const s = state(
+      { isDown: true, inFoot: true, foot: [...blackThrees(5), card("JOKER"), card("9")] },
+      [card("3", "spades")],
+    );
+    expect(canTakePile(s, 0).feasible).toBe(true);
+    const after = takeAndSettle(s);
+    expect(after.players[0].melds.find((m) => m.rank === "3")?.cards).toHaveLength(7);
+  });
+
+  it("is refused when the threes fall short of seven", () => {
+    const s = state({ isDown: true, inFoot: true, foot: [...blackThrees(5), card("9")] }, [
+      card("3", "spades"),
+    ]);
+    expect(canTakePile(s, 0).feasible).toBe(false);
+    expect(applyAction(s, { type: "takePile" }).ok).toBe(false);
+  });
+
+  it("is refused from the hand, where black threes can never be melded", () => {
+    const s = state({ isDown: true, hand: [...blackThrees(6), card("9")], foot: cards("Q", 3) }, [
+      card("3", "spades"),
+    ]);
+    expect(canTakePile(s, 0).feasible).toBe(false);
+    expect(applyAction(s, { type: "takePile" }).ok).toBe(false);
   });
 });
