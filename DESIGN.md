@@ -726,6 +726,27 @@ ends. A player who is present but out of time still gets the default, after thei
 lay-down, since they are there to see what is done with their cards. As above, this ends most
 abandoned rounds but not all, so the reaper stays.
 
+### Hints for a learner
+
+Hints are for someone learning the game at the table, and come in two kinds. The first is a reason
+for a move that is not open. Most of those the table already gives: the lay-down being built shows
+its value against the minimum and names what is wrong with each group. The one it could not was the
+pile, because whether it can be taken is decided by the same solver the reducer uses, over cards the
+client does not hold together. So the server works the reason out for the seat on turn — the pile is
+empty, none of its cards can be played with the player's own, or the best lay-down with it falls
+short of the minimum, by how much — and sends it in that seat's hints alone. It is worked out from
+the player's own cards and the face-up pile, which is everything they could work it out from at a
+real table, so it gives nothing away.
+
+The second is a suggested move: the computer player's choice, asked of it in the browser. The
+heuristic takes only a seat's view, so it runs on the client from exactly what the player is shown
+— a suggestion cannot know a card the player cannot see — and asking costs the server nothing. The
+move is put into words and its cards are ringed in the hand, and it is forgotten the moment the
+table changes, since it is advice about one position.
+
+Hints are a per-device choice, on by default at a family table and off at a competitive one, where
+being shown a good move is not the game the table chose to play; a player can still turn them on.
+
 ### Calling a player back to the table
 
 A family game is mostly waiting. Between turns a player reads something else in another tab, and

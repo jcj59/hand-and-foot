@@ -7,7 +7,7 @@ import {
   isWild,
 } from "@hf/shared";
 import { activeCards } from "./core";
-import { canTakePile } from "./feasibility";
+import { canTakePile, takePileWhy } from "./feasibility";
 import { canGoOut } from "./goout";
 
 // `LegalHints` itself lives in `@hf/shared`: it crosses the socket inside a
@@ -54,6 +54,7 @@ export function legalHints(state: GameState, seat: number): LegalHints {
     };
   }
   if (state.phase === "draw") {
+    const why = takePileWhy(state, seat);
     return {
       seatToAct: seat,
       phase: "draw",
@@ -61,6 +62,7 @@ export function legalHints(state: GameState, seat: number): LegalHints {
       canTakePile: canTakePile(state, seat).feasible,
       meldableRanks: [],
       canGoOut: false,
+      ...(why ? { takePileWhy: why } : {}),
     };
   }
   return {

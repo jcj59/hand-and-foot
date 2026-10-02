@@ -356,6 +356,8 @@ table's minimums, wild ratio, and Marva setting rather than generic text.
 
 ### 9. Hints and interactive tutorial *(may split: 9a in-game hints, 9b tutorial)*
 
+*9a (in-game hints) done after 5b; 9b (tutorial) next. See DESIGN.md, "Hints for a learner".*
+
 **Depends on** 1 (scenarios) and 7 (the bot as a source of suggestions).
 
 - **In-game hints** (toggleable, off by default at competitive tables): explain why a button is

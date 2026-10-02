@@ -382,6 +382,12 @@ export interface LegalHints {
   readonly canTakePile: boolean;
   readonly meldableRanks: readonly Rank[];
   readonly canGoOut: boolean;
+  /**
+   * Why this seat cannot take the pile, in words for the player, on their own turn
+   * in the draw phase when they cannot. Absent otherwise. About their own cards and
+   * the face-up pile only, as the rest of the hints are.
+   */
+  readonly takePileWhy?: string;
 }
 
 export * from "./avatar";

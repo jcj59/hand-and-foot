@@ -8,7 +8,8 @@ import {
   type Rank,
   type Suit,
 } from "@hf/shared";
-import { canTakePile } from "./feasibility";
+import { canTakePile, takePileWhy } from "./feasibility";
+import { legalHints } from "./legal";
 import { applyAction } from "./reducer";
 
 let idc = 0;
@@ -303,5 +304,46 @@ describe("a wild on the pile", () => {
     const f = canTakePile(s, 0);
     expect(f.feasible).toBe(true);
     expect(f.plan).toEqual([{ rank: "K", cardIds: [joker.id] }]);
+  });
+});
+
+describe("why the pile cannot be taken", () => {
+  it("names an empty pile", () => {
+    const s = state({ isDown: true, hand: cards("K", 2) }, []);
+    expect(takePileWhy(s, 0)).toBe("the discard pile is empty");
+  });
+
+  it("says when no card in it can be played with the player's own", () => {
+    const s = state({ isDown: true, hand: cards("K", 2) }, [card("9")]);
+    expect(takePileWhy(s, 0)).toBe(
+      "none of the pile's cards can be played with yours: a card needs a pair of its rank (or one and a wild), or a meld of its rank already down",
+    );
+  });
+
+  it("says how far short of the minimum the best lay-down with it falls", () => {
+    // Three fives are 15 points, against round one's 60.
+    const s = state({ hand: [...cards("5", 2), card("9")] }, [card("5")]);
+    expect(canTakePile(s, 0).why).toEqual({ kind: "short", value: 15, minimum: 60 });
+    expect(takePileWhy(s, 0)).toBe(
+      "with the pile your best lay-down is worth 15, short of the 60 you need to get down",
+    );
+  });
+
+  it("is nothing when the pile can be taken, or when the question does not arise", () => {
+    const can = state({ isDown: true, hand: cards("K", 2) }, [card("K")]);
+    expect(takePileWhy(can, 0)).toBeNull();
+    const cannot = state({ isDown: true, hand: cards("K", 2) }, [card("9")]);
+    // Not their turn, past the draw, or the round over.
+    expect(takePileWhy(cannot, 1)).toBeNull();
+    expect(takePileWhy({ ...cannot, phase: "play" }, 0)).toBeNull();
+    expect(takePileWhy({ ...cannot, roundEnded: true }, 0)).toBeNull();
+  });
+
+  it("rides in the seat's own hints on their turn, and nowhere else", () => {
+    const cannot = state({ isDown: true, hand: cards("K", 2) }, [card("9")]);
+    expect(legalHints(cannot, 0).takePileWhy).toBe(takePileWhy(cannot, 0));
+    expect("takePileWhy" in legalHints(cannot, 1)).toBe(false);
+    const can = state({ isDown: true, hand: cards("K", 2) }, [card("K")]);
+    expect("takePileWhy" in legalHints(can, 0)).toBe(false);
   });
 });
