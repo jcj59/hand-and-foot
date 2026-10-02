@@ -11,6 +11,7 @@ import {
   play,
   reclaimOnReconnect,
   reclaimSeat,
+  carryOnWithout,
   resumeSavedGame,
   SAVED_GAME_GONE,
   startTable,
@@ -182,6 +183,58 @@ describe("reclaimSeat", () => {
     const { socket } = fakeSocket([{ ok: false, error: "no room with that code" }]);
     expect(await reclaimSeat(socket, credentials, sink())).toBe("gone");
     expect(loadCredentials()).toBeNull();
+  });
+});
+
+describe("a seat the match went on without", () => {
+  it("is gone, and said so, rather than taken for a table that has gone", async () => {
+    const { socket } = fakeSocket([{ ok: false, error: "the game carried on without you" }]);
+    saveCredentials(credentials);
+    expect(await reclaimSeat(socket, credentials, sink())).toBe("removed");
+    expect(loadCredentials()).toBeNull();
+  });
+
+  it("is the notice on a reconnect", async () => {
+    const { socket, sent } = fakeSocket([{ ok: false, error: "the game carried on without you" }]);
+    const handlers = new Set<() => void>();
+    Object.assign(socket, {
+      on: (_event: "connect", handler: () => void) => handlers.add(handler),
+      off: (_event: "connect", handler: () => void) => handlers.delete(handler),
+    });
+    const left: number[] = [];
+    const target = { ...sink(), credentials: () => credentials, leave: () => left.push(1) };
+    reclaimOnReconnect(socket, target);
+    handlers.forEach((handler) => handler());
+    await vi.waitFor(() => expect(left).toHaveLength(1));
+    expect(sent).toHaveLength(1);
+    expect(target.notices).toEqual(["the game carried on without you"]);
+  });
+
+  it("is the notice for a saved game too", async () => {
+    const game = { ...credentials, savedUntil: 9e15, names: ["ana"], round: 2 };
+    rememberSavedGame(game);
+    const { socket } = fakeSocket([{ ok: false, error: "the game carried on without you" }]);
+    const target = sink();
+    expect(await resumeSavedGame(socket, game, target)).toBe(false);
+    expect(target.notices).toEqual(["the game carried on without you"]);
+    expect(loadSavedGames()).toEqual([]);
+  });
+});
+
+describe("carryOnWithout", () => {
+  it("asks the server, and clears any notice once it has", async () => {
+    const { socket, sent } = fakeSocket([{ ok: true, data: undefined }]);
+    const target = sink();
+    expect(await carryOnWithout(socket, 2, target)).toBe(true);
+    expect(sent).toEqual([{ event: "removePlayer", args: [{ seat: 2 }] }]);
+    expect(target.notices).toEqual([null]);
+  });
+
+  it("puts a refusal on the store", async () => {
+    const { socket } = fakeSocket([{ ok: false, error: "cy is still at the table" }]);
+    const target = sink();
+    expect(await carryOnWithout(socket, 2, target)).toBe(false);
+    expect(target.notices).toEqual(["cy is still at the table"]);
   });
 });
 

@@ -1,4 +1,5 @@
 import { matchTotals } from "./nextRound";
+import { isSeated } from "./seats";
 import type { GameState, OpponentView, PlayerView } from "@hf/shared";
 
 /**
@@ -23,7 +24,9 @@ export function project(state: GameState, seat: number): PlayerView {
 
   const opponents: OpponentView[] = state.players
     .map((player, index) => ({ player, index }))
-    .filter(({ index }) => index !== seat)
+    // A player who has left the match is not an opponent any more: their seat is
+    // dealt nothing, and the round they left after is over.
+    .filter(({ index }) => index !== seat && isSeated(state, index))
     .map(({ player, index }) => ({
       seat: index,
       handCount: player.hand.length,
@@ -58,5 +61,6 @@ export function project(state: GameState, seat: number): PlayerView {
     finalLapRemaining: state.finalLapRemaining ? state.finalLapRemaining : null,
     // The finished rounds only: the one in play is not scored until it ends.
     scoresSoFar: matchTotals({ ...state, roundEnded: false }),
+    departed: state.departed ?? [],
   };
 }

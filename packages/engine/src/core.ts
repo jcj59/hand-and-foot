@@ -1,4 +1,5 @@
 import type { Card, GameState, PlayerState } from "@hf/shared";
+import { nextSeated } from "./seats";
 
 /** The outcome of applying an action: the next state, or a rejection reason. */
 export type ApplyResult =
@@ -40,10 +41,10 @@ export function updatePlayer(
 }
 
 /**
- * End the current player's turn: pass to the next seat and decrement a running
- * final lap (started by a without-discard go-out), ending the round once it
- * reaches zero. A turn normally ends with a discard, but a player who has shed
- * every card ends it without one, so both paths share this.
+ * End the current player's turn: pass to the next player still in the match and
+ * decrement a running final lap (started by a without-discard go-out), ending the
+ * round once it reaches zero. A turn normally ends with a discard, but a player
+ * who has shed every card ends it without one, so both paths share this.
  *
  * The next turn normally opens in the draw phase. A player whose foot is pending —
  * they emptied their hand with a discard — picks the foot up *in place of* drawing,
@@ -58,7 +59,7 @@ export function advanceTurn(state: GameState, seat: number): GameState {
     finalLap -= 1;
     if (finalLap === 0) roundEnded = true;
   }
-  const next = (seat + 1) % state.players.length;
+  const next = nextSeated(state, seat);
   // The turn is over, so whatever it played is final.
   const passed: GameState = {
     ...withoutTurnBase(state),

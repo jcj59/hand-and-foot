@@ -42,7 +42,9 @@ export function SavedGame({ socket }: SavedGameProps): React.ReactElement | null
   const mine = credentials?.seat;
   const isHost = mine === room.hostSeat;
   const canResume = isHost || !host?.connected;
-  const away = room.players.filter((p) => !p.connected);
+  // Anyone who left the match between rounds is not coming back to it.
+  const playing = room.players.filter((p) => !p.departed);
+  const away = playing.filter((p) => !p.connected);
   const round = update?.view.roundNumber;
   const scores = update?.view.scoresSoFar ?? [];
 
@@ -76,10 +78,10 @@ export function SavedGame({ socket }: SavedGameProps): React.ReactElement | null
 
       <section className="flex flex-col gap-2">
         <h2 className="text-sm font-medium text-white/80">
-          Back at the table ({room.players.length - away.length}/{room.players.length})
+          Back at the table ({playing.length - away.length}/{playing.length})
         </h2>
         <ul className="flex flex-col gap-1">
-          {room.players.map((player) => (
+          {playing.map((player) => (
             <li
               key={player.seat}
               className="flex items-center gap-2 rounded bg-black/20 px-3 py-2 text-sm"

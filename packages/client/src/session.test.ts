@@ -58,6 +58,7 @@ function viewUpdate(overrides: { serverNow?: number; roundNumber?: number } = {}
       wentOutSeat: null,
       finalLapRemaining: null,
       scoresSoFar: [],
+      departed: [],
     },
     clock: { serverNow, deadlineAt: serverNow + 30_000, inDiscardGrace: false, paused: false },
     room: roomInfo({ started: true }),

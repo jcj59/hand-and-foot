@@ -7,6 +7,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { CARRIED_ON_WITHOUT_YOU } from "@hf/shared";
 import { leaveOnClose, reclaimOnReconnect, reclaimSeat } from "./actions";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { loadCredentials } from "./credentials";
@@ -114,11 +115,14 @@ export function App({ socket }: AppProps): React.ReactElement {
  * to reclaim, and giving up here would leave the server playing the seat.
  *
  * A refusal raises no notice: the player did not ask for this, and telling them a
- * seat they had forgotten about is gone would be noise.
+ * seat they had forgotten about is gone would be noise. The exception is a match
+ * that went on without them: the table is still there, so the join form it shows
+ * would otherwise be the only answer to why they are not in the game.
  */
 function ResumeSeat({ socket }: { readonly socket: HfClientSocket }): null {
   const status = useSession((s) => s.status);
   const seat = useSession((s) => s.seat);
+  const setNotice = useSession((s) => s.setNotice);
   const credentials = useSession((s) => s.credentials);
   // The page it has settled for, so arriving at another page — the table, from
   // the home screen's Rejoin — asks afresh.
@@ -151,12 +155,13 @@ function ResumeSeat({ socket }: { readonly socket: HfClientSocket }): null {
     asked.current = true;
     void reclaimSeat(socket, stored, { seat }).then((outcome) => {
       if (outcome === "unreachable") return;
+      if (outcome === "removed") setNotice(CARRIED_ON_WITHOUT_YOU);
       asked.current = false;
       setTriedFor(pathname);
       // The table URL as the server spells it, in case it was typed in lower case.
       if (outcome === "reclaimed") navigate(`/room/${stored.roomId}`, { replace: true });
     });
-  }, [triedFor, pathname, status, credentials, socket, seat, navigate]);
+  }, [triedFor, pathname, status, credentials, socket, seat, setNotice, navigate]);
 
   return null;
 }

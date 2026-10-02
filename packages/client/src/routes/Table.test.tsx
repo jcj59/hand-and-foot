@@ -151,6 +151,7 @@ function update(
     wentOutSeat: null,
     finalLapRemaining: null,
     scoresSoFar: [],
+    departed: [],
     ...overrides.view,
   };
   return {
@@ -3072,5 +3073,160 @@ describe("turn notifications on a phone", () => {
     });
     mount(fakeSocket().socket);
     expect(screen.queryByRole("button", { name: /notify me/i })).toBeNull();
+  });
+});
+
+describe("carrying on without a player", () => {
+  const three = roomInfo({
+    players: [
+      { seat: 0, name: "ana", connected: true },
+      { seat: 1, name: "ben", connected: true },
+      { seat: 2, name: "cy", connected: true },
+    ],
+  });
+
+  function between(room: RoomInfo, result: RoundEnded): HTMLElement {
+    act(() => useSession.setState({ result }));
+    act(() => useSession.getState().applyRoom(room));
+    return screen.getByRole("dialog", { name: /round result/i });
+  }
+
+  function roundTwo(departed: RoundEnded["departed"], totals = [300, 900, 500]): RoundEnded {
+    return {
+      ...scored(
+        [
+          [0, 100],
+          [1, 0],
+          [2, 200],
+        ],
+        2,
+        { matchOver: false, roundNumber: 2, totals },
+      ),
+      ...(departed ? { departed } : {}),
+    };
+  }
+
+  it("keeps a player who left on the scoreboard, below the rest, as having left", () => {
+    mount(fakeSocket().socket, update({ room: three }));
+    const dialog = between(
+      roomInfo({
+        ...three,
+        players: three.players.map((p) => (p.seat === 1 ? { ...p, departed: true } : p)),
+        nextRoundReady: [0],
+      }),
+      roundTwo([{ seat: 1, afterRound: 1 }]),
+    );
+    const rows = within(dialog).getAllByRole("row").slice(1);
+    // Ben leads the totals, but he has gone: the standing is among the rest.
+    expect(rows.map((r) => r.getAttribute("aria-label"))).toEqual([
+      "cy: 200",
+      "ana: 100",
+      "ben: left after round 1",
+    ]);
+    expect(rows[2]).toHaveTextContent("Left after round 1");
+    expect(rows[2]).toHaveTextContent("900");
+    expect(within(dialog).getByRole("status")).toHaveTextContent("(1 of 2)");
+  });
+
+  it("scores a player for the round they leave after, marked as having left", () => {
+    mount(fakeSocket().socket, update({ room: three }));
+    const dialog = between(three, {
+      ...roundTwo([{ seat: 2, afterRound: 2 }]),
+    });
+    expect(within(dialog).getByRole("row", { name: "cy: 200" })).toHaveTextContent("(left)");
+  });
+
+  it("does not count a player who left for the win", () => {
+    mount(fakeSocket().socket, update({ room: three }));
+    act(() =>
+      useSession.setState({
+        result: {
+          ...scored(
+            [
+              [0, 10],
+              [1, 0],
+              [2, 20],
+            ],
+            0,
+            { matchOver: true, roundNumber: 4, totals: [1000, 5000, 1200] },
+          ),
+          departed: [{ seat: 1, afterRound: 2 }],
+        },
+      }),
+    );
+    expect(screen.getByRole("dialog", { name: /round result/i })).toHaveTextContent("cy wins!");
+  });
+
+  it("offers the host to carry on without a player who has gone, and asks the server", async () => {
+    const { socket, sent } = fakeSocket();
+    mount(socket, update({ room: three }));
+    const away = {
+      ...three,
+      players: three.players.map((p) => (p.seat === 2 ? { ...p, connected: false } : p)),
+    };
+    const dialog = between(away, roundTwo(undefined));
+    expect(dialog).toHaveTextContent("cy is not at the table");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Carry on without cy" }));
+    await waitFor(() => expect(sent).toEqual([{ event: "removePlayer", args: [{ seat: 2 }] }]));
+    // Nobody else at the table is offered it for a player who is there.
+    expect(
+      within(dialog).queryByRole("button", { name: /carry on without (ana|ben)/i }),
+    ).toBeNull();
+  });
+
+  it("shows a refusal from the server where the player is looking", async () => {
+    const { socket } = fakeSocket([{ ok: false, error: "cy is still at the table" }]);
+    mount(socket, update({ room: three }));
+    const away = {
+      ...three,
+      players: three.players.map((p) => (p.seat === 2 ? { ...p, connected: false } : p)),
+    };
+    const dialog = between(away, roundTwo(undefined));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Carry on without cy" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("cy is still at the table");
+  });
+
+  it("offers it only to the host, at a family table, with enough players left", () => {
+    const away = {
+      ...three,
+      players: three.players.map((p) => (p.seat === 2 ? { ...p, connected: false } : p)),
+    };
+    const cases: RoomInfo[] = [
+      { ...away, hostSeat: 1 },
+      { ...away, config: { ...away.config, mode: "competitive", pauseEnabled: false } },
+      { ...away, players: away.players.filter((p) => p.seat !== 1) },
+    ];
+    for (const room of cases) {
+      mount(fakeSocket().socket, update({ room }));
+      const dialog = between(room, roundTwo(undefined));
+      expect(within(dialog).queryByRole("button", { name: /carry on without/i })).toBeNull();
+      cleanup();
+    }
+  });
+
+  it("marks a player who has left in the scores along the top", () => {
+    mount(
+      fakeSocket().socket,
+      update({
+        room: three,
+        view: {
+          roundNumber: 2,
+          scoresSoFar: [300, 900, 500],
+          departed: [{ seat: 1, afterRound: 1 }],
+          opponents: [],
+        },
+      }),
+    );
+    expect(screen.getByLabelText("Scores so far")).toHaveTextContent(
+      "Scores: ana 300 · ben (left) 900 · cy 500",
+    );
+  });
+
+  it("tells a player at a family table that leaving now takes them out of the match", () => {
+    mount(fakeSocket().socket, update({ room: three }));
+    const dialog = between(three, roundTwo(undefined));
+    expect(dialog).toHaveTextContent(
+      "Leaving now takes you out of the match; the others carry on without you.",
+    );
   });
 });

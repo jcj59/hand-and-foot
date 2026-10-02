@@ -27,7 +27,8 @@ an animation) in its description, under `## Screenshots`.
    `BLACK_BOOK=1` puts the viewer in their foot beside a book of black threes, holding a red
    three and a black one. `PAUSED=1` has Ana pause the table, `SAVED=1` has her save it for later
    (three players back; the viewer hosts unless `SAVED_GUEST=1`), and `ROUND_OVER=1` opens the
-   scoreboard between rounds. Action `home` renders the home screen instead of the table, with
+   scoreboard between rounds; with `LEFT=1`, Ana has left the match after round 1 (and Dee,
+   seat 4, is not at the table, so the host is offered to carry on without her). Action `home` renders the home screen instead of the table, with
    `SAVED_LIST=1` seeding two saved games.
    On this machine Chromium needs nss/nspr/alsa from the `pwlibs` conda env. Emoji (the quick
    reactions) draw as boxes without a colour emoji font: set `EMOJI_FONT=<path to

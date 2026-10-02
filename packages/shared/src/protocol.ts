@@ -12,6 +12,7 @@ import type {
   MeldPlay,
   Action,
   Card,
+  Departure,
   LegalHints,
   PlayerView,
   RoomOptions,
@@ -70,6 +71,11 @@ export interface RoomPlayerInfo {
   readonly connected: boolean;
   /** The picture they chose, if any; without one a seat is drawn from its name (`defaultAvatar`). */
   readonly avatar?: Avatar;
+  /**
+   * Left the match between rounds: the seat is kept, for its scores, but no longer
+   * plays. Absent for everyone still playing.
+   */
+  readonly departed?: true;
 }
 
 /** Who holds the Grabby Pants title, with the streak that earned or kept it. */
@@ -165,6 +171,11 @@ export interface RoundEnded {
   readonly matchOver: boolean;
   /** Seat that went out, if anyone did; the stock running out ends a round with nobody out. */
   readonly wentOutSeat?: number;
+  /**
+   * Players who have left the match, and after which round: a scoreboard shows
+   * them as gone, and does not count them for the win. Absent when nobody has left.
+   */
+  readonly departed?: readonly Departure[];
 }
 
 /**
@@ -226,12 +237,20 @@ export interface ClientToServerEvents {
   /**
    * Give up this socket's seat on purpose. In the lobby the seat is freed for
    * someone else and the seats behind it close up; once dealt, it is played for
-   * by the server from then on, without waiting out the reconnect grace.
+   * by the server from then on, without waiting out the reconnect grace — at a
+   * family table only until the round is over, when the rest carry on without
+   * this player (at once, between rounds).
    */
   leaveRoom: (ack: (result: Ack) => void) => void;
   startGame: (ack: (result: Ack) => void) => void;
   /** Hand hosting to the player in `seat`. Only the host may, and only before the deal. */
   setHost: (payload: { readonly seat: number }, ack: (result: Ack) => void) => void;
+  /**
+   * Carry on without the player in `seat`, who has gone: between rounds of a family
+   * game, by the host, for a player not at the table. From the next round the deal
+   * is for the smaller table.
+   */
+  removePlayer: (payload: { readonly seat: number }, ack: (result: Ack) => void) => void;
   submitAction: (action: Action, ack: (result: Ack) => void) => void;
   /**
    * Once the round is over, get up from this table and into a waiting room for a
@@ -327,6 +346,13 @@ export interface Reaction {
   readonly seat: number;
   readonly id: ReactionId;
 }
+
+/**
+ * The refusal a player gets for a seat they no longer have because the match went
+ * on without them — they left between rounds, or the host carried on without
+ * them. Shared so the client can say so, rather than that the table has gone.
+ */
+export const CARRIED_ON_WITHOUT_YOU = "the game carried on without you";
 
 /** Why a table was closed. */
 export type CloseReason = "paused" | "saved" | "abandoned";

@@ -12,6 +12,8 @@ import {
 } from "@hf/shared";
 import { activeCards } from "./core";
 import { CHECKPOINT_EVERY, TimelineError, buildTimeline, type GameLog } from "./playback";
+import { deal } from "./deal";
+import { defaultAction } from "./policy";
 import { applyAction } from "./reducer";
 import { replay } from "./replay";
 import { recordRich } from "./testing/golden";
@@ -267,6 +269,41 @@ describe("moments found in any game", () => {
     expect(timeline.entry(2).move).toBeNull();
     expect(timeline.turns).toEqual([{ round: 1, seat: 0, start: 0, end: 1 }]);
     expect(timeline.stateAt(2).roundNumber).toBe(2);
+  });
+
+  it("marks a player leaving between rounds, as nobody's turn", () => {
+    const rules: RulesConfig = { ...EAST_COAST, extraDecks: 0, stockExhaustion: "end" };
+    const actions: Action[] = [];
+    let state = deal(3, rules, 5);
+    while (!state.roundEnded) {
+      const action = defaultAction(state)!;
+      actions.push(action);
+      const r = applyAction(state, action);
+      if (!r.ok) throw new Error(r.error);
+      state = r.state;
+    }
+    const ended = actions.length;
+    actions.push({ type: "removePlayer", seat: 1 }, { type: "nextRound" });
+    const timeline = buildTimeline({
+      config: rules,
+      setup: { seed: 5, playerCount: 3 },
+      actions,
+      names: ["Ana", "Bo", "Cy"],
+    });
+    expect(
+      timeline.moments.filter((m) => m.step > ended - 1).map((m) => [m.kind, m.step, m.label]),
+    ).toEqual([
+      ["roundEnded", ended, "Round 1 ended"],
+      ["playerLeft", ended + 1, "Bo left the game"],
+    ]);
+    expect(timeline.moments.at(-1)!.seat).toBe(1);
+    expect(timeline.entry(ended + 1).move).toBeNull();
+    expect(timeline.turns.at(-1)!.end).toBe(ended);
+    expect(timeline.rounds.map((r) => [r.number, r.start, r.end])).toEqual([
+      [1, 0, ended],
+      [2, ended + 2, ended + 2],
+    ]);
+    expect(timeline.stateAt(ended + 2).departed).toEqual([{ seat: 1, afterRound: 1 }]);
   });
 
   it("marks going out once, at the meld that does it, and the final lap as turns", () => {

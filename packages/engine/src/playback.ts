@@ -65,6 +65,7 @@ export type MomentKind =
   | "grabbyPants"
   | "wentOut"
   | "roundEnded"
+  | "playerLeft"
   | "matchOver";
 
 export interface Moment {
@@ -185,6 +186,9 @@ export function buildTimeline(log: GameLog): Timeline {
     if (action.type === "nextRound") {
       roundStart = step;
       turnStart = step;
+    } else if (action.type === "removePlayer") {
+      // Between rounds, so it is no one's turn and the round's end is already marked.
+      note("playerLeft", step, `${nameOf(action.seat)} left the game`, action.seat);
     } else {
       if (action.type === "takePile") {
         note("pileTaken", step, `${nameOf(seat)} took the pile (${state.discard.length})`, seat);
@@ -272,7 +276,8 @@ export function buildTimeline(log: GameLog): Timeline {
     grabbyPants: 4,
     wentOut: 5,
     roundEnded: 6,
-    matchOver: 7,
+    playerLeft: 7,
+    matchOver: 8,
   };
   const moments = [...named, ...found].sort(
     (a, b) => a.step - b.step || order[a.kind] - order[b.kind],

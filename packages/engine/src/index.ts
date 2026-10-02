@@ -9,6 +9,8 @@ export * from "./scoring";
 export * from "./scoreRound";
 export * from "./reducer";
 export * from "./nextRound";
+export * from "./removePlayer";
+export * from "./seats";
 export * from "./feasibility";
 export * from "./plan";
 export * from "./policy";

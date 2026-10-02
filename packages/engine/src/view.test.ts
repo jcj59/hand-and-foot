@@ -219,6 +219,39 @@ describe("project from any seat", () => {
   });
 });
 
+describe("a player who has left the match", () => {
+  const leaver = player({
+    hand: cards("K", 3),
+    foot: cards("Q", 2),
+    melds: [{ rank: "A", cards: cards("A", 3) }],
+  });
+  const s: GameState = {
+    ...table([player({ hand: cards("5", 1) }), leaver, player({ hand: cards("6", 2) })]),
+    roundEnded: true,
+    departed: [{ seat: 1, afterRound: 1 }],
+  };
+
+  it("is not among anyone's opponents, and is named as departed to every seat", () => {
+    for (const seat of [0, 2]) {
+      const v = project(s, seat);
+      expect(v.opponents.map((o) => o.seat)).toEqual([seat === 0 ? 2 : 0]);
+      expect(v.departed).toEqual([{ seat: 1, afterRound: 1 }]);
+    }
+  });
+
+  it("leaves no card of theirs in anyone else's view, though the cards are still in the state", () => {
+    const theirs = [...leaver.hand, ...leaver.foot, ...leaver.melds.flatMap((m) => m.cards)];
+    for (const seat of [0, 2]) {
+      const sent = JSON.stringify(project(s, seat));
+      for (const c of theirs) expect(sent).not.toContain(`"${c.id}"`);
+    }
+  });
+
+  it("is an empty list when nobody has left", () => {
+    expect(project(table([player(), player()]), 0).departed).toEqual([]);
+  });
+});
+
 describe("the take-pile obligation in a view", () => {
   it("shows the viewer their own outstanding obligation", () => {
     // The client needs it to say why a discard is about to be refused, and which

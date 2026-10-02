@@ -97,6 +97,7 @@ function viewUpdate(room: RoomInfo = roomInfo({ started: true })): ViewUpdate {
       wentOutSeat: null,
       finalLapRemaining: null,
       scoresSoFar: [],
+      departed: [],
     },
     clock: { serverNow: 1_000, deadlineAt: 31_000, inDiscardGrace: false, paused: false },
     room,
@@ -573,6 +574,21 @@ describe("a game saved for later", () => {
     expect(screen.queryByRole("heading", { name: "Saved game" })).toBeNull();
     expect(screen.getByRole("button", { name: "Main menu" })).toBeTruthy();
     expect(loadSavedGames()).toEqual([]);
+  });
+
+  it("leaves anyone who left the match off the list of who is back", () => {
+    atSavedTable(
+      savedRoom({
+        players: [
+          { seat: 0, name: "ana", connected: true },
+          { seat: 1, name: "ben", connected: false, departed: true },
+          { seat: 2, name: "cy", connected: true },
+        ],
+      }),
+    );
+    expect(screen.getByText("Back at the table (2/2)")).toBeTruthy();
+    expect(screen.queryByText("ben")).toBeNull();
+    expect(screen.getByRole("button", { name: "Resume the game" })).toBeTruthy();
   });
 
   it("leaves resuming to the host while the host is back", () => {

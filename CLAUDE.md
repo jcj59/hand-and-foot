@@ -751,6 +751,34 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   background tab, so focus has to be staged in the page, and its `reducedMotion` context option
   overrides Chrome's `--force-prefers-reduced-motion`.
 
+- **Carrying on without a player (P3).** Engine: `removePlayer {seat}` (`removePlayer.ts`),
+  accepted only between rounds, at a `family` table, for a seat still in, and never below
+  `MIN_PLAYERS`; it appends `{seat, afterRound}` to `GameState.departed` and changes nothing else
+  (the leaver is scored for that round when `nextRound` scores it). **Seats keep their numbers**
+  (decision and trade-off in DESIGN.md "Carrying on without a player"): `seats.ts` has
+  `isSeated`/`seatedCount`/`nextSeated`/`sitsOut`, and everything that walks the table uses them —
+  `advanceTurn`, the go-out final lap (`seatedCount - 1` turns), and `deal(..., firstSeat,
+  departed)`, which builds the shoe for the players still in, deals the departed nothing, and starts
+  each round one seat on from **the last round's starter** (walked round by round, skipping the
+  departed; `firstSeat + round - 1` would give the seat after a leaver two starts running).
+  `PlayerView.departed` is public and departed seats are not in `opponents`; `RoundEnded.departed`
+  and `RoomPlayerInfo.departed` are absent when nobody has left. Timeline moment `playerLeft`;
+  scenario `player-leaves` (script step `removePlayer(seat)`). Server: `Room.leave` between rounds
+  removes at once; a `left` player is removed when the round ends (`removeLeavers`, from
+  `afterAction`); `Room.removePlayer(bySeat, seat)` / `removePlayer {seat}` request is host-only,
+  for a seat **not connected**, never the host. Removal is logged as the table's action at
+  `currentSeat` (like `nextRound`), hands hosting to the next seat still in, lets the leaver's pause
+  go (not a saved game's), and the token then gets `CARRIED_ON_WITHOUT_YOU` from `resume`, which the
+  client turns into that notice (`reclaimSeat` → `"removed"`). Competitive tables, two-player
+  tables and saved games keep the old leave. The idle pause counts a lap by `seatedCount`. Client:
+  the scoreboard ranks departed players last, shows "Left after round n" for rounds they sat out,
+  excludes them from the win and from "n of N", and offers the host "Carry on without <name>" for
+  each absent player; SavedGame lists only players still in. Mutation-tested: 27/27 engine
+  mutants killed (two only after tests were added: a starter who leaves right after starting a
+  round, and a go-out whose left-hand neighbour has gone), and 20 of 21 server mutants killed,
+  with 1 equivalent — choosing the next host with `p.seat >= seat` rather than `>`, since the
+  departing seat is not seated and so never chosen.
+
 ## Known wrinkles and open questions
 
 ### Settled rules decisions (2026-08-04) — don't relitigate these
@@ -818,6 +846,10 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   rule only loosens the minimum — both pinned in `room.restore.test.ts`. A lay-down that got its
   player down *only* through the waiver is decided by `gotDownByMarva` and carried to every seat as
   `LastMove.marva`; the timeline marks it as a `marva` moment.
+- **A player can leave a family match between rounds (P3, 2026-10-02).** The match goes on as a
+  smaller table from the next deal; the seat keeps its number, its scores stay on the board marked
+  as having left, and it does not count for the win. A competitive match keeps the leaver in,
+  played for by the default. Don't renumber seats to close the gap — see DESIGN.md.
 - **Shedding every card is not going out.** A player may legally play or discard their last foot card
   without the go-out books; they keep no cards, the round continues, and they draw one card per turn
   until the books are complete. So `player.hand.length + player.foot.length === 0` does **not** mean

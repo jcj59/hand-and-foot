@@ -98,6 +98,7 @@ const ACTION_MS = {
   discard: 1100,
   takeBack: 1300,
   nextRound: 1800,
+  removePlayer: 1800,
 } as const;
 /** Extra time to read the scores at the end of a round, and to take in a named moment. */
 export const ROUND_END_DWELL_MS = 3_500;

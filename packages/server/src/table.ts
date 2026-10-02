@@ -245,6 +245,17 @@ export class TableChannel {
         if (changed.ok) this.broadcastRoom();
         return;
       }
+      case "removePlayer": {
+        if (seated === null) return reply({ ok: false, error: NOT_SEATED });
+        const removed = this.room.removePlayer(seated, Number(payload?.seat));
+        reply(ackOf(removed));
+        if (!removed.ok) return;
+        this.broadcastRoom();
+        // The scoreboard shows who has gone; a next round dealt now needs views too.
+        this.broadcastResult();
+        this.broadcastViews();
+        return;
+      }
       case "nextRound": {
         if (seated === null) return reply({ ok: false, error: NOT_SEATED });
         const ready = this.room.readyForNextRound(seated);
@@ -292,6 +303,9 @@ export class TableChannel {
         this.tellMoved(before);
         this.broadcastRoom();
         this.broadcastViews();
+        // Leaving between rounds takes the player out of the match, which the
+        // scoreboard shows.
+        this.broadcastResult();
         return;
       }
       default:

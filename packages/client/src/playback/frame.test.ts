@@ -83,4 +83,16 @@ describe("a replayed step, as one seat sees it", () => {
     expect(result.wentOutSeat).toBe(0);
     expect(result.scores).toHaveLength(3);
   });
+
+  it("marks a player who has left as departed, and shows no seat of theirs to the others", () => {
+    const left = buildTimeline(buildScenario(SCENARIOS.find((s) => s.id === "player-leaves")!));
+    const gone = left.moments.find((m) => m.kind === "playerLeft")!;
+    expect(frameAt(left, gone.step - 1, 0, null).room.players[1]!.departed).toBeUndefined();
+    const frame = frameAt(left, gone.step + 1, 0, null);
+    expect(frame.room.players.map((p) => p.departed ?? false)).toEqual([false, true, false]);
+    expect(frame.update.view.opponents.map((o) => o.seat)).toEqual([2]);
+    expect(frameAt(left, left.length, 2, null).result!.departed).toEqual([
+      { seat: 1, afterRound: 1 },
+    ]);
+  });
 });
