@@ -129,6 +129,37 @@ export interface MatchHistory {
 /** Ask for a player's match history: POST `{ user }` (their identity credentials). */
 export const MATCHES_PATH = "/api/users/matches";
 
+/** Ask for one of a player's matches, to watch it again: POST `{ user, id }`. */
+export const MATCH_PATH = "/api/users/match";
+
+/** Answered for a match id that is not one of the asking player's. */
+export const NO_SUCH_MATCH = "that game is not one of yours";
+
+/**
+ * A match as one of its players is sent it to watch again: the record, with every
+ * identity taken out, and the seat they sat in, which the replay follows first.
+ */
+export interface ReplayMatch extends Omit<MatchRecord, "seats"> {
+  readonly seats: readonly Omit<MatchSeat, "userId">[];
+  /** The asking player's own seat. */
+  readonly seat: number;
+}
+
+/** The match for one of its players to watch, or null if they did not play in it. */
+export function replayFor(record: MatchRecord, userId: string): ReplayMatch | null {
+  const seat = seatOf(record, userId);
+  if (seat === null) return null;
+  return {
+    ...record,
+    seats: record.seats.map((s) => {
+      const { userId, ...rest } = s;
+      void userId;
+      return rest;
+    }),
+    seat,
+  };
+}
+
 /** How many matches the list shows; the stats count every match kept. */
 export const RECENT_MATCHES = 20;
 

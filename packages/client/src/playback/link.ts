@@ -1,19 +1,20 @@
 /**
- * Scenario links: `/scenarios/marva#moment=getdown`, or `#step=12&seat=1&all=1`.
- * Kept in the fragment so that a link names a point in a scenario without the
- * server, or the router, having to know anything about it.
+ * Links to a point in a game being watched: `/scenarios/marva#moment=getdown`, or
+ * `/replay/<id>#step=12&seat=1&all=1`. Kept in the fragment so that a link names a
+ * point in a game without the server, or the router, having to know anything
+ * about it.
  */
-import { momentById } from "../playback/navigate";
+import { momentById } from "./navigate";
 import type { Timeline } from "@hf/engine";
 
-export interface ScenarioLink {
+export interface PlaybackLink {
   readonly step?: number;
   readonly momentId?: string;
   readonly seat?: number;
   readonly revealAll?: boolean;
 }
 
-export function parseLink(hash: string): ScenarioLink {
+export function parseLink(hash: string): PlaybackLink {
   const params = new URLSearchParams(hash.replace(/^#/, ""));
   const int = (key: string): number | undefined => {
     const raw = params.get(key);
@@ -32,7 +33,7 @@ export function parseLink(hash: string): ScenarioLink {
 }
 
 /** Where a link points, in a timeline: a moment wins over a bare step; out of range is ignored. */
-export function stepFor(timeline: Timeline, link: ScenarioLink): number | undefined {
+export function stepFor(timeline: Timeline, link: PlaybackLink): number | undefined {
   if (link.momentId !== undefined) {
     const moment = momentById(timeline, link.momentId);
     if (moment) return moment.step;

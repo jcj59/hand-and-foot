@@ -822,6 +822,18 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   tests running), three only after tests were added — placing past a player who left ahead, a share
   of a tied win, and a match that did not start at seat 0.
 
+- **Replay of a past match (roadmap item 5b).** `MATCH_PATH` (`POST /api/users/match {user, id}`)
+  → `ReplayMatch` (the record with every `userId` stripped, plus the asker's `seat`; `replayFor`),
+  refused with `NO_SUCH_MATCH` for a match the identity was not in. `MatchStore.get(userId, id)`
+  (in memory, Postgres join on `match_players`), `matchReplay` on Node, `UserObject.replay` on the
+  Worker. Client: `routes/Replay.tsx` at `/replay/:matchId` (production route, in `App`), `timelineOf`
+  turns the record into the player's `GameLog` (bots named "(computer)"), opening on the player's
+  own seat and following `#step=n&seat=n&all=1` links; Home's history rows link "Watch again". The
+  link helpers moved from `scenarios/link.ts` to `playback/link.ts` (`PlaybackLink`), since the
+  replay route uses them too. Mutation-tested: 8/9 killed, 1 equivalent — dropping `matchReplay`'s id type
+  check still refuses, since no store finds a non-string id; it is kept so a malformed id never
+  reaches a SQL query.
+
 ## Known wrinkles and open questions
 
 ### Settled rules decisions (2026-08-04) — don't relitigate these

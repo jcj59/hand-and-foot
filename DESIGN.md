@@ -643,6 +643,13 @@ player who left a match counts it the same way, as far as they played it. Comput
 in the records and the lists, marked as such, but have no identity and so no stats; a game played
 against them counts for the person who played it.
 
+Any of a player's matches can be watched again from their list, in the same player the scenarios
+use: loading a record into it is the whole of the work, since the record is exactly the player's
+input — the rules, the seed and first seat it was dealt from, and the moves in order. The match is
+over, so the replay may follow any seat or show every hand; it opens on the player's own. Only a
+player who was in the match can open it, on a browser holding their identity — an id on its own
+opens nothing — and what is sent is the record without anyone's identity in it.
+
 What a player is sent about a match is a listing built for them: the names, pictures and totals at
 the table, where they came, and whether they won — never another player's identity, which a listing
 has no use for.

@@ -10,6 +10,9 @@
  */
 import {
   historyFor,
+  NO_SUCH_MATCH,
+  replayFor,
+  type ReplayMatch,
   isUserCredentials,
   NOT_AN_IDENTITY,
   type Ack,
@@ -23,6 +26,8 @@ export interface MatchStore {
   save(record: MatchRecord): Promise<void>;
   /** Every match kept for this identity. */
   forUser(userId: string): Promise<readonly MatchRecord[]>;
+  /** One match kept for this identity, or null — also for a match they were not in. */
+  get(userId: string, id: string): Promise<MatchRecord | null>;
 }
 
 /** The identities a match is kept for: the people who played it, never a computer. */
@@ -41,6 +46,30 @@ export class InMemoryMatchStore implements MatchStore {
   async forUser(userId: string): Promise<readonly MatchRecord[]> {
     return [...this.records.values()].filter((r) => keptFor(r).includes(userId));
   }
+
+  async get(userId: string, id: string): Promise<MatchRecord | null> {
+    const record = this.records.get(id);
+    return record && keptFor(record).includes(userId) ? record : null;
+  }
+}
+
+/**
+ * One match, to watch again, for a player who played in it — and only for them:
+ * the id alone opens nothing, and the match comes without anyone's identity.
+ */
+export async function matchReplay(
+  users: UserStore,
+  matches: MatchStore,
+  body: unknown,
+): Promise<Ack<ReplayMatch>> {
+  const { user, id } = (body ?? {}) as { user?: unknown; id?: unknown };
+  if (!isUserCredentials(user)) return { ok: false, error: NOT_AN_IDENTITY };
+  const userId = await verifyUser(users, user);
+  if (userId === null) return { ok: false, error: NOT_AN_IDENTITY };
+  if (typeof id !== "string" || id === "") return { ok: false, error: NO_SUCH_MATCH };
+  const record = await matches.get(userId, id);
+  const replay = record && replayFor(record, userId);
+  return replay ? { ok: true, data: replay } : { ok: false, error: NO_SUCH_MATCH };
 }
 
 /**

@@ -9,6 +9,7 @@
  * table.
  */
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { MATCHES_PATH, type MatchHistory as History, type MatchListing } from "@hf/shared";
 import { loadIdentity, type Post } from "../identity";
 
@@ -84,6 +85,13 @@ export function MatchHistory({ post }: MatchHistoryProps): React.ReactElement | 
                 )
                 .join(" · ")}
             </p>
+            <Link
+              to={`/replay/${match.id}`}
+              aria-label={`Watch the game at table ${match.roomId} again`}
+              className="mt-1 inline-block text-xs text-sky-200 underline"
+            >
+              Watch again
+            </Link>
           </li>
         ))}
       </ul>

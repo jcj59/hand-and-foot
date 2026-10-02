@@ -285,9 +285,9 @@ A lightweight notion of a **user** without accounts or passwords.
 - Handle the "cleared storage / new device" case gracefully (a fresh identity, no error). A way to
   move an identity to another device (a short code or link) is a nice-to-have, not required.
 
-### 5. Match history, stats, and replay *(may split: 5a history + stats, 5b replay viewer)*
+### ~~5. Match history, stats, and replay *(may split: 5a history + stats, 5b replay viewer)*~~
 
-*5a (history and stats) done after 7b; 5b (replay) next. See DESIGN.md, "Keeping a record of every
+*5a (history and stats) and 5b (replay) done after 7b. See DESIGN.md, "Keeping a record of every
 match".*
 
 **Depends on** 4.

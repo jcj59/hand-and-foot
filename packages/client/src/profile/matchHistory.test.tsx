@@ -1,8 +1,14 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render as rtlRender, screen, waitFor, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import type { Ack, MatchHistory as History, MatchListing } from "@hf/shared";
 import { IDENTITY_KEY, saveIdentity, type Post } from "../identity";
 import { MatchHistory, outcome } from "./MatchHistory";
+
+/** Rendered inside a router, as on the home screen, since each game links to its replay. */
+function render(ui: React.ReactElement): ReturnType<typeof rtlRender> {
+  return rtlRender(ui, { wrapper: MemoryRouter });
+}
 
 const user = { userId: "u".repeat(16), secret: "s".repeat(32) };
 
@@ -76,6 +82,11 @@ describe("the player's games on the home screen", () => {
     expect(game).toHaveTextContent("Won · 2400");
     // Highest first, with the computer player marked.
     expect(game).toHaveTextContent("Ana 2400 · Ben 2100 · Robo Rita (computer) 1800");
+    expect(
+      within(game as HTMLElement).getByRole("link", {
+        name: /watch the game at table ABC234 again/i,
+      }),
+    ).toHaveAttribute("href", "/replay/m1");
   });
 
   it("asks nothing and shows nothing for a browser with no identity", () => {

@@ -15,6 +15,7 @@ import { forgetSavedGame } from "./savedGames";
 import { Home } from "./routes/Home";
 import { Lobby } from "./routes/Lobby";
 import { SavedGame } from "./routes/SavedGame";
+import { Replay } from "./routes/Replay";
 import { Table } from "./routes/Table";
 import { attachSession, useSession } from "./session";
 import type { HfClientSocket } from "./socket";
@@ -93,6 +94,7 @@ export function App({ socket }: AppProps): React.ReactElement {
         <Routes>
           <Route path="/" element={<Home socket={socket} />} />
           <Route path="/room/:roomId" element={<RoomRoute socket={socket} />} />
+          <Route path="/replay/:matchId" element={<Replay />} />
           {/* Anything else is a mistyped or stale URL; the home screen is recoverable. */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

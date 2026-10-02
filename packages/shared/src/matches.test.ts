@@ -4,6 +4,7 @@ import {
   historyFor,
   listingFor,
   RECENT_MATCHES,
+  replayFor,
   seatOf,
   statsFor,
   type MatchRecord,
@@ -230,5 +231,23 @@ describe("a player's history", () => {
     expect(history.recent[0]!.id).toBe("m24");
     expect(history.recent.at(-1)!.id).toBe("m5");
     expect(history.stats.played).toBe(25);
+  });
+});
+
+describe("a match to watch again", () => {
+  it("is the whole record for one of its players, their seat named, and no identities", () => {
+    const replay = replayFor(record(), "u-ana")!;
+    expect(replay.seat).toBe(0);
+    expect(replay.log).toEqual(record().log);
+    expect(replay.seats).toEqual([
+      { seat: 0, name: "Ana" },
+      { seat: 1, name: "Ben" },
+      { seat: 2, name: "Robo Rita", bot: true },
+    ]);
+    expect(JSON.stringify(replay)).not.toContain("u-ana");
+  });
+
+  it("is nothing for someone who did not play it", () => {
+    expect(replayFor(record(), "u-other")).toBeNull();
   });
 });

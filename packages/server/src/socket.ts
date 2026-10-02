@@ -17,12 +17,13 @@ import {
   ROOMS_PATH,
   USERS_PATH,
   MATCHES_PATH,
+  MATCH_PATH,
   type Ack,
   type ClientFrame,
 } from "@hf/shared";
 import { nextTableFor, openTable, sitAt } from "./lobby";
 import { InMemoryUserStore, registerUser, verifyUser, type UserStore } from "./users";
-import { InMemoryMatchStore, matchHistory, type MatchStore } from "./matches";
+import { InMemoryMatchStore, matchHistory, matchReplay, type MatchStore } from "./matches";
 import type { RoomManager } from "./manager";
 import type { Room } from "./room";
 import { refusal, TableChannel } from "./table";
@@ -132,6 +133,9 @@ export function attachTables(
     }
     if (path === MATCHES_PATH) {
       return json(response, 200, await matchHistory(users, matches, body));
+    }
+    if (path === MATCH_PATH) {
+      return json(response, 200, await matchReplay(users, matches, body));
     }
     // Who is sitting down, if their browser proved an identity (anonymous otherwise),
     // and their picture, if it is one (none otherwise; never a reason to refuse).

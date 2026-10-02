@@ -422,6 +422,13 @@ export class PostgresMatchStore implements MatchStore {
       where p.user_id = ${userId} order by m.ended_at desc`;
     return rows.map((row) => row.record as MatchRecord);
   }
+
+  async get(userId: string, id: string): Promise<MatchRecord | null> {
+    const rows = await this.sql`
+      select m.record from matches m join match_players p on p.match_id = m.id
+      where p.user_id = ${userId} and m.id = ${id}`;
+    return (rows[0]?.record as MatchRecord | undefined) ?? null;
+  }
 }
 
 /**

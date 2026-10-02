@@ -745,6 +745,19 @@ describe("match history", () => {
         roundsPlayed: 1,
       });
     }
+    const id = ((await history(ana)) as { ok: true; data: MatchHistory }).data.recent[0]!.id;
+    const replay = await post<{ seat: number; log: unknown[] }>("/api/users/match", {
+      user: ben,
+      id,
+    });
+    expect(replay.ok && replay.data.seat).toBe(1);
+    expect(JSON.stringify(replay)).not.toContain(ana.userId);
+    const stranger = { userId: "cal-history-0003", secret: "c".repeat(40) };
+    await post("/api/users", { ...stranger, name: "Cal" });
+    expect(await post("/api/users/match", { user: stranger, id })).toEqual({
+      ok: false,
+      error: "that game is not one of yours",
+    });
   });
 
   it("keeps a match closed part way, as unfinished", async () => {

@@ -21,7 +21,7 @@ import { SCENARIOS, scenarioById, type Scenario } from "@hf/scenarios";
 import { Player } from "../playback/Player";
 import type { Speed } from "../playback/playback";
 import { playlist, timelineOf } from "./catalog";
-import { formatLink, parseLink, stepFor } from "./link";
+import { formatLink, parseLink, stepFor } from "../playback/link";
 
 export default function ScenarioApp(): React.ReactElement {
   return (

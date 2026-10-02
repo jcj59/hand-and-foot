@@ -11,7 +11,10 @@ import { DurableObject } from "cloudflare:workers";
 import { registerUser, verifyUser, type UserRecord, type UserStore } from "@hf/server/core";
 import {
   historyFor,
+  NO_SUCH_MATCH,
   NOT_AN_IDENTITY,
+  replayFor,
+  type ReplayMatch,
   seatOf,
   type Ack,
   type MatchHistory,
@@ -56,6 +59,16 @@ export class UserObject extends DurableObject<Env> {
   recordMatch(userId: string, record: MatchRecord): void {
     if (seatOf(record, userId) === null) return;
     this.ctx.storage.kv.put(`${MATCH}${record.id}`, record);
+  }
+
+  /** One of this identity's matches, to watch again, for credentials that prove it. */
+  async replay(credentials: unknown, id: unknown): Promise<Ack<ReplayMatch>> {
+    const userId = await this.verify(credentials);
+    if (userId === null) return { ok: false, error: NOT_AN_IDENTITY };
+    if (typeof id !== "string" || id === "") return { ok: false, error: NO_SUCH_MATCH };
+    const record = this.ctx.storage.kv.get<MatchRecord>(`${MATCH}${id}`);
+    const replay = record && replayFor(record, userId);
+    return replay ? { ok: true, data: replay } : { ok: false, error: NO_SUCH_MATCH };
   }
 
   /** This identity's stats and recent matches, for credentials that prove it. */
