@@ -242,7 +242,7 @@ table's minimums, wild ratio, and Marva setting rather than generic text.
 
 ## Phase D — polish and reach
 
-### 10. Your-turn attention
+### ~~10. Your-turn attention~~ (#36)
 
 Family games often sit in a background tab. Flash the tab title and favicon on your turn, an optional
 browser notification, and installability as a PWA (manifest, icons). Web push for "your turn" while
