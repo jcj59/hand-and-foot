@@ -22,7 +22,8 @@ an animation) in its description, under `## Screenshots`.
    deal at another), with `FRAMES=40,120,300` giving the milliseconds after the
    change to capture. `BIG_MELDS=1` adds enough melds that the middle scrolls;
    `GRABBY_ME=1` makes the viewer the Grabby Pants holder; `TWO_DISCARDS=1` puts two
-   cards on the discard pile, `PILE=<n>` puts n; mode `takepile` has the viewer take the pile; `BIG_OPP=1` gives an opponent enough melds to fill its box;
+   cards on the discard pile, `PILE=<n>` puts n; mode `takepile` has the viewer take the pile;
+   `BIG_OPP=1` gives an opponent enough melds to fill its box;
    `BLACK_BOOK=1` puts the viewer in their foot beside a book of black threes, holding a red
    three and a black one. `PAUSED=1` has Ana pause the table, `SAVED=1` has her save it for later
    (three players back; the viewer hosts unless `SAVED_GUEST=1`), and `ROUND_OVER=1` opens the
