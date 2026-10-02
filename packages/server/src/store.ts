@@ -15,6 +15,7 @@
  */
 import type { Avatar, LoggedAction, RulesConfig } from "@hf/shared";
 import type { UserStore } from "./users";
+import { InMemoryMatchStore, type MatchStore } from "./matches";
 
 /** One seat, as much of it as outlives a process. Connection state does not. */
 export interface SeatRecord {
@@ -79,6 +80,8 @@ export interface RoomStore {
    * does. Without one the server keeps them in memory.
    */
   users?(): UserStore;
+  /** Where finished matches are kept, for a store that can keep them too. In memory otherwise. */
+  matches?(): MatchStore;
   /** Record the room's current seating and status, replacing what was there. */
   saveRoom(room: RoomRecord): void;
   /** Record one accepted action. */
@@ -109,8 +112,13 @@ function viaJson<T>(value: T): T {
 }
 
 export class InMemoryRoomStore implements RoomStore {
+  private readonly kept = new InMemoryMatchStore();
   private readonly rooms = new Map<string, { room: RoomRecord; closedAt: number | null }>();
   private readonly logs = new Map<string, LoggedAction[]>();
+
+  matches(): MatchStore {
+    return this.kept;
+  }
 
   saveRoom(room: RoomRecord): void {
     const closedAt = this.rooms.get(room.uid)?.closedAt ?? null;

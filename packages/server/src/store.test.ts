@@ -203,7 +203,7 @@ describe.skipIf(DATABASE_URL === undefined)("Postgres", () => {
   });
 
   async function wipe(): Promise<void> {
-    await admin`drop table if exists actions, rooms, users, schema_migrations`;
+    await admin`drop table if exists match_players, matches, actions, rooms, users, schema_migrations`;
   }
 
   async function fresh(): Promise<PostgresRoomStore> {
@@ -224,10 +224,10 @@ describe.skipIf(DATABASE_URL === undefined)("Postgres", () => {
   describe("migrations", () => {
     it("apply once, and a second boot finds nothing to do", async () => {
       await wipe();
-      expect(await migrate(admin)).toBe(5);
+      expect(await migrate(admin)).toBe(6);
       expect(await migrate(admin)).toBe(0);
       const versions = await admin`select version from schema_migrations order by version`;
-      expect(versions.map((r) => r.version)).toEqual([1, 2, 3, 4, 5]);
+      expect(versions.map((r) => r.version)).toEqual([1, 2, 3, 4, 5, 6]);
     });
 
     it("are safe for two servers booting at once", async () => {
@@ -235,7 +235,7 @@ describe.skipIf(DATABASE_URL === undefined)("Postgres", () => {
       const second = postgres(url, { max: 1, onnotice: () => {} });
       try {
         const [a, b] = await Promise.all([migrate(admin), migrate(second)]);
-        expect(a + b).toBe(5);
+        expect(a + b).toBe(6);
       } finally {
         await second.end();
       }
@@ -250,7 +250,7 @@ describe.skipIf(DATABASE_URL === undefined)("Postgres", () => {
     await admin`insert into schema_migrations (version) values (1)`;
     await admin`insert into rooms (uid, code, config, seed, created_at, players, started)
       values ('old', 'OLD234', ${admin.json(EAST_COAST as never)}, 1, 1, '[]', false)`;
-    expect(await migrate(admin)).toBe(4);
+    expect(await migrate(admin)).toBe(5);
     const store = new PostgresRoomStore(admin, { retryDelaysMs: [] });
     const [old] = await store.loadOpen();
     expect(old?.room.uid).toBe("old");

@@ -4,6 +4,7 @@ import { RoomManager } from "./manager";
 import { attachTables, type Tables } from "./socket";
 import type { RoomStore } from "./store";
 import type { UserStore } from "./users";
+import { InMemoryMatchStore, type MatchStore } from "./matches";
 
 export * from "./clock";
 export * from "./lobby";
@@ -15,6 +16,7 @@ export * from "./socket";
 export * from "./store";
 export * from "./table";
 export * from "./users";
+export * from "./matches";
 
 export interface ServerOptions {
   readonly clock?: Clock;
@@ -36,6 +38,8 @@ export interface ServerOptions {
   readonly store?: RoomStore;
   /** Where identities are kept; the store's own when it keeps them, else in memory. */
   readonly users?: UserStore;
+  /** Where finished matches are kept; the store's own when it keeps them, else in memory. */
+  readonly matches?: MatchStore;
 }
 
 export interface HandAndFootServer {
@@ -53,7 +57,15 @@ export interface HandAndFootServer {
  */
 export function createServer(options: ServerOptions = {}): HandAndFootServer {
   const http = createHttpServer();
+  const matches = options.matches ?? options.store?.matches?.() ?? new InMemoryMatchStore();
   const manager = new RoomManager({
+    recordMatch: (record) => {
+      // A match that cannot be kept is a lost record, never a reason to disturb the
+      // table it was played at: report it and go on.
+      matches.save(record).catch((error: unknown) => {
+        console.error(`could not keep match ${record.id}:`, error);
+      });
+    },
     clock: options.clock ?? systemClock,
     random: options.random,
     reconnectGraceMs: options.reconnectGraceMs,
@@ -64,6 +76,7 @@ export function createServer(options: ServerOptions = {}): HandAndFootServer {
     cors: options.cors,
     heartbeatMs: options.heartbeatMs,
     users: options.users ?? options.store?.users?.(),
+    matches,
     now: () => (options.clock ?? systemClock).now(),
   });
   manager.startSweeping();

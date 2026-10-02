@@ -25,6 +25,7 @@ import {
 import { createTable, joinTable, resumeSavedGame } from "../actions";
 import { loadAvatar, saveAvatar } from "../profile/avatarStore";
 import { AvatarEditor } from "../profile/AvatarEditor";
+import { MatchHistory } from "../profile/MatchHistory";
 import { loadCredentials } from "../credentials";
 import { isPossibleRoomCode, normalizeRoomCode } from "../roomCode";
 import { loadSavedGames, type SavedGame } from "../savedGames";
@@ -299,6 +300,8 @@ export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React
           Open a new table
         </button>
       </form>
+
+      <MatchHistory post={post} />
 
       <IdentityPanel post={post} />
 

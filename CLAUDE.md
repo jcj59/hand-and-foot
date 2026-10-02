@@ -802,6 +802,26 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   test was sharpened to pause after exactly one lap (a bot turn not counting still paused, a lap
   later).
 
+- **Match history and stats (roadmap item 5a).** `@hf/shared/matches.ts`: `MatchRecord {id (the
+  room uid), roomId, startedAt, endedAt, config, seed, firstSeat, seats: MatchSeat[] (userId, bot),
+  log: MatchMove[] (seat, action, source), summary}`, `MatchSummary` (rounds, totals, finished,
+  winners among those who finished, departed, per-seat `SeatTally`), `listingFor` (no identities in
+  it), `statsFor` (finished matches count as played/won/average; unfinished and left ones count
+  only rounds, best round and tallies), `historyFor` (newest first, `RECENT_MATCHES` 20),
+  `MATCHES_PATH` (`POST /api/users/matches {user}`). Engine `summarizeMatch` replays through
+  `buildTimeline` and counts its moments, so stats match the replay by construction. Server:
+  `Room.matchRecord()`, `RoomDeps.recordMatch` (called when the last round ends, and by
+  `recordUnfinished()` from `RoomManager.remove` / the Durable Object's closing alarm; only if a
+  person with an identity played), `matches.ts` (`MatchStore`, `InMemoryMatchStore`, `keptFor`,
+  `matchHistory`), `PostgresMatchStore` (migration 6: `matches`, `match_players`; upsert by id), and
+  `RoomStore.matches?()`. Worker: `TableObject.keepMatch` sends a copy to each player's `UserObject`
+  (`recordMatch`, KV `match:<id>`, `ctx.waitUntil`), and `UserObject.history` answers the route.
+  Client: `profile/MatchHistory.tsx` on Home (only with a stored identity and at least one match;
+  silent on any failure), `outcome()` words a listing. DB tests now drop `match_players, matches`
+  too. Mutation-tested: 29/29 killed across shared, engine and server (with the database
+  tests running), three only after tests were added — placing past a player who left ahead, a share
+  of a tied win, and a match that did not start at seat 0.
+
 ## Known wrinkles and open questions
 
 ### Settled rules decisions (2026-08-04) — don't relitigate these

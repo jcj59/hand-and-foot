@@ -9,9 +9,19 @@
  */
 import { DurableObject } from "cloudflare:workers";
 import { registerUser, verifyUser, type UserRecord, type UserStore } from "@hf/server/core";
+import {
+  historyFor,
+  NOT_AN_IDENTITY,
+  seatOf,
+  type Ack,
+  type MatchHistory,
+  type MatchRecord,
+} from "@hf/shared";
 import type { Env } from "./env";
 
 const RECORD = "user";
+/** Each match this identity played, under its id: saving it again replaces it. */
+const MATCH = "match:";
 
 export class UserObject extends DurableObject<Env> {
   /** This object's one record, through the store interface the rules are written against. */
@@ -36,5 +46,23 @@ export class UserObject extends DurableObject<Env> {
 
   verify(credentials: unknown): Promise<string | null> {
     return verifyUser(this.store, credentials);
+  }
+
+  /**
+   * Keep a match this identity played. The tables send it here, one copy to each
+   * player's own object, so a player's history is read from one place and never
+   * across identities. A match this identity was not in is not kept.
+   */
+  recordMatch(userId: string, record: MatchRecord): void {
+    if (seatOf(record, userId) === null) return;
+    this.ctx.storage.kv.put(`${MATCH}${record.id}`, record);
+  }
+
+  /** This identity's stats and recent matches, for credentials that prove it. */
+  async history(credentials: unknown): Promise<Ack<MatchHistory>> {
+    const userId = await this.verify(credentials);
+    if (userId === null) return { ok: false, error: NOT_AN_IDENTITY };
+    const records = [...this.ctx.storage.kv.list<MatchRecord>({ prefix: MATCH })].map(([, r]) => r);
+    return { ok: true, data: historyFor(records, userId) };
   }
 }
