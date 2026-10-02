@@ -420,8 +420,6 @@ export function TableView({
   const canTake = myTurn && hints.canTakePile && !busy;
 
   const lastLap = view.finalLapRemaining !== null && view.wentOutSeat !== null;
-  // The pile's top card, which is the one that moves when the pile is played to.
-  const pileTop = view.discard.at(-1);
 
   return (
     <main ref={tableRef} className="flex h-full flex-col gap-2 overflow-hidden p-2 sm:p-3">
@@ -691,12 +689,11 @@ export function TableView({
                   onClick={() => void send({ type: "takePile" })}
                   style={pilePulse}
                   className="pile-prompt rounded p-1 ring-2 ring-amber-300 transition hover:bg-white/10"
-                  data-motion={pileTop?.id}
                 >
                   <DiscardPile cards={view.discard} size={phone ? "normal" : "large"} />
                 </button>
               ) : (
-                <div className="p-1" data-motion={pileTop?.id}>
+                <div className="p-1">
                   <DiscardPile cards={view.discard} size={phone ? "normal" : "large"} />
                 </div>
               )}

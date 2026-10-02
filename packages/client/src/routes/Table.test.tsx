@@ -257,8 +257,9 @@ describe("the piles", () => {
   it("draws one discard as one card", () => {
     mount(fakeSocket().socket, update({ view: { discard: [card("9", "clubs")] } }));
     const pile = screen.getByRole("img", { name: "Discard pile, 1 card, Nine of clubs on top" });
-    // One face: a rank and a suit.
+    // One face: a rank and a suit, and no edges behind it.
     expect(pile.querySelectorAll("text")).toHaveLength(2);
+    expect(pile.querySelectorAll("[data-pile-edge]")).toHaveLength(0);
   });
 
   it("draws two discards as two cards, the one beneath peeking out", () => {
@@ -267,25 +268,55 @@ describe("the piles", () => {
       update({ view: { discard: [card("5", "spades"), card("9", "clubs")] } }),
     );
     expect(screen.getByText(/discard \(2\)/i)).toBeInTheDocument();
-    const pile = screen.getByRole("img", { name: "Discard pile, 2 cards, Nine of clubs on top" });
+    const pile = screen.getByRole("img", {
+      name: "Discard pile, 2 cards, Nine of clubs on top, Five of spades beneath",
+    });
     expect([...pile.querySelectorAll("text")].map((t) => t.textContent)).toEqual([
       "5",
       "♠",
       "9",
       "♣",
     ]);
+    expect(pile.querySelectorAll("[data-pile-edge]")).toHaveLength(0);
   });
 
-  it("draws three or more discards as a stack, showing only the top card's face", () => {
+  it("always shows the real second card beneath the top, with edges behind a bigger pile", () => {
     mount(
       fakeSocket().socket,
       update({
         view: { discard: [card("5", "spades"), card("7", "hearts"), card("9", "clubs")] },
       }),
     );
-    const pile = screen.getByRole("img", { name: "Discard pile, 3 cards, Nine of clubs on top" });
-    expect(pile.querySelectorAll("text")).toHaveLength(2);
-    expect(pile.textContent).not.toMatch(/5|7/);
+    const pile = screen.getByRole("img", {
+      name: "Discard pile, 3 cards, Nine of clubs on top, Seven of hearts beneath",
+    });
+    // The top two faces, beneath first, and nothing of the third but its edge.
+    expect([...pile.querySelectorAll("text")].map((t) => t.textContent)).toEqual([
+      "7",
+      "♥",
+      "9",
+      "♣",
+    ]);
+    expect(pile.textContent).not.toMatch(/5/);
+    expect(pile.querySelectorAll("[data-pile-edge]")).toHaveLength(1);
+  });
+
+  it("draws a large pile deeper than a small one, up to a limit", () => {
+    const pileOf = (n: number) =>
+      Array.from({ length: n }, (_, i) => card(i % 2 ? "8" : "6", i % 2 ? "hearts" : "spades"));
+    mount(fakeSocket().socket, update({ view: { discard: pileOf(30) } }));
+    const pile = screen.getByRole("img", { name: /^Discard pile, 30 cards/ });
+    expect(pile.querySelectorAll("[data-pile-edge]")).toHaveLength(4);
+  });
+
+  it("marks only the top card to move, so a discard flies to that card and no further", () => {
+    const top = card("9", "clubs");
+    mount(fakeSocket().socket, update({ view: { discard: [card("5", "spades"), top] } }));
+    const pile = screen.getByRole("img", { name: /^Discard pile, 2 cards/ });
+    const moving = pile.closest("[data-zone='pile']")!.querySelectorAll("[data-motion]");
+    expect([...moving].map((el) => el.getAttribute("data-motion"))).toEqual([top.id]);
+    // The marked element is one card's face, not the whole drawing.
+    expect([...moving[0]!.querySelectorAll("text")].map((t) => t.textContent)).toEqual(["9", "♣"]);
   });
 
   it("says when the pile is empty", () => {
@@ -2736,8 +2767,26 @@ describe("quick reactions", () => {
     expect(within(seat).getByRole("status", { name: "ben: Hurry up!" })).toHaveTextContent(
       "Hurry up!",
     );
-    act(() => vi.advanceTimersByTime(REACTION_SHOW_MS));
+    // Five seconds, so someone who glanced away can still read it. Pinned as a
+    // literal: the symbolic advances below would move with the constant.
+    expect(REACTION_SHOW_MS).toBe(5_000);
+    act(() => vi.advanceTimersByTime(REACTION_SHOW_MS - 100));
+    expect(screen.getByRole("status", { name: "ben: Hurry up!" })).toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(100));
     expect(screen.queryByRole("status", { name: "ben: Hurry up!" })).toBeNull();
+  });
+
+  it("offers every reaction, emoji in a grid and phrases as words", () => {
+    const { socket, sent } = fakeSocket();
+    mount(socket);
+    fireEvent.click(screen.getByRole("button", { name: "React" }));
+    const picker = screen.getByRole("group", { name: "Reactions" });
+    for (const name of ["Oof", "Ouch", "Yikes", "Phew", "Ha!", "GG", "Close one"]) {
+      expect(within(picker).getByRole("button", { name })).toHaveTextContent(name);
+    }
+    expect(within(picker).getByRole("button", { name: "Grimacing" })).toHaveTextContent("😬");
+    fireEvent.click(within(picker).getByRole("button", { name: "Oof" }));
+    expect(sent).toContainEqual({ event: "react", args: [{ id: "oof" }] });
   });
 
   it("shows my own reaction by my hand, and the latest one only", () => {
@@ -2792,8 +2841,11 @@ describe("quick reactions", () => {
     mount(socket);
     fireEvent.click(screen.getByRole("button", { name: "React" }));
     const picker = screen.getByRole("group", { name: "Reactions" });
-    // Portalled to the page, so the scrolling table cannot clip it.
+    // Portalled to the page, so the scrolling table cannot clip it, and capped
+    // with its own scroll, so a short screen scrolls the list rather than cutting it.
     expect(picker.closest("main")).toBeNull();
+    expect(picker.className).toMatch(/max-h-\[70dvh\]/);
+    expect(picker.className).toMatch(/overflow-y-auto/);
     fireEvent.click(within(picker).getByRole("button", { name: "Good luck" }));
     expect(sent).toContainEqual({ event: "react", args: [{ id: "good-luck" }] });
   });

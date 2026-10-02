@@ -3,7 +3,7 @@
 // any game state can be looked at. Usage: node scene.mjs <out.png> [W] [H] [action]
 import { chromium } from "playwright";
 const [out, W = "390", H = "844", action = "", mode = "mine"] = process.argv.slice(2);
-const base = "http://localhost:8787";
+const base = process.env.BASE ?? "http://localhost:8787";
 const c = (rank, suit, n = 0) => ({ id: `${rank}-${suit}-${n}`, rank, suit });
 const names = ["Jack", "Ana", "Ben", "Cyrus", "Dee", "Eleanor"];
 const meld = (rank, cards) => ({ rank, cards });
@@ -113,6 +113,13 @@ if (process.env.BLACK_BOOK) {
   view.playedThisTurn = [];
 }
 if (process.env.TWO_DISCARDS) view.discard = [c("3", "hearts", 40), c("3", "diamonds", 41)];
+if (process.env.PILE) {
+  const ranks = ["5", "9", "Q", "4", "8", "J", "6", "10", "A"];
+  const suits = ["spades", "hearts", "clubs", "diamonds"];
+  view.discard = Array.from({ length: Number(process.env.PILE) }, (_, i) =>
+    c(ranks[i % ranks.length], suits[i % suits.length], 60 + i),
+  );
+}
 if (process.env.BIG_OPP) {
   // An opponent with a table full of melds, as tall as a seat gets.
   view.opponents[0] = {
@@ -303,6 +310,15 @@ const run = async () => {
             lastMove: { seq: 6, seat: 0, kind: "discard", card: c("7", "clubs") },
           });
         }
+        if (mode === "takepile") {
+          // The viewer takes the whole pile: every card flies to the hand, and the
+          // pile is left empty.
+          later(700, {
+            ...base,
+            view: { ...view, hand: [...hand, ...view.discard], discard: [] },
+            lastMove: { seq: 6, seat: 0, kind: "takePile", count: view.discard.length },
+          });
+        }
         if (mode === "stale") {
           // A finished round at one table, then a fresh deal (round 1) at another.
           const bd = {
@@ -441,7 +457,8 @@ const run = async () => {
   }
   const waitText = {
     draw: "Your hand (15)",
-    discard: "Discard (4)",
+    discard: `Discard (${view.discard.length + 1})`,
+    takepile: "Discard (0)",
     oppdraw: "picked up the pile",
     grabby: "is Grabby Pants",
     react: "Nice!",

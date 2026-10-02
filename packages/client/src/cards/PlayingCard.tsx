@@ -244,9 +244,31 @@ export function HiddenHand({
 }
 
 /**
- * The discard pile, face up, drawn as what it is: one card is one card, two are
- * two — the one beneath peeking out, since it is as public as the top — and three
- * or more are a stack, with only the top card's face showing.
+ * The edges drawn behind a discard pile's two cards: none for a pile of two or
+ * fewer, then one more for every `PILE_EDGE_EVERY` cards, up to `PILE_EDGES_MAX`,
+ * so a big pile reads as big without the exact count having to be read.
+ */
+export function pileEdges(count: number): number {
+  if (count <= 2) return 0;
+  return Math.min(PILE_EDGES_MAX, 1 + Math.floor((count - 3) / PILE_EDGE_EVERY));
+}
+export const PILE_EDGE_EVERY = 6;
+export const PILE_EDGES_MAX = 4;
+/** How far each edge sits out from the one in front of it, in card units (a card is 56 wide). */
+const PILE_EDGE_STEP = 2;
+/** Room to the left for the card beneath, which is tilted and peeks out (~7 units as it turns). */
+const PILE_PEEK_X = 23;
+const PILE_PEEK_Y = 3;
+
+/**
+ * The discard pile, face up, drawn as what it is. The top card, and from two cards
+ * on the one beneath it peeking out to the left — the whole pile is public, so the
+ * second card is as much the players' to see as the first. Behind them, edges down
+ * and to the right, more of them the bigger the pile (`pileEdges`).
+ *
+ * The top card is its own element, carrying `data-motion` with its id, so a card
+ * discarded onto the pile flies to exactly where the top card is drawn — not to the
+ * whole drawing, which a flight would otherwise copy, beneath card and all.
  */
 export function DiscardPile({
   cards,
@@ -256,6 +278,7 @@ export function DiscardPile({
   readonly size?: CardSize;
 }): React.ReactElement {
   const { w } = DIMENSIONS[size];
+  const unit = w / 56;
   const top = cards[cards.length - 1];
   if (!top) {
     return (
@@ -281,43 +304,64 @@ export function DiscardPile({
     );
   }
   const under = cards[cards.length - 2];
-  // Room for what shows beneath the top card: a peeking card to the left, or the
-  // edges of a stack down and to the right.
-  // Two cards: the one beneath is tilted and peeks out to the left, so there is
-  // room left of it (it swings out ~7 units as it turns) and above (~2).
-  const [padX, padY] = cards.length === 1 ? [0, 0] : cards.length === 2 ? [23, 3] : [6, 6];
-  const topX = cards.length === 2 ? padX : 0;
-  const topY = cards.length === 2 ? 2 : 0;
+  const edges = pileEdges(cards.length);
+  const [padX, padY] = under ? [PILE_PEEK_X, PILE_PEEK_Y] : [0, 0];
+  const topX = padX;
+  const topY = under ? 2 : 0;
+  const reach = edges * PILE_EDGE_STEP;
+  const width = 56 + padX + reach;
+  const height = 80 + padY + reach;
   return (
-    <svg
-      width={(w * (56 + padX)) / 56}
-      height={(w * (80 + padY)) / 56}
-      viewBox={`0 0 ${56 + padX} ${80 + padY}`}
+    <div
       role="img"
-      aria-label={`Discard pile, ${cards.length} card${cards.length === 1 ? "" : "s"}, ${cardLabel(top)} on top`}
-      className="block"
+      aria-label={`Discard pile, ${cards.length} card${cards.length === 1 ? "" : "s"}, ${cardLabel(top)} on top${under ? `, ${cardLabel(under)} beneath` : ""}`}
+      className="relative block"
+      style={{ width: width * unit, height: height * unit }}
     >
-      {cards.length === 2 && under && (
-        <g transform="translate(9 2) rotate(-6 28 80)">
-          <CardFace card={under} stroke="#cbd5e1" strokeWidth={1} />
-        </g>
+      {(under || edges > 0) && (
+        <svg
+          width={width * unit}
+          height={height * unit}
+          viewBox={`0 0 ${width} ${height}`}
+          aria-hidden="true"
+          className="absolute inset-0 block"
+        >
+          {Array.from({ length: edges }, (_, i) => {
+            const d = (edges - i) * PILE_EDGE_STEP;
+            return (
+              <rect
+                key={d}
+                data-pile-edge=""
+                x={topX + 1 + d}
+                y={topY + 1 + d}
+                width="54"
+                height="78"
+                rx="5"
+                fill="#f8fafc"
+                stroke="#94a3b8"
+                strokeWidth="1"
+              />
+            );
+          })}
+          {under && (
+            <g transform={`translate(${topX - 14} ${topY}) rotate(-6 28 80)`}>
+              <CardFace card={under} stroke="#cbd5e1" strokeWidth={1} />
+            </g>
+          )}
+        </svg>
       )}
-      {cards.length >= 3 &&
-        [6, 3].map((d) => (
-          <rect
-            key={d}
-            x={1 + d}
-            y={1 + d}
-            width="54"
-            height="78"
-            rx="5"
-            fill="#f8fafc"
-            stroke="#94a3b8"
-            strokeWidth="1"
-          />
-        ))}
-      <CardFace card={top} stroke="#cbd5e1" strokeWidth={1} x={topX} y={topY} />
-    </svg>
+      <svg
+        width={w}
+        height={(w * 80) / 56}
+        viewBox="0 0 56 80"
+        aria-hidden="true"
+        data-motion={top.id}
+        className="absolute block"
+        style={{ left: topX * unit, top: topY * unit }}
+      >
+        <CardFace card={top} stroke="#cbd5e1" strokeWidth={1} />
+      </svg>
+    </div>
   );
 }
 

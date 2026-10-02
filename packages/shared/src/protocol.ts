@@ -266,6 +266,10 @@ export interface ClientToServerEvents {
  * The quick reactions a seated player can send: a fixed set, so only an id ever
  * crosses the wire — never free text — and there is nothing to moderate. Each is
  * shown briefly by the sender's seat on every screen.
+ *
+ * Only ever add to it. An id may be in flight to a client loaded before the
+ * change, or remembered by one, so removing or renaming one breaks a table. The
+ * client tells a phrase from an emoji by whether its text is its own label.
  */
 export const REACTIONS = [
   { id: "thumbs-up", text: "👍", label: "Thumbs up" },
@@ -274,12 +278,25 @@ export const REACTIONS = [
   { id: "angry", text: "😤", label: "Fuming" },
   { id: "party", text: "🎉", label: "Party" },
   { id: "pray", text: "🙏", label: "Please" },
+  { id: "grimace", text: "😬", label: "Grimacing" },
+  { id: "cry", text: "😭", label: "Crying" },
+  { id: "facepalm", text: "🤦", label: "Facepalm" },
+  { id: "fingers-crossed", text: "🤞", label: "Fingers crossed" },
+  { id: "fire", text: "🔥", label: "On fire" },
+  { id: "cool", text: "😎", label: "Cool" },
   { id: "nice", text: "Nice!", label: "Nice!" },
   { id: "oops", text: "Oops", label: "Oops" },
   { id: "hurry", text: "Hurry up!", label: "Hurry up!" },
   { id: "grabby", text: "Grabby!", label: "Grabby!" },
   { id: "well-played", text: "Well played", label: "Well played" },
   { id: "good-luck", text: "Good luck", label: "Good luck" },
+  { id: "oof", text: "Oof", label: "Oof" },
+  { id: "ouch", text: "Ouch", label: "Ouch" },
+  { id: "yikes", text: "Yikes", label: "Yikes" },
+  { id: "phew", text: "Phew", label: "Phew" },
+  { id: "ha", text: "Ha!", label: "Ha!" },
+  { id: "close-one", text: "Close one", label: "Close one" },
+  { id: "gg", text: "GG", label: "GG" },
 ] as const;
 
 export type ReactionId = (typeof REACTIONS)[number]["id"];

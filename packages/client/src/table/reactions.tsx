@@ -12,8 +12,11 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { REACTIONS, type Reaction, type ReactionId } from "@hf/shared";
 
-/** How long a reaction stays by its sender's seat. */
-export const REACTION_SHOW_MS = 3_000;
+/**
+ * How long a reaction stays by its sender's seat: long enough to be read by
+ * someone who glanced away from the table when it arrived.
+ */
+export const REACTION_SHOW_MS = 5_000;
 /** How long the picker rests after sending, so nobody hits the server's limit by tapping. */
 export const REACTION_COOLDOWN_MS = 1_500;
 
@@ -169,7 +172,7 @@ export function ReactionPicker({
       onClick={(event) => event.stopPropagation()}
       className={
         sheet
-          ? "flex w-full flex-col gap-2 rounded-t-xl border-t border-white/15 bg-felt-900 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]"
+          ? "flex max-h-[70dvh] w-full flex-col gap-2 overflow-y-auto rounded-t-xl border-t border-white/15 bg-felt-900 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]"
           : `absolute top-full ${alignRight ? "right-0" : "left-0"} z-40 mt-1 flex w-72 flex-col gap-2 rounded-lg border border-white/20 bg-felt-900 p-2 shadow-xl`
       }
     >

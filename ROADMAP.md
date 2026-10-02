@@ -95,7 +95,7 @@ match and, once held, can only be taken by a streak *longer than the holder's be
 random seat, a restored pre-change table still restores and plays identically, Grabby Pants resets
 each round and changes hands on any new three-in-a-row, and the CI sequence passes. Update `CLAUDE.md` and `DESIGN.md`.
 
-### P2. Table tweaks: longer, richer reactions and a deeper discard pile
+### ~~P2. Table tweaks: longer, richer reactions and a deeper discard pile~~
 
 *Client, plus the reaction list in `@hf/shared`. No rules or server changes beyond the new ids.*
 

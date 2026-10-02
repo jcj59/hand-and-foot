@@ -243,6 +243,12 @@ limits each seat to a short burst and then one every couple of seconds, which th
 pause after sending keeps anyone from meeting by accident, and each device can mute other players'
 reactions without affecting anyone else.
 
+The list only ever grows. An id can be in flight to a client loaded before a change, so removing
+or renaming one would break a table mid-game, while adding one costs an older client nothing worse
+than a reaction it cannot name. It is kept short enough to find one at a glance — a couple of dozen
+— and a reaction stays up for five seconds, long enough to be read by someone who looked away when
+it arrived.
+
 ### Rules chosen when a room is opened
 
 A table's rules are settled before anyone sits down, so the creator picks them at room creation and
