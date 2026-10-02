@@ -1074,7 +1074,7 @@ function writeFlag(key: string, on: boolean): void {
   }
 }
 
-/** A speaker, struck through when muted: drawn, as not every font has the glyph. */
+/** A bell, filled when notifications are on and struck through when off. */
 function BellIcon({ on }: { readonly on: boolean }): React.ReactElement {
   return (
     <svg aria-hidden="true" viewBox="0 0 16 16" className="h-4 w-4 fill-none stroke-current">
@@ -1089,6 +1089,7 @@ function BellIcon({ on }: { readonly on: boolean }): React.ReactElement {
   );
 }
 
+/** A speaker, struck through when muted: drawn, as not every font has the glyph. */
 function SpeakerIcon({ muted }: { readonly muted: boolean }): React.ReactElement {
   return (
     <svg aria-hidden="true" viewBox="0 0 16 16" className="h-4 w-4 fill-none stroke-current">
