@@ -4,7 +4,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { EAST_COAST, type Ack, type Action, type GameState, type ReplayMatch } from "@hf/shared";
 import { applyAction, deal, heuristicPolicy } from "@hf/engine";
 import { IDENTITY_KEY, saveIdentity, type Post } from "../identity";
-import { NO_PROFILE, Replay, timelineOf, UNREACHABLE } from "./Replay";
+import { NO_PROFILE, Replay, timelineOf, UNPLAYABLE, UNREACHABLE } from "./Replay";
 
 const user = { userId: "u".repeat(16), secret: "s".repeat(32) };
 
@@ -108,6 +108,19 @@ describe("watching a past game again", () => {
     saveIdentity(user);
     mount(server(new Error("offline")).post);
     expect(await screen.findByRole("alert")).toHaveTextContent(UNREACHABLE);
+  });
+
+  it("says so, with a way back, when the record no longer replays", async () => {
+    saveIdentity(user);
+    const m = match();
+    const refused: Action = { type: "nextRound" };
+    mount(
+      server({ ok: true, data: { ...m, log: [{ seat: 2, action: refused, source: "player" }] } })
+        .post,
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(UNPLAYABLE);
+    screen.getByRole("button", { name: "Back to the main screen" }).click();
+    await waitFor(() => expect(screen.getByText("main screen")).toBeInTheDocument());
   });
 });
 

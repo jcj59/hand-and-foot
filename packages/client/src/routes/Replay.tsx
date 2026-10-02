@@ -36,6 +36,10 @@ export const NO_PROFILE =
 /** Shown when the server could not be asked. */
 export const UNREACHABLE = "Could not reach the server to load that game. Try again later.";
 
+/** Shown when the record no longer replays, as after a change to the rules. */
+export const UNPLAYABLE =
+  "That game can no longer be played back: the rules have changed since it was recorded.";
+
 /** A recorded match as the player's input: how it was dealt, what was played, and who played it. */
 export function timelineOf(match: ReplayMatch): Timeline {
   return buildTimeline({
@@ -73,20 +77,24 @@ export function Replay({ post = httpPost(serverUrl()) }: ReplayProps): React.Rea
     };
   }, [post, matchId]);
 
-  const timeline = useMemo(
-    () => (loaded.state === "ready" ? timelineOf(loaded.match) : null),
-    [loaded],
-  );
+  const timeline = useMemo(() => {
+    if (loaded.state !== "ready") return null;
+    try {
+      return timelineOf(loaded.match);
+    } catch {
+      return "unplayable" as const;
+    }
+  }, [loaded]);
 
   if (loaded.state === "loading") {
     return <main className="p-6 text-white/60">Loading the game&hellip;</main>;
   }
-  if (loaded.state === "failed" || !timeline) {
+  if (loaded.state === "failed" || !timeline || timeline === "unplayable") {
     return (
       <main className="mx-auto flex w-full max-w-md flex-col gap-4 p-6">
         <h1 className="text-2xl font-semibold">Watch a game again</h1>
         <p role="alert" className="rounded bg-red-600/20 px-3 py-2 text-sm text-red-200">
-          {loaded.state === "failed" ? loaded.message : UNREACHABLE}
+          {loaded.state === "failed" ? loaded.message : UNPLAYABLE}
         </p>
         <button
           type="button"
