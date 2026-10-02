@@ -1976,7 +1976,12 @@ describe("laying a hand out in rows", () => {
           stagedIds={new Set()}
           owedIds={new Set()}
           meldRanks={new Set()}
-          playContext={{ inFoot: false, blackThreesHeld: 0, hasBlackThreeMeld: false }}
+          playContext={{
+            inFoot: false,
+            blackThreesHeld: 0,
+            wildsHeld: 0,
+            hasBlackThreeMeld: false,
+          }}
           onSelect={() => {}}
           chosenId={null}
           menu={null}

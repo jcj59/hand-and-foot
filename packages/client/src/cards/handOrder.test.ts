@@ -126,8 +126,8 @@ describe("isUnplayable", () => {
   const black = { id: "b3", rank: "3" as const, suit: "clubs" as const };
   const red = { id: "r3", rank: "3" as const, suit: "hearts" as const };
   const king = { id: "k", rank: "K" as const, suit: "clubs" as const };
-  const inHand = { inFoot: false, blackThreesHeld: 7, hasBlackThreeMeld: true };
-  const inFoot = { inFoot: true, blackThreesHeld: 1, hasBlackThreeMeld: false };
+  const inHand = { inFoot: false, blackThreesHeld: 7, wildsHeld: 3, hasBlackThreeMeld: true };
+  const inFoot = { inFoot: true, blackThreesHeld: 1, wildsHeld: 0, hasBlackThreeMeld: false };
 
   it("never plays a red three, anywhere", () => {
     expect(isUnplayable(red, inHand)).toBe(true);
@@ -146,6 +146,14 @@ describe("isUnplayable", () => {
     expect(isUnplayable(black, { ...inFoot, blackThreesHeld: 7 })).toBe(false);
   });
 
+  it("plays a black three from the foot when wilds make the seven, at four threes or more", () => {
+    expect(isUnplayable(black, { ...inFoot, blackThreesHeld: 6, wildsHeld: 1 })).toBe(false);
+    expect(isUnplayable(black, { ...inFoot, blackThreesHeld: 5, wildsHeld: 1 })).toBe(true);
+    expect(isUnplayable(black, { ...inFoot, blackThreesHeld: 4, wildsHeld: 3 })).toBe(false);
+    // Three threes and four wilds is seven cards, but the wilds outnumber them.
+    expect(isUnplayable(black, { ...inFoot, blackThreesHeld: 3, wildsHeld: 4 })).toBe(true);
+  });
+
   it("plays a black three from the foot onto a black-three book already down", () => {
     expect(isUnplayable(black, { ...inFoot, hasBlackThreeMeld: true })).toBe(false);
   });
@@ -160,6 +168,7 @@ describe("what can go straight onto a meld", () => {
   const ctx = (over: Partial<PlayContext> = {}): PlayContext => ({
     inFoot: true,
     blackThreesHeld: 0,
+    wildsHeld: 0,
     hasBlackThreeMeld: true,
     ...over,
   });

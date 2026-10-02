@@ -19,6 +19,22 @@ export interface LayDown {
   readonly usesRequired: boolean;
 }
 
+/** What the search is looking for, beyond playing a required card. */
+export interface LayDownGoal {
+  /** The points the lay-down must reach; zero for a player already down. */
+  readonly minimum?: number;
+  /**
+   * Whether the cards are the player's foot. Black threes are meldable only from
+   * the foot, as a book of seven or more, so only then does the search use them.
+   * Required rather than defaulted: a caller that forgot it would quietly refuse a
+   * take its partner allowed.
+   */
+  readonly inFoot: boolean;
+}
+
+/** Cards in a black-three book: the fewest that may be melded, per `applyPlayMelds`. */
+const BLACK_THREE_BOOK = 7;
+
 /** One group of the plan: the cards to lay on `rank`, and what is already there. */
 interface Group {
   readonly rank: Rank;
@@ -51,13 +67,16 @@ function byRankThenId(a: Card, b: Card): number {
  * The search:
  *
  * 1. **Naturals.** Every rank with three or more naturals opens a meld, and every
- *    natural of a rank already melded extends it. That costs nothing.
+ *    natural of a rank already melded extends it. That costs nothing. From the
+ *    foot, black threes count too, but only seven or more of them, or onto a
+ *    black-three book already down.
  * 2. **Wilds, only as needed.** Wilds are worth keeping, so they are spent only
  *    while the goal is unmet, highest value first. First on the required card: a
  *    natural pair that includes one becomes a meld with a wild. Then, while short
  *    of the minimum, on whichever single move adds the most — a wild onto a meld
  *    already in the plan, or a natural pair made a meld with one — within the
- *    table's wild ratio.
+ *    table's wild ratio. A required black three short of its seven is made up
+ *    with wilds the same way, as a black-three book is the only meld it can join.
  *
  * It is sound, not optimal: every group it returns passes `validateMeld` with the
  * meld it joins, so a plan it returns is always a lay-down the reducer accepts.
@@ -69,13 +88,18 @@ export function greedyLayDown(
   melds: readonly Meld[],
   requiredIds: ReadonlySet<string>,
   config: RulesConfig,
-  minimum = 0,
+  { minimum = 0, inFoot }: LayDownGoal,
 ): LayDown {
   const cards = [...available].sort(byRankThenId);
   const naturalsByRank = new Map<Rank, Card[]>();
   const wilds: Card[] = [];
+  const blackThrees: Card[] = [];
   for (const c of cards) {
-    if (isRedThree(c) || isBlackThree(c)) continue;
+    if (isRedThree(c)) continue;
+    if (isBlackThree(c)) {
+      if (inFoot) blackThrees.push(c);
+      continue;
+    }
     if (isWild(c.rank)) {
       wilds.push(c);
       continue;
@@ -97,6 +121,10 @@ export function greedyLayDown(
     } else if (naturals.length === 2) {
       pairs.set(rank, naturals);
     }
+  }
+  const threesDown = existing.get("3");
+  if (blackThrees.length > 0 && (threesDown || blackThrees.length >= BLACK_THREE_BOOK)) {
+    groups.push({ rank: "3", existing: threesDown ?? [], naturals: [...blackThrees], wilds: [] });
   }
 
   const valueOf = (): number => {
@@ -147,6 +175,22 @@ export function greedyLayDown(
       groups.push(group);
       pairs.delete(rank);
       break;
+    }
+  }
+
+  // Step 2a, for a black three: the book it needs, made up to seven with wilds.
+  // `validateMeld` holds the wilds to the table's ratio, so at least four of the
+  // seven are threes.
+  if (!usesRequired() && blackThrees.some((c) => requiredIds.has(c.id))) {
+    const short = BLACK_THREE_BOOK - blackThrees.length;
+    const book = [...blackThrees, ...wilds.slice(0, short)];
+    if (short <= wilds.length && validateMeld(book, config).valid) {
+      groups.push({
+        rank: "3",
+        existing: [],
+        naturals: [...blackThrees],
+        wilds: wilds.splice(0, short),
+      });
     }
   }
 

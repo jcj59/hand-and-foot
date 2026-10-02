@@ -81,6 +81,8 @@ export interface PlayContext {
   readonly inFoot: boolean;
   /** Black threes in the cards being played from — the hand, or the foot. */
   readonly blackThreesHeld: number;
+  /** Wilds in the same cards, which can make a black-three book up to seven. */
+  readonly wildsHeld: number;
   /** Whether a meld of black threes is already down. */
   readonly hasBlackThreeMeld: boolean;
 }
@@ -90,15 +92,22 @@ export interface PlayContext {
  * dimmed and offered no meld.
  *
  * A red three never plays. A black three plays only from the foot, and only as a
- * book of seven or more — so it is live there only when the player holds seven of
- * them or already has that book down to add to. Everywhere else it is as dead as a
- * red three, and saying so on the card saves the player trying.
+ * book of seven or more — so it is live there only when the player already has
+ * that book down to add to, or holds enough to make one: seven threes, or at least
+ * four (the most wilds either wild ratio lets into seven cards is three) and wilds
+ * to make up the rest. Everywhere else it is as dead as a red three, and saying so
+ * on the card saves the player trying.
  */
 export function isUnplayable(card: Card, context: PlayContext): boolean {
   if (isRedThree(card)) return true;
   if (!isBlackThree(card)) return false;
-  return !(context.inFoot && (context.blackThreesHeld >= 7 || context.hasBlackThreeMeld));
+  const { blackThreesHeld: threes, wildsHeld: wilds } = context;
+  const canMakeBook = threes >= BLACK_THREE_BOOK - 3 && threes + wilds >= BLACK_THREE_BOOK;
+  return !(context.inFoot && (canMakeBook || context.hasBlackThreeMeld));
 }
+
+/** Cards in a book of black threes, the fewest that may be melded. */
+const BLACK_THREE_BOOK = 7;
 
 /**
  * Whether a card from the hand can go straight onto one of the player's melds:
