@@ -596,7 +596,7 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   last `KEPT_REACTIONS` (16), reset with the table; `table/reactions.tsx` has the picker (menu on a
   computer, opening towards the side with room; bottom sheet portalled to `body` on a phone),
   `REACTION_COOLDOWN_MS` (1.5s) rest after sending, and `useReactionBubbles`, which shows each
-  seat's latest for `REACTION_SHOW_MS` (5s since P2, pinned as a literal; the phone sheet is capped
+  seat's latest for `REACTION_SHOW_MS` (5s since P2, pinned as a literal, and the bubble's CSS fade reads it through `--reaction-ms` — it was once fixed at 3s and hid the bubble early; the phone sheet is capped
   at `70dvh` and scrolls) inside its seat box (the seat lists scroll, so a bubble outside the box would be clipped) and by the player's own hand. Reactions already in the store
   when the table mounts are not replayed. "Mute other players' reactions" is per device
   (`hf.muteReactions`) and hides theirs and their blip sound, never your own. A watched table
