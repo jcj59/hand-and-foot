@@ -202,6 +202,9 @@ pause allowed. Start from a preset and edit.
 
 ### 7. Heuristic bot and bot-filled seats *(may split: 7a policy, 7b seats)*
 
+*7a (policy) done in #34; 7b (seats) next. Measured results and the round-deadlock finding are in
+DESIGN.md, "A heuristic opponent".*
+
 - A playing heuristic beside `defaultAction` in `policy.ts`, reusing `chooseDiscard` and `plan.ts`:
   it draws or takes the pile sensibly, gets down when it can, builds toward books, and goes out. Pure
   and deterministic given state (plus an injected rng if it randomizes). This is also the RL
