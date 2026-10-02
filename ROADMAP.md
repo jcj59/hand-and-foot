@@ -34,7 +34,7 @@ Found while playing real games. Each is one PR, labelled `P1`–`P3` so they sit
 order; take them lowest first, ahead of everything else, whatever the numbered items' dependencies.
 `P1` and `P2` touch different packages and can run in parallel; `P3` should wait for `P1`.
 
-### P1. Take-pile bug with a seventh black three, a random first player, and per-round Grabby Pants
+### ~~P1. Take-pile bug with a seventh black three, a random first player, and per-round Grabby Pants~~
 
 *Engine and server, with the viewer's announcement following. Three small rules changes, shipped together because they share the replay-safety care.*
 
@@ -292,9 +292,12 @@ A lightweight notion of a **user** without accounts or passwords.
   ids and names, the action log, per-round scores, and outcome. The log is a few KB, so storing it whole
   is the design — replay reconstructs everything else.
 - The home screen shows the user's stats (games played, wins, average score, best round, times as
-  Grabby Pants, Marva Rules invoked, …) and a list of recent matches.
+  Grabby Pants, Marva Rules invoked, …) and a list of recent matches. Since P1 the title lasts a
+  round and changes hands on any three in a row, so "times as Grabby Pants" counts each *earning*
+  (a holder appearing or changing in `grabbyHistory`), not who held it when the match ended.
 - **Replay**: open any past match in the item 1 player, which was built for this — the work here is
-  loading a stored match into its `{ config, setup, actions }` input and adding a production route, not
+  loading a stored match into its `{ config, setup, actions }` input (with `setup.firstSeat` from the
+  record — since P1 a match need not start at seat 0) and adding a production route, not
   building playback. All of its controls come for free: fast forward, scrubbing, step back, jump to a
   turn or round, and the automatic moments (pile takes, foot pickups, Marva, Grabby Pants, going out).
   Because the match is over, replay may show every hand or follow one seat. If something about
@@ -371,8 +374,9 @@ the page is closed is a follow-up only if it fits the free plan.
 ### 11. Round recap and match awards
 
 At round end, a short recap (who went out, books made, biggest swing). At match end, awards built on
-the celebration overlay: most Grabby Pants, Marva Rules invoked, most clean books, most red threes
-eaten, and similar. Feed the counts into item 5's stats.
+the celebration overlay: most Grabby Pants (counting each earning of the per-round title, since
+P1), Marva Rules invoked, most clean books, most red threes eaten, and similar. Feed the counts into
+item 5's stats.
 
 ### 12. Rematch and spectators
 

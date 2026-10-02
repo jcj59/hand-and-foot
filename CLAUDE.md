@@ -532,10 +532,15 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   end to end with Playwright under `--autoplay-policy=user-gesture-required`, instrumenting
   `AudioContext` to count sources started while not `running`.
 - **Grabby Pants.** `engine/src/grabby.ts` (moved from the server in roadmap item 1, so replay and
-  the scenario viewer derive the same holder) works out, from the action log, who has taken the pile
-  most times running this match: 3 in a row (`GRABBY_STREAK`, pinned) earns the title; taking it
-  needs a streak longer than the holder's best; another player drawing does not break a streak,
-  only someone else taking the pile. Sent as `RoomInfo.grabbyPants {seat, streak, from?}`. The
+  the scenario viewer derive the same holder) works out, from the action log, who last took the
+  pile three times running **this round** (P1): 3 in a row (`GRABBY_STREAK`, pinned) earns the
+  title, from nobody or from its holder, with no longer streak needed; the holder going on keeps
+  it (`streak` counts up); another player drawing does not break a streak, only someone else
+  taking the pile. The `nextRound` action resets it — nobody holds it and no streak carries over —
+  so it stays a pure function of the log. Stats (items 5, 11) count each *earning* (a holder
+  appearing or changing), not the holder at match end. The client's announcement keys on
+  `seat:from`, so a lapse (null) is silent and a re-earning in a later round, even by the same
+  player, is announced (pinned in `Table.test.tsx`). Sent as `RoomInfo.grabbyPants {seat, streak, from?}`. The
   client renames the holder "Grabby Pants" with a drawn icon (`table/grabby.tsx`), announces a
   new holder on every screen (through the shared `table/Celebration.tsx` overlay since item 2), and
   says "Grabby Pants" with the device's speech synthesis at its lowest pitch (unless muted; speech
@@ -737,7 +742,7 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   to the next round is an ordinary action, `{ type: "nextRound" }`, accepted only once a round has
   ended and it was not the last (`isMatchOver`). It deals round r from `roundSeed(seed, r)` — round
   1 is the match seed itself, so every game recorded before rounds existed replays unchanged — with
-  the first turn rotating one seat per round, and appends the finished round's `scoreRound` to
+  the first turn rotating one seat per round from `GameState.firstSeat`, and appends the finished round's `scoreRound` to
   `GameState.pastRounds`; `matchTotals` adds them up. Because it is an action, the server logs it
   and a restart replays a match across rounds. The server deals it once everyone still at the table
   has said ready (`Room.readyForNextRound`, `RoomInfo.nextRoundReady`); a player who leaves is not
@@ -753,6 +758,34 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   its input, because the policy discharging a take must find the plan that authorized it — the
   property test now checks that after every take. Exotic lay-downs can still be missed; smarter
   search is bot-milestone work.
+- **The first turn of a match goes to a random seat (P1, 2026-10-01).** `firstSeatFor(seed,
+  playerCount)` (in `deal.ts`, salted so it is not the shuffle's own first draw) picks it when
+  `Room.start` deals; `deal(..., roundNumber, firstSeat)` starts there and records
+  `GameState.firstSeat` (left out at 0, so an old-style deal is the same value), and `nextRound`
+  rotates from it. **The seat is stored, never recomputed**: `RoomRecord.firstSeat` (Postgres
+  `first_seat`, migration 5; the Durable Object stores the record whole), set once dealt. A record
+  without it is a match from before, which started at seat 0 whatever its seed, and restores from
+  0 (pinned in `room.restore.test.ts` by a log played from seat 0). `Room.restore` refuses a first
+  seat that is not a seat. `GameSetup` and `replay` take an optional `firstSeat`; golden games and
+  scenarios keep seat 0. Server tests that assume seat 0 starts either use a fixture seed that
+  picks 0 (`room.clock.test.ts` seed 5, `table.test.ts` seed 1) or, over the wire with random
+  seeds, `turnTo`/`byTurn` in `socket.integration.test.ts`.
+- **A black three on the pile can be taken when it can be melded at once (P1, 2026-10-01).**
+  Found in a real game: six black threes in the foot, a seventh discarded, pile refused, because
+  `greedyLayDown` skipped black threes. The rule is the one `applyPlayMelds` already enforced:
+  black threes meld **only from the foot**, as a book of **seven or more**, wilds allowed within
+  the table's ratio (so at least four threes in seven). So the pile's black three is takeable
+  when the player is in the foot and either has a black-three book down, or with it holds seven,
+  or at least four plus wilds to make seven; never from the hand. Considered and rejected: the
+  variant where a black three *blocks* the pile for the next player — the family expected to take
+  it, and the engine already let them meld it. `greedyLayDown` takes `{ minimum, inFoot }` (inFoot
+  required, so no caller can forget it); black threes form a free group at seven or onto a book,
+  and a *required* black three short of seven is made up with wilds. The client's `isUnplayable`
+  learned the same wild rule (`PlayContext.wildsHeld`), or a take relying on wilds would have
+  dimmed the cards needed to settle it. `blackthrees.property.test.ts` generates such positions
+  directly (random games almost never reach one) and asserts both exact legality and that the
+  policy and the heuristic settle every allowed take. Note: a 2-player shoe holds only six black
+  threes, so these need three seats.
 - **The Marva rule is on in both presets (roadmap item 2, 2026-10-01).** `EAST_COAST.marvaRule` is
   `true` and West Coast inherits it. Tables persisted earlier keep the config stored in their record
   (`marvaRule: false`) and restore unchanged; their logs also replay under the new preset, since the

@@ -33,7 +33,8 @@ describe("the scenario catalog", () => {
     }
     // A scenario with no named moments has nothing to show in this mode.
     expect(items.some((i) => i.scenario.id === "match")).toBe(false);
-    // Grabby Pants' two moments are far apart: two windows.
-    expect(items.filter((i) => i.scenario.id === "grabby-pants")).toHaveLength(2);
+    // Grabby Pants: earned, then taken and kept close together, then a round later
+    // the lapse — three windows.
+    expect(items.filter((i) => i.scenario.id === "grabby-pants")).toHaveLength(3);
   });
 });
