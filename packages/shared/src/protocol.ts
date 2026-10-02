@@ -72,7 +72,7 @@ export interface RoomPlayerInfo {
 /** Who holds the Grabby Pants title, with the streak that earned or kept it. */
 export interface GrabbyPants {
   readonly seat: number;
-  /** The holder's best run of pile pickups, which a challenger has to beat. */
+  /** The run of pile pickups that earned the title or last kept it: three or more. */
   readonly streak: number;
   /** Who held it before, when it was taken from someone. */
   readonly from?: number;
@@ -97,7 +97,7 @@ export interface RoomInfo {
    * open indefinitely.
    */
   readonly closesAt?: number | null;
-  /** Whoever took the pile most times running this match, once someone has three. */
+  /** Whoever last took the pile three times running this round, if anyone has. */
   readonly grabbyPants?: GrabbyPants | null;
   readonly config: RulesConfig;
   /** Seats that have gone on from this finished table to a new game's waiting room. */

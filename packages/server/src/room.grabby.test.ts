@@ -30,4 +30,16 @@ describe("Grabby Pants at the table", () => {
     });
     expect(quiet.info().grabbyPants).toBeNull();
   });
+
+  it("lapses when the room's log reaches the next round", () => {
+    const log = [...takes(1, 3)];
+    log.push({ seq: log.length, seat: 0, action: { type: "nextRound" }, source: "player", at: 0 });
+    const room = new Room("LAPSED", EAST_COAST, {
+      clock: new FakeClock(0),
+      seed: 1,
+      newToken: () => "t",
+      log: new InMemoryActionLog(log),
+    });
+    expect(room.info().grabbyPants).toBeNull();
+  });
 });

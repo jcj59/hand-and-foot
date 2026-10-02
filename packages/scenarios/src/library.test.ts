@@ -69,6 +69,7 @@ describe("the scenario library", () => {
       "go-out-final-lap",
       "stock-reshuffle",
       "grabby-pants",
+      "pile-black-three",
       "match",
     ]) {
       expect(ids).toContain(id);
@@ -205,15 +206,31 @@ describe("each scenario shows what it says", () => {
     expect(after.roundEnded).toBeFalsy();
   });
 
-  it("Grabby Pants is earned, then taken by a longer run", () => {
+  it("Grabby Pants is earned, taken by another three in a row, and lapses at a new round", () => {
     const t = timeline("grabby-pants");
     const grabby = t.moments.filter((m) => m.kind === "grabbyPants");
-    expect(grabby.map((m) => m.label)).toEqual([
+    // The scripted part: earned, then taken with a run no longer than Ana's.
+    expect(grabby.slice(0, 2).map((m) => m.label)).toEqual([
       "Ana is Grabby Pants",
       "Ben takes Grabby Pants from Ana",
     ]);
-    expect(grabby[0]!.step).toBe(step("grabby-pants", "earned") + 0);
+    expect(grabby[0]!.step).toBe(step("grabby-pants", "earned"));
     expect(grabby[1]!.step).toBe(step("grabby-pants", "taken"));
+    expect(t.grabbyAt(step("grabby-pants", "kept"))).toEqual({ seat: 1, streak: 4, from: 0 });
+    // Nobody holds it once the next round is dealt.
+    const lapsed = step("grabby-pants", "lapsed");
+    expect(t.stateAt(lapsed).roundNumber).toBe(2);
+    expect(t.grabbyAt(lapsed - 1)).not.toBeNull();
+    expect(t.grabbyAt(lapsed)).toBeNull();
+  });
+
+  it("a black three on the pile taken from the foot, and melded as a book of seven", () => {
+    const offered = at("pile-black-three", "offered");
+    expect(offered.discard.at(-1)).toMatchObject({ rank: "3", suit: "spades" });
+    expect(offered.players[0]!.foot.filter((c) => c.rank === "3")).toHaveLength(6);
+    expect(at("pile-black-three", "taken").phase).toBe("play");
+    const book = at("pile-black-three", "book").players[0]!.melds.find((m) => m.rank === "3");
+    expect(book?.cards).toHaveLength(7);
   });
 
   it("a whole match: four rounds dealt and scored, and the match over", () => {

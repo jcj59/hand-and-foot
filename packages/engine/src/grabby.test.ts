@@ -39,24 +39,33 @@ describe("Grabby Pants", () => {
     expect(grabbyPants(log([1, "take"], [1, "take"], [2, "take"], [1, "take"]))).toBeNull();
   });
 
-  it("must be taken with a longer streak than the holder's best", () => {
-    // Ana holds it at 3; Ben matching 3 is not enough, and 4 takes it.
+  it("changes hands on anyone else's three in a row, with no longer streak needed", () => {
+    // Until P1 Ben's matching three was not enough; now three is all it takes.
     const matched = log(...takes(0, 3), ...takes(1, 3));
-    expect(grabbyPants(matched)).toEqual({ seat: 0, streak: 3 });
-    const beaten = log(...takes(0, 3), ...takes(1, 4));
-    expect(grabbyPants(beaten)).toEqual({ seat: 1, streak: 4, from: 0 });
+    expect(grabbyPants(matched)).toEqual({ seat: 1, streak: 3, from: 0 });
+    // And it can come straight back the same way.
+    const back = log(...takes(0, 3), ...takes(1, 3), ...takes(0, 3));
+    expect(grabbyPants(back)).toEqual({ seat: 0, streak: 3, from: 1 });
   });
 
-  it("raises the bar when the holder extends their own streak", () => {
-    expect(grabbyPants(log(...takes(2, 5)))).toEqual({ seat: 2, streak: 5 });
-    // Five is now what has to be beaten: a later four does not take it.
-    expect(grabbyPants(log(...takes(2, 5), ...takes(3, 4)))).toEqual({ seat: 2, streak: 5 });
+  it("is not taken by fewer than three, however long the holder's run was", () => {
+    expect(grabbyPants(log(...takes(2, 5), ...takes(3, 2)))).toEqual({ seat: 2, streak: 5 });
   });
 
-  it("keeps the holder's best when they start a shorter streak later", () => {
+  it("stays with a holder who keeps taking the pile, counting the run up", () => {
+    expect(grabbyPants(log(...takes(2, 4)))).toEqual({ seat: 2, streak: 4 });
+    // Earned, lost and won back: the run counts up from the third take again.
+    expect(grabbyPants(log(...takes(1, 3), ...takes(2, 3), ...takes(1, 4)))).toEqual({
+      seat: 1,
+      streak: 4,
+      from: 2,
+    });
+  });
+
+  it("stays with its holder through a shorter run of their own later", () => {
     expect(grabbyPants(log(...takes(1, 5), [2, "take"], ...takes(1, 3)))).toEqual({
       seat: 1,
-      streak: 5,
+      streak: 3,
     });
   });
 
@@ -68,17 +77,46 @@ describe("Grabby Pants", () => {
   });
 });
 
+describe("Grabby Pants round by round", () => {
+  const nextRound: SeatedAction = { seat: 0, action: { type: "nextRound" } };
+
+  it("lapses at the start of every round", () => {
+    expect(grabbyPants([...log(...takes(1, 3)), nextRound])).toBeNull();
+  });
+
+  it("carries no streak over the round boundary", () => {
+    // Two at the end of one round and one at the start of the next are not three.
+    expect(grabbyPants([...log(...takes(1, 2)), nextRound, ...log([1, "take"])])).toBeNull();
+    expect(grabbyPants([...log(...takes(1, 2)), nextRound, ...log(...takes(1, 3))])).toEqual({
+      seat: 1,
+      streak: 3,
+    });
+  });
+
+  it("is earned afresh in a later round, from nobody, whoever held it before", () => {
+    expect(grabbyPants([...log(...takes(1, 3)), nextRound, ...log(...takes(2, 3))])).toEqual({
+      seat: 2,
+      streak: 3,
+    });
+    expect(grabbyPants([...log(...takes(1, 3)), nextRound, ...log(...takes(1, 3))])).toEqual({
+      seat: 1,
+      streak: 3,
+    });
+  });
+});
+
 describe("Grabby Pants over the course of a match", () => {
   it("gives the holder after every prefix of the log", () => {
-    const moves = log(...takes(0, 3), ...takes(1, 4));
+    const moves = log(...takes(0, 3), ...takes(1, 3));
     const history = grabbyHistory(moves);
     expect(history).toHaveLength(moves.length + 1);
     expect(history[0]).toBeNull();
     // Every entry agrees with working the title out from that prefix alone.
     history.forEach((holder, k) => expect(holder).toEqual(grabbyPants(moves.slice(0, k))));
-    // Earned on the third take (the fifth action), and taken on Ben's fourth.
+    // Earned on the third take (the fifth action), and taken on Ben's third.
     expect(history[4]).toBeNull();
     expect(history[5]).toEqual({ seat: 0, streak: 3 });
-    expect(history.at(-1)).toEqual({ seat: 1, streak: 4, from: 0 });
+    expect(history.at(-2)).toEqual({ seat: 0, streak: 3 });
+    expect(history.at(-1)).toEqual({ seat: 1, streak: 3, from: 0 });
   });
 });
