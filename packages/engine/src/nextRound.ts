@@ -7,7 +7,8 @@ import { scoreRound } from "./scoreRound";
  * Deal the next round of a match: a fresh shoe from that round's seed, the first
  * turn one seat further on than last round's (rotating from the match's own first
  * seat), and the finished round's scores kept in `pastRounds`,
- * which is what running totals are added up from. Refused while a round is still
+ * which is what running totals are added up from. Anyone who has left the match is
+ * dealt out. Refused while a round is still
  * being played, and after the last one, when the match is over.
  */
 export function applyNextRound(state: GameState): ApplyResult {
@@ -19,6 +20,7 @@ export function applyNextRound(state: GameState): ApplyResult {
     state.seed,
     state.roundNumber + 1,
     state.firstSeat,
+    state.departed,
   );
   return ok({ ...next, pastRounds: [...(state.pastRounds ?? []), scoreRound(state)] });
 }

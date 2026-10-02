@@ -192,6 +192,20 @@ export interface GameState {
    * it final.
    */
   readonly turnBase?: { readonly seat: number; readonly player: PlayerState };
+  /**
+   * Players who have left the match between rounds, in the order they left. A seat
+   * keeps its number for the rest of the match — past rounds are scored by seat,
+   * and the scoreboard still shows what a departed player scored — but it is dealt
+   * no cards and takes no turns from the next round on. Absent when nobody has left.
+   */
+  readonly departed?: readonly Departure[];
+}
+
+/** A player who left the match between rounds; see the `removePlayer` action. */
+export interface Departure {
+  readonly seat: number;
+  /** The last round they played: they are scored for it, and sit out every one after. */
+  readonly afterRound: number;
 }
 
 /** What one player can see of another player: counts, not hidden card contents. */
@@ -253,6 +267,11 @@ export interface PlayerView {
    * the scores of a finished round are. Zero for everyone in the first round.
    */
   readonly scoresSoFar: readonly number[];
+  /**
+   * Players who have left the match, and after which round. Public: everyone saw
+   * them go. Their seats are not among `opponents`, since they no longer play.
+   */
+  readonly departed: readonly Departure[];
 }
 
 /** One meld a player lays or extends: the cards to add and the rank they form. */
@@ -279,7 +298,15 @@ export type Action =
    * last. Not a player's move but the table's: the server submits it once everyone
    * still playing is ready. An action all the same, so a match replays from its log.
    */
-  | { readonly type: "nextRound" };
+  | { readonly type: "nextRound" }
+  /**
+   * Take a player out of the match between rounds, so the others carry on without
+   * them: from the next round the deal is for the smaller table, and their seat
+   * takes no turns. Also the table's doing rather than a move — the server submits
+   * it when someone leaves a family game between rounds, or the host lets one go —
+   * and logged like `nextRound`, so a restart replays the smaller table.
+   */
+  | { readonly type: "removePlayer"; readonly seat: number };
 
 /** One player's score for a completed round. */
 export interface RoundScore {

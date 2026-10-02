@@ -9,7 +9,7 @@
  * the player's to add on top, not something this lets through.
  */
 import type { ClockState, RoomInfo, RoundEnded, ViewUpdate } from "@hf/shared";
-import { legalHints, moveSeenBy, project, roundResult, type Timeline } from "@hf/engine";
+import { isSeated, legalHints, moveSeenBy, project, roundResult, type Timeline } from "@hf/engine";
 
 export interface Frame {
   readonly update: ViewUpdate;
@@ -47,6 +47,7 @@ export function frameAt(
       seat: s,
       name: timeline.nameOf(s),
       connected: true,
+      ...(isSeated(state, s) ? {} : { departed: true as const }),
     })),
     hostSeat: 0,
     started: true,

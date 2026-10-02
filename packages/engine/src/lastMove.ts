@@ -8,7 +8,8 @@ import { scoreRound } from "./scoreRound";
  * What a table would say about an action it just applied, as the full truth: a
  * draw names the card drawn. `seq` is the caller's, since only the caller knows
  * how moves are numbered — the server by its log, a replay by its own steps.
- * Dealing the next round is the table's doing rather than a move, so it has none.
+ * Dealing the next round, and a player leaving between rounds, are the table's
+ * doing rather than moves, so they have none.
  *
  * Worked out here rather than by the server alone so that a recorded match played
  * back says exactly what the live table said at the same point.
@@ -42,6 +43,7 @@ export function describeMove(
     case "discard":
       return { seq, seat, kind: "discard", card: after.discard.at(-1)! };
     case "nextRound":
+    case "removePlayer":
       return null;
   }
 }
@@ -65,5 +67,6 @@ export function roundResult(state: GameState): RoundEnded | null {
     roundNumber: state.roundNumber,
     totals: matchTotals(state),
     matchOver: isMatchOver(state),
+    ...(state.departed ? { departed: state.departed } : {}),
   };
 }

@@ -1368,3 +1368,108 @@ describe("identities over HTTP", () => {
     expect(info).not.toContain(ana.userId);
   });
 });
+
+describe("carrying on without a player over the wire", () => {
+  function removePlayer(socket: Client, seat: number): Promise<Ack<undefined>> {
+    return new Promise((resolve) => socket.emit("removePlayer", { seat }, resolve));
+  }
+  function ready(socket: Client): Promise<Ack<boolean>> {
+    return new Promise((resolve) => socket.emit("nextRound", resolve));
+  }
+
+  async function seatFour(): Promise<{
+    server: HandAndFootServer;
+    port: number;
+    sockets: Client[];
+    creds: SeatCredentials[];
+    room: Room;
+  }> {
+    const { server, port } = await boot();
+    const sockets = [await connect(port), await connect(port), await connect(port)];
+    sockets.push(await connect(port));
+    const created = await createRoom(sockets[0]!, "ana", {
+      rules: { extraDecks: 0, stockExhaustion: "end" },
+    });
+    if (!created.ok) throw new Error(created.error);
+    const creds = [created.data];
+    for (const [i, name] of ["ben", "cy", "di"].entries()) {
+      const joined = await joinRoom(sockets[i + 1]!, created.data.roomId, name);
+      if (!joined.ok) throw new Error(joined.error);
+      creds.push(joined.data);
+    }
+    await startGame(sockets[0]!);
+    const room = server.manager.get(created.data.roomId)!;
+    // Play the round out on the room itself, as the turns are not what this is about.
+    while (!room.gameState!.roundEnded) {
+      const state = room.gameState!;
+      expect(room.submitAction(state.currentSeat, defaultAction(state)!).ok).toBe(true);
+    }
+    return { server, port, sockets, creds, room };
+  }
+
+  it("takes a player who leaves between rounds out of the match, and tells the table", async () => {
+    const { sockets, room } = await seatFour();
+    const [ana, , cy] = sockets as [Client, Client, Client, Client];
+    const scores = waitFor(ana, "roundEnded", (r) => r.departed !== undefined);
+    const seen = waitForRoom(ana, (info) => info.players[2]!.departed === true);
+    expect(await leaveRoom(cy)).toEqual({ ok: true, data: undefined });
+    expect((await scores).departed).toEqual([{ seat: 2, afterRound: 1 }]);
+    expect((await seen).players.map((p) => p.departed ?? false)).toEqual([
+      false,
+      false,
+      true,
+      false,
+    ]);
+    expect(room.gameState!.departed).toEqual([{ seat: 2, afterRound: 1 }]);
+  });
+
+  it("lets the host carry on without someone who has gone, and refuses them their seat", async () => {
+    const { port, sockets, creds, room } = await seatFour();
+    const [ana, ben, , di] = sockets as [Client, Client, Client, Client];
+    const gone = waitForRoom(ana, (info) => !info.players[3]!.connected);
+    di.disconnect();
+    await gone;
+
+    expect(await removePlayer(ben, 3)).toEqual({
+      ok: false,
+      error: "only the host can carry on without a player",
+    });
+    const scores = waitFor(ben, "roundEnded", (r) => r.departed !== undefined);
+    const told = waitForRoom(ben, (info) => info.players[3]!.departed === true);
+    expect(await removePlayer(ana, 3)).toEqual({ ok: true, data: undefined });
+    expect((await scores).departed).toEqual([{ seat: 3, afterRound: 1 }]);
+    await told;
+
+    // Di comes back on a new connection: the seat is not hers any more.
+    const back = await connect(port);
+    expect(await resumeSeat(back, creds[3]!)).toEqual({
+      ok: false,
+      error: "the game carried on without you",
+    });
+
+    // The rest deal the next round among the three of them.
+    const dealt = waitFor(ana, "view", (u) => u.view.roundNumber === 2);
+    const others = [ben, sockets[2]!].map((s) =>
+      waitFor(s, "view", (u) => u.view.roundNumber === 2),
+    );
+    await ready(sockets[2]!);
+    await ready(ben);
+    expect(await ready(ana)).toEqual({ ok: true, data: true });
+    const update = await dealt;
+    expect(update.view.opponents.map((o) => o.seat)).toEqual([1, 2]);
+    expect(update.view.departed).toEqual([{ seat: 3, afterRound: 1 }]);
+    expect(room.gameState!.players[3]!.hand).toEqual([]);
+    for (const seen of await Promise.all(others)) {
+      expect(seen.view.opponents.some((o) => o.seat === 3)).toBe(false);
+    }
+  });
+
+  it("refuses a socket with no seat", async () => {
+    const { port } = await seatFour();
+    const stranger = await connect(port);
+    expect(await removePlayer(stranger, 1)).toEqual({
+      ok: false,
+      error: "you are not seated in a room",
+    });
+  });
+});

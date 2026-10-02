@@ -71,6 +71,7 @@ describe("the scenario library", () => {
       "grabby-pants",
       "pile-black-three",
       "match",
+      "player-leaves",
     ]) {
       expect(ids).toContain(id);
     }
@@ -231,6 +232,27 @@ describe("each scenario shows what it says", () => {
     expect(at("pile-black-three", "taken").phase).toBe("play");
     const book = at("pile-black-three", "book").players[0]!.melds.find((m) => m.rank === "3");
     expect(book?.cards).toHaveLength(7);
+  });
+
+  it("a player leaving between rounds: the next round dealt to the two left", () => {
+    const leaving = at("player-leaves", "leaving");
+    expect(leaving.roundEnded).toBe(true);
+    expect(leaving.players[1]!.hand.length + leaving.players[1]!.melds.length).toBeGreaterThan(0);
+    const smaller = at("player-leaves", "smaller");
+    expect(smaller.roundNumber).toBe(2);
+    expect(smaller.departed).toEqual([{ seat: 1, afterRound: 1 }]);
+    expect(smaller.players[1]!.hand).toEqual([]);
+    expect(smaller.players[1]!.foot).toEqual([]);
+    expect(smaller.currentSeat).toBe(2);
+    expect(kinds("player-leaves")).toContain("playerLeft");
+    // Ben's round 1 is kept, and he never plays in round 2.
+    const t = timeline("player-leaves");
+    const end = t.stateAt(t.length);
+    expect(end.roundEnded).toBe(true);
+    expect(end.pastRounds![0]![1]!.score).not.toBe(0);
+    const round2 = t.turns.filter((turn) => turn.round === 2);
+    expect(round2.length).toBeGreaterThan(0);
+    expect(round2.some((turn) => turn.seat === 1)).toBe(false);
   });
 
   it("a whole match: four rounds dealt and scored, and the match over", () => {

@@ -1,4 +1,5 @@
 import {
+  CARRIED_ON_WITHOUT_YOU,
   MAX_PLAYERS,
   MIN_PLAYERS,
   isReactionId,
@@ -24,10 +25,12 @@ import {
   describeMove,
   grabbyPants,
   isMatchOver,
+  isSeated,
   legalHints,
   moveSeenBy,
   project,
   roundResult,
+  seatedCount,
 } from "@hf/engine";
 import type { Clock } from "./clock";
 import { ReactionLimiter } from "./reactions";
@@ -503,9 +506,12 @@ export class Room {
    * Before the deal the seat is removed outright and the ones after it close up,
    * because `deal` seats exactly `players.length` players and a gap would be dealt
    * a hand nobody holds. The first seat hosts, so a departing host hands the table
-   * to whoever is next in line. After the deal the engine's player count is fixed,
-   * so the seat stays and is treated as a disconnect whose grace has already run
-   * out: the default policy plays it straight away instead of stalling the table.
+   * to whoever is next in line. After the deal the seat stays and is treated as a
+   * disconnect whose grace has already run out: the default policy plays it
+   * straight away instead of stalling the table. At a family table that lasts only
+   * until the round is over — then the player is taken out of the match and the
+   * rest carry on without them (see `removeLeavers`), which between rounds is at
+   * once.
    */
   leave(token: string): RoomResult<RoomPlayer> {
     const player = this.seatOf(token);
@@ -536,10 +542,82 @@ export class Room {
     player.left = true;
     this.ready.delete(player.token);
     this.setConnected(player.seat, false);
+    this.removeLeavers();
     this.save();
     // The others may have been waiting only on this player to start the next round.
     this.dealNextRoundIfReady();
     return succeed(player);
+  }
+
+  /**
+   * Carry on without a player who has gone, between rounds of a family game: the
+   * host's call, for someone who is not coming back. Only someone not at the table
+   * — a player still connected leaves for themselves — and never the host, who
+   * leaves the same way. The engine has the rest of the say: between rounds, at a
+   * family table, and never below two players.
+   */
+  removePlayer(bySeat: number, seat: number): RoomResult<undefined> {
+    const state = this.state;
+    if (!state) return fail("the game has not started");
+    if (bySeat !== this.hostSeat) return fail("only the host can carry on without a player");
+    const player = this.players[seat];
+    if (!player || !isSeated(state, seat)) return fail("there is no such player");
+    if (seat === bySeat) return fail("to leave the game yourself, leave the table");
+    if (player.connected) return fail(`${player.name} is still at the table`);
+    const removed = this.remove(seat);
+    if (!removed.ok) return removed;
+    this.save();
+    // Everyone else may have been waiting only on this player to start the next round.
+    this.dealNextRoundIfReady();
+    return succeed(undefined);
+  }
+
+  /**
+   * Take a player out of the match: the engine's `removePlayer`, logged as the
+   * table's action like `nextRound`, so a restart replays the smaller table. The
+   * seat keeps its number and its token, but the token no longer resumes it, and
+   * whatever the player held — readiness, the pause, hosting — passes on or lapses.
+   */
+  private remove(seat: number): RoomResult<undefined> {
+    const state = this.state;
+    /* v8 ignore next -- callers check for state first */
+    if (!state) return fail("the game has not started");
+    const action: Action = { type: "removePlayer", seat };
+    const removed = applyAction(state, action);
+    if (!removed.ok) return fail(removed.error);
+    this.state = removed.state;
+    this.log.append(state.currentSeat, action, "player", this.deps.clock.now());
+    const player = this.players[seat]!;
+    this.ready.delete(player.token);
+    player.left = true;
+    if (player.connected) this.setConnected(seat, false);
+    if (this.hostToken === player.token) {
+      // Hosting passes to the next player on from them who is still playing.
+      const next = this.players.find((p) => p.seat > seat && isSeated(removed.state, p.seat));
+      this.hostToken = (next ?? this.players.find((p) => isSeated(removed.state, p.seat)))!.token;
+    }
+    // A pause belongs to the player who made it; it goes with them, as it does when
+    // someone leaves the lobby. Not a saved game's: that pause is the whole table's.
+    if (this.pausedSeat === seat && !this.saved) this.unpause();
+    return succeed(undefined);
+  }
+
+  /**
+   * Take every player who walked away from a family game out of the match, once
+   * the round they left in is over, so the next round is dealt without them rather
+   * than played for them by the default policy. Nothing happens mid-round, at a
+   * competitive table, or once it would leave too few players: there a player who
+   * left goes on being played for, as before.
+   */
+  private removeLeavers(): boolean {
+    if (!this.state?.roundEnded) return false;
+    let removed = false;
+    for (const player of this.players) {
+      if (player.left && isSeated(this.state, player.seat)) {
+        removed = this.remove(player.seat).ok || removed;
+      }
+    }
+    return removed;
   }
 
   /**
@@ -583,6 +661,7 @@ export class Room {
   private dealNextRoundIfReady(): boolean {
     const state = this.state;
     if (!state?.roundEnded || this.matchOver) return false;
+    // A player taken out of the match is always marked left too.
     const staying = this.players.filter((p) => !p.left);
     if (!staying.every((p) => this.ready.has(p.token))) return false;
     // An ordinary action, logged like any other, so a restart replays the match
@@ -606,6 +685,9 @@ export class Room {
   resume(token: string): RoomResult<RoomPlayer> {
     const player = this.seatOf(token);
     if (!player) return fail("that seat token does not belong to this room");
+    if (this.state && !isSeated(this.state, player.seat)) {
+      return fail(CARRIED_ON_WITHOUT_YOU);
+    }
     const cameBack = player.left;
     player.left = false;
     this.setConnected(player.seat, true);
@@ -813,6 +895,8 @@ export class Room {
     if (action.type === "nextRound") {
       return fail("the next round is dealt when everyone is ready");
     }
+    // Nor is taking a player out of the match anyone's move: see `leave` and `removePlayer`.
+    if (action.type === "removePlayer") return fail("players leave the game by leaving the table");
     // Once the main clock is gone the turn is being wound up: a discard ends it,
     // anything else would extend a turn that has already run past its cap.
     if (source === "player" && this.graceUntil !== null && action.type !== "discard") {
@@ -846,6 +930,7 @@ export class Room {
     if (state.roundEnded) {
       this.dispose();
       this.clockSeat = null;
+      if (this.removeLeavers()) this.save();
       return;
     }
     if (state.currentSeat !== seat) {
@@ -1055,7 +1140,9 @@ export class Room {
       if (!this.apply(state.currentSeat, action, source)) break;
     }
     this.idleTurns++;
-    const idle = this.deps.pauseWhenIdle !== false && this.idleTurns >= this.players.length;
+    const idle =
+      this.deps.pauseWhenIdle !== false &&
+      this.idleTurns >= (this.state ? seatedCount(this.state) : this.players.length);
     if (idle && this.state && !this.state.roundEnded) {
       this.pauseForIdleness();
     }
@@ -1124,6 +1211,7 @@ export class Room {
         name: p.name,
         connected: p.connected,
         ...(p.avatar ? { avatar: p.avatar } : {}),
+        ...(this.state && !isSeated(this.state, p.seat) ? { departed: true as const } : {}),
       })),
       hostSeat: this.hostSeat,
       started: this.started,

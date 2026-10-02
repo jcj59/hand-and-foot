@@ -363,9 +363,10 @@ hand hosting to another player before the deal; the host is recorded by token ra
 so handing it on moves nobody, and a departing host passes it to whoever is then first in line.
 Closing the gap renumbers other players, so the server keys each socket's seat by token rather than
 by number, answers a `resumeSeat` with the seat it resolved, and tells any socket that moved its new
-number. After the deal the player count is fixed, so the seat stays and is treated as a disconnect
-whose grace has already run out: the server plays it at once instead of stalling the table for a
-player who has said they are not coming back.
+number. After the deal the seat stays and is treated as a disconnect whose grace has already run
+out: the server plays it at once instead of stalling the table for a player who has said they are
+not coming back. At a family table that lasts only until the round is over, when the player is taken
+out of the match; see "Carrying on without a player".
 
 A dropped connection is recovered by the client rather than the transport. The transport reconnects
 on its own, but to the server the result is a new socket carrying no seat, so the client presents
@@ -530,6 +531,53 @@ and forgotten when it resumes or closes — and is never the authority on whethe
 exists: the seat token is, and a refused one simply drops the entry. The list is per device; moving
 a saved game to another device would mean finding a player's seats by their identity, which the
 server already records with each seat but does not yet offer as a lookup.
+
+### Carrying on without a player
+
+A family game often loses someone part way through the evening. Before this, a player who left
+after the deal was played by the safe default for the rest of the match, which kept the table going
+but filled every later round with a seat that drew, discarded and never scored. Now, at a family
+table, a player can leave between rounds and the rest carry on as a smaller table.
+
+It has to be an engine concern rather than a flag on the seat, because the table's size is part of
+the deal: the shoe is built from one deck per player, and the first turn rotates by seat. So leaving
+is an action, `removePlayer`, accepted only between rounds, only at a family table and never below
+two players, and logged by the server like `nextRound`; the next deal is for the players still in
+the match, from a shoe that size, and a restart replays the smaller table from the log. A
+competitive match keeps the old behaviour, since its result should not depend on who stayed.
+
+The main decision was what happens to the departed player's seat number. Renumbering the seats so
+they stay `0..n-1` would make the next round look exactly like a fresh table of that size, which is
+tidy for the engine and for an agent's observation. But almost everything outside the round is keyed
+by seat: every finished round's scores are a list in seat order, which is what match totals are
+added up from; the action log names the seat each action was applied to, which is what Grabby Pants
+and the replay timeline are worked out from; and every client holds its seat number in its
+credentials. Renumbering would make the scores already on the board refer to a different seating
+and send every client a new number in the middle of a match. So the seat keeps its number, and the
+state records the departure — the seat and the last round they played. The cost is that "a seat" no
+longer means "a player in the round", and everything that walks round the table asks whether a seat
+is still in it: the turn passes to the next seat still playing, the final lap after a go-out counts
+the players still in, and the first turn of each round passes on from whoever started the last one,
+skipping anyone gone. (Counting rounds from the first seat instead, as before, would hand the player
+after a departed one two first turns running.) A departed player is not among anyone's opponents in
+a view, so an agent's observation of the round is that of a table of the remaining size, with the
+departures public beside it.
+
+The player is scored for the round they leave after, as it was played — their cards are still where
+that round left them when the next deal scores it — and for nothing after. Their total stays on the
+scoreboard, marked as having left, but the win is decided among the players who finished: someone
+who led the table and then went home has not won the match. Their cards are never shown to anyone;
+the next round is a fresh deal, and between the departure and that deal the view simply leaves
+their seat out.
+
+Who may do it follows who knows the player has gone. A player leaving the table between rounds is
+taken out at once; one who leaves mid-round is played for until the round ends and taken out then,
+since taking their cards out mid-round would change a round everyone else is halfway through. The
+host can carry on without a player who is no longer at the table, but not without one who is still
+connected — that player leaves for themselves. Leaving a saved game still only empties the seat, as
+everyone leaving is the point of saving it. A departed player's seat token stops resuming the seat,
+with a refusal the client recognizes, so the player is told the game went on without them rather
+than that the table has gone.
 
 ### Watching a game back
 

@@ -21,6 +21,7 @@ import { naturalRank, validateMeld } from "./meld";
 import { layDownValue } from "./marva";
 import { claimsGoOut } from "./goout";
 import { withTurnBase } from "./takeBack";
+import { nextSeated, seatedCount } from "./seats";
 
 /**
  * Lay new melds and extend existing ones from the current player's active zone.
@@ -123,12 +124,12 @@ export function applyPlayMelds(state: GameState, plays: readonly MeldPlay[]): Ap
     if (!claimsGoOut(state, nextState.players[seat])) {
       return ok(advanceTurn(nextState, seat));
     }
-    const nextSeat = (seat + 1) % state.players.length;
     return ok({
       ...withoutTurnBase(nextState),
-      currentSeat: nextSeat,
+      currentSeat: nextSeated(state, seat),
       phase: "draw",
-      finalLapRemaining: state.players.length - 1,
+      // One more turn for each of the others still in the match.
+      finalLapRemaining: seatedCount(state) - 1,
       wentOutSeat: seat,
     });
   }

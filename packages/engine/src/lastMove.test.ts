@@ -161,5 +161,12 @@ describe("roundResult", () => {
     const result = roundResult(last)!;
     expect(result.matchOver).toBe(true);
     expect("wentOutSeat" in result).toBe(false);
+    expect("departed" in result).toBe(false);
+  });
+
+  it("names everyone who has left the match, for the scoreboard", () => {
+    const departed = [{ seat: 1, afterRound: 1 }];
+    const ended = stateWith({ roundEnded: true, roundNumber: 2, departed });
+    expect(roundResult(ended)!.departed).toEqual(departed);
   });
 });

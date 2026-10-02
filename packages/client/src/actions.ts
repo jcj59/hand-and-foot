@@ -11,6 +11,7 @@
  * refused request as a value. A rejection is put on the store as a notice for the
  * interface to surface, and the caller learns whether it worked.
  */
+import { CARRIED_ON_WITHOUT_YOU } from "@hf/shared";
 import type {
   Action,
   Avatar,
@@ -94,7 +95,7 @@ export async function reclaimSeat(
   socket: HfClientSocket,
   credentials: SeatCredentials,
   sink: Pick<ActionSink, "seat">,
-): Promise<"reclaimed" | "gone" | "unreachable"> {
+): Promise<"reclaimed" | "gone" | "removed" | "unreachable"> {
   const result = await wire.resumeSeat(socket, credentials);
   if (result.ok) {
     // The server's seat, not the stored one: seats close up when someone ahead
@@ -104,7 +105,9 @@ export async function reclaimSeat(
   }
   if (result.error === wire.NO_RESPONSE) return "unreachable";
   clearCredentials();
-  return "gone";
+  // Gone in a way worth telling the player, whenever they find out: the table is
+  // still there, and the match went on without them.
+  return result.error === CARRIED_ON_WITHOUT_YOU ? "removed" : "gone";
 }
 
 /** Shown when a game saved for later is no longer there to go back to. */
@@ -137,7 +140,9 @@ export async function resumeSavedGame(
     return false;
   }
   forgetSavedGame(game.roomId);
-  sink.setNotice(SAVED_GAME_GONE);
+  sink.setNotice(
+    result.error === CARRIED_ON_WITHOUT_YOU ? CARRIED_ON_WITHOUT_YOU : SAVED_GAME_GONE,
+  );
   return false;
 }
 
@@ -170,11 +175,11 @@ export function reclaimOnReconnect(socket: HfClientSocket, sink: ReconnectSink):
     if (!credentials) return;
     void reclaimSeat(socket, credentials, sink).then((outcome) => {
       // Unreachable keeps the seat: the next reconnect tries again.
-      if (outcome !== "gone") return;
+      if (outcome !== "gone" && outcome !== "removed") return;
       // Unlike a fresh load, the player was at this table a moment ago, so its
       // disappearing is worth saying out loud rather than silently going home.
       sink.leave();
-      sink.setNotice(TABLE_GONE);
+      sink.setNotice(outcome === "removed" ? CARRIED_ON_WITHOUT_YOU : TABLE_GONE);
     });
   };
   socket.on("connect", onConnect);
@@ -344,6 +349,24 @@ export async function playAgain(
   sink.leave();
   sink.seat(result.data);
   return result.data.roomId;
+}
+
+/**
+ * Carry on without a player who has gone, between rounds. Only the host's client
+ * offers this. A refusal is a notice.
+ */
+export async function carryOnWithout(
+  socket: HfClientSocket,
+  seat: number,
+  sink: ActionSink,
+): Promise<boolean> {
+  const result = await wire.removePlayer(socket, seat);
+  if (!result.ok) {
+    sink.setNotice(result.error);
+    return false;
+  }
+  sink.setNotice(null);
+  return true;
 }
 
 /** Say ready for the next round of the match. A refusal is a notice. */

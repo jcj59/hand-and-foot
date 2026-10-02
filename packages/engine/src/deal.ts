@@ -1,6 +1,7 @@
-import type { Card, GameState, PlayerState, RulesConfig } from "@hf/shared";
+import type { Card, Departure, GameState, PlayerState, RulesConfig } from "@hf/shared";
 import { buildShoe } from "./deck";
 import { prng, shuffle } from "./rng";
+import { sitsOut } from "./seats";
 
 /**
  * Produce the initial state of a round: build and shuffle the shoe, deal a hand
@@ -13,6 +14,10 @@ import { prng, shuffle } from "./rng";
  * goes to `firstSeat` in round 1 and passes one seat to the left each round after,
  * as the deal does at a real table. It defaults to seat 0, which is what every
  * game recorded before the first player was chosen at random assumes.
+ *
+ * Players who have `departed` the match are dealt nothing: the shoe is built for
+ * the players still at the table, as it would be for a table that size, and the
+ * first turn skips their seats.
  */
 export function deal(
   playerCount: number,
@@ -20,9 +25,13 @@ export function deal(
   seed: number,
   roundNumber = 1,
   firstSeat = 0,
+  departed: readonly Departure[] = [],
 ): GameState {
+  const out = (seat: number): boolean => sitsOut(departed, seat, roundNumber);
+  let playing = 0;
+  for (let seat = 0; seat < playerCount; seat++) if (!out(seat)) playing++;
   const rng = prng(roundSeed(seed, roundNumber));
-  const shoe = shuffle(buildShoe(playerCount, config.extraDecks), rng);
+  const shoe = shuffle(buildShoe(playing, config.extraDecks), rng);
 
   let next = 0;
   const take = (count: number): Card[] => {
@@ -33,9 +42,10 @@ export function deal(
 
   const players: PlayerState[] = [];
   for (let seat = 0; seat < playerCount; seat++) {
+    const dealt = !out(seat);
     players.push({
-      hand: take(config.handSize),
-      foot: take(config.footSize),
+      hand: dealt ? take(config.handSize) : [],
+      foot: dealt ? take(config.footSize) : [],
       melds: [],
       isDown: false,
       inFoot: false,
@@ -51,13 +61,35 @@ export function deal(
     seed,
     roundNumber,
     players,
-    currentSeat: (firstSeat + roundNumber - 1) % playerCount,
+    currentSeat: startingSeat(playerCount, firstSeat, roundNumber, departed),
     phase: "draw",
     stock,
     discard,
     // Left out at seat 0, so a state dealt the old way is the same value it was.
     ...(firstSeat !== 0 ? { firstSeat } : {}),
+    ...(departed.length > 0 ? { departed } : {}),
   };
+}
+
+/**
+ * Who takes the first turn of a round: `firstSeat` in round 1, then each round the
+ * next player to the left of whoever started the round before — skipping anyone
+ * who had left by then. Walked round by round rather than worked out as
+ * `firstSeat + roundNumber - 1`, because that sum would hand two rounds running to
+ * the player after a departed one; with nobody gone the two agree.
+ */
+function startingSeat(
+  playerCount: number,
+  firstSeat: number,
+  roundNumber: number,
+  departed: readonly Departure[],
+): number {
+  let seat = firstSeat;
+  for (let round = 2; round <= roundNumber; round++) {
+    do seat = (seat + 1) % playerCount;
+    while (sitsOut(departed, seat, round));
+  }
+  return seat;
 }
 
 /**

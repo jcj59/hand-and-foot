@@ -174,6 +174,15 @@ const room = {
   playAgain: [],
   nextRoundReady: [],
 };
+// LEFT=1: Ana left the match after round 1, so round 2 was dealt without her.
+const departed = process.env.LEFT ? [{ seat: 1, afterRound: 1 }] : undefined;
+if (departed) {
+  view.opponents = view.opponents.filter((o) => o.seat !== 1);
+  view.departed = departed;
+  room.players = room.players.map((p) =>
+    p.seat === 1 ? { ...p, connected: false, departed: true } : p,
+  );
+}
 // A table Ana paused; SAVED=1 has her save it for later too.
 if (process.env.PAUSED || process.env.SAVED) {
   room.pausedBy = 1;
@@ -265,11 +274,26 @@ const run = async () => {
             JSON.stringify({
               event: "roundEnded",
               payload: {
-                scores: names.map((_, seat) => ({ seat, score: 900 - seat * 150, breakdown: bd })),
+                scores: names.map((_, seat) =>
+                  departed && seat === 1
+                    ? {
+                        seat,
+                        score: 0,
+                        breakdown: {
+                          ...bd,
+                          cleanBooks: 0,
+                          dirtyBooks: 0,
+                          bookBonus: 0,
+                          meldedCards: 0,
+                        },
+                      }
+                    : { seat, score: 900 - seat * 150, breakdown: bd },
+                ),
                 wentOutSeat: 2,
                 roundNumber: 2,
                 totals: names.map((_, seat) => 1500 - seat * 200),
                 matchOver: false,
+                ...(departed ? { departed } : {}),
               },
             }),
           );

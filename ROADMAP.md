@@ -120,7 +120,7 @@ each round and changes hands on any new three-in-a-row, and the CI sequence pass
 This changes what players see, so it carries before/after screenshots (frames for the pile
 animation), desktop and phone. Update `CLAUDE.md`.
 
-### P3. Remove a player between rounds (family mode)
+### ~~P3. Remove a player between rounds (family mode)~~
 
 **Depends on** P1. *Engine, server, client; may split `a` (engine and server) / `b` (client).*
 

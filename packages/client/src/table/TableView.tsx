@@ -98,6 +98,8 @@ export interface TableControls {
   leave(): void;
   playAgain(): void;
   nextRound(): void;
+  /** Carry on without a player who has gone, between rounds. The host's to offer. */
+  removePlayer(seat: number): void;
 }
 
 export interface TableViewProps {
@@ -459,7 +461,13 @@ export function TableView({
               className={phone ? "w-full truncate text-xs text-white/60" : "text-sm text-white/60"}
             >
               Scores:{" "}
-              {view.scoresSoFar.map((total, seat) => `${nameOf(seat)} ${total}`).join(" · ")}
+              {view.scoresSoFar
+                .map((total, seat) => {
+                  // A player who has left keeps their total, marked so nobody counts it.
+                  const gone = (view.departed ?? []).some((d) => d.seat === seat);
+                  return `${nameOf(seat)}${gone ? " (left)" : ""} ${total}`;
+                })
+                .join(" · ")}
             </p>
           )}
         </div>
@@ -898,6 +906,7 @@ export function TableView({
               onLeave: controls.leave,
               onPlayAgain: controls.playAgain,
               onNextRound: controls.nextRound,
+              onRemovePlayer: controls.removePlayer,
               onSaveForLater: () => void controls.saveForLater(),
             }
           }

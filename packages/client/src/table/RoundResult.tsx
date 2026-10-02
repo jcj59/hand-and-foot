@@ -13,7 +13,7 @@
  * cards is easy to miss. It can be hidden to look back at the table.
  */
 import { useRef, useState } from "react";
-import type { RoomInfo, RoundEnded, RulesConfig } from "@hf/shared";
+import { MIN_PLAYERS, type RoomInfo, type RoundEnded, type RulesConfig } from "@hf/shared";
 
 export interface RoundResultProps {
   readonly result: RoundEnded;
@@ -34,6 +34,11 @@ export interface RoundResultActions {
   readonly onPlayAgain: () => void;
   /** Say ready for the next round of the match. Offered until the last round. */
   readonly onNextRound: () => void;
+  /**
+   * Carry on without a player who has gone. Offered to the host, between rounds of
+   * a family game, for each player not at the table.
+   */
+  readonly onRemovePlayer: (seat: number) => void;
   /**
    * Put the match away between rounds, to be finished another day. Offered until
    * the last round, at family tables, as pausing is.
@@ -59,13 +64,35 @@ export function RoundResult({
   // Where the panel has been dragged to, as an offset from where it opens.
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const drag = useRef<{ x: number; y: number } | null>(null);
-  // Ranked by the match so far: that is the standing that matters between rounds.
   const totalOf = (seat: number): number => result.totals[seat] ?? 0;
-  const ranked = [...result.scores].sort((a, b) => totalOf(b.seat) - totalOf(a.seat));
+  // The round a player left the match after, if they have left it.
+  const leftAfter = (seat: number): number | undefined =>
+    result.departed?.find((d) => d.seat === seat)?.afterRound;
+  const gone = (seat: number): boolean => leftAfter(seat) !== undefined;
+  // Ranked by the match so far, which is the standing that matters between rounds —
+  // among the players still in it. Anyone who has left keeps their row, below them.
+  const ranked = [...result.scores].sort(
+    (a, b) => Number(gone(a.seat)) - Number(gone(b.seat)) || totalOf(b.seat) - totalOf(a.seat),
+  );
   const nameOf = (seat: number): string =>
     room.players.find((p) => p.seat === seat)?.name ?? `Seat ${seat}`;
-  const best = Math.max(...result.scores.map((r) => totalOf(r.seat)));
-  const winners = result.scores.filter((r) => totalOf(r.seat) === best).map((r) => nameOf(r.seat));
+  // A player who left can top the totals without having finished the match: the
+  // win is among those who did.
+  const contenders = result.scores.filter((r) => !gone(r.seat));
+  const best = Math.max(...contenders.map((r) => totalOf(r.seat)));
+  const winners = contenders.filter((r) => totalOf(r.seat) === best).map((r) => nameOf(r.seat));
+  const playing = room.players.filter((p) => !p.departed);
+  const family = config.mode === "family";
+  // Who the host could carry on without: anyone still in the match but not at the
+  // table, while enough would be left to deal to.
+  const absent =
+    actions &&
+    !result.matchOver &&
+    family &&
+    mySeat === room.hostSeat &&
+    playing.length > MIN_PLAYERS
+      ? playing.filter((p) => !p.connected && p.seat !== mySeat)
+      : [];
   const headline = result.matchOver
     ? winners.length === 1
       ? `${winners[0]} wins!`
@@ -192,14 +219,36 @@ export function RoundResult({
               <tbody>
                 {ranked.map(({ seat, score, breakdown: b }) => {
                   const name = room.players.find((p) => p.seat === seat)?.name ?? `Seat ${seat}`;
+                  const after = leftAfter(seat);
+                  // Gone before this round was dealt: there is nothing of theirs to break down.
+                  if (after !== undefined && after < result.roundNumber) {
+                    return (
+                      <tr
+                        key={seat}
+                        aria-label={`${name}: left after round ${after}`}
+                        className="border-t border-white/10 text-white/50"
+                      >
+                        <th scope="row" className="py-1 pr-3 text-left font-medium">
+                          {name} <span className="text-xs font-normal">(left)</span>
+                        </th>
+                        <td colSpan={6} className="py-1 pr-3 italic">
+                          Left after round {after}
+                        </td>
+                        <td className="py-1">{totalOf(seat)}</td>
+                      </tr>
+                    );
+                  }
                   return (
                     <tr
                       key={seat}
                       aria-label={`${name}: ${score}`}
-                      className="border-t border-white/10"
+                      className={`border-t border-white/10 ${after !== undefined ? "text-white/60" : ""}`}
                     >
                       <th scope="row" className="py-1 pr-3 text-left font-medium">
                         {name}
+                        {after !== undefined && (
+                          <span className="text-xs font-normal"> (left)</span>
+                        )}
                       </th>
                       <td className="py-1 pr-3">
                         {b.cleanBooks} × {scoring.cleanBookBonus} ={" "}
@@ -229,7 +278,7 @@ export function RoundResult({
           {!result.matchOver && room.nextRoundReady.length > 0 && (
             <p role="status" className="mt-3 text-sm text-amber-100">
               Ready for round {result.roundNumber + 1}: {room.nextRoundReady.map(nameOf).join(", ")}{" "}
-              ({room.nextRoundReady.length} of {room.players.length})
+              ({room.nextRoundReady.length} of {playing.length})
             </p>
           )}
           {result.matchOver && room.playAgain.length > 0 && (
@@ -237,12 +286,34 @@ export function RoundResult({
             // anyone is there to play with.
             <p role="status" className="mt-3 text-sm text-amber-100">
               Waiting in the next game: {room.playAgain.map(nameOf).join(", ")} (
-              {room.playAgain.length} of {room.players.length})
+              {room.playAgain.length} of {playing.length})
             </p>
           )}
+          {absent.map((p) => (
+            <div
+              key={p.seat}
+              className="mt-3 flex flex-wrap items-center gap-2 rounded border border-white/15 px-3 py-2 text-sm"
+            >
+              <span className="flex-1 text-white/80">
+                {p.name} is not at the table. The rest of you can carry on without them.
+              </span>
+              <button
+                type="button"
+                onClick={() => actions!.onRemovePlayer(p.seat)}
+                className="rounded border border-amber-200/60 px-3 py-1.5 text-amber-100"
+              >
+                Carry on without {p.name}
+              </button>
+            </div>
+          ))}
           {notice && (
             <p role="alert" className="mt-3 rounded bg-red-600/20 px-3 py-2 text-sm text-red-200">
               {notice}
+            </p>
+          )}
+          {actions && !result.matchOver && family && playing.length > MIN_PLAYERS && (
+            <p className="mt-3 text-xs text-white/60">
+              Leaving now takes you out of the match; the others carry on without you.
             </p>
           )}
           <div className="mt-3 flex flex-wrap gap-2">

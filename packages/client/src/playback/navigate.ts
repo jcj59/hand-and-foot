@@ -62,5 +62,7 @@ export function describeStep(timeline: Timeline, step: number): string {
       return `${name} discarded`;
     case "nextRound":
       return `Round ${timeline.stateAt(step).roundNumber} dealt`;
+    case "removePlayer":
+      return `${timeline.nameOf(action.seat)} left the game`;
   }
 }

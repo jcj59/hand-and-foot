@@ -22,6 +22,8 @@ export type ScriptStep =
   | { readonly do: "takePile" }
   | { readonly do: "takeBack" }
   | { readonly do: "nextRound" }
+  /** A player leaves the match between rounds. */
+  | { readonly do: "removePlayer"; readonly seat: number }
   /** A named card, or whatever the default discard heuristic would throw. */
   | { readonly do: "discard"; readonly card?: string }
   | { readonly do: "meld"; readonly melds: Readonly<Partial<Record<Rank, string>>> }
@@ -37,6 +39,7 @@ export const draw = (): ScriptStep => ({ do: "draw" });
 export const takePile = (): ScriptStep => ({ do: "takePile" });
 export const takeBack = (): ScriptStep => ({ do: "takeBack" });
 export const nextRound = (): ScriptStep => ({ do: "nextRound" });
+export const removePlayer = (seat: number): ScriptStep => ({ do: "removePlayer", seat });
 export const discard = (card?: string): ScriptStep => ({
   do: "discard",
   ...(card ? { card } : {}),
@@ -108,6 +111,9 @@ export function resolveScript(start: GameState, script: readonly ScriptStep[]): 
         apply({ type: "playMelds", melds: plays }, "meld");
         break;
       }
+      case "removePlayer":
+        apply({ type: "removePlayer", seat: step.seat }, `seat ${step.seat} leaves`);
+        break;
       case "auto":
         if ("turns" in step) {
           for (let turn = 0; turn < step.turns && !state.roundEnded; turn++) {

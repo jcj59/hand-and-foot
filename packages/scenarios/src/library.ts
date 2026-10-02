@@ -16,6 +16,7 @@ import {
   meld,
   moment,
   nextRound,
+  removePlayer,
   takeBack,
   takePile,
 } from "./script";
@@ -447,6 +448,24 @@ export const SCENARIOS: readonly Scenario[] = [
       nextRound(),
       moment("lapsed", "A new round, and nobody is Grabby Pants"),
     ],
+  },
+  {
+    id: "player-leaves",
+    title: "A player leaves between rounds",
+    description:
+      "Three play a round. Then Ben leaves the table, and the other two carry on: round 2 is dealt to a two-player table from a two-player shoe, the first turn goes on from Ana past Ben's empty seat, and the scoreboard keeps what Ben scored in round 1, marked as having left.",
+    config: EAST_COAST,
+    setup: { seed: 1, playerCount: 3 },
+    names: ["Ana", "Ben", "Cy"],
+    script: [
+      autoUntil("round"),
+      moment("leaving", "Round 1 is over, and Ben is leaving"),
+      removePlayer(1),
+      nextRound(),
+      moment("smaller", "Round 2, dealt to Ana and Cy"),
+      autoUntil("round"),
+    ],
+    watch: 0,
   },
   {
     id: "match",

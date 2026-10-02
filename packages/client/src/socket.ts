@@ -159,6 +159,10 @@ export function stageMelds(
   return ask((ack) => socket.emit("stageMelds", { melds }, ack));
 }
 
+export function removePlayer(socket: HfClientSocket, seat: number): Promise<Ack<undefined>> {
+  return ask((ack) => socket.emit("removePlayer", { seat }, ack));
+}
+
 export function setHost(socket: HfClientSocket, seat: number): Promise<Ack<undefined>> {
   return ask((ack) => socket.emit("setHost", { seat }, ack));
 }

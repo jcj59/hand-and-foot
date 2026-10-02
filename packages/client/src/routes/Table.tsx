@@ -6,6 +6,7 @@
 import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  carryOnWithout,
   leaveTable,
   pauseTable,
   play,
@@ -53,6 +54,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
           if (roomId) navigate(`/room/${roomId}`);
         }),
       nextRound: () => void readyForNextRound(socket, sink),
+      removePlayer: (seat) => void carryOnWithout(socket, seat, sink),
       react: (id) => void sendReaction(socket, id),
     };
   }, [socket, seat, setNotice, leave, navigate]);
