@@ -11,6 +11,7 @@ import {
   type CloseReason,
   type GameState,
   type LastMove,
+  type MatchRecord,
   type MeldPlay,
   type Reaction,
   type RoomInfo,
@@ -33,6 +34,7 @@ import {
   project,
   roundResult,
   seatedCount,
+  summarizeMatch,
 } from "@hf/engine";
 import type { Clock } from "./clock";
 import { ReactionLimiter } from "./reactions";
@@ -180,6 +182,13 @@ export interface RoomDeps {
   readonly uid?: string;
   /** When it was opened. Given only when restoring a room opened before a restart. */
   readonly createdAt?: number;
+  /**
+   * Keep a match for the people who played it: called once when the last round
+   * ends, and by the host when a table closes part way through (`recordUnfinished`).
+   * Only for a match somebody played under an identity — nobody could ask for any
+   * other. The host decides where it goes; see `MatchStore`.
+   */
+  readonly recordMatch?: (record: MatchRecord) => void;
 }
 
 export const DEFAULT_RECONNECT_GRACE_MS = 30_000;
@@ -1019,6 +1028,7 @@ export class Room {
       this.dispose();
       this.clockSeat = null;
       if (this.removeLeavers()) this.save();
+      if (isMatchOver(state)) this.keepMatch();
       return;
     }
     if (state.currentSeat !== seat) {
@@ -1380,6 +1390,62 @@ export class Room {
   /** Final scores, once the round is over. */
   result(): RoundEnded | null {
     return this.state && roundResult(this.state);
+  }
+
+  /**
+   * The match as it is kept: who played it, the log that replays it, and its
+   * summary. Null before the deal. The log is the room's own, which is what a
+   * restart replays, so the record and the game cannot disagree.
+   */
+  matchRecord(): MatchRecord | null {
+    const state = this.state;
+    if (!state) return null;
+    const entries = this.log.entries();
+    const firstSeat = state.firstSeat ?? 0;
+    return {
+      id: this.uid,
+      roomId: this.id,
+      startedAt: entries[0]?.at ?? this.createdAt,
+      endedAt: this.deps.clock.now(),
+      config: this.config,
+      seed: this.deps.seed,
+      firstSeat,
+      seats: this.players.map((p) => ({
+        seat: p.seat,
+        name: p.name,
+        ...(p.avatar ? { avatar: p.avatar } : {}),
+        ...(p.userId ? { userId: p.userId } : {}),
+        ...(p.bot ? { bot: true as const } : {}),
+      })),
+      log: entries.map((e) => ({ seat: e.seat, action: e.action, source: e.source })),
+      summary: summarizeMatch({
+        config: this.config,
+        seed: this.deps.seed,
+        playerCount: this.players.length,
+        firstSeat,
+        actions: entries.map((e) => e.action),
+      }),
+    };
+  }
+
+  /**
+   * Keep a match that is closing before its last round, as far as it got. The host
+   * calls this as it closes the table — reaped for being left, or paused too long —
+   * since only the host knows a table is closing.
+   */
+  recordUnfinished(): void {
+    if (this.started && !this.matchOver) this.keepMatch();
+  }
+
+  private keepMatch(): void {
+    if (!this.deps.recordMatch) return;
+    try {
+      const record = this.matchRecord();
+      if (!record || !record.seats.some((s) => s.userId && !s.bot)) return;
+      this.deps.recordMatch(record);
+    } catch (error) {
+      console.error(`could not record match ${this.uid}:`, error);
+    }
   }
 
   /** Whether the last round of the match has been played. */

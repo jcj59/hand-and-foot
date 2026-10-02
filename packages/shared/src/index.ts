@@ -389,3 +389,4 @@ export * from "./identity";
 export * from "./rules";
 export * from "./protocol";
 export * from "./wire";
+export * from "./matches";

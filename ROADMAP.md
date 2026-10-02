@@ -287,6 +287,9 @@ A lightweight notion of a **user** without accounts or passwords.
 
 ### 5. Match history, stats, and replay *(may split: 5a history + stats, 5b replay viewer)*
 
+*5a (history and stats) done after 7b; 5b (replay) next. See DESIGN.md, "Keeping a record of every
+match".*
+
 **Depends on** 4.
 
 - When a match ends (or a table closes mid-match), persist a record: config, seed, seats with user

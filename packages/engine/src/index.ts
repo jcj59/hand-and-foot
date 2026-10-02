@@ -21,6 +21,7 @@ export * from "./takeBack";
 export * from "./grabby";
 export * from "./lastMove";
 export * from "./playback";
+export * from "./matchSummary";
 export * from "./marva";
 export * from "./arena";
 

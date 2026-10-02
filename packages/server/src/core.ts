@@ -11,3 +11,4 @@ export * from "./room";
 export * from "./store";
 export * from "./table";
 export * from "./users";
+export * from "./matches";

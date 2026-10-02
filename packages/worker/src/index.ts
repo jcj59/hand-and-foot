@@ -8,6 +8,7 @@
 import {
   HEALTH_PATH,
   isUserCredentials,
+  MATCHES_PATH,
   NOT_AN_IDENTITY,
   parseAvatar,
   parseRoomPath,
@@ -72,6 +73,13 @@ export default {
       if (!body) return json({ ok: false, error: "that request was not JSON" }, 400);
       if (!isUserCredentials(body)) return json({ ok: false, error: NOT_AN_IDENTITY });
       return json(await env.USERS.getByName(body.userId).register(body, Date.now()));
+    }
+
+    if (pathname === MATCHES_PATH && request.method === "POST") {
+      const body = await readJson(request);
+      if (!body) return json({ ok: false, error: "that request was not JSON" }, 400);
+      if (!isUserCredentials(body.user)) return json({ ok: false, error: NOT_AN_IDENTITY });
+      return json(await env.USERS.getByName(body.user.userId).history(body.user));
     }
 
     if (pathname === ROOMS_PATH && request.method === "POST") {

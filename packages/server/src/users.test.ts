@@ -148,12 +148,12 @@ describe.skipIf(DATABASE_URL === undefined)("Postgres", () => {
 
   afterAll(async () => {
     for (const store of opened) await store.close();
-    await admin`drop table if exists actions, rooms, users, schema_migrations`;
+    await admin`drop table if exists match_players, matches, actions, rooms, users, schema_migrations`;
     await admin.end();
   });
 
   contract("postgres", async () => {
-    await admin`drop table if exists actions, rooms, users, schema_migrations`;
+    await admin`drop table if exists match_players, matches, actions, rooms, users, schema_migrations`;
     const store = await openPostgresStore(url, { retryDelaysMs: [] });
     opened.push(store);
     return store.users();

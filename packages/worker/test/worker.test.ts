@@ -20,6 +20,7 @@ import {
   PING,
   PONG,
   type Ack,
+  type MatchHistory,
   type RoomOptions,
   type SeatCredentials,
   type ViewUpdate,
@@ -680,6 +681,98 @@ describe("identities", () => {
     expect((await ask<SeatCredentials>(guest, "playAgain")).ok).toBe(true);
     const ids = await insideTable(first.data.roomId, (room) => room.seats().map((p) => p.userId));
     expect(ids).toEqual([ana.userId, ben.userId]);
+  });
+});
+
+describe("match history", () => {
+  const ana = { userId: "ana-history-0001", secret: "a".repeat(40) };
+  const ben = { userId: "ben-history-0002", secret: "b".repeat(40) };
+
+  async function post<T>(path: string, body: unknown): Promise<Ack<T>> {
+    const response = await SELF.fetch(`${BASE}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return (await response.json()) as Ack<T>;
+  }
+
+  async function history(user: unknown): Promise<Ack<MatchHistory>> {
+    return post<MatchHistory>("/api/users/matches", { user });
+  }
+
+  /** Ana and Ben, registered, dealt a one-round match. */
+  async function table(): Promise<string> {
+    await post("/api/users", { ...ana, name: "Ana" });
+    await post("/api/users", { ...ben, name: "Ben" });
+    const host = client();
+    const guest = client();
+    const opened = await ask<SeatCredentials>(host, "createRoom", {
+      name: "Ana",
+      user: ana,
+      options: {
+        rules: { rounds: 1, layDownMinimums: [60], extraDecks: 0, stockExhaustion: "end" },
+      },
+    });
+    if (!opened.ok) throw new Error(opened.error);
+    await ask(guest, "joinRoom", { roomId: opened.data.roomId, name: "Ben", user: ben });
+    const dealt = nextView(host);
+    await ask(host, "startGame");
+    await dealt;
+    return opened.data.roomId;
+  }
+
+  it("keeps a finished match in each player's own history", async () => {
+    const code = await table();
+    await insideTable(code, (room) => {
+      for (let guard = 0; !room.matchOver && guard < 5_000; guard++) {
+        const state = room.gameState!;
+        room.submitAction(state.currentSeat, defaultAction(state)!);
+      }
+      stopClock(room);
+    });
+    for (const user of [ana, ben]) {
+      await until(async () => {
+        const answer = await history(user);
+        return answer.ok && answer.data.recent.length === 1;
+      });
+      const answer = await history(user);
+      if (!answer.ok) throw new Error(answer.error);
+      expect(answer.data.stats.played).toBe(1);
+      expect(answer.data.recent[0]).toMatchObject({
+        roomId: code,
+        finished: true,
+        roundsPlayed: 1,
+      });
+    }
+  });
+
+  it("keeps a match closed part way, as unfinished", async () => {
+    const code = await table();
+    await insideTable(code, (room) => {
+      room.setConnected(0, false);
+      room.setConnected(1, false);
+      stopClock(room);
+    });
+    await runInDurableObject(tableOf(code), async (instance: TableObject) => {
+      // Past every limit, so the alarm closes it.
+      const internal = instance as unknown as { channel: TableChannel };
+      const room = internal.channel.room as unknown as { players: { disconnectedAt: number }[] };
+      for (const p of room.players) p.disconnectedAt = 0;
+      await instance.alarm();
+    });
+    await until(async () => {
+      const answer = await history(ana);
+      return answer.ok && answer.data.stats.unfinished === 1;
+    });
+  });
+
+  it("is refused to credentials that do not prove the identity", async () => {
+    await post("/api/users", { ...ana, name: "Ana" });
+    const refused = { ok: false, error: "that is not an identity" };
+    expect(await history({ ...ana, secret: "z".repeat(40) })).toEqual(refused);
+    expect(await history({ userId: "../x", secret: "z" })).toEqual(refused);
+    expect(await history(undefined)).toEqual(refused);
   });
 });
 

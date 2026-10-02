@@ -16,11 +16,13 @@ import {
   PONG,
   ROOMS_PATH,
   USERS_PATH,
+  MATCHES_PATH,
   type Ack,
   type ClientFrame,
 } from "@hf/shared";
 import { nextTableFor, openTable, sitAt } from "./lobby";
 import { InMemoryUserStore, registerUser, verifyUser, type UserStore } from "./users";
+import { InMemoryMatchStore, matchHistory, type MatchStore } from "./matches";
 import type { RoomManager } from "./manager";
 import type { Room } from "./room";
 import { refusal, TableChannel } from "./table";
@@ -37,6 +39,8 @@ export interface TransportOptions {
   readonly heartbeatMs?: number;
   /** Where identities are kept; in memory when unset. */
   readonly users?: UserStore;
+  /** Where finished matches are kept; in memory when unset. */
+  readonly matches?: MatchStore;
   /** The time an identity was registered or updated; the system clock when unset. */
   readonly now?: () => number;
 }
@@ -63,6 +67,7 @@ export function attachTables(
   options: TransportOptions = {},
 ): Tables {
   const users = options.users ?? new InMemoryUserStore();
+  const matches = options.matches ?? new InMemoryMatchStore();
   const now = options.now ?? Date.now;
   const channels = new Map<string, TableChannel>();
   const channelFor = (room: Room): TableChannel => {
@@ -124,6 +129,9 @@ export function attachTables(
       return json(response, 400, { ok: false, error: "that request was not JSON" });
     if (path === USERS_PATH) {
       return json(response, 200, await registerUser(users, body, now()));
+    }
+    if (path === MATCHES_PATH) {
+      return json(response, 200, await matchHistory(users, matches, body));
     }
     // Who is sitting down, if their browser proved an identity (anonymous otherwise),
     // and their picture, if it is one (none otherwise; never a reason to refuse).

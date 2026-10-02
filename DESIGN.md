@@ -613,6 +613,40 @@ resolved into actions by playing it. Every scenario is replayed in continuous in
 rules change that breaks one fails the build by name. The viewer is a development tool and is left
 out of production builds; the player it uses is not tied to it.
 
+### Keeping a record of every match
+
+When a match ends — or its table closes before the last round, reaped for being left or paused too
+long — the server keeps a record of it: the rules, the seed and the first seat, who sat where (with
+the identity each person sat down under, and which seats were computers), the action log, and a
+summary. The log is kept whole because it is small, a few kilobytes, and because everything else
+can be worked out from it again: the replay plays it, and a statistic nobody has thought of yet can
+be computed from it later without having had to be recorded at the time. The summary — each round's
+scores, the totals, who won, who left, and what each seat did that stats count — exists only so the
+home screen need not replay every game to draw a list. It is worked out by replaying the log
+through the replay player's own timeline, so a count of Grabby Pants on the home screen is by
+construction the number of times the replay announces it.
+
+A record is kept per identity rather than per table. On Cloudflare each identity is already its own
+Durable Object, so the table sends a copy of the record to each of its players' objects, and a
+player's history is read from one place without ever reading across identities; on the Node host
+it is one Postgres table of records and one of which identities played which. A match nobody played
+under an identity is not kept, since nobody could ever ask for it. Saving a record again under the
+same id replaces it, which is what lets a match first recorded unfinished, or recorded twice, end
+up kept once.
+
+Everything is kept. At the scale of a family there is no storage reason to throw a game away, and
+every recorded game is a training example for the agent — with its moves marked by source, so a
+computer's or a timeout's can be left out. An unfinished match shows in the list as unfinished,
+with the rounds it reached; it counts towards a player's rounds and best round, but not towards
+games played, wins or average, which would otherwise reward walking away from a losing game. A
+player who left a match counts it the same way, as far as they played it. Computer players appear
+in the records and the lists, marked as such, but have no identity and so no stats; a game played
+against them counts for the person who played it.
+
+What a player is sent about a match is a listing built for them: the names, pictures and totals at
+the table, where they came, and whether they won — never another player's identity, which a listing
+has no use for.
+
 ### A heuristic opponent
 
 The safe default above never melds, so it cannot serve as an opponent: it never scores and never

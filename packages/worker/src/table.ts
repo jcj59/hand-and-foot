@@ -21,6 +21,7 @@
  */
 import { DurableObject } from "cloudflare:workers";
 import {
+  keptFor,
   refusal,
   Room,
   systemClock,
@@ -36,6 +37,7 @@ import {
   ROOM_CODE_ALPHABET,
   type Ack,
   type ClientFrame,
+  type MatchRecord,
   type RulesConfig,
   type SeatCredentials,
 } from "@hf/shared";
@@ -248,6 +250,8 @@ export class TableObject extends DurableObject<Env> {
       this.scheduleReaping();
       return;
     }
+    // A match closing before its last round is kept as far as it got.
+    channel.room.recordUnfinished();
     this.store.closeRoom(channel.room.uid, systemClock.now());
     channel.room.dispose();
     // Anyone still looking at it is told why, rather than finding out on their
@@ -330,6 +334,22 @@ export class TableObject extends DurableObject<Env> {
       clock: systemClock,
       newToken: () => randomString(ROOM_CODE_ALPHABET, 24),
       store: this.store,
+      recordMatch: (record) => this.keepMatch(record),
     };
+  }
+
+  /**
+   * Send a match to each of its players' identity objects. Not awaited by the
+   * game, but kept running past the request that ended it; a copy that fails to
+   * arrive costs that player one entry in their history, never the table its game.
+   */
+  private keepMatch(record: MatchRecord): void {
+    for (const userId of keptFor(record)) {
+      this.ctx.waitUntil(
+        this.env.USERS.getByName(userId)
+          .recordMatch(userId, record)
+          .catch((error: unknown) => console.error(`could not keep match ${record.id}:`, error)),
+      );
+    }
   }
 }

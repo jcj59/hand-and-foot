@@ -2,6 +2,7 @@ import {
   ROOM_CODE_ALPHABET,
   ROOM_CODE_LENGTH,
   type CloseReason,
+  type MatchRecord,
   type RulesConfig,
 } from "@hf/shared";
 import { defaultConfig } from "@hf/engine";
@@ -33,6 +34,8 @@ export interface ManagerOptions {
   readonly store?: RoomStore;
   /** Storage identity for a new room; see `RoomRecord.uid`. Injected for deterministic tests. */
   readonly newUid?: () => string;
+  /** Where a finished match, or one closed part way, is sent to be kept; see `RoomDeps.recordMatch`. */
+  readonly recordMatch?: (record: MatchRecord) => void;
 }
 
 /** A stored room that could not be brought back, and why. */
@@ -60,6 +63,7 @@ export class RoomManager {
   private readonly sweepIntervalMs: number;
   private readonly store: RoomStore | undefined;
   private readonly newUid: () => string;
+  private readonly recordMatch: ((record: MatchRecord) => void) | undefined;
   private cancelSweep: (() => void) | null = null;
 
   /** Told when a room is removed, so whatever else holds it can let go too. */
@@ -74,6 +78,7 @@ export class RoomManager {
     this.store = options.store;
     // The global rather than node:crypto: this module also runs in a Cloudflare Worker.
     this.newUid = options.newUid ?? (() => crypto.randomUUID());
+    this.recordMatch = options.recordMatch;
   }
 
   get size(): number {
@@ -97,6 +102,7 @@ export class RoomManager {
       reconnectGraceMs: this.reconnectGraceMs,
       store: this.store,
       uid: this.newUid(),
+      recordMatch: this.recordMatch,
     });
     this.rooms.set(id, room);
     // Recorded as soon as it exists, so the log's first row always has a room to
@@ -124,6 +130,7 @@ export class RoomManager {
             newToken: () => randomString(ROOM_CODE_ALPHABET, 24, this.random),
             reconnectGraceMs: this.reconnectGraceMs,
             store: this.store,
+            recordMatch: this.recordMatch,
           });
       if (!restored.ok) {
         failures.push({ uid, id, error: restored.error });
@@ -154,6 +161,8 @@ export class RoomManager {
     // Dropping the reference is not enough: a room holds a live timer, and one
     // left armed would keep firing against a table nobody can see.
     room?.dispose();
+    // A match closing before its last round is kept as far as it got.
+    room?.recordUnfinished();
     // Closed in the store too, or the next boot would bring back a room that was
     // deliberately let go.
     if (room) this.store?.closeRoom(room.uid, this.clock.now());

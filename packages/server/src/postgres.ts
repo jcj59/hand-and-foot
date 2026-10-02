@@ -13,8 +13,9 @@
  * restart, never a game rebuilt wrong.
  */
 import postgres from "postgres";
-import type { Action, ActionSource, LoggedAction, RulesConfig } from "@hf/shared";
+import type { Action, ActionSource, LoggedAction, MatchRecord, RulesConfig } from "@hf/shared";
 import type { UserRecord, UserStore } from "./users";
+import { keptFor, type MatchStore } from "./matches";
 import type { RoomRecord, RoomStore, SeatRecord, StoredRoom } from "./store";
 
 /** Just enough of `console` to report through; see `main.ts`. */
@@ -71,6 +72,17 @@ export const MIGRATIONS: readonly string[] = [
   // The seat that took the first turn, chosen at random since P1. Null on rows
   // written before: those matches started at seat 0.
   `alter table rooms add column first_seat integer;`,
+  // Finished matches (roadmap item 5), whole, and which identities played each.
+  `create table matches (
+     id text primary key,
+     record jsonb not null,
+     ended_at bigint not null
+   );
+   create table match_players (
+     user_id text not null,
+     match_id text not null references matches (id),
+     primary key (user_id, match_id)
+   );`,
 ];
 
 /**
@@ -334,6 +346,11 @@ export class PostgresRoomStore implements RoomStore {
     return new PostgresUserStore(this.sql);
   }
 
+  /** Finished matches, in the same database. */
+  matches(): MatchStore {
+    return new PostgresMatchStore(this.sql);
+  }
+
   async close(): Promise<void> {
     await this.writes.close(this.shutdownDeadlineMs);
     await this.sql.end({ timeout: 5 });
@@ -373,6 +390,37 @@ export class PostgresUserStore implements UserStore {
       where users.secret_hash = excluded.secret_hash
       returning user_id`;
     return written.length === 1;
+  }
+}
+
+/**
+ * Finished matches in Postgres: the record whole, as `jsonb`, and a row per
+ * identity that played it, which is what a player's history is looked up by.
+ * Saving the same match again replaces it, so a match recorded unfinished and then
+ * finished — or recorded twice — is kept once.
+ */
+export class PostgresMatchStore implements MatchStore {
+  constructor(private readonly sql: postgres.Sql) {}
+
+  async save(record: MatchRecord): Promise<void> {
+    await this.sql.begin(async (tx) => {
+      await tx`
+        insert into matches (id, record, ended_at)
+        values (${record.id}, ${tx.json(record as unknown as postgres.JSONValue)}, ${record.endedAt})
+        on conflict (id) do update set record = excluded.record, ended_at = excluded.ended_at`;
+      for (const userId of keptFor(record)) {
+        await tx`
+          insert into match_players (user_id, match_id) values (${userId}, ${record.id})
+          on conflict do nothing`;
+      }
+    });
+  }
+
+  async forUser(userId: string): Promise<readonly MatchRecord[]> {
+    const rows = await this.sql`
+      select m.record from matches m join match_players p on p.match_id = m.id
+      where p.user_id = ${userId} order by m.ended_at desc`;
+    return rows.map((row) => row.record as MatchRecord);
   }
 }
 
