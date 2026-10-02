@@ -58,6 +58,7 @@ import {
 } from "./reactions";
 import { useMoveNews } from "./moveNews";
 import { useTableSounds } from "./sounds";
+import { useTurnAttention } from "./turnAttention";
 import { PauseBar } from "./PauseBar";
 import { OpponentStrip } from "./OpponentStrip";
 import { Seats } from "./Seats";
@@ -188,14 +189,19 @@ export function TableView({
 
   // One card sound for every move, a chime when it is this player's turn, and
   // a phrase when a round or the match ends.
-  const { muted, setMuted, blocked, playSound } = useTableSounds(
-    {
-      moveSeq: update.lastMove?.seq ?? null,
-      moveKind: update.lastMove?.kind ?? null,
-      myTurn: turnOpen,
-      result,
-    },
-    quiet,
+  const moment = {
+    moveSeq: update.lastMove?.seq ?? null,
+    moveKind: update.lastMove?.kind ?? null,
+    myTurn: turnOpen,
+    result,
+  };
+  const { muted, setMuted, blocked, playSound } = useTableSounds(moment, quiet);
+  // The tab flashes, and optionally a notification goes up, for the turn the chime
+  // marks — the same flag, so the two can never disagree about whose turn it is.
+  const { notify, toggleNotify } = useTurnAttention(
+    moment.myTurn,
+    heading ?? `Table ${latestRoom.roomId}`,
+    muted,
   );
   const grabbyHeadline = useGrabbyAnnouncement(realRoom, muted, quiet);
   const [muteReactions, setMuteReactions] = useState(readMuteReactions);
@@ -525,6 +531,38 @@ export function TableView({
               />
             )}
           </button>
+          {/* Turn notifications, for a table left in a background tab. Off until
+              turned on here, which is the only place permission is asked for; not
+              shown where the browser has no notifications, and inert once the
+              browser has been told no, since only its own settings can undo that.
+              Not offered on a phone either: Chrome on Android refuses a notification
+              made by a page, and iOS has them only through web push, so the button
+              would promise what never comes — and the header has no room to spare. */}
+          {controls && !phone && notify !== "unsupported" && (
+            <button
+              type="button"
+              aria-label={
+                notify === "on"
+                  ? "Stop notifying me when it's my turn"
+                  : notify === "blocked"
+                    ? "Turn notifications are blocked by the browser"
+                    : "Notify me when it's my turn"
+              }
+              title={
+                notify === "blocked"
+                  ? "Notifications are blocked for this site in the browser's settings"
+                  : undefined
+              }
+              aria-pressed={notify === "on"}
+              disabled={notify === "blocked"}
+              onClick={toggleNotify}
+              className={`rounded border px-2 py-1 text-sm disabled:opacity-40 ${
+                notify === "on" ? "border-amber-300/80 text-amber-200" : "border-white/25"
+              }`}
+            >
+              <BellIcon on={notify === "on"} />
+            </button>
+          )}
           {/* Away from the table without giving up the seat: the main screen offers
               the way back. The clock keeps running meanwhile. */}
           <button
@@ -1034,6 +1072,21 @@ function writeFlag(key: string, on: boolean): void {
   } catch {
     // Blocked storage: the choice lasts until the page is reloaded.
   }
+}
+
+/** A bell, filled when notifications are on and struck through when off. */
+function BellIcon({ on }: { readonly on: boolean }): React.ReactElement {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16" className="h-4 w-4 fill-none stroke-current">
+      <path
+        d="M4 11V7a4 4 0 0 1 8 0v4l1.5 1.5h-11zM6.5 14a1.5 1.5 0 0 0 3 0"
+        className={on ? "fill-current" : undefined}
+        strokeWidth="1.3"
+        strokeLinejoin="round"
+      />
+      {!on && <path d="M2.5 2.5l11 11" strokeWidth="1.3" strokeLinecap="round" />}
+    </svg>
+  );
 }
 
 /** A speaker, struck through when muted: drawn, as not every font has the glyph. */

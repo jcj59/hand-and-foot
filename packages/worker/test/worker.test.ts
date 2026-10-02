@@ -186,6 +186,26 @@ describe("the Worker", () => {
     expect(page.status).toBe(200);
     expect(await page.text()).toContain('<div id="root">');
   });
+
+  it("serves the install manifest and every icon it names as files, not as the page", async () => {
+    // A missing file would still answer 200 — with the app's page, by the
+    // single-page fallback — so the type is what shows the file is really there.
+    const manifest = await SELF.fetch(`${BASE}/manifest.webmanifest`);
+    expect(manifest.status).toBe(200);
+    expect(manifest.headers.get("content-type")).toMatch(/^application\/manifest\+json/);
+    const { icons } = (await manifest.json()) as { icons: { src: string; type: string }[] };
+    expect(icons.length).toBeGreaterThan(0);
+    for (const src of [
+      ...icons.map((i) => i.src),
+      "/favicon-turn.svg",
+      "/icons/apple-touch-icon.png",
+    ]) {
+      const icon = await SELF.fetch(`${BASE}${src}`);
+      expect(icon.status, src).toBe(200);
+      expect(icon.headers.get("content-type"), src).toMatch(/^image\//);
+      await icon.arrayBuffer();
+    }
+  });
 });
 
 /** A socket to a table spoken to directly, collecting every frame it receives. */

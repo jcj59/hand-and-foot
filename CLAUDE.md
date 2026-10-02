@@ -695,6 +695,31 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   `LastMove.marva`, decided from the table's own config: `marva.test.ts` checks it under custom
   minimums and card values.
 
+- **Your-turn attention (roadmap item 10).** Client only. `table/attention.ts` is the pure
+  decision: `signalFor({myTurn, away, reducedMotion})` → `none`/`steady`/`flash`, `frameFor(signal,
+  base, beat)` → `{title, alert}` (flash starts on "Your turn!" and alternates with the page title
+  every `FLASH_MS` 1000; reduced motion is a static `STEADY_PREFIX` and the alert icon, with no
+  timer at all), `shouldNotify` (enabled, the turn has *just* become theirs, away, and never for the
+  turn the page opened on), `notificationSpent`, `notifyState(permission, enabled)`. Pinned to
+  literals and mutation-tested together with the hook: 47/47 killed. `table/turnAttention.ts`
+  (`useTurnAttention(myTurn, label, muted)`) is the glue: away = `visibilityState === "hidden" ||
+  !document.hasFocus()`, swaps `/favicon.svg` ↔ `/favicon-turn.svg` and puts back whatever href was
+  there. `TableView` builds the chime's `Moment` once and passes `moment.myTurn` to both hooks, so a
+  watched table (`controls` null) never flashes. Notifications: off by default, `hf.notifyTurn`,
+  permission requested only from the bell's tap (callback-form `requestPermission` handled too),
+  `silent` when muted, closed when spent or on unmount, and a constructor that throws (Android
+  Chrome) is swallowed. The bell is hidden when `Notification` is missing and on the phone layout,
+  and disabled when permission is `denied`. **jsdom's `document.hasFocus()` is always false**, so
+  every table test counts as "away" and flashes the title; tests that care stub it with
+  `vi.spyOn(document, "hasFocus")`. PWA: `public/manifest.webmanifest`, icons in `public/icons`
+  (rendered from the SVGs by `packages/client/icons/render.mjs`), theme colour felt-900 `#0d2e1d`,
+  **no service worker** (Chromium 141 fires `beforeinstallprompt` without one — see DESIGN.md
+  "Calling a player back to the table"). The Worker serves them as plain assets; `worker.test.ts`
+  checks every icon the manifest names comes back as an image, not the SPA fallback page. For
+  screenshots of the tab strip, Playwright pins every page as focused and visible even in a headed
+  background tab, so focus has to be staged in the page, and its `reducedMotion` context option
+  overrides Chrome's `--force-prefers-reduced-motion`.
+
 ## Known wrinkles and open questions
 
 ### Settled rules decisions (2026-08-04) — don't relitigate these
