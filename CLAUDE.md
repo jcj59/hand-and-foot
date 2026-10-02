@@ -512,8 +512,8 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   card with the real second card peeking out beneath and up to `PILE_EDGES_MAX` (4) edges behind,
   one per `PILE_EDGE_EVERY` (6) cards (`pileEdges`; its `count <= 2` guard is an equivalent mutant,
   the arithmetic gives 0 anyway). Only the **top card's own element** carries `data-motion`, so a
-  discard flies to that card, not to a copy of the whole drawing. Movement runs only when a new `lastMove.seq` arrives; jsdom
-  has no `animate` and reduced-motion users get none, so tests see a static table. Verify visually
+  discard flies to that card, not to a copy of the whole drawing. Movement runs only when a new
+  `lastMove.seq` arrives; jsdom has no `animate` and reduced-motion users get none, so tests see a static table. Verify visually
   with Playwright frames captured right after a change (headless Chromium needs `LD_LIBRARY_PATH`
   at the `pwlibs` conda env for nss/nspr/alsa on this machine).
 - **Sounds.** `table/sounds.ts`. Card sounds are recordings from Kenney's Casino Audio (CC0) in
@@ -587,8 +587,8 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
 - **Quick reactions (roadmap item 3).** A fixed list, `REACTIONS` in `@hf/shared/protocol.ts`
   (twelve emoji, thirteen phrases since P2; **only ever add** — an id may be in flight to an older
   client — pinned in `protocol.test.ts`, along with a cap of 30; the picker tells a phrase from an
-  emoji by `text === label`, so a phrase's label must be its text); only an id crosses the wire (`isReactionId` is the server's check), so
-  there is nothing to moderate. `react {id}` → `Room.react` (seat valid, id valid, and a per-seat
+  emoji by `text === label`, so a phrase's label must be its text); only an id crosses the wire
+  (`isReactionId` is the server's check), so there is nothing to moderate. `react {id}` → `Room.react` (seat valid, id valid, and a per-seat
   token bucket in `server/src/reactions.ts`: burst `REACTION_BURST` 3, one more per
   `REACTION_REFILL_MS` 2s, on the injected clock) → `TableChannel` acks and sends `reaction
   {seq, seat, id}` to every seated connection, the sender too. Never logged, never in the record:
@@ -597,8 +597,7 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   computer, opening towards the side with room; bottom sheet portalled to `body` on a phone),
   `REACTION_COOLDOWN_MS` (1.5s) rest after sending, and `useReactionBubbles`, which shows each
   seat's latest for `REACTION_SHOW_MS` (5s since P2, pinned as a literal; the phone sheet is capped
-  at `70dvh` and scrolls) inside its seat box (the seat lists scroll, so a bubble
-  outside the box would be clipped) and by the player's own hand. Reactions already in the store
+  at `70dvh` and scrolls) inside its seat box (the seat lists scroll, so a bubble outside the box would be clipped) and by the player's own hand. Reactions already in the store
   when the table mounts are not replayed. "Mute other players' reactions" is per device
   (`hf.muteReactions`) and hides theirs and their blip sound, never your own. A watched table
   (`controls` null) has no picker. Emoji need a colour emoji font: real devices have one, headless
