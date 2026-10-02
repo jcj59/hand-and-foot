@@ -99,6 +99,42 @@ describe("quick reactions", () => {
     }
   });
 
+  it("only ever grow: every id ever sent is still one, and the list stays short", () => {
+    // An id may be in flight to, or remembered by, a client loaded before a change.
+    const ids = REACTIONS.map((r) => r.id);
+    for (const id of [
+      "thumbs-up",
+      "laugh",
+      "wow",
+      "angry",
+      "party",
+      "pray",
+      "nice",
+      "oops",
+      "hurry",
+      "grabby",
+      "well-played",
+      "good-luck",
+      "grimace",
+      "cry",
+      "facepalm",
+      "fingers-crossed",
+      "fire",
+      "cool",
+      "oof",
+      "ouch",
+      "yikes",
+      "phew",
+      "ha",
+      "close-one",
+      "gg",
+    ]) {
+      expect(ids).toContain(id);
+    }
+    // Small enough to find one at a glance.
+    expect(REACTIONS.length).toBeLessThanOrEqual(30);
+  });
+
   it("recognize only their own ids, whatever else arrives", () => {
     for (const r of REACTIONS) expect(isReactionId(r.id)).toBe(true);
     for (const bad of ["", "Nice!", "nice ", 1, null, undefined, {}, ["nice"]]) {

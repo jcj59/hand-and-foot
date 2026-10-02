@@ -22,7 +22,8 @@ an animation) in its description, under `## Screenshots`.
    deal at another), with `FRAMES=40,120,300` giving the milliseconds after the
    change to capture. `BIG_MELDS=1` adds enough melds that the middle scrolls;
    `GRABBY_ME=1` makes the viewer the Grabby Pants holder; `TWO_DISCARDS=1` puts two
-   cards on the discard pile; `BIG_OPP=1` gives an opponent enough melds to fill its box;
+   cards on the discard pile, `PILE=<n>` puts n; mode `takepile` has the viewer take the pile;
+   `BIG_OPP=1` gives an opponent enough melds to fill its box;
    `BLACK_BOOK=1` puts the viewer in their foot beside a book of black threes, holding a red
    three and a black one. `PAUSED=1` has Ana pause the table, `SAVED=1` has her save it for later
    (three players back; the viewer hosts unless `SAVED_GUEST=1`), and `ROUND_OVER=1` opens the
@@ -32,6 +33,9 @@ an animation) in its description, under `## Screenshots`.
    reactions) draw as boxes without a colour emoji font: set `EMOJI_FONT=<path to
    NotoColorEmoji.ttf>` and the page loads it for emoji only. Do not install it system-wide —
    fontconfig then hands it digits and spaces too, and every number on the table spreads out.
+   Its range also covers the suit symbols, so cards draw emoji suits: set it only for shots of
+   reactions. `BASE=<url>` points the harness at another origin, such as `vite` dev on :5173
+   (which needs no build).
 
    For "before" shots, build and render the base branch first.
 

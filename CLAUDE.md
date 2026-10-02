@@ -508,10 +508,14 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   `discard`, `seat-N`), and zones carry `data-zone` (`hand`, `melds`, `pile`, `seat`). Only a card
   that changed zone slides — plus the hand closing up — because a meld that grew shifts the rest by
   layout alone; and a card scrolled out of view (clipped by a scrolling ancestor) is never flown,
-  or its copy is drawn over the hand. Movement runs only when a new `lastMove.seq` arrives; jsdom
-  has no `animate` and reduced-motion users get none, so tests see a static table. Verify visually
-  with Playwright frames captured right after a change (headless Chromium needs `LD_LIBRARY_PATH`
-  at the `pwlibs` conda env for nss/nspr/alsa on this machine).
+  or its copy is drawn over the hand. The discard pile (`DiscardPile`, P2) always shows its top
+  card with the real second card peeking out beneath and up to `PILE_EDGES_MAX` (4) edges behind,
+  one per `PILE_EDGE_EVERY` (6) cards (`pileEdges`; its `count <= 2` guard is an equivalent mutant,
+  the arithmetic gives 0 anyway). Only the **top card's own element** carries `data-motion`, so a
+  discard flies to that card, not to a copy of the whole drawing. Movement runs only when a new
+  `lastMove.seq` arrives; jsdom has no `animate` and reduced-motion users get none, so tests see a
+  static table. Verify visually with Playwright frames captured right after a change (headless
+  Chromium needs `LD_LIBRARY_PATH` at the `pwlibs` conda env for nss/nspr/alsa on this machine).
 - **Sounds.** `table/sounds.ts`. Card sounds are recordings from Kenney's Casino Audio (CC0) in
   `client/public/sounds` (licence file beside them), loaded after the first gesture, with a
   synthesized flick standing in until they arrive; the chimes are synthesized with Web Audio.
@@ -581,17 +585,21 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   rejection kill the process. Home's panel registers the profile when opened and shows the code
   only once the server knows it.
 - **Quick reactions (roadmap item 3).** A fixed list, `REACTIONS` in `@hf/shared/protocol.ts`
-  (six emoji, six phrases); only an id crosses the wire (`isReactionId` is the server's check), so
-  there is nothing to moderate. `react {id}` → `Room.react` (seat valid, id valid, and a per-seat
-  token bucket in `server/src/reactions.ts`: burst `REACTION_BURST` 3, one more per
+  (twelve emoji, thirteen phrases since P2; **only ever add** — an id may be in flight to an older
+  client — pinned in `protocol.test.ts`, along with a cap of 30; the picker tells a phrase from an
+  emoji by `text === label`, so a phrase's label must be its text); only an id crosses the wire
+  (`isReactionId` is the server's check), so there is nothing to moderate. `react {id}` →
+  `Room.react` (seat valid, id valid, and a per-seat token bucket in `server/src/reactions.ts`: burst `REACTION_BURST` 3, one more per
   `REACTION_REFILL_MS` 2s, on the injected clock) → `TableChannel` acks and sends `reaction
   {seq, seat, id}` to every seated connection, the sender too. Never logged, never in the record:
   the bucket lives in memory and a wake simply refills it. Client: `session.reactions` keeps the
   last `KEPT_REACTIONS` (16), reset with the table; `table/reactions.tsx` has the picker (menu on a
   computer, opening towards the side with room; bottom sheet portalled to `body` on a phone),
   `REACTION_COOLDOWN_MS` (1.5s) rest after sending, and `useReactionBubbles`, which shows each
-  seat's latest for `REACTION_SHOW_MS` (3s) inside its seat box (the seat lists scroll, so a bubble
-  outside the box would be clipped) and by the player's own hand. Reactions already in the store
+  seat's latest for `REACTION_SHOW_MS` (5s since P2, pinned as a literal; the bubble's CSS fade
+  reads it through `--reaction-ms`, so the two cannot disagree; the phone sheet is capped at
+  `70dvh` and scrolls) inside its seat box (the seat lists scroll, so a bubble outside the box
+  would be clipped) and by the player's own hand. Reactions already in the store
   when the table mounts are not replayed. "Mute other players' reactions" is per device
   (`hf.muteReactions`) and hides theirs and their blip sound, never your own. A watched table
   (`controls` null) has no picker. Emoji need a colour emoji font: real devices have one, headless

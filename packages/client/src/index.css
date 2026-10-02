@@ -129,8 +129,10 @@ body,
     opacity: 0;
   }
 }
+/* Its length comes from REACTION_SHOW_MS through --reaction-ms, so the bubble fades
+   exactly as it is taken away rather than vanishing early and lingering unseen. */
 .reaction-pop {
-  animation: reaction-pop 3000ms ease-out both;
+  animation: reaction-pop var(--reaction-ms, 5000ms) ease-out both;
 }
 @media (prefers-reduced-motion: reduce) {
   .reaction-pop {
