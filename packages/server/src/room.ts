@@ -1438,10 +1438,14 @@ export class Room {
   }
 
   private keepMatch(): void {
-    const record = this.matchRecord();
-    if (!record || !this.deps.recordMatch) return;
-    if (!record.seats.some((s) => s.userId && !s.bot)) return;
-    this.deps.recordMatch(record);
+    if (!this.deps.recordMatch) return;
+    try {
+      const record = this.matchRecord();
+      if (!record || !record.seats.some((s) => s.userId && !s.bot)) return;
+      this.deps.recordMatch(record);
+    } catch (error) {
+      console.error(`could not record match ${this.uid}:`, error);
+    }
   }
 
   /** Whether the last round of the match has been played. */

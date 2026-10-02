@@ -2,7 +2,7 @@
  * Keeping matches: the store contract, in memory and on Postgres; what a table
  * sends to be kept and when; and a player asking for their history.
  */
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import postgres from "postgres";
 import { EAST_COAST, type MatchRecord, type RulesConfig } from "@hf/shared";
 import { defaultAction } from "@hf/engine";
@@ -270,6 +270,46 @@ describe("a table closed part way through", () => {
     manager.remove(room.id, "abandoned");
     expect(kept).toHaveLength(1);
     expect(kept[0]!.summary.finished).toBe(false);
+  });
+});
+
+describe("a table whose match cannot be recorded", () => {
+  it("still accepts the move when the record cannot be built", () => {
+    const kept: MatchRecord[] = [];
+    const { room, finishRound } = table(kept);
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const entries = room.log.entries();
+      const bad = { ...entries[0]!, action: { type: "nextRound" as const } };
+      vi.spyOn(room.log, "entries").mockReturnValue([bad, ...entries.slice(1)]);
+      expect(() => room.recordUnfinished()).not.toThrow();
+      expect(() => finishRound()).not.toThrow();
+      expect(kept).toEqual([]);
+      expect(log).toHaveBeenCalled();
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it("leaves a room removable when the record cannot be saved", () => {
+    const manager = new RoomManager({
+      clock: new FakeClock(),
+      recordMatch: () => {
+        throw new Error("store down");
+      },
+    });
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const room = manager.create(SHORT);
+      room.join("ana", { userId: "u-ana" });
+      room.join("ben");
+      room.start(0);
+      expect(() => manager.remove(room.id, "abandoned")).not.toThrow();
+      expect(manager.get(room.id)).toBeUndefined();
+      expect(log).toHaveBeenCalled();
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 });
 
