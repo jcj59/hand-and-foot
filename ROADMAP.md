@@ -324,9 +324,10 @@ pause allowed. Start from a preset and edit.
 - Persist the full config with the room record so restore replays under the same rules.
 - Remember the user's last custom rules (per identity once item 4 exists).
 
-### 7. Heuristic bot and bot-filled seats *(may split: 7a policy, 7b seats)*
+### ~~7. Heuristic bot and bot-filled seats *(may split: 7a policy, 7b seats)*~~
 
-*7a (policy) done in #34; 7b (seats) next. Measured results and the round-deadlock finding are in
+*7a (policy) done in #34; 7b (seats) done after P3: the host adds computer players in the lobby,
+and the heuristic plays for absent people too (DESIGN.md, "Computer players"). Measured results and the round-deadlock finding are in
 DESIGN.md, "A heuristic opponent".*
 
 - A playing heuristic beside `defaultAction` in `policy.ts`, reusing `chooseDiscard` and `plan.ts`:

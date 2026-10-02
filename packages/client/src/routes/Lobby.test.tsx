@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import {
   defaultAvatar,
@@ -367,5 +367,69 @@ describe("pictures in the lobby", () => {
       "rose sand wink grin crown",
       Object.values(defaultAvatar("ben")).join(" "),
     ]);
+  });
+});
+
+describe("computer players in the lobby", () => {
+  const withBot = roomInfo({
+    players: [
+      { seat: 0, name: "ana", connected: true },
+      { seat: 1, name: "Robo Rita", connected: true, bot: true },
+    ],
+  });
+
+  it("lets the host add one", async () => {
+    const socket = fakeSocket();
+    seated(0);
+    mount(socket.socket);
+    fireEvent.click(screen.getByRole("button", { name: "Add a computer player" }));
+    await waitFor(() => expect(socket.sent).toEqual([{ event: "addBot", args: [] }]));
+  });
+
+  it("marks one as a computer, with no connection dot, and lets the host take it away", async () => {
+    const socket = fakeSocket();
+    seated(0, withBot);
+    mount(socket.socket);
+    const row = screen.getByText("Robo Rita").closest("li")!;
+    expect(row).toHaveTextContent("computer");
+    expect(within(row).queryByLabelText(/connected/)).toBeNull();
+    // A computer cannot host, so it is never offered the deal.
+    expect(screen.queryByRole("button", { name: "Make Robo Rita the host" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Take Robo Rita away" }));
+    await waitFor(() => expect(socket.sent).toEqual([{ event: "removeBot", args: [{ seat: 1 }] }]));
+  });
+
+  it("offers neither to anyone but the host", () => {
+    seated(
+      1,
+      roomInfo({
+        ...withBot,
+        players: [...withBot.players, { seat: 2, name: "ben", connected: true }],
+      }),
+    );
+    mount(fakeSocket().socket);
+    expect(screen.queryByRole("button", { name: "Add a computer player" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /take .* away/i })).toBeNull();
+  });
+
+  it("cannot add one to a full table, and surfaces a refusal", async () => {
+    const full = roomInfo({
+      players: Array.from({ length: 8 }, (_, seat) => ({
+        seat,
+        name: `p${seat}`,
+        connected: true,
+      })),
+    });
+    seated(0, full);
+    mount(fakeSocket().socket);
+    expect(screen.getByRole("button", { name: "Add a computer player" })).toBeDisabled();
+    cleanup();
+    const socket = fakeSocket([{ ok: false, error: "a table seats at most 8" }]);
+    seated(0);
+    mount(socket.socket);
+    fireEvent.click(screen.getByRole("button", { name: "Add a computer player" }));
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent("a table seats at most 8"),
+    );
   });
 });

@@ -26,6 +26,8 @@ export interface SeatRecord {
   readonly userId?: string;
   /** The picture they chose. Absent from older records, and for anyone who chose none. */
   readonly avatar?: Avatar;
+  /** A computer player the host added. Absent for people, and from older records. */
+  readonly bot?: true;
 }
 
 /** A room, minus its game — which the log reconstructs. */

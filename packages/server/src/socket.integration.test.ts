@@ -1473,3 +1473,56 @@ describe("carrying on without a player over the wire", () => {
     });
   });
 });
+
+describe("computer players over the wire", () => {
+  function addBot(socket: Client): Promise<Ack<undefined>> {
+    return new Promise((resolve) => socket.emit("addBot", resolve));
+  }
+  function removeBot(socket: Client, seat: number): Promise<Ack<undefined>> {
+    return new Promise((resolve) => socket.emit("removeBot", { seat }, resolve));
+  }
+
+  it("seats one for the host, takes it away again, and refuses anyone else", async () => {
+    const { host, guest } = await seatTwo();
+    const seen = waitForRoom(host, (info) => info.players.length === 3);
+    expect(await addBot(host)).toEqual({ ok: true, data: undefined });
+    const info = await seen;
+    expect(info.players[2]).toMatchObject({ name: "Robo Rita", bot: true, connected: true });
+    expect(await addBot(guest)).toEqual({
+      ok: false,
+      error: "only the host can add a computer player",
+    });
+    const gone = waitForRoom(guest, (i) => i.players.length === 2);
+    expect(await removeBot(host, 2)).toEqual({ ok: true, data: undefined });
+    await gone;
+  });
+
+  it("tells a guest moved up by a computer player's removal their new seat", async () => {
+    const { server, port } = await boot();
+    const host = await connect(port);
+    const created = await createRoom(host, "ana");
+    if (!created.ok) throw new Error(created.error);
+    await addBot(host);
+    const guest = await connect(port);
+    await joinRoom(guest, created.data.roomId, "ben");
+    expect(server.manager.get(created.data.roomId)!.seats()[2]!.name).toBe("ben");
+    const moved = next(guest, "seat");
+    await removeBot(host, 1);
+    expect(await moved).toBe(1);
+  });
+
+  it("plays its moves at the table, and every seat sees them", async () => {
+    const { server, port } = await boot();
+    const host = await connect(port);
+    const created = await createRoom(host, "ana");
+    if (!created.ok) throw new Error(created.error);
+    await addBot(host);
+    await startGame(host);
+    const room = server.manager.get(created.data.roomId)!;
+    const moved = waitFor(host, "view", (u) => u.lastMove?.seat === 1, 6_000);
+    turnTo(room, 1);
+    const update = await moved;
+    expect(update.room.players[1]!.bot).toBe(true);
+    expect(room.log.entries().at(-1)!.source).toBe("bot");
+  });
+});

@@ -82,6 +82,9 @@ export function RoundResult({
   const best = Math.max(...contenders.map((r) => totalOf(r.seat)));
   const winners = contenders.filter((r) => totalOf(r.seat) === best).map((r) => nameOf(r.seat));
   const playing = room.players.filter((p) => !p.departed);
+  // Who the table waits on between rounds: the people still playing. A computer
+  // player is always ready.
+  const waitedOn = playing.filter((p) => !p.bot);
   const family = config.mode === "family";
   // Who the host could carry on without: anyone still in the match but not at the
   // table, while enough would be left to deal to.
@@ -278,7 +281,7 @@ export function RoundResult({
           {!result.matchOver && room.nextRoundReady.length > 0 && (
             <p role="status" className="mt-3 text-sm text-amber-100">
               Ready for round {result.roundNumber + 1}: {room.nextRoundReady.map(nameOf).join(", ")}{" "}
-              ({room.nextRoundReady.length} of {playing.length})
+              ({room.nextRoundReady.length} of {waitedOn.length})
             </p>
           )}
           {result.matchOver && room.playAgain.length > 0 && (
@@ -286,7 +289,7 @@ export function RoundResult({
             // anyone is there to play with.
             <p role="status" className="mt-3 text-sm text-amber-100">
               Waiting in the next game: {room.playAgain.map(nameOf).join(", ")} (
-              {room.playAgain.length} of {playing.length})
+              {room.playAgain.length} of {waitedOn.length})
             </p>
           )}
           {absent.map((p) => (

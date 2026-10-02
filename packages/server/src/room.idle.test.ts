@@ -46,8 +46,10 @@ function timeOut(room: Room, clock: FakeClock): void {
 
 /**
  * Play by hand to the last card of the stock, then let the clock play out the
- * round: ana's turn runs out on her and ben, gone, has his whole turn played for
- * him, which ends the round on the same turn that completes a lap nobody played.
+ * round: ana's turn runs out on her and so does ben's, which ends the round on the
+ * same turn that completes a lap nobody played. (Out of time rather than gone: a
+ * player who has gone is played by the heuristic, which might take the pile
+ * rather than draw the last card.)
  */
 function endRoundOnClockPlayedTurns(): { room: Room; clock: FakeClock } {
   const { room, clock } = started({ ...EAST_COAST, extraDecks: 0, stockExhaustion: "end" });
@@ -65,7 +67,6 @@ function endRoundOnClockPlayedTurns(): { room: Room; clock: FakeClock } {
       room.submitAction(seat, { type: "discard", cardId: card.id });
     }
   }
-  room.setConnected(1, false);
   for (let guard = 0; !room.gameState!.roundEnded; guard++) {
     expect(guard).toBeLessThan(10);
     clock.advance(WHOLE_TURN);
@@ -122,14 +123,13 @@ describe("a table nobody is playing", () => {
 
   it("does not pause a round an auto-played turn just finished, which has no clock to stop", () => {
     const { room } = endRoundOnClockPlayedTurns();
-    expect(room.log.entries().at(-1)).toMatchObject({ seat: 1, source: "disconnect" });
+    expect(room.log.entries().at(-1)).toMatchObject({ seat: 1, source: "timeout" });
     expect(room.paused).toBe(false);
     expect(room.info().idlePaused).toBe(false);
   });
 
   it("starts a fresh lap when the next round is dealt", () => {
     const { room, clock } = endRoundOnClockPlayedTurns();
-    room.setConnected(1, true);
     expect(room.readyForNextRound(0).ok).toBe(true);
     expect(room.readyForNextRound(1)).toEqual({ ok: true, value: true });
     // Everyone just said ready: the turns played for them last round do not count.
