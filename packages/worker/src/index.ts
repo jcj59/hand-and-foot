@@ -5,15 +5,14 @@
  * table's Durable Object; a table's socket is handed straight to it. Everything
  * else is the client, served from the static assets.
  */
-import { configFor } from "@hf/server/core";
 import {
   HEALTH_PATH,
   isUserCredentials,
   NOT_AN_IDENTITY,
   parseRoomPath,
+  resolveRules,
   ROOMS_PATH,
   USERS_PATH,
-  type RoomOptions,
 } from "@hf/shared";
 import { newCode } from "./codes";
 import type { Env } from "./env";
@@ -77,7 +76,10 @@ export default {
     if (pathname === ROOMS_PATH && request.method === "POST") {
       const body = await readJson(request);
       if (!body) return json({ ok: false, error: "that request was not JSON" }, 400);
-      const config = configFor(body.options as RoomOptions | undefined);
+      // Checked here, before a code is drawn: rules that do not make a game open nothing.
+      const rules = resolveRules(body.options);
+      if (!rules.ok) return json(rules);
+      const config = rules.data;
       const name = String(body.name ?? "");
       const userId = await verified(env, body.user);
       // Each code is its own object; one already in use says so, and another is drawn.

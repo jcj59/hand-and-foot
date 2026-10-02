@@ -15,6 +15,7 @@ import { useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   MAX_NAME_LENGTH,
+  resolveRules,
   ROOM_CODE_LENGTH,
   transferCode,
   type GameMode,
@@ -25,6 +26,14 @@ import { createTable, joinTable, resumeSavedGame } from "../actions";
 import { loadCredentials } from "../credentials";
 import { isPossibleRoomCode, normalizeRoomCode } from "../roomCode";
 import { loadSavedGames, type SavedGame } from "../savedGames";
+import {
+  DEFAULT_CHOICE,
+  loadRulesChoice,
+  rebased,
+  rememberRulesChoice,
+  type RulesChoice,
+} from "../rules/customRules";
+import { RulesEditor } from "../rules/RulesEditor";
 import { useSession } from "../session";
 import { serverUrl, type HfClientSocket } from "../socket";
 import {
@@ -66,8 +75,12 @@ export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React
   // The name this player went by last time, ready to use again or change.
   const [name, setName] = useState(loadName);
   const [code, setCode] = useState(fromLink ? normalizeRoomCode(fromLink) : "");
-  const [preset, setPreset] = useState<RulesPreset>("east-coast");
-  const [mode, setMode] = useState<GameMode>("family");
+  // The rules this device last opened a table with, ready to use again or change.
+  const [choice, setChoice] = useState<RulesChoice>(loadRulesChoice);
+  const { preset, mode } = choice;
+  // The server's own check, asked as the rules are edited; the server asks again.
+  const checked = resolveRules(choice);
+  const changes = Object.keys(choice.rules).length;
   // One flag for both buttons: a request is in flight and neither should be sent
   // twice, which double-seats the sender at their own table.
   const [busy, setBusy] = useState(false);
@@ -98,7 +111,9 @@ export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React
       const user = await prepareIdentity(post, name.trim());
       const roomId = join
         ? await joinTable(socket, code, name, sink, user)
-        : await createTable(socket, name, { preset, mode }, sink, user);
+        : await createTable(socket, name, choice, sink, user);
+      // Remembered once a table has actually been opened with them.
+      if (roomId && !join) rememberRulesChoice(choice);
       if (roomId) navigate(`/room/${roomId}`);
     } finally {
       // Cleared even on refusal, so a wrong code can be corrected and retried.
@@ -218,7 +233,7 @@ export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React
             <select
               className="rounded border border-white/20 bg-black/30 px-2 py-1"
               value={preset}
-              onChange={(e) => setPreset(e.target.value as RulesPreset)}
+              onChange={(e) => setChoice(rebased(choice, e.target.value as RulesPreset, mode))}
             >
               <option value="east-coast">East Coast</option>
               <option value="west-coast">West Coast</option>
@@ -229,16 +244,43 @@ export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React
             <select
               className="rounded border border-white/20 bg-black/30 px-2 py-1"
               value={mode}
-              onChange={(e) => setMode(e.target.value as GameMode)}
+              onChange={(e) => setChoice(rebased(choice, preset, e.target.value as GameMode))}
             >
               <option value="family">Family</option>
               <option value="competitive">Competitive</option>
             </select>
           </label>
+          <details className="rounded border border-white/10 bg-black/15 p-2 text-sm">
+            <summary className="cursor-pointer text-white/70">
+              Change the rules
+              {changes > 0 && (
+                <span className="ml-2 rounded bg-amber-300/20 px-1.5 py-0.5 text-xs text-amber-200">
+                  {changes} changed
+                </span>
+              )}
+            </summary>
+            <div className="mt-3 flex flex-col gap-3">
+              <RulesEditor choice={choice} onChange={setChoice} />
+              {changes > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setChoice({ ...DEFAULT_CHOICE, preset, mode })}
+                  className="self-start text-xs text-white/60 underline"
+                >
+                  Back to the preset&rsquo;s rules
+                </button>
+              )}
+            </div>
+          </details>
+          {!checked.ok && (
+            <p role="alert" className="rounded bg-red-600/20 px-3 py-2 text-sm text-red-200">
+              {capitalize(checked.error)}.
+            </p>
+          )}
         </fieldset>
         <button
           type="submit"
-          disabled={busy || !named}
+          disabled={busy || !named || !checked.ok}
           className="rounded border border-white/30 px-4 py-2 font-medium disabled:opacity-40"
         >
           Open a new table
@@ -340,6 +382,10 @@ function IdentityPanel({ post }: { readonly post: Post }): React.ReactElement {
       </div>
     </details>
   );
+}
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 function formatDay(at: number): string {

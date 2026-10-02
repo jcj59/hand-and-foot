@@ -111,11 +111,13 @@ describe("rule presets", () => {
   // "differs only by" is the actual claim, so check every other field rather than
   // the three sampled above: WEST_COAST is spread from EAST_COAST and a future edit
   // could quietly add a second difference.
-  it("West Coast differs from East Coast in exactly one field", () => {
+  // (`preset` is the name each records for itself, not a rule.)
+  it("West Coast differs from East Coast in exactly one rule", () => {
     const differing = (Object.keys(EAST_COAST) as (keyof typeof EAST_COAST)[]).filter(
       (k) => JSON.stringify(EAST_COAST[k]) !== JSON.stringify(WEST_COAST[k]),
     );
-    expect(differing).toEqual(["wildRatio"]);
+    expect(differing).toEqual(["wildRatio", "preset"]);
+    expect([EAST_COAST.preset, WEST_COAST.preset]).toEqual(["east-coast", "west-coast"]);
   });
 
   // The engine's scoring tests hard-code these numbers, and so does the rulebook the

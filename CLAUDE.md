@@ -661,6 +661,39 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   head (two copies, seats swapped): a red-three limit of 2 beat 1, 3 and 4; the clean-book guard is
   worth about ten points of win rate; spending wilds from the hand too, and avoiding discards an
   opponent's meld could use, made no measurable difference, so neither is in.
+- **Rules editor (roadmap item 6).** `@hf/shared/rules.ts` now holds `EAST_COAST`/`WEST_COAST`
+  (moved from `index.ts`, re-exported, so importers are unaffected; a value import of them from
+  `index.ts` would be a cycle), `PRESETS`, `RulesPreset`, `RoomOptions {preset?, mode?, rules?}`,
+  `RulesOverrides` (any subset of the rules; `scoring`/`timers` one value at a time; never `mode`
+  or `preset`), `RULE_LIMITS` (every range, **pinned whole as a literal** in `rules.test.ts`),
+  `baseRules(preset, mode)`, and **`resolveRules(options: unknown): Ack<RulesConfig>`** — the one
+  check. It refuses rather than coerces: unknown option/rule/score/timer names (so `__proto__` and
+  misspellings are refused, and only known keys are copied into the result), out-of-range or
+  non-integer values (timers in whole seconds), and inconsistent sets (`layDownMinimums.length !==
+  rounds`, no books to go out, `capMs < baseMs`, competitive with pausing). Error strings are
+  lowercase and name the rule, like the engine's. `configFor` is gone: `openTable` (Node) and the
+  Worker's `POST /api/rooms` call `resolveRules` and answer a refusal before any table or code
+  exists. `RulesConfig.preset?` records the starting preset (both presets carry it); records
+  stored before it lack it, and `presetOf` falls back to the wild ratio. `changedRules(config)`
+  names what differs from `baseRules(presetOf(config), config.mode)` (`rounds`, `scoring.joker`),
+  `rulesOverrides(config, base)` is the minimal partial. The config was already stored whole in
+  the record (Postgres `config` jsonb, the Durable Object's KV), so **no migration** was needed.
+  Client: `rules/customRules.ts` (the choice as `{preset, mode, rules}`; `hf.rules` per device —
+  moves to the identity later; a stored choice the server would refuse is dropped on load),
+  `rules/ruleText.ts` (every rule in words, `was` = the preset's value when changed),
+  `rules/RulesEditor.tsx` (folded "Change the rules" on Home; runs `resolveRules` per keystroke and
+  disables "Open a new table" with the reason shown), `rules/RulesSummary.tsx` (lobby: changed rules
+  up front beside the preset's value, all rules in a fold). Real-wire tests in
+  `rules.integration.test.ts` (raw HTTP and the client transport), Worker tests in `worker.test.ts`,
+  restore of custom and pre-editor records in `room.restore.test.ts`, `store.test.ts` and
+  `restart.integration.test.ts` (in-memory and Postgres). Mutation-tested: 69 mutants over
+  `rules.ts`, `customRules.ts` and `ruleText.ts`, 66 killed, 3 equivalent — `seconds`' integer
+  check (a number that is a multiple of 1000 is already whole), `ruleLines` comparing the two
+  texts instead of asking `changedRules` (each rule's words are one-to-one with its value), and
+  `ruleLines` dropping the mode from its base (both presets are family, and pausing is the only
+  rule the mode moves, which a competitive table cannot change). The Marva celebration is keyed to
+  `LastMove.marva`, decided from the table's own config: `marva.test.ts` checks it under custom
+  minimums and card values.
 
 ## Known wrinkles and open questions
 

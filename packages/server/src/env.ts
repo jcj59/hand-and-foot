@@ -2,13 +2,10 @@
  * Reading the process environment, kept apart from starting the server so that
  * the parsing can be tested without binding a port.
  *
- * Operator configuration is validated rather than coerced, which is the
- * opposite of how `configFor` treats a room's options — deliberately so. A
- * room's options arrive in an untrusted socket payload, where the only safe
- * response to nonsense is a known default. An environment variable is set by
- * whoever deploys the server, so quietly ignoring `PORT=808O` would leave them
- * believing they had configured something they had not. A bad value stops the
- * process at boot, which is the cheapest place to notice it.
+ * Operator configuration is validated rather than coerced, as a room's rules
+ * are (`resolveRules`): quietly ignoring `PORT=808O` would leave whoever deploys
+ * the server believing they had configured something they had not. A bad value
+ * stops the process at boot, which is the cheapest place to notice it.
  */
 import type { ServerOptions } from "./index";
 
