@@ -10,6 +10,7 @@ import { connect as connectTransport, type TableSocket } from "@hf/transport";
 import type {
   Ack,
   Action,
+  Avatar,
   MeldPlay,
   ReactionId,
   RoomOptions,
@@ -95,8 +96,15 @@ export function createRoom(
   name: string,
   options?: RoomOptions,
   user?: UserCredentials | null,
+  avatar?: Avatar | null,
 ): Promise<Ack<SeatCredentials>> {
-  return ask((ack) => socket.emit("createRoom", { name, options, ...(user ? { user } : {}) }, ack));
+  return ask((ack) =>
+    socket.emit(
+      "createRoom",
+      { name, options, ...(user ? { user } : {}), ...(avatar ? { avatar } : {}) },
+      ack,
+    ),
+  );
 }
 
 export function joinRoom(
@@ -104,8 +112,15 @@ export function joinRoom(
   roomId: string,
   name: string,
   user?: UserCredentials | null,
+  avatar?: Avatar | null,
 ): Promise<Ack<SeatCredentials>> {
-  return ask((ack) => socket.emit("joinRoom", { roomId, name, ...(user ? { user } : {}) }, ack));
+  return ask((ack) =>
+    socket.emit(
+      "joinRoom",
+      { roomId, name, ...(user ? { user } : {}), ...(avatar ? { avatar } : {}) },
+      ack,
+    ),
+  );
 }
 
 /** Reclaim a seat with the token issued on join, after a reload or a dropped socket. */

@@ -10,6 +10,7 @@ import type { Duplex } from "node:stream";
 import { WebSocketServer, type WebSocket } from "ws";
 import {
   HEALTH_PATH,
+  parseAvatar,
   parseRoomPath,
   PING,
   PONG,
@@ -124,16 +125,20 @@ export function attachTables(
     if (path === USERS_PATH) {
       return json(response, 200, await registerUser(users, body, now()));
     }
-    // Who is sitting down, if their browser proved an identity; anonymous otherwise.
-    const userId = await verifyUser(users, body.user);
+    // Who is sitting down, if their browser proved an identity (anonymous otherwise),
+    // and their picture, if it is one (none otherwise; never a reason to refuse).
+    const profile = {
+      userId: await verifyUser(users, body.user),
+      avatar: parseAvatar(body.avatar),
+    };
     if (path === ROOMS_PATH) {
-      return json(response, 200, openTable(manager, body.name, body.options, userId));
+      return json(response, 200, openTable(manager, body.name, body.options, profile));
     }
     const target = parseRoomPath(path);
     if (target?.what === "join") {
       // No broadcast yet: the table hears of the newcomer when their socket claims
       // the seat, which is the moment they are actually there.
-      return json(response, 200, sitAt(manager, target.roomId, body.name, userId));
+      return json(response, 200, sitAt(manager, target.roomId, body.name, profile));
     }
     response.writeHead(404).end();
   }

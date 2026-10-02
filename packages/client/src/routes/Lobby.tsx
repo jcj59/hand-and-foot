@@ -9,6 +9,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { MAX_PLAYERS, MIN_PLAYERS } from "@hf/shared";
+import { AvatarFace } from "../profile/Avatar";
+import { faceOf } from "../profile/avatarStore";
 import { leaveTable, makeHost, startTable } from "../actions";
 import { roomLink } from "../roomCode";
 import { RulesSummary } from "../rules/RulesSummary";
@@ -100,6 +102,7 @@ export function Lobby({ socket }: LobbyProps): React.ReactElement {
                   player.connected ? "bg-emerald-400" : "bg-red-400"
                 }`}
               />
+              <AvatarFace avatar={faceOf(player)} size={28} />
               <span className="flex-1">{player.name}</span>
               {player.seat === room.hostSeat && <span className="text-xs text-white/40">host</span>}
               {/* The host can hand the deal to someone else — the person who will

@@ -34,6 +34,7 @@ import {
   type ViewUpdate,
 } from "@hf/shared";
 import { canLayOff, isUnplayable, type PlayContext } from "../cards/handOrder";
+import { faceOf } from "../profile/avatarStore";
 import { DiscardPile, FaceDownPile, PlayingCard } from "../cards/PlayingCard";
 import { usePhone } from "../usePhone";
 import { Hand } from "./Hand";
@@ -239,7 +240,8 @@ export function TableView({
   const nameOf = (s: number): string => room.players.find((p) => p.seat === s)?.name ?? `Seat ${s}`;
   // Watching, the seat on view is someone's rather than the viewer's own — by their
   // own name, since the Grabby Pants badge already says who holds the title.
-  const watched = realRoom.players.find((p) => p.seat === view.seat)?.name ?? `Seat ${view.seat}`;
+  const me = realRoom.players.find((p) => p.seat === view.seat);
+  const watched = me?.name ?? `Seat ${view.seat}`;
   const whose = controls ? "Your" : `${watched}'s`;
 
   const preview = previewLayDown({
@@ -846,7 +848,11 @@ export function TableView({
         <div className="flex items-end gap-3">
           <div className="relative min-w-0 flex-1">
             {bubbles.get(view.seat) && (
-              <ReactionBubble reaction={bubbles.get(view.seat)!} name={watched} />
+              <ReactionBubble
+                reaction={bubbles.get(view.seat)!}
+                name={watched}
+                avatar={me && faceOf(me)}
+              />
             )}
             <Hand
               cards={zone}

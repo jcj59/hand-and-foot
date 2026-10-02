@@ -262,9 +262,10 @@ sender's seat on every screen, with an optional short sound.
 - A per-device "mute reactions" toggle.
 - Works on phone (reaction picker as a bottom sheet, matching the card menu).
 
-### 4. Identity and avatars *(may split: 4a identity, 4b avatars)*
+### ~~4. Identity and avatars *(may split: 4a identity, 4b avatars)*~~ (#30, 4b)
 
-*4a (identity) done in #30; 4b (avatars) next. The store ended up as a Durable Object per identity
+*4a (identity) done in #30; 4b (avatars) done — kept per device for now, not on the identity (see
+DESIGN.md, "Pictures made from parts"). The store ended up as a Durable Object per identity
 rather than D1 — see DESIGN.md, "Identity without accounts".*
 
 A lightweight notion of a **user** without accounts or passwords.

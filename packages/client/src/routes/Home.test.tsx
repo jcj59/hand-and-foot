@@ -8,6 +8,7 @@ import { useSession } from "../session";
 import type { HfClientSocket } from "../socket";
 import { IDENTITY_KEY, NAME_KEY, type Post } from "../identity";
 import { RULES_KEY } from "../rules/customRules";
+import { AVATAR_KEY } from "../profile/avatarStore";
 import { Home } from "./Home";
 
 /** A socket that answers each request from a queue and records what was sent. */
@@ -74,6 +75,7 @@ beforeEach(() => {
   window.localStorage.removeItem(NAME_KEY);
   window.localStorage.removeItem(IDENTITY_KEY);
   window.localStorage.removeItem(RULES_KEY);
+  window.localStorage.removeItem(AVATAR_KEY);
   useSession.setState({
     status: "connected",
     credentials: null,
@@ -124,6 +126,24 @@ describe("opening a table", () => {
         },
       ],
     });
+  });
+
+  it("sends the picture chosen here, keeps it for next time, and sends none until one is", async () => {
+    const { socket, sent } = fakeSocket();
+    mount(socket);
+    fireEvent.change(nameBox(), { target: { value: "ana" } });
+    fireEvent.click(createButton());
+    await waitFor(() => expect(sent).toHaveLength(1));
+    // Not chosen: nothing sent, and every screen draws a face from the name.
+    expect(sent[0]!.args[0]).not.toHaveProperty("avatar");
+
+    fireEvent.click(screen.getByRole("button", { name: "Change picture" }));
+    fireEvent.click(screen.getByRole("button", { name: "Hair or hat: crown" }));
+    const chosen = JSON.parse(window.localStorage.getItem(AVATAR_KEY)!);
+    expect(chosen.top).toBe("crown");
+    fireEvent.click(createButton());
+    await waitFor(() => expect(sent).toHaveLength(2));
+    expect((sent[1]!.args[0] as { avatar: unknown }).avatar).toEqual(chosen);
   });
 
   it("defaults to the East Coast family game", async () => {

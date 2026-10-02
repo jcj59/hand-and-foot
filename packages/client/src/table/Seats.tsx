@@ -16,6 +16,8 @@ import { FaceDownPile, HiddenHand } from "../cards/PlayingCard";
 import { GrabbyIcon } from "./grabby";
 import { Melds } from "./Melds";
 import { ReactionBubble } from "./reactions";
+import { AvatarFace } from "../profile/Avatar";
+import { faceOf } from "../profile/avatarStore";
 
 export interface SeatsProps {
   readonly opponents: readonly OpponentView[];
@@ -54,6 +56,7 @@ export function Seats({
               <ReactionBubble
                 reaction={reactions.get(opponent.seat)!}
                 name={info?.name ?? `Seat ${opponent.seat}`}
+                avatar={info && faceOf(info)}
               />
             )}
             <div className="flex items-center gap-2">
@@ -63,6 +66,7 @@ export function Seats({
                   info?.connected ? "bg-emerald-400" : "bg-red-400"
                 }`}
               />
+              {info && <AvatarFace avatar={faceOf(info)} size={24} />}
               {room.grabbyPants?.seat === opponent.seat && (
                 <GrabbyIcon className="h-5 w-5 shrink-0" />
               )}

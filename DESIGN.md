@@ -232,6 +232,22 @@ reads across identities, so a single database would add a resource to create and
 answering any question an object per identity cannot; on the Node host the same records sit in
 a table beside the rooms.
 
+### Pictures made from parts
+
+Each player has a small picture: a face put together from a fixed set of parts — a background, a
+face colour, eyes, a mouth, and hair or a hat — drawn as SVG by the client. Choosing from parts
+rather than uploading an image means there is nothing to store, scale or moderate, and a picture
+is five short ids, small enough to travel with every seat in the room's public information. As
+with reactions, the lists only grow: a picture chosen once must stay a picture, so the server
+accepts exactly the known ids and drops anything else, and a seat is never refused over one. A
+player who has not chosen gets a face derived from their name, so everyone has one and looks the
+same on every screen without anything being stored.
+
+For now the picture is kept by the device, like the name and the rules last played, and sent when
+the player sits down; it goes with them to the next game. It belongs to the identity in the end,
+which is where it will move when accounts arrive — keeping it on the device until then avoids a
+second copy of the profile that a transfer code would have to keep in step.
+
 ### Quick reactions
 
 Players at a real table talk, and an online one is quiet without a way to say "nice" or "hurry

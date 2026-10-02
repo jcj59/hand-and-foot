@@ -10,7 +10,8 @@
  */
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import { REACTIONS, type Reaction, type ReactionId } from "@hf/shared";
+import { REACTIONS, type Avatar, type Reaction, type ReactionId } from "@hf/shared";
+import { AvatarFace } from "../profile/Avatar";
 
 /**
  * How long a reaction stays by its sender's seat: long enough to be read by
@@ -103,9 +104,12 @@ export function useReactionBubbles(
 export function ReactionBubble({
   reaction,
   name,
+  avatar,
 }: {
   readonly reaction: Reaction;
   readonly name: string;
+  /** The sender's face, drawn small at the start of the bubble so it reads as theirs. */
+  readonly avatar?: Avatar;
 }): React.ReactElement {
   const def = REACTIONS.find((r) => r.id === reaction.id)!;
   // The phrases are their own label; an emoji is not.
@@ -116,10 +120,11 @@ export function ReactionBubble({
       aria-label={`${name}: ${def.label}`}
       // The fade lasts as long as the bubble is shown; see `.reaction-pop`.
       style={{ "--reaction-ms": `${REACTION_SHOW_MS}ms` } as CSSProperties}
-      className={`reaction-pop pointer-events-none absolute top-1 right-1 z-10 rounded-2xl rounded-br-sm bg-white font-semibold whitespace-nowrap text-felt-900 shadow-lg shadow-black/40 ${
-        emoji ? "px-1.5 py-0.5 text-2xl leading-none" : "px-2 py-1 text-sm"
+      className={`reaction-pop pointer-events-none absolute top-1 right-1 z-10 inline-flex items-center gap-1 rounded-2xl rounded-br-sm bg-white font-semibold whitespace-nowrap text-felt-900 shadow-lg shadow-black/40 ${
+        emoji ? "py-0.5 pr-1.5 pl-1 text-2xl leading-none" : "py-1 pr-2 pl-1 text-sm"
       }`}
     >
+      {avatar && <AvatarFace avatar={avatar} size={emoji ? 22 : 18} />}
       {def.text}
     </span>
   );

@@ -682,3 +682,37 @@ describe("identities", () => {
     expect(ids).toEqual([ana.userId, ben.userId]);
   });
 });
+
+describe("pictures", () => {
+  const ana = { background: "rose", skin: "sand", eyes: "wink", mouth: "grin", top: "crown" };
+  const ben = { background: "teal", skin: "cocoa", eyes: "shades", mouth: "beard", top: "cap" };
+
+  it("are shown to the table, a forged one is dropped, and each travels to the next game", async () => {
+    const host = client();
+    const guest = client();
+    const third = client();
+    const opened = await ask<SeatCredentials>(host, "createRoom", { name: "Ana", avatar: ana });
+    if (!opened.ok) throw new Error(opened.error);
+    const code = opened.data.roomId;
+    await ask(guest, "joinRoom", { roomId: code, name: "Ben", avatar: ben });
+    await ask(third, "joinRoom", { roomId: code, name: "Cal", avatar: { ...ana, top: "halo" } });
+    const pictures = await insideTable(code, (room) => room.info().players.map((p) => p.avatar));
+    expect(pictures).toEqual([ana, ben, undefined]);
+
+    const dealt = nextView(host);
+    await ask(host, "startGame");
+    await dealt;
+    await insideTable(code, (room) => {
+      const internal = room as unknown as { state: object };
+      internal.state = { ...room.gameState!, roundEnded: true, roundNumber: room.config.rounds };
+    });
+    // The first to go on opens the next table; the second sits at it.
+    const first = await ask<SeatCredentials>(host, "playAgain");
+    if (!first.ok) throw new Error(first.error);
+    expect((await ask<SeatCredentials>(guest, "playAgain")).ok).toBe(true);
+    const next = await insideTable(first.data.roomId, (room) =>
+      room.info().players.map((p) => p.avatar),
+    );
+    expect(next).toEqual([ana, ben]);
+  });
+});

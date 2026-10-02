@@ -12,11 +12,13 @@
  * opponents as counts and melds, never cards in hand.
  */
 import { useEffect, useRef, useState } from "react";
-import type { OpponentView, Reaction, RoomInfo, RulesConfig } from "@hf/shared";
+import type { Avatar, OpponentView, Reaction, RoomInfo, RulesConfig } from "@hf/shared";
 import { classifyBook } from "@hf/engine";
 import { GrabbyIcon } from "./grabby";
 import { Melds } from "./Melds";
 import { ReactionBubble } from "./reactions";
+import { AvatarFace } from "../profile/Avatar";
+import { faceOf } from "../profile/avatarStore";
 
 export interface OpponentStripProps {
   readonly opponents: readonly OpponentView[];
@@ -37,6 +39,10 @@ export function OpponentStrip({
   const [open, setOpen] = useState<number | null>(null);
   const nameOf = (seat: number): string =>
     room.players.find((p) => p.seat === seat)?.name ?? `Seat ${seat}`;
+  const faceAt = (seat: number): Avatar | undefined => {
+    const player = room.players.find((p) => p.seat === seat);
+    return player && faceOf(player);
+  };
   const shown = opponents.find((o) => o.seat === open) ?? null;
   const closeRef = useRef<HTMLButtonElement>(null);
   const showing = shown !== null;
@@ -71,6 +77,7 @@ export function OpponentStrip({
                 <ReactionBubble
                   reaction={reactions.get(opponent.seat)!}
                   name={nameOf(opponent.seat)}
+                  avatar={faceAt(opponent.seat)}
                 />
               )}
               <button
@@ -88,6 +95,9 @@ export function OpponentStrip({
                       connected ? "bg-emerald-400" : "bg-red-400"
                     }`}
                   />
+                  {faceAt(opponent.seat) && (
+                    <AvatarFace avatar={faceAt(opponent.seat)!} size={18} />
+                  )}
                   {room.grabbyPants?.seat === opponent.seat && (
                     <GrabbyIcon className="h-4 w-4 shrink-0" />
                   )}

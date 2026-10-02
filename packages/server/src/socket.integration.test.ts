@@ -4,6 +4,7 @@ import {
   EAST_COAST,
   type Ack,
   type Action,
+  type Avatar,
   type RoomInfo,
   type RoomOptions,
   type RoundEnded,
@@ -1246,6 +1247,33 @@ describe("quick reactions over the wire", () => {
     });
     const stranger = await connect(port);
     expect((await react(stranger, "nice")).ok).toBe(false);
+  });
+});
+
+describe("pictures over the wire", () => {
+  it("shows a chosen picture to the table, and seats a forged one without it", async () => {
+    const { port } = await boot();
+    const host = await connect(port);
+    const ana = { background: "rose", skin: "sand", eyes: "wink", mouth: "grin", top: "crown" };
+    const created = await new Promise<Ack<SeatCredentials>>((resolve) =>
+      host.emit("createRoom", { name: "ana", avatar: ana as Avatar }, resolve),
+    );
+    if (!created.ok) throw new Error(created.error);
+    const guest = await connect(port);
+    const heard = waitFor(host, "room", (info) => info.players.length === 2);
+    // Not a picture: an unknown part, and a field that has no business being there.
+    const forged = { ...ana, eyes: "<script>", token: "x" } as unknown as Avatar;
+    const joined = await new Promise<Ack<SeatCredentials>>((resolve) =>
+      guest.emit("joinRoom", { roomId: created.data.roomId, name: "ben", avatar: forged }, resolve),
+    );
+    expect(joined.ok).toBe(true);
+    if (!joined.ok) return;
+    const views = waitFor(guest, "room", (info) => info.players.length === 2);
+    await resumeSeat(guest, joined.data);
+    for (const info of [await heard, await views]) {
+      expect(info.players[0]!.avatar).toEqual(ana);
+      expect(info.players[1]).not.toHaveProperty("avatar");
+    }
   });
 });
 

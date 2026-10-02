@@ -6,7 +6,7 @@ import {
 } from "@hf/shared";
 import { defaultConfig } from "@hf/engine";
 import { type Clock, systemClock } from "./clock";
-import { Room, type RoomResult } from "./room";
+import { Room, type RoomResult, type SeatProfile } from "./room";
 import type { RoomStore, StoredRoom } from "./store";
 
 // The alphabet and length live in `@hf/shared`, because the client validates a
@@ -139,11 +139,11 @@ export class RoomManager {
   join(
     roomId: string,
     name: string,
-    userId?: string | null,
+    profile: SeatProfile = {},
   ): RoomResult<{ room: Room; seat: number; token: string }> {
     const room = this.get(roomId);
     if (!room) return { ok: false, error: "no room with that code" };
-    const joined = room.join(name, userId);
+    const joined = room.join(name, profile);
     if (!joined.ok) return joined;
     return { ok: true, value: { room, seat: joined.value.seat, token: joined.value.token } };
   }

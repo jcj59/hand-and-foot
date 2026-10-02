@@ -19,6 +19,7 @@ import type {
   RulesConfig,
   UserCredentials,
 } from "./index";
+import type { Avatar } from "./avatar";
 
 /** Where an action in the log came from. */
 export type ActionSource = "player" | "timeout" | "disconnect";
@@ -67,6 +68,8 @@ export interface RoomPlayerInfo {
   readonly seat: number;
   readonly name: string;
   readonly connected: boolean;
+  /** The picture they chose, if any; without one a seat is drawn from its name (`defaultAvatar`). */
+  readonly avatar?: Avatar;
 }
 
 /** Who holds the Grabby Pants title, with the streak that earned or kept it. */
@@ -197,11 +200,18 @@ export interface ClientToServerEvents {
       readonly options?: RoomOptions;
       /** Who is sitting down, if the browser has an identity; checked by the server. */
       readonly user?: UserCredentials;
+      /** The player's picture, if they chose one; dropped by the server if it is not one. */
+      readonly avatar?: Avatar;
     },
     ack: (result: Ack<SeatCredentials>) => void,
   ) => void;
   joinRoom: (
-    payload: { readonly roomId: string; readonly name: string; readonly user?: UserCredentials },
+    payload: {
+      readonly roomId: string;
+      readonly name: string;
+      readonly user?: UserCredentials;
+      readonly avatar?: Avatar;
+    },
     ack: (result: Ack<SeatCredentials>) => void,
   ) => void;
   /**

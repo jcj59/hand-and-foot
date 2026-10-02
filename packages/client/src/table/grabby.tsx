@@ -9,6 +9,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { RoomInfo } from "@hf/shared";
+import { faceOf } from "../profile/avatarStore";
 import { Celebration } from "./Celebration";
 
 /** The holder's name at the table, while they hold the title: until someone else takes it, or the round ends. */
@@ -20,7 +21,10 @@ export function withGrabbyName(room: RoomInfo): RoomInfo {
   if (holder === undefined) return room;
   return {
     ...room,
-    players: room.players.map((p) => (p.seat === holder ? { ...p, name: GRABBY_NAME } : p)),
+    // Renamed but not re-faced: a face drawn from the name keeps the real name's.
+    players: room.players.map((p) =>
+      p.seat === holder ? { ...p, name: GRABBY_NAME, avatar: faceOf(p) } : p,
+    ),
   };
 }
 

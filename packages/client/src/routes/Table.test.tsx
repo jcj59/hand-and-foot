@@ -1,6 +1,7 @@
 import { afterEach, describe, it, expect, beforeEach, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import {
+  defaultAvatar,
   EAST_COAST,
   type Ack,
   type Card,
@@ -2728,6 +2729,74 @@ describe("the Marva Rule", () => {
       useSession.getState().applyUpdate(update({ lastMove: { ...marva, marva: undefined } })),
     );
     expect(screen.queryByRole("status", { name: "Marva Rule" })).toBeNull();
+  });
+});
+
+describe("pictures at the table", () => {
+  const BEN = {
+    background: "teal",
+    skin: "cocoa",
+    eyes: "shades",
+    mouth: "beard",
+    top: "cap",
+  } as const;
+  const faceIn = (el: Element): string | null =>
+    el.querySelector("[data-avatar]")?.getAttribute("data-avatar") ?? null;
+  afterEach(() => delete (window as { matchMedia?: unknown }).matchMedia);
+
+  it("shows each other player's face in their seat, and in their reactions", () => {
+    mount(
+      fakeSocket().socket,
+      update({
+        room: roomInfo({
+          players: [
+            { seat: 0, name: "ana", connected: true },
+            { seat: 1, name: "ben", connected: true, avatar: BEN },
+          ],
+        }),
+      }),
+    );
+    const seat = screen.getByLabelText(/^ben, /);
+    expect(faceIn(seat)).toBe("teal cocoa shades beard cap");
+    act(() => useSession.getState().applyReaction({ seq: 1, seat: 1, id: "nice" }));
+    const bubble = within(seat).getByRole("status", { name: "ben: Nice!" });
+    expect(faceIn(bubble)).toBe("teal cocoa shades beard cap");
+    // My own reaction, by my hand, carries the face my name gives me.
+    act(() => useSession.getState().applyReaction({ seq: 2, seat: 0, id: "oops" }));
+    expect(faceIn(screen.getByRole("status", { name: "ana: Oops" }))).toBe(
+      Object.values(defaultAvatar("ana")).join(" "),
+    );
+  });
+
+  it("keeps a player's own face when Grabby Pants renames them", () => {
+    mount(fakeSocket().socket, update({ room: roomInfo({ grabbyPants: { seat: 1, streak: 3 } }) }));
+    const seat = screen.getByLabelText(/^Grabby Pants, /);
+    // Drawn from "ben", the real name, not from the title.
+    expect(faceIn(seat)).toBe(Object.values(defaultAvatar("ben")).join(" "));
+  });
+
+  it("shows faces on the phone's strip of players too", () => {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: (query: string) => ({
+        matches: query === PHONE_QUERY,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }),
+    });
+    mount(
+      fakeSocket().socket,
+      update({
+        room: roomInfo({
+          players: [
+            { seat: 0, name: "ana", connected: true },
+            { seat: 1, name: "ben", connected: true, avatar: BEN },
+          ],
+        }),
+      }),
+    );
+    const chip = screen.getByRole("button", { name: /^ben/ });
+    expect(faceIn(chip)).toBe("teal cocoa shades beard cap");
   });
 });
 

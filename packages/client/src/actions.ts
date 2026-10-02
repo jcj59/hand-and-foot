@@ -13,6 +13,7 @@
  */
 import type {
   Action,
+  Avatar,
   CloseReason,
   MeldPlay,
   ReactionId,
@@ -44,8 +45,9 @@ export async function createTable(
   options: RoomOptions,
   sink: ActionSink,
   user?: UserCredentials | null,
+  avatar?: Avatar | null,
 ): Promise<string | null> {
-  const result = await wire.createRoom(socket, name.trim(), options, user);
+  const result = await wire.createRoom(socket, name.trim(), options, user, avatar);
   if (!result.ok) {
     sink.setNotice(result.error);
     return null;
@@ -62,8 +64,9 @@ export async function joinTable(
   name: string,
   sink: ActionSink,
   user?: UserCredentials | null,
+  avatar?: Avatar | null,
 ): Promise<string | null> {
-  const result = await wire.joinRoom(socket, normalizeRoomCode(roomId), name.trim(), user);
+  const result = await wire.joinRoom(socket, normalizeRoomCode(roomId), name.trim(), user, avatar);
   if (!result.ok) {
     sink.setNotice(result.error);
     return null;
