@@ -276,9 +276,9 @@ obligation if one is open, and otherwise discards by heuristic, but it never mel
 because laying a player's cards down while they are away commits them to a position they never
 chose. (A lay-down the player had staged themselves is different: they did choose it, so it is
 played before the default takes over.) One consequence matters for the server: a table of nothing
-but defaults never ends a round, so an abandoned room is reaped rather than left to finish. A
-heuristic strong enough to serve as the agent's evaluation baseline is separate, later work that
-will share the discard heuristic.
+but defaults never ends a round, so an abandoned room is reaped rather than left to finish. The
+heuristic that plays to win, and serves as the agent's evaluation baseline, is a separate function
+that shares the default's discard judgement; see "A heuristic opponent" below.
 
 Leaving on purpose is a separate `leaveRoom` request rather than a closed socket, because the tab
 usually stays open and the connection outlives the player's interest in the table. Before the deal
@@ -488,6 +488,53 @@ intentions — "meld these kings", "discard the nine of clubs", "play on until t
 resolved into actions by playing it. Every scenario is replayed in continuous integration, so a
 rules change that breaks one fails the build by name. The viewer is a development tool and is left
 out of production builds; the player it uses is not tied to it.
+
+### A heuristic opponent
+
+The safe default above never melds, so it cannot serve as an opponent: it never scores and never
+ends a round. The agent needs a baseline that plays to win, and a person playing alone will need
+opponents, so the engine has a second policy beside the default, a hand-written heuristic. Its
+moves are ordinary: it takes the pile when the rules allow and the pile is worth having, gets down
+as soon as a lay-down reaches the minimum (or melds the whole hand under the Marva rule), lays every
+natural it can once down, and goes out as soon as it holds the books.
+
+It is given the seat's filtered view and the rules, never the game state. That is the same
+observation a human has and the agent will have, so a comparison between them is fair, and it is
+enforced by the type rather than by care: a function handed a view has no other hand, foot or stock
+order to look at. A property test checks it anyway, by dealing every card the seat cannot see
+differently and requiring the same move. The heuristic also reuses the engine's own pieces rather
+than holding copies: the lay-down search that decides whether the pile may be taken is the one it
+plays with, so it never takes a pile it cannot then settle, and its discards use the default's
+judgement of which card is least useful. It does not randomize. The same view always gets the same
+move, which keeps every game it plays replayable from its seed, and variety can come later from
+the agent rather than from noise in the baseline.
+
+Most of its judgement is about wild cards, which are scarce and decide books. It never puts a wild
+on a clean book, nor on the clean meld closest to becoming one while a clean book is still needed
+to go out. In the hand it spends a wild only to complete a book, because a natural pair and a wild
+is how a player takes the pile; from the foot, when a held wild is only a penalty in waiting, it
+spends them all. One exception was found by watching it fail: a seat that had built more clean books
+than going out needs, and could no longer find the cards for a dirty one, drew and discarded threes
+indefinitely. So a spare clean book is given a wild when a dirty book is missing, trading 200 points
+of bonus for the ability to go out.
+
+The choices were settled by measurement, not intuition. A small arena plays whole matches
+headlessly with a policy per seat, and a script reports the heuristic's results against the
+default, against itself, and whether rounds end. Variants were played head to head with seats
+swapped: declining a pile with three or more red threes beat both a stricter and a looser limit,
+and guarding the clean prospect was worth about ten points of win rate, while two ideas that
+sounded right, spending wilds from the hand and avoiding discards an opponent's meld could use,
+changed nothing measurable and were left out. Against the default it wins about 99% of two-player
+matches and 87% at four seats; against copies of itself the seats split evenly, and all but a
+handful of thousands of rounds end with someone going out.
+
+That handful is a property of the rules rather than the heuristic. With the stock reshuffled from
+the discards whenever it runs out, only going out ends a round, and a round can reach a position
+where nobody can: every card that could finish a missing book is already melded or held for good.
+Among heuristic players it is rare. Beside defaults, which hoard their wilds and pairs, it is
+common enough to matter, since the stock drains to threes no one can meld. A bot standing in for
+absent players would therefore end most abandoned rounds, but not all of them, so the reaper
+stays.
 
 ## Testing
 
