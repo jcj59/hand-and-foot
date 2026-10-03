@@ -195,6 +195,46 @@ describe("going on to the next game", () => {
   });
 });
 
+describe("a rematch asked for twice at once", () => {
+  it("opens one table and answers both taps with the same seat", async () => {
+    const { room, store } = table(["ana", "ben"]);
+    room.start(0);
+    const internal = room as unknown as { state: object };
+    internal.state = { ...room.gameState!, roundEnded: true, roundNumber: room.config.rounds };
+    let opened = 0;
+    let open: () => void = () => undefined;
+    const channel = new TableChannel(room, {
+      nextTable: () => Promise.resolve({ ok: false as const, error: "no" }),
+      rematch: async (_from, players) => {
+        opened++;
+        await new Promise<void>((resolve) => (open = resolve));
+        return {
+          ok: true as const,
+          value: new Map(
+            players.map((p) => [
+              p.token,
+              { roomId: "NXT234", seat: p.seat, token: `next-${p.seat}` },
+            ]),
+          ),
+        };
+      },
+    });
+    void store;
+    const p = peer();
+    const conn = channel.connect(p);
+    await ask(channel, conn, "resumeSeat", { roomId: "TBL234", token: "tok-0" });
+    const first = ask(channel, conn, "rematch");
+    const second = ask(channel, conn, "rematch");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    open();
+    await Promise.all([first, second]);
+    expect(opened).toBe(1);
+    const expected = { ok: true, data: { roomId: "NXT234", seat: 0, token: "next-0" } };
+    const answers = p.frames.filter((f) => "ack" in f).slice(1);
+    expect(answers.map((f) => ("ack" in f ? f.result : null))).toEqual([expected, expected]);
+  });
+});
+
 describe("closing a table that was left", () => {
   it("tells everyone seated why, then refuses whatever comes after", async () => {
     const { channel } = table(["ana", "ben"]);
