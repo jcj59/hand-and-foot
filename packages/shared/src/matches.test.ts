@@ -205,6 +205,8 @@ describe("a player's stats", () => {
       wentOut: 0,
       cleanBooks: 0,
       dirtyBooks: 0,
+      pilesTaken: 0,
+      redThreesEaten: 0,
     });
   });
 

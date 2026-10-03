@@ -13,6 +13,8 @@
  * cards is easy to miss. It can be hidden to look back at the table.
  */
 import { useRef, useState } from "react";
+import { awardsOf, winnersOf } from "./awards";
+import { roundRecap } from "./recap";
 import { MIN_PLAYERS, type RoomInfo, type RoundEnded, type RulesConfig } from "@hf/shared";
 
 export interface RoundResultProps {
@@ -278,6 +280,24 @@ export function RoundResult({
               </tbody>
             </table>
           </div>
+          <ul aria-label="Round recap" className="mt-3 flex flex-col gap-0.5 text-sm text-white/80">
+            {roundRecap(result, nameOf).map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+          {awardsOf(result).length > 0 && (
+            <section aria-label="Awards" className="mt-3 rounded border border-amber-300/40 p-3">
+              <h3 className="text-sm font-semibold text-amber-200">Awards</h3>
+              <ul className="mt-1 flex flex-col gap-0.5 text-sm">
+                {awardsOf(result).map((award) => (
+                  <li key={award.id}>
+                    <span className="font-medium text-amber-100">{award.title}:</span>{" "}
+                    {winnersOf(award, nameOf)}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           {!result.matchOver && room.nextRoundReady.length > 0 && (
             <p role="status" className="mt-3 text-sm text-amber-100">
               Ready for round {result.roundNumber + 1}: {room.nextRoundReady.map(nameOf).join(", ")}{" "}

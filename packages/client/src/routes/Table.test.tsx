@@ -98,6 +98,7 @@ function scored(
         goOutBonus: 0,
         heldCount: 0,
         heldPenalty: 0,
+        redThreesHeld: 0,
       },
     })),
     wentOutSeat,
@@ -575,6 +576,7 @@ describe("the round result", () => {
                 goOutBonus,
                 heldCount: 0,
                 heldPenalty: 0,
+                redThreesHeld: 0,
               },
             },
             {
@@ -588,6 +590,7 @@ describe("the round result", () => {
                 goOutBonus: 0,
                 heldCount: 3,
                 heldPenalty: -520,
+                redThreesHeld: 0,
               },
             },
           ],
@@ -3366,5 +3369,53 @@ describe("the rules at the table", () => {
     );
     fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
     expect(screen.queryByRole("dialog", { name: "How to play" })).toBeNull();
+  });
+});
+
+describe("the recap and the awards on the scoreboard", () => {
+  it("recaps the round, and at the end of the match lists the awards", () => {
+    mount(fakeSocket().socket);
+    act(() =>
+      useSession.setState({
+        result: {
+          ...scored(
+            [
+              [0, 900],
+              [1, 300],
+            ],
+            0,
+            { matchOver: true, roundNumber: 4, totals: [5000, 4000] },
+          ),
+          tallies: [
+            {
+              pilesTaken: 4,
+              grabbyPants: 1,
+              marvaRules: 0,
+              wentOut: 2,
+              cleanBooks: 3,
+              dirtyBooks: 2,
+              redThreesEaten: 0,
+            },
+            {
+              pilesTaken: 1,
+              grabbyPants: 0,
+              marvaRules: 1,
+              wentOut: 0,
+              cleanBooks: 1,
+              dirtyBooks: 4,
+              redThreesEaten: 2,
+            },
+          ],
+        },
+      }),
+    );
+    const dialog = screen.getByRole("dialog", { name: /round result/i });
+    expect(within(dialog).getByRole("list", { name: "Round recap" })).toHaveTextContent(
+      "Best round: ana, +900.",
+    );
+    const awards = within(dialog).getByRole("region", { name: "Awards" });
+    expect(awards).toHaveTextContent("Grabby Pants champion: ana (Grabby Pants once)");
+    expect(awards).toHaveTextContent("Marva's favourite: ben (one Marva Rule)");
+    expect(awards).toHaveTextContent("Ate the most red threes: ben (2 red threes)");
   });
 });

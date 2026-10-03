@@ -98,6 +98,7 @@ describe("summarizing a match", () => {
         wentOut,
         cleanBooks: rounds.reduce((n, r) => n + r[seat]!.breakdown.cleanBooks, 0),
         dirtyBooks: rounds.reduce((n, r) => n + r[seat]!.breakdown.dirtyBooks, 0),
+        redThreesEaten: rounds.reduce((n, r) => n + r[seat]!.breakdown.redThreesHeld, 0),
       });
     }
     expect(s.tallies.reduce((n, t) => n + t.wentOut, 0)).toBeGreaterThan(0);

@@ -8,8 +8,16 @@
  * a replay may show beyond one seat's view (every hand, once a game is over) is
  * the player's to add on top, not something this lets through.
  */
-import type { ClockState, RoomInfo, RoundEnded, ViewUpdate } from "@hf/shared";
-import { isSeated, legalHints, moveSeenBy, project, roundResult, type Timeline } from "@hf/engine";
+import type { ClockState, GameState, RoomInfo, RoundEnded, ViewUpdate } from "@hf/shared";
+import {
+  isSeated,
+  legalHints,
+  moveSeenBy,
+  project,
+  roundResult,
+  seatTallies,
+  type Timeline,
+} from "@hf/engine";
 
 export interface Frame {
   readonly update: ViewUpdate;
@@ -65,6 +73,15 @@ export function frameAt(
       ...(move ? { lastMove: { ...moveSeenBy(move, seat), seq: playedAs! } } : {}),
     },
     room,
-    result: roundResult(state),
+    result: resultAt(timeline, state),
   };
+}
+
+/**
+ * How the round came out at this step, as the table said it — with the whole
+ * match's tallies once the match is over, as the table sends for the awards.
+ */
+function resultAt(timeline: Timeline, state: GameState): RoundEnded | null {
+  const result = roundResult(state);
+  return result?.matchOver ? { ...result, tallies: seatTallies(timeline) } : result;
 }

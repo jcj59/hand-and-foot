@@ -45,6 +45,8 @@ export function MatchHistory({ post }: MatchHistoryProps): React.ReactElement | 
     ["Clean books", String(stats.cleanBooks)],
     ["Grabby Pants", String(stats.grabbyPants)],
     ["Marva Rules", String(stats.marvaRules)],
+    ["Piles taken", String(stats.pilesTaken)],
+    ["Red threes eaten", String(stats.redThreesEaten)],
   ];
 
   return (
