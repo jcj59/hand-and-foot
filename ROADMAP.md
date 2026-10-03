@@ -385,7 +385,9 @@ the celebration overlay: most Grabby Pants (counting each earning of the per-rou
 P1), Marva Rules invoked, most clean books, most red threes eaten, and similar. Feed the counts into
 item 5's stats.
 
-### 12. Rematch and spectators
+### 12. Rematch and spectators *(may split: 12a rematch, 12b spectators)*
+
+*12a (rematch) done; 12b (spectators) next.*
 
 - One-tap rematch with the same seats and rules (building on the existing play-again flow).
 - A read-only watch link for people not playing. A spectator sees only public information during the

@@ -203,6 +203,7 @@ export class TableSocket {
         if (!resumed.ok && resumed.error !== NOT_SEATED) this.leaveTable();
         return resumed;
       }
+      case "rematch":
       case "playAgain": {
         const moved = (await this.send(event, payload)) as Ack<SeatCredentials>;
         if (moved.ok) return this.claim(moved.data);

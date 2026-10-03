@@ -684,6 +684,45 @@ describe("identities", () => {
   });
 });
 
+describe("a rematch", () => {
+  it("opens a dealt table with the same players, and sends each the seat there", async () => {
+    const ana = client();
+    const ben = client();
+    const opened = await ask<SeatCredentials>(ana, "createRoom", {
+      name: "Ana",
+      options: {
+        rules: { rounds: 1, layDownMinimums: [60], extraDecks: 0, stockExhaustion: "end" },
+      },
+    });
+    if (!opened.ok) throw new Error(opened.error);
+    await ask(ben, "joinRoom", { roomId: opened.data.roomId, name: "Ben" });
+    await ask(ana, "addBot");
+    const dealt = nextView(ana);
+    await ask(ana, "startGame");
+    await dealt;
+    await insideTable(opened.data.roomId, (room) => {
+      for (let guard = 0; !room.matchOver && guard < 5_000; guard++) {
+        const state = room.gameState!;
+        room.submitAction(state.currentSeat, defaultAction(state)!);
+      }
+      stopClock(room);
+    });
+    const told = new Promise<SeatCredentials>((resolve) => ben.once("rematch", resolve));
+    const mine = await ask<SeatCredentials>(ana, "rematch");
+    if (!mine.ok) throw new Error(mine.error);
+    const theirs = await told;
+    expect(theirs).toMatchObject({ roomId: mine.data.roomId, seat: 1 });
+    const seats = await insideTable(mine.data.roomId, (room) => {
+      stopClock(room);
+      return { started: room.started, names: room.seats().map((p) => p.name), host: room.hostSeat };
+    });
+    expect(seats).toEqual({ started: true, names: ["Ana", "Ben", "Robo Rita"], host: 0 });
+    const back = nextView(ben, (u) => u.room.roomId === mine.data.roomId);
+    expect((await ask<SeatCredentials>(ben, "resumeSeat", theirs)).ok).toBe(true);
+    expect((await back).view.seat).toBe(1);
+  });
+});
+
 describe("match history", () => {
   const ana = { userId: "ana-history-0001", secret: "a".repeat(40) };
   const ben = { userId: "ben-history-0002", secret: "b".repeat(40) };

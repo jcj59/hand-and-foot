@@ -12,6 +12,7 @@ import {
   reclaimOnReconnect,
   reclaimSeat,
   carryOnWithout,
+  followRematch,
   resumeSavedGame,
   SAVED_GAME_GONE,
   startTable,
@@ -506,5 +507,59 @@ describe("sending a reaction", () => {
       ["react", { id: "nice" }],
       ["react", { id: "nice" }],
     ]);
+  });
+});
+
+describe("followRematch", () => {
+  function listening(answers: Ack<unknown>[]) {
+    const { socket, sent } = fakeSocket(answers);
+    const handlers = new Set<(seat: SeatCredentials) => void>();
+    Object.assign(socket, {
+      on: (_event: "rematch", handler: (seat: SeatCredentials) => void) => handlers.add(handler),
+      off: (_event: "rematch", handler: (seat: SeatCredentials) => void) =>
+        handlers.delete(handler),
+    });
+    return {
+      socket,
+      sent,
+      fire: (seat: SeatCredentials) => handlers.forEach((h) => h(seat)),
+      handlers,
+    };
+  }
+
+  it("takes the seat the host's rematch sent, and goes to its table", async () => {
+    const seat = { roomId: "NXT234", seat: 1, token: "n1" };
+    const { socket, sent, fire } = listening([{ ok: true, data: seat }]);
+    const left: number[] = [];
+    const went: string[] = [];
+    const target = { ...sink(), leave: () => left.push(1), go: (id: string) => went.push(id) };
+    followRematch(socket, target);
+    fire(seat);
+    await vi.waitFor(() => expect(went).toEqual(["NXT234"]));
+    expect(sent).toEqual([{ event: "resumeSeat", args: [seat] }]);
+    expect(left).toEqual([1]);
+    expect(target.seated).toEqual([seat]);
+  });
+
+  it("stays put, saying why, if the seat is refused", async () => {
+    const { socket, fire } = listening([{ ok: false, error: "no room with that code" }]);
+    const went: string[] = [];
+    const target = { ...sink(), leave: () => undefined, go: (id: string) => went.push(id) };
+    followRematch(socket, target);
+    fire({ roomId: "NXT234", seat: 1, token: "n1" });
+    await vi.waitFor(() => expect(target.notices).toEqual(["no room with that code"]));
+    expect(went).toEqual([]);
+  });
+
+  it("detaches its listener", () => {
+    const { socket, handlers } = listening([]);
+    const detach = followRematch(socket, {
+      ...sink(),
+      leave: () => undefined,
+      go: () => undefined,
+    });
+    expect(handlers.size).toBe(1);
+    detach();
+    expect(handlers.size).toBe(0);
   });
 });

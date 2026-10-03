@@ -13,6 +13,7 @@ import { NOT_SEATED, TableChannel, type Peer } from "./table";
 
 const noNextTable = {
   nextTable: () => Promise.resolve({ ok: false as const, error: "no" }),
+  rematch: () => Promise.resolve({ ok: false as const, error: "no" }),
 };
 
 /** A peer that remembers what it was sent and which seat it was told it holds. */
@@ -135,6 +136,7 @@ describe("going on to the next game", () => {
         await new Promise<void>((resolve) => (open = resolve));
         return { ok: true, value: { roomId: "NXT234", seat: calls - 1, token: `next-${calls}` } };
       },
+      rematch: () => Promise.resolve({ ok: false as const, error: "no" }),
     });
     return { room, store, channel, calls: () => calls, open: () => open() };
   }

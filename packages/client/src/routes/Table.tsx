@@ -12,6 +12,7 @@ import {
   play,
   playAgain,
   readyForNextRound,
+  rematch,
   saveTableForLater,
   sendReaction,
   stageDraft,
@@ -54,6 +55,10 @@ export function Table({ socket }: TableProps): React.ReactElement {
           if (roomId) navigate(`/room/${roomId}`);
         }),
       nextRound: () => void readyForNextRound(socket, sink),
+      rematch: () =>
+        void rematch(socket, { ...sink, leave }).then((roomId) => {
+          if (roomId) navigate(`/room/${roomId}`);
+        }),
       removePlayer: (seat) => void carryOnWithout(socket, seat, sink),
       react: (id) => void sendReaction(socket, id),
     };

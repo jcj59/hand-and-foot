@@ -49,6 +49,36 @@ export function sitAt(
 }
 
 /**
+ * Open the next game for a rematch: the same rules, the players in the same order —
+ * computer players too — the same host, dealt at once. Returns each person's seat
+ * there by their token at this table.
+ */
+export function rematchFor(
+  manager: RoomManager,
+  room: Room,
+  players: readonly RoomPlayer[],
+): RoomResult<ReadonlyMap<string, SeatCredentials>> {
+  const next = manager.create(room.config);
+  const seats = new Map<string, SeatCredentials>();
+  let host: number | null = null;
+  for (const player of players) {
+    if (player.bot) {
+      next.addBot(next.hostSeat);
+      continue;
+    }
+    const joined = next.join(player.name, { userId: player.userId, avatar: player.avatar });
+    /* v8 ignore next -- a fresh table seats as many as the finished one had */
+    if (!joined.ok) return { ok: false, error: joined.error };
+    seats.set(player.token, seatAt(next, joined.value));
+    if (player.seat === room.hostSeat) host = joined.value.seat;
+  }
+  if (host !== null) next.setHost(next.hostSeat, host);
+  next.start(next.hostSeat);
+  room.nextRoomId = next.id;
+  return { ok: true, value: seats };
+}
+
+/**
  * Seat a player from a finished table at the next game's waiting room: the one
  * the first to ask opened, or a new one with the same rules if there is none yet
  * (or it was reaped). A waiting room already dealt is refused, not replaced.

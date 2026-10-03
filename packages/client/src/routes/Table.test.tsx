@@ -3419,3 +3419,39 @@ describe("the recap and the awards on the scoreboard", () => {
     expect(awards).toHaveTextContent("Ate the most red threes: ben (2 red threes)");
   });
 });
+
+describe("a rematch", () => {
+  const final = () =>
+    scored(
+      [
+        [0, 40],
+        [1, 90],
+      ],
+      0,
+      { matchOver: true, roundNumber: 4, totals: [2400, 1800] },
+    );
+
+  it("is offered to the host at the end of the match, and deals the same table again", async () => {
+    const { socket, sent } = fakeSocket([
+      { ok: true, data: { roomId: "NXT234", seat: 0, token: "n0" } },
+    ]);
+    mount(socket);
+    act(() => useSession.setState({ result: final() }));
+    fireEvent.click(screen.getByRole("button", { name: "Rematch" }));
+    await waitFor(() => expect(sent).toEqual([{ event: "rematch", args: [] }]));
+    await waitFor(() =>
+      expect(useSession.getState().credentials).toEqual({ roomId: "NXT234", seat: 0, token: "n0" }),
+    );
+  });
+
+  it("is not offered to anyone but the host, nor once someone has gone on to a new game", () => {
+    mount(fakeSocket().socket, update({ room: roomInfo({ hostSeat: 1 }) }));
+    act(() => useSession.setState({ result: final() }));
+    expect(screen.queryByRole("button", { name: "Rematch" })).toBeNull();
+    cleanup();
+    mount(fakeSocket().socket);
+    act(() => useSession.setState({ result: final() }));
+    act(() => useSession.getState().applyRoom(roomInfo({ playAgain: [1] })));
+    expect(screen.queryByRole("button", { name: "Rematch" })).toBeNull();
+  });
+});

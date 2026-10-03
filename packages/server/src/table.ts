@@ -39,6 +39,14 @@ export interface TableHooks {
    */
   nextTable(room: Room, player: RoomPlayer): Promise<RoomResult<SeatCredentials>>;
   /**
+   * Open the next game for a rematch with these players, in this order, and deal it:
+   * each person's seat there, by their token here. Crosses tables, as `nextTable` does.
+   */
+  rematch(
+    room: Room,
+    players: readonly RoomPlayer[],
+  ): Promise<RoomResult<ReadonlyMap<string, SeatCredentials>>>;
+  /**
    * Something about the table changed — a request handled, or a move the server
    * made itself. For a host that has to act on when the table would close, as a
    * Durable Object setting its alarm does.
@@ -301,6 +309,27 @@ export class TableChannel {
         } finally {
           this.moving.delete(token);
         }
+      }
+      case "rematch": {
+        const token = this.sessions.get(connection);
+        if (token === undefined || seated === null) return reply({ ok: false, error: NOT_SEATED });
+        const coming = this.room.rematchPlayers(seated);
+        if (!coming.ok) return reply({ ok: false, error: coming.error });
+        const moved = await this.hooks.rematch(this.room, coming.value);
+        if (!moved.ok) return reply({ ok: false, error: moved.error });
+        // Everyone goes at once: each connection is told its own seat there, and
+        // every seat here is let go of, as a play again does for one player.
+        for (const [other, held] of [...this.sessions]) {
+          const seat = moved.value.get(held);
+          if (seat && other !== connection) this.send(other, "rematch", seat);
+        }
+        for (const [moving] of moved.value) {
+          this.letGo(moving);
+          this.room.moveOn(moving);
+        }
+        reply({ ok: true, data: moved.value.get(token)! });
+        this.broadcastRoom();
+        return;
       }
       case "leaveRoom": {
         const token = this.sessions.get(connection);
