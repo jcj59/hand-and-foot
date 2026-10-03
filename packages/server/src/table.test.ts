@@ -233,6 +233,63 @@ describe("a rematch asked for twice at once", () => {
     const answers = p.frames.filter((f) => "ack" in f).slice(1);
     expect(answers.map((f) => ("ack" in f ? f.result : null))).toEqual([expected, expected]);
   });
+
+  function pendingRematch(moved: (tokens: string[]) => string[]) {
+    const { room } = table(["ana", "ben"]);
+    room.start(0);
+    const internal = room as unknown as { state: object };
+    internal.state = { ...room.gameState!, roundEnded: true, roundNumber: room.config.rounds };
+    let open: () => void = () => undefined;
+    const channel = new TableChannel(room, {
+      nextTable: () => Promise.resolve({ ok: false as const, error: "no" }),
+      rematch: async (_from, players) => {
+        await new Promise<void>((resolve) => (open = resolve));
+        const keep = moved(players.map((p) => p.token));
+        return {
+          ok: true as const,
+          value: new Map(
+            players
+              .filter((p) => keep.includes(p.token))
+              .map((p) => [p.token, { roomId: "NXT234", seat: p.seat, token: `next-${p.seat}` }]),
+          ),
+        };
+      },
+    });
+    return { channel, open: () => open() };
+  }
+
+  const resultOf = (p: ReturnType<typeof peer>) => {
+    const last = p.frames.filter((f) => "ack" in f).at(-1);
+    return last && "ack" in last ? last.result : null;
+  };
+
+  it("refuses someone who is not the host while it is pending", async () => {
+    const { channel, open } = pendingRematch((tokens) => tokens);
+    const [hostPeer, benPeer] = [peer(), peer()];
+    const host = channel.connect(hostPeer);
+    const ben = channel.connect(benPeer);
+    await ask(channel, host, "resumeSeat", { roomId: "TBL234", token: "tok-0" });
+    await ask(channel, ben, "resumeSeat", { roomId: "TBL234", token: "tok-1" });
+    const first = ask(channel, host, "rematch");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await ask(channel, ben, "rematch");
+    expect(resultOf(benPeer)).toEqual({ ok: false, error: "only the host can start a rematch" });
+    open();
+    await first;
+  });
+
+  it("does not report a seat to a host who is not among those moved", async () => {
+    const { channel, open } = pendingRematch(() => []);
+    const hostPeer = peer();
+    const host = channel.connect(hostPeer);
+    await ask(channel, host, "resumeSeat", { roomId: "TBL234", token: "tok-0" });
+    const first = ask(channel, host, "rematch");
+    const second = ask(channel, host, "rematch");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    open();
+    await Promise.all([first, second]).catch(() => undefined);
+    expect(resultOf(hostPeer)).toEqual({ ok: false, error: NOT_SEATED });
+  });
 });
 
 describe("closing a table that was left", () => {
