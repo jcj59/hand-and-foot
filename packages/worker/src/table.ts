@@ -390,6 +390,12 @@ export class TableObject extends DurableObject<Env> {
     room: Room,
     players: readonly RoomPlayer[],
   ): Promise<RoomResult<ReadonlyMap<string, SeatCredentials>>> {
+    if (room.nextRoomId !== null) {
+      return {
+        ok: false,
+        error: "someone has already gone on to a new game; play again to join them",
+      };
+    }
     const seats: RematchSeat[] = players.map((p) => ({
       name: p.name,
       profile: { userId: p.userId ?? null, avatar: p.avatar ?? null },

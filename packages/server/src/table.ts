@@ -76,6 +76,8 @@ export class TableChannel {
   private readonly owners = new Map<string, number>();
   /** Seats on their way to the next game, so a second click waits for the first. */
   private readonly moving = new Map<string, Promise<Ack<SeatCredentials>>>();
+  /** A rematch being opened, so a second tap waits for it rather than opening another table. */
+  private rematching: Promise<RoomResult<ReadonlyMap<string, SeatCredentials>>> | null = null;
   /**
    * Where each connection was sent. The seat here is let go as the move finishes,
    * so a repeat of the same click arriving after it would otherwise be refused as
@@ -313,9 +315,21 @@ export class TableChannel {
       case "rematch": {
         const token = this.sessions.get(connection);
         if (token === undefined || seated === null) return reply({ ok: false, error: NOT_SEATED });
+        if (this.rematching) {
+          const first = await this.rematching;
+          if (!first.ok) return reply({ ok: false, error: first.error });
+          return reply({ ok: true, data: first.value.get(token)! });
+        }
         const coming = this.room.rematchPlayers(seated);
         if (!coming.ok) return reply({ ok: false, error: coming.error });
-        const moved = await this.hooks.rematch(this.room, coming.value);
+        const opening = this.hooks.rematch(this.room, coming.value);
+        this.rematching = opening;
+        let moved;
+        try {
+          moved = await opening;
+        } finally {
+          this.rematching = null;
+        }
         if (!moved.ok) return reply({ ok: false, error: moved.error });
         // Everyone goes at once: each connection is told its own seat there, and
         // every seat here is let go of, as a play again does for one player.
