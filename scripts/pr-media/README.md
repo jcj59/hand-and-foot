@@ -32,7 +32,7 @@ an animation) in its description, under `## Screenshots`.
    scoreboard between rounds; with `LEFT=1`, Ana has left the match after round 1 (and Dee,
    seat 4, is not at the table, so the host is offered to carry on without her). `BOTS=1` makes Ben and Dee
    computer players ("Robo Rita", "Robo Ray"); `LOBBY=1` renders the waiting room instead of the
-   table. Action `home` renders the home screen
+   table. `WATCHING=1` renders the table as a spectator sees it, at `/watch/HFDEMO`. Action `home` renders the home screen
    instead of the table, with `SAVED_LIST=1` seeding two saved games.
    On this machine Chromium needs nss/nspr/alsa from the `pwlibs` conda env. Emoji (the quick
    reactions) draw as boxes without a colour emoji font: set `EMOJI_FONT=<path to

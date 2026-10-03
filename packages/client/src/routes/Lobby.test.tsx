@@ -433,3 +433,14 @@ describe("computer players in the lobby", () => {
     );
   });
 });
+
+describe("the watch link", () => {
+  it("is offered in the lobby, with how many are watching", () => {
+    seated(0, roomInfo({ watching: 2 }));
+    mount(fakeSocket().socket);
+    expect(screen.getByRole("textbox", { name: "Link to watch the table" })).toHaveValue(
+      `${window.location.origin}/watch/ABC234`,
+    );
+    expect(screen.getByText("2 watching")).toBeInTheDocument();
+  });
+});

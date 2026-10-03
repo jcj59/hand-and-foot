@@ -1,5 +1,6 @@
 import {
   CARRIED_ON_WITHOUT_YOU,
+  SPECTATOR_SEAT,
   defaultAvatar,
   MAX_PLAYERS,
   MIN_PLAYERS,
@@ -34,6 +35,7 @@ import {
   project,
   roundResult,
   seatedCount,
+  spectate,
   summarizeMatch,
 } from "@hf/engine";
 import type { Clock } from "./clock";
@@ -1367,6 +1369,37 @@ export class Room {
       config: this.config,
       playAgain: this.players.filter((p) => this.wentOn.has(p.token)).map((p) => p.seat),
       nextRoundReady: this.players.filter((p) => this.ready.has(p.token)).map((p) => p.seat),
+      ...(this.watching > 0 ? { watching: this.watching } : {}),
+    };
+  }
+
+  /**
+   * How many people are watching without a seat. Kept by whoever holds the
+   * connections, the channel, and only reported: it changes nothing at the table.
+   */
+  watching = 0;
+
+  /**
+   * The update a spectator is sent: the table with every hand hidden, the latest
+   * move as a player who drew nothing would see it, and hints that open nothing.
+   * Null before the deal.
+   */
+  spectatorView(): ViewUpdate | null {
+    if (!this.state) return null;
+    const lastMove = this.lastMove && moveSeenBy(this.lastMove, SPECTATOR_SEAT);
+    return {
+      ...(lastMove ? { lastMove } : {}),
+      view: spectate(this.state),
+      clock: this.clockState(),
+      room: this.info(),
+      hints: {
+        seatToAct: this.state.currentSeat,
+        phase: this.state.phase,
+        canDraw: false,
+        canTakePile: false,
+        meldableRanks: [],
+        canGoOut: false,
+      },
     };
   }
 

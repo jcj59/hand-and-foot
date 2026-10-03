@@ -13,6 +13,7 @@ import type {
   Avatar,
   MeldPlay,
   ReactionId,
+  RoomInfo,
   RoomOptions,
   SeatCredentials,
   UserCredentials,
@@ -146,6 +147,10 @@ export function submitAction(socket: HfClientSocket, action: Action): Promise<Ac
 
 export function playAgain(socket: HfClientSocket): Promise<Ack<SeatCredentials>> {
   return ask((ack) => socket.emit("playAgain", ack));
+}
+
+export function watchRoom(socket: HfClientSocket, roomId: string): Promise<Ack<RoomInfo>> {
+  return ask((ack) => socket.emit("watchRoom", { roomId }, ack));
 }
 
 export function readyForNextRound(socket: HfClientSocket): Promise<Ack<boolean>> {

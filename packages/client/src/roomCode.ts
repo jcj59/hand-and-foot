@@ -38,3 +38,8 @@ export function isPossibleRoomCode(raw: string): boolean {
 export function roomLink(roomId: string, origin: string): string {
   return `${origin.replace(/\/+$/, "")}/room/${normalizeRoomCode(roomId)}`;
 }
+
+/** The link to watch a table without a seat at it. */
+export function watchLink(roomId: string, origin: string): string {
+  return `${origin.replace(/\/+$/, "")}/watch/${normalizeRoomCode(roomId)}`;
+}

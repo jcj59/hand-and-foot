@@ -356,6 +356,12 @@ export interface ScoreBreakdown {
 export const ROOM_CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
 export const ROOM_CODE_LENGTH = 6;
 
+/**
+ * The seat a spectator's view is projected for: nobody's. A view for it holds no
+ * hand and no foot, and every player at the table is among its opponents.
+ */
+export const SPECTATOR_SEAT = -1;
+
 /** A table needs two to deal and seats eight at most. */
 export const MIN_PLAYERS = 2;
 export const MAX_PLAYERS = 8;
