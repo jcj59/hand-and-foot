@@ -13,7 +13,7 @@ import { prng } from "./rng";
 import { canTakePile } from "./feasibility";
 import { naturalRank, validateMeld } from "./meld";
 import { defaultAction } from "./policy";
-import { project } from "./view";
+import { project, spectate } from "./view";
 
 /**
  * Each property plays dozens of whole games, which takes a second or two locally
@@ -205,6 +205,11 @@ function assertNoLeak(state: GameState): void {
     for (const c of state.stock) {
       if (visible.has(c.id)) leaks.push(`seat ${seat} sees stock card ${c.id}`);
     }
+  }
+  // A spectator sees no hand, no foot and no stock card, of anyone.
+  const watched = visibleIds(spectate(state));
+  for (const c of [...state.stock, ...state.players.flatMap((p) => [...p.hand, ...p.foot])]) {
+    if (watched.has(c.id)) leaks.push(`a spectator sees ${c.id}`);
   }
   // One assertion per state: a per-card expect() here costs millions of calls.
   expect(leaks).toEqual([]);

@@ -723,6 +723,45 @@ describe("a rematch", () => {
   });
 });
 
+describe("watching a table", () => {
+  it("sends a watcher every hand hidden, and keeps them watching through a sleep", async () => {
+    const { ana, ben, anaSeat, anaView } = await dealtTable();
+    const code = anaSeat.roomId;
+    const watcher = client();
+    const watched = await ask<{ roomId: string }>(watcher, "watchRoom", { roomId: code });
+    expect(watched.ok && watched.data.roomId).toBe(code);
+    expect(await insideTable(code, (room) => room.info().watching)).toBe(1);
+
+    const onTurn = anaView.hints.seatToAct === 0 ? ana : ben;
+    const waiting = onTurn === ana ? ben : ana;
+    // Paused, so no clock keeps the object awake; then evicted, sockets left open.
+    await ask(waiting, "setPaused", { paused: true });
+    await evictDurableObject(tableOf(code));
+    const seen = nextView(watcher, (u) => !u.clock.paused);
+    expect((await ask(waiting, "setPaused", { paused: false })).ok).toBe(true);
+    const update = await seen;
+    expect(update.view.seat).toBe(-1);
+    expect(update.view.hand).toEqual([]);
+    const hidden = await insideTable(code, (room) =>
+      room.gameState!.players.flatMap((p) => [...p.hand, ...p.foot]).map((c) => c.id),
+    );
+    const sent = JSON.stringify(update);
+    for (const id of hidden) expect(sent).not.toContain(`"${id}"`);
+    expect(await ask(watcher, "submitAction", { type: "draw" })).toEqual({
+      ok: false,
+      error: "you are not seated in a room",
+    });
+  });
+
+  it("tells a watcher at a code with no table that it is gone", async () => {
+    const watcher = client();
+    expect(await ask(watcher, "watchRoom", { roomId: "ZZZZZZ" })).toEqual({
+      ok: false,
+      error: "no room with that code",
+    });
+  });
+});
+
 describe("match history", () => {
   const ana = { userId: "ana-history-0001", secret: "a".repeat(40) };
   const ben = { userId: "ben-history-0002", secret: "b".repeat(40) };

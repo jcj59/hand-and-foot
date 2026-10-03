@@ -592,6 +592,24 @@ again, because a table is one match — its log, its record and its history entr
 a new match. Once anyone has gone on with play again, the rematch is no longer offered: the next
 game's table already exists, and the rest join it the ordinary way.
 
+### Watching without a seat
+
+Anyone with a table's watch link can follow its game live without playing. A spectator is the
+anti-cheat boundary's hardest case — a person at the table with no hand of their own — so they get
+a projection of their own rather than a seat's view with parts removed: every player still in the
+match is an opponent, reduced to card counts and the melds on the table, and there is no hand and
+no foot in it at all, so nothing hidden at a real table can be sent to them. The latest move is
+shown as it would be to a player who drew nothing — a drawn card is never named — and the hints
+open nothing. The engine's property tests check, on every state of random games, that no hand, foot
+or stock card is ever in it, and the server's tests check the same over the wire for a whole stretch
+of play.
+
+A watcher is a connection at the table holding no seat: it hears what the table hears — the room,
+the results, the reactions, the table closing — and every request it makes is refused as not
+seated. Taking a seat on the same connection ends watching. On Cloudflare, a watcher survives the
+table's object sleeping as a seat does, by a mark on its socket. The table shows how many are
+watching; it changes nothing else.
+
 ### Watching a game back
 
 Every later piece of work changes something a player sees, and most of the situations worth

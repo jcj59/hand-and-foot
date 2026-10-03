@@ -192,6 +192,28 @@ if (departed) {
     p.seat === 1 ? { ...p, connected: false, departed: true } : p,
   );
 }
+// WATCHING=1: the viewer watches the table without a seat (open /watch/HFDEMO).
+if (process.env.WATCHING) {
+  room.watching = 1;
+  view.seat = -1;
+  view.hand = [];
+  view.foot = null;
+  view.footCount = 0;
+  view.melds = [];
+  view.isDown = false;
+  view.playedThisTurn = [];
+  view.opponents = [
+    {
+      seat: 0,
+      handCount: 15,
+      footCount: 13,
+      melds: view.opponents[0].melds,
+      isDown: true,
+      inFoot: false,
+    },
+    ...view.opponents,
+  ];
+}
 // A table Ana paused; SAVED=1 has her save it for later too.
 if (process.env.PAUSED || process.env.SAVED) {
   room.pausedBy = 1;
@@ -230,11 +252,14 @@ const run = async () => {
     ws.onMessage((text) => {
       if (text === "ping") return ws.send("pong");
       const frame = JSON.parse(text);
-      if (frame.event === "resumeSeat") {
+      if (frame.event === "resumeSeat" || frame.event === "watchRoom") {
         ws.send(
           JSON.stringify({
             ack: frame.id,
-            result: { ok: true, data: { roomId: "HFDEMO", seat: 0, token: "t" } },
+            result: {
+              ok: true,
+              data: frame.event === "watchRoom" ? room : { roomId: "HFDEMO", seat: 0, token: "t" },
+            },
           }),
         );
         const now = Date.now();
@@ -498,7 +523,8 @@ const run = async () => {
       ],
     );
   }
-  if (action !== "home") await page.goto(`${base}/room/HFDEMO`);
+  if (action !== "home")
+    await page.goto(`${base}/${process.env.WATCHING ? "watch" : "room"}/HFDEMO`);
   else await page.goto(base);
   await page.waitForTimeout(800);
   if (action === "collapse") await page.getByRole("button", { name: "Collapse players" }).click();

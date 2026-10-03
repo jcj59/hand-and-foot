@@ -203,6 +203,13 @@ export class TableSocket {
         if (!resumed.ok && resumed.error !== NOT_SEATED) this.leaveTable();
         return resumed;
       }
+      case "watchRoom": {
+        // Watching is a socket at the table like a player's, holding no seat.
+        this.goTo((payload as { roomId: string }).roomId);
+        const watched = await this.send(event, payload);
+        if (!watched.ok) this.leaveTable();
+        return watched;
+      }
       case "rematch":
       case "playAgain": {
         const moved = (await this.send(event, payload)) as Ack<SeatCredentials>;

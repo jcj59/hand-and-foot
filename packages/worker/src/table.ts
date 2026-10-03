@@ -69,6 +69,8 @@ const NO_TABLE = 0;
 interface Attachment {
   readonly connection: number;
   readonly token: string | null;
+  /** Watching the table without a seat. */
+  readonly watching?: boolean;
 }
 
 function attachment(ws: WebSocket): Attachment {
@@ -265,6 +267,8 @@ export class TableObject extends DurableObject<Env> {
       {
         send: (frame) => send(ws, JSON.stringify(frame)),
         seated: (token) => ws.serializeAttachment({ connection, token } satisfies Attachment),
+        watching: (on) =>
+          ws.serializeAttachment({ connection, token: null, watching: on } satisfies Attachment),
       },
       previous,
     );
@@ -274,9 +278,10 @@ export class TableObject extends DurableObject<Env> {
   /** After a wake: seat every socket that was still open again, as it was. */
   private rewire(): void {
     for (const ws of this.ctx.getWebSockets()) {
-      const { connection, token } = attachment(ws);
+      const { connection, token, watching } = attachment(ws);
       if (connection === NO_TABLE) continue;
       this.wire(ws, connection);
+      if (watching) this.channel!.adoptWatcher(connection);
       // A token that no longer holds a seat here is simply forgotten; the client's
       // next request is refused as not seated and it reclaims, as after a drop.
       if (token !== null && !this.channel!.adoptSeat(connection, token)) {

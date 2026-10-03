@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   EAST_COAST,
+  SPECTATOR_SEAT,
   type Card,
   type GameState,
   type Meld,
@@ -10,7 +11,7 @@ import {
 } from "@hf/shared";
 import { deal } from "./deal";
 import { moveSeenBy } from "./lastMove";
-import { project } from "./view";
+import { project, spectate } from "./view";
 import { buildShoe } from "./deck";
 
 const meldCardCount = (melds: readonly Meld[]) =>
@@ -328,5 +329,51 @@ describe("the latest move as each seat sees it", () => {
   it("passes a Marva get-down to every seat: the lay-down is on the table for all", () => {
     const move = { seq: 3, seat: 0, kind: "meld" as const, count: 4, marva: true as const };
     for (const seat of [0, 1, 2, 3]) expect(moveSeenBy(move, seat)).toEqual(move);
+  });
+});
+
+describe("the spectator's view", () => {
+  it("holds no hand, no foot and no stock card, and every player as an opponent", () => {
+    const s: GameState = {
+      ...table([
+        player({ hand: cards("K", 3), foot: cards("Q", 2) }),
+        player({ hand: cards("A", 2), foot: cards("J", 4), inFoot: false }),
+        player({ hand: [], foot: cards("7", 3), inFoot: true, isDown: true, melds: [] }),
+      ]),
+    };
+    const v = spectate(s);
+    expect(v.seat).toBe(SPECTATOR_SEAT);
+    expect(v.hand).toEqual([]);
+    expect(v.foot).toBeNull();
+    expect(v.opponents.map((o) => [o.seat, o.handCount, o.footCount])).toEqual([
+      [0, 3, 2],
+      [1, 2, 4],
+      [2, 0, 3],
+    ]);
+    const sent = JSON.stringify(v);
+    const hidden = [...s.stock, ...s.players.flatMap((p) => [...p.hand, ...p.foot])];
+    for (const c of hidden) expect(sent).not.toContain(`"${c.id}"`);
+    // What is public passes through: the pile, and the counts.
+    expect(v.discard).toEqual(s.discard);
+    expect(v.stockCount).toBe(s.stock.length);
+  });
+
+  it("shows less than any seat's view, never more", () => {
+    const s = deal(4, EAST_COAST, 9);
+    const watched = new Set(JSON.stringify(spectate(s)).match(/"id":"[^"]+"/g) ?? []);
+    for (let seat = 0; seat < 4; seat++) {
+      const seen = new Set(JSON.stringify(project(s, seat)).match(/"id":"[^"]+"/g) ?? []);
+      for (const id of watched) expect(seen.has(id)).toBe(true);
+    }
+  });
+
+  it("leaves out a player who has left the match", () => {
+    const s: GameState = {
+      ...table([player(), player(), player()]),
+      roundEnded: true,
+      departed: [{ seat: 1, afterRound: 1 }],
+    };
+    expect(spectate(s).opponents.map((o) => o.seat)).toEqual([0, 2]);
+    expect(spectate(s).departed).toEqual([{ seat: 1, afterRound: 1 }]);
   });
 });

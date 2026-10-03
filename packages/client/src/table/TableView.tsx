@@ -23,6 +23,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   isBlackThree,
   isWild,
+  SPECTATOR_SEAT,
   type Action,
   type Card,
   type MeldPlay,
@@ -254,6 +255,8 @@ export function TableView({
   const awardsShown = useAwardsCelebration(result, quiet);
   // Watching, the seat on view is someone's rather than the viewer's own — by their
   // own name, since the Grabby Pants badge already says who holds the title.
+  // Watching the table without a seat: nobody's hand is ours to show.
+  const spectating = view.seat === SPECTATOR_SEAT;
   const me = realRoom.players.find((p) => p.seat === view.seat);
   const watched = me?.name ?? `Seat ${view.seat}`;
   const whose = controls ? "Your" : `${watched}'s`;
@@ -452,17 +455,24 @@ export function TableView({
             <p className="truncate text-xs text-white/70">
               Round {view.roundNumber}/{room.config.rounds} · min{" "}
               {room.config.layDownMinimums[view.roundNumber - 1] ?? "—"}
-              {view.isDown ? " · down" : " · not down"}
+              {spectating ? " · watching" : view.isDown ? " · down" : " · not down"}
             </p>
           ) : (
             <p className="text-sm text-white/60">
               Round {view.roundNumber} of {room.config.rounds} · minimum{" "}
               {room.config.layDownMinimums[view.roundNumber - 1] ?? "—"}
-              {view.isDown
-                ? controls
-                  ? " · you are down"
-                  : ` · ${watched} is down`
-                : " · not down"}
+              {spectating
+                ? " · watching"
+                : view.isDown
+                  ? controls
+                    ? " · you are down"
+                    : ` · ${watched} is down`
+                  : " · not down"}
+            </p>
+          )}
+          {room.watching !== undefined && (
+            <p aria-label="Watching" className="text-xs text-white/50">
+              {room.watching} watching
             </p>
           )}
           {/* The match so far, once there is one: it is what every later round is
@@ -764,36 +774,42 @@ export function TableView({
             </p>
           )}
 
-          <section className="flex flex-col gap-2" aria-label={`${whose} melds`} data-zone="melds">
-            <div className="flex items-center gap-3">
-              <h2 className="text-sm font-medium text-white/80">{whose} melds</h2>
-              {phone && view.melds.length > 0 && (
-                <button
-                  type="button"
-                  aria-pressed={compactMelds}
-                  onClick={() => {
-                    setCompactMelds(!compactMelds);
-                    writeFlag(COMPACT_MELDS_KEY, !compactMelds);
-                  }}
-                  className="rounded border border-white/20 px-2 py-0.5 text-xs text-white/70"
-                >
-                  {compactMelds ? "Show cards" : "Collapse"}
-                </button>
-              )}
-            </div>
-            <Melds
-              melds={view.melds}
-              config={room.config}
-              // Clicking a meld on the table aims the next cards at it — the only way
-              // to add a wild to a meld already down.
-              onSelect={
-                canMeld ? (rank) => setStaging((current) => focusGroup(current, rank)) : undefined
-              }
-              selectedRank={canMeld ? staging.focusedRank : null}
-              chips={phone && compactMelds}
-              provisionalIds={provisional}
-            />
-          </section>
+          {!spectating && (
+            <section
+              className="flex flex-col gap-2"
+              aria-label={`${whose} melds`}
+              data-zone="melds"
+            >
+              <div className="flex items-center gap-3">
+                <h2 className="text-sm font-medium text-white/80">{whose} melds</h2>
+                {phone && view.melds.length > 0 && (
+                  <button
+                    type="button"
+                    aria-pressed={compactMelds}
+                    onClick={() => {
+                      setCompactMelds(!compactMelds);
+                      writeFlag(COMPACT_MELDS_KEY, !compactMelds);
+                    }}
+                    className="rounded border border-white/20 px-2 py-0.5 text-xs text-white/70"
+                  >
+                    {compactMelds ? "Show cards" : "Collapse"}
+                  </button>
+                )}
+              </div>
+              <Melds
+                melds={view.melds}
+                config={room.config}
+                // Clicking a meld on the table aims the next cards at it — the only way
+                // to add a wild to a meld already down.
+                onSelect={
+                  canMeld ? (rank) => setStaging((current) => focusGroup(current, rank)) : undefined
+                }
+                selectedRank={canMeld ? staging.focusedRank : null}
+                chips={phone && compactMelds}
+                provisionalIds={provisional}
+              />
+            </section>
+          )}
         </div>
 
         {building && (
@@ -914,45 +930,51 @@ export function TableView({
             )}
           </section>
         )}
-        <div className="flex items-end gap-3">
-          <div className="relative min-w-0 flex-1">
-            {bubbles.get(view.seat) && (
-              <ReactionBubble
-                reaction={bubbles.get(view.seat)!}
-                name={watched}
-                avatar={me && faceOf(me)}
-              />
-            )}
-            <Hand
-              cards={zone}
-              interactive={canMeld || canDiscard}
-              stagedIds={staged}
-              owedIds={owed}
-              hintIds={hintsOn ? suggestion?.cardIds : undefined}
-              meldRanks={meldRanks}
-              playContext={playContext}
-              onSelect={onCardSelect}
-              chosenId={chosenId}
-              menu={menu}
-              onDismiss={closeMenu}
-              title={`${whose} ${view.inFoot ? "foot" : "hand"}${grabby ? ` (${GRABBY_NAME})` : ""}`}
-              badge={grabby && <GrabbyIcon className="h-5 w-5" />}
-              rows={phone}
-              newId={drawnId}
-            />
-          </div>
-          {/* The foot waits beside the hand it will replace. */}
-          {!view.inFoot && (
-            <div className="flex shrink-0 flex-col items-center gap-1">
-              <span className="text-xs text-white/60">{phone ? "Foot" : `${whose} foot`}</span>
-              <FaceDownPile
-                count={view.footCount}
-                label={`${whose} foot`}
-                size={phone ? "small" : "normal"}
+        {spectating ? (
+          <p className="text-sm text-white/60">
+            Watching. Every player&rsquo;s cards stay hidden; only what is on the table is shown.
+          </p>
+        ) : (
+          <div className="flex items-end gap-3">
+            <div className="relative min-w-0 flex-1">
+              {bubbles.get(view.seat) && (
+                <ReactionBubble
+                  reaction={bubbles.get(view.seat)!}
+                  name={watched}
+                  avatar={me && faceOf(me)}
+                />
+              )}
+              <Hand
+                cards={zone}
+                interactive={canMeld || canDiscard}
+                stagedIds={staged}
+                owedIds={owed}
+                hintIds={hintsOn ? suggestion?.cardIds : undefined}
+                meldRanks={meldRanks}
+                playContext={playContext}
+                onSelect={onCardSelect}
+                chosenId={chosenId}
+                menu={menu}
+                onDismiss={closeMenu}
+                title={`${whose} ${view.inFoot ? "foot" : "hand"}${grabby ? ` (${GRABBY_NAME})` : ""}`}
+                badge={grabby && <GrabbyIcon className="h-5 w-5" />}
+                rows={phone}
+                newId={drawnId}
               />
             </div>
-          )}
-        </div>
+            {/* The foot waits beside the hand it will replace. */}
+            {!view.inFoot && (
+              <div className="flex shrink-0 flex-col items-center gap-1">
+                <span className="text-xs text-white/60">{phone ? "Foot" : `${whose} foot`}</span>
+                <FaceDownPile
+                  count={view.footCount}
+                  label={`${whose} foot`}
+                  size={phone ? "small" : "normal"}
+                />
+              </div>
+            )}
+          </div>
+        )}
       </footer>
 
       {rulesOpen && <RulesDialog config={room.config} onClose={() => setRulesOpen(false)} />}
