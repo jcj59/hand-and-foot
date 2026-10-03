@@ -99,6 +99,8 @@ export interface TableControls {
   react(id: ReactionId): void;
   leave(): void;
   playAgain(): void;
+  /** Deal the same table again at once, as the host, once the match is over. */
+  rematch(): void;
   nextRound(): void;
   /** Carry on without a player who has gone, between rounds. The host's to offer. */
   removePlayer(seat: number): void;
@@ -964,6 +966,7 @@ export function TableView({
             controls && {
               onLeave: controls.leave,
               onPlayAgain: controls.playAgain,
+              onRematch: controls.rematch,
               onNextRound: controls.nextRound,
               onRemovePlayer: controls.removePlayer,
               onSaveForLater: () => void controls.saveForLater(),

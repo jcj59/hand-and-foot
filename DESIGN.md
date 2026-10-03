@@ -580,6 +580,18 @@ everyone leaving is the point of saving it. A departed player's seat token stops
 with a refusal the client recognizes, so the player is told the game went on without them rather
 than that the table has gone.
 
+### Playing the same table again
+
+Play again sends each player, one click at a time, to a waiting room for a new game with the same
+rules, which suits a table that is changing. A rematch is the other case — the same people want to
+go again at once — so the host can deal the same table again in one tap: everyone still at it, in
+the same seats' order, computer players included, the same host, at a new table dealt
+immediately. The host's ack carries their seat there, and every other player's connection is sent
+its own, which their client takes up as it would a reclaim. A new table rather than the same one
+again, because a table is one match — its log, its record and its history entry — and a rematch is
+a new match. Once anyone has gone on with play again, the rematch is no longer offered: the next
+game's table already exists, and the rest join it the ordinary way.
+
 ### Watching a game back
 
 Every later piece of work changes something a player sees, and most of the situations worth

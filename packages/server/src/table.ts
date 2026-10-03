@@ -39,6 +39,14 @@ export interface TableHooks {
    */
   nextTable(room: Room, player: RoomPlayer): Promise<RoomResult<SeatCredentials>>;
   /**
+   * Open the next game for a rematch with these players, in this order, and deal it:
+   * each person's seat there, by their token here. Crosses tables, as `nextTable` does.
+   */
+  rematch(
+    room: Room,
+    players: readonly RoomPlayer[],
+  ): Promise<RoomResult<ReadonlyMap<string, SeatCredentials>>>;
+  /**
    * Something about the table changed — a request handled, or a move the server
    * made itself. For a host that has to act on when the table would close, as a
    * Durable Object setting its alarm does.
@@ -68,6 +76,8 @@ export class TableChannel {
   private readonly owners = new Map<string, number>();
   /** Seats on their way to the next game, so a second click waits for the first. */
   private readonly moving = new Map<string, Promise<Ack<SeatCredentials>>>();
+  /** A rematch being opened, so a second tap waits for it rather than opening another table. */
+  private rematching: Promise<RoomResult<ReadonlyMap<string, SeatCredentials>>> | null = null;
   /**
    * Where each connection was sent. The seat here is let go as the move finishes,
    * so a repeat of the same click arriving after it would otherwise be refused as
@@ -301,6 +311,43 @@ export class TableChannel {
         } finally {
           this.moving.delete(token);
         }
+      }
+      case "rematch": {
+        const token = this.sessions.get(connection);
+        if (token === undefined || seated === null) return reply({ ok: false, error: NOT_SEATED });
+        if (this.rematching) {
+          if (seated !== this.room.hostSeat) {
+            return reply({ ok: false, error: "only the host can start a rematch" });
+          }
+          const first = await this.rematching;
+          if (!first.ok) return reply({ ok: false, error: first.error });
+          const there = first.value.get(token);
+          return reply(there ? { ok: true, data: there } : { ok: false, error: NOT_SEATED });
+        }
+        const coming = this.room.rematchPlayers(seated);
+        if (!coming.ok) return reply({ ok: false, error: coming.error });
+        const opening = this.hooks.rematch(this.room, coming.value);
+        this.rematching = opening;
+        let moved;
+        try {
+          moved = await opening;
+        } finally {
+          this.rematching = null;
+        }
+        if (!moved.ok) return reply({ ok: false, error: moved.error });
+        // Everyone goes at once: each connection is told its own seat there, and
+        // every seat here is let go of, as a play again does for one player.
+        for (const [other, held] of [...this.sessions]) {
+          const seat = moved.value.get(held);
+          if (seat && other !== connection) this.send(other, "rematch", seat);
+        }
+        for (const [moving] of moved.value) {
+          this.letGo(moving);
+          this.room.moveOn(moving);
+        }
+        reply({ ok: true, data: moved.value.get(token)! });
+        this.broadcastRoom();
+        return;
       }
       case "leaveRoom": {
         const token = this.sessions.get(connection);
