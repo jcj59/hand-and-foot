@@ -876,7 +876,8 @@ work, in order:
 2. ~~A configurable rules editor, since the engine is already fully config-driven.~~ Done: start
    from a preset and change any rule; the server checks the changes, and the lobby shows every
    player what was changed. See "Rules chosen when a room is opened".
-3. An interactive tutorial that teaches the game through guided scenarios.
+3. ~~An interactive tutorial that teaches the game through guided scenarios.~~ Done: eight
+   short lessons and a narrated demo round; see "Learning to play".
 4. ~~Support for large tables on mobile.~~ Done: below 768px the table stacks vertically, with
    opponents as a strip of summary chips (tap one for its melds), the player's own melds as cards
    that can be collapsed to compact chips, and the hand in even rows sized to the screen, so no
