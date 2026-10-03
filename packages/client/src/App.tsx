@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { CARRIED_ON_WITHOUT_YOU } from "@hf/shared";
-import { leaveOnClose, reclaimOnReconnect, reclaimSeat } from "./actions";
+import { followRematch, leaveOnClose, reclaimOnReconnect, reclaimSeat } from "./actions";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { loadCredentials } from "./credentials";
 import { forgetSavedGame } from "./savedGames";
@@ -64,6 +64,17 @@ export function App({ socket }: AppProps): React.ReactElement {
         setNotice,
       }),
     [socket, seat, leave, setNotice],
+  );
+
+  useEffect(
+    () =>
+      followRematch(socket, {
+        seat,
+        setNotice,
+        leave,
+        go: (roomId) => navigate(`/room/${roomId}`),
+      }),
+    [socket, seat, setNotice, leave, navigate],
   );
 
   // Audio may only start after a gesture; listening from the first screen means

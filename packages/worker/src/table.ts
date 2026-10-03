@@ -51,6 +51,14 @@ export const ABANDONED_TABLE_MS = 30 * 60_000;
 /** The answer when a new table's code is already a live table's. */
 export const TAKEN = "taken";
 
+/** One seat of a rematch, as the new table is told it. */
+interface RematchSeat {
+  readonly name: string;
+  readonly profile: SeatProfile;
+  readonly bot: boolean;
+  readonly host: boolean;
+}
+
 /** The connection id of a socket opened to a code with no table behind it. */
 const NO_TABLE = 0;
 
@@ -137,6 +145,49 @@ export class TableObject extends DurableObject<Env> {
     this.store.saveRoom(room.record());
     this.install(room);
     return this.sit(name, profile);
+  }
+
+  /**
+   * Open a new table here, under `code`, as a rematch of another: these players in
+   * this order — a person with their identity and picture, or a computer player —
+   * the host among them hosting, dealt at once. Each person's seat, in order; null
+   * for a computer player.
+   */
+  async openRematch(
+    code: string,
+    config: RulesConfig,
+    seats: readonly RematchSeat[],
+  ): Promise<Ack<(SeatCredentials | null)[]> | typeof TAKEN> {
+    if (this.channel) return TAKEN;
+    for (const ws of this.ctx.getWebSockets()) {
+      ws.serializeAttachment({ connection: NO_TABLE, token: null } satisfies Attachment);
+    }
+    const room = new Room(code, config, {
+      ...this.deps(),
+      seed: crypto.getRandomValues(new Uint32Array(1))[0]! >>> 1,
+      uid: crypto.randomUUID(),
+    });
+    this.store.saveRoom(room.record());
+    this.install(room);
+    const out: (SeatCredentials | null)[] = [];
+    let host: number | null = null;
+    for (const seat of seats) {
+      if (seat.bot) {
+        room.addBot(room.hostSeat);
+        out.push(null);
+        continue;
+      }
+      const joined = room.join(seat.name, seat.profile);
+      /* v8 ignore next -- a fresh table seats as many as the finished one had */
+      if (!joined.ok) return { ok: false, error: joined.error };
+      room.setConnected(joined.value.seat, false);
+      if (seat.host) host = joined.value.seat;
+      out.push({ roomId: room.id, seat: joined.value.seat, token: joined.value.token });
+    }
+    if (host !== null) room.setHost(room.hostSeat, host);
+    room.start(room.hostSeat);
+    this.scheduleReaping();
+    return { ok: true, data: out };
   }
 
   /** Sit down at this table, as the identity the Worker verified (if any), with their picture. */
@@ -281,6 +332,11 @@ export class TableObject extends DurableObject<Env> {
   private install(room: Room): void {
     this.channel = new TableChannel(room, {
       nextTable: (from, player) => this.nextTable(from, player),
+      rematch: (from, players) => {
+        const turn = this.nextTableQueue.then(() => this.rematchAt(from, players));
+        this.nextTableQueue = turn.catch(() => undefined);
+        return turn;
+      },
       changed: () => this.scheduleReaping(),
     });
   }
@@ -327,6 +383,32 @@ export class TableObject extends DurableObject<Env> {
     };
     const seated = await answer();
     return seated.ok ? { ok: true, value: seated.data } : { ok: false, error: seated.error };
+  }
+
+  /** Open the rematch's table under a fresh code, and say where each person sits there. */
+  private async rematchAt(
+    room: Room,
+    players: readonly RoomPlayer[],
+  ): Promise<RoomResult<ReadonlyMap<string, SeatCredentials>>> {
+    const seats: RematchSeat[] = players.map((p) => ({
+      name: p.name,
+      profile: { userId: p.userId ?? null, avatar: p.avatar ?? null },
+      bot: p.bot === true,
+      host: p.seat === room.hostSeat,
+    }));
+    for (;;) {
+      const code = newCode();
+      const opened = await this.env.TABLES.getByName(code).openRematch(code, room.config, seats);
+      if (opened === TAKEN) continue;
+      if (!opened.ok) return { ok: false, error: opened.error };
+      room.nextRoomId = code;
+      const byToken = new Map<string, SeatCredentials>();
+      players.forEach((p, i) => {
+        const seat = opened.data[i];
+        if (seat) byToken.set(p.token, seat);
+      });
+      return { ok: true, value: byToken };
+    }
   }
 
   private deps(): Omit<RoomDeps, "seed"> {

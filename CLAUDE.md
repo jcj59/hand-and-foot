@@ -853,6 +853,17 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   header's "Rules" / "?" button, aria-label "How to play", for the table's own config). Harness
   action `rules`.
 
+- **Rematch (roadmap item 12a).** `Room.rematchPlayers(bySeat)` (host, match over, nobody gone on
+  yet — `nextRoomId` null; brings every seated player not gone on and not walked away, bots
+  included, in seat order; at least `MIN_PLAYERS`). `TableHooks.rematch(room, players)` →
+  token → new `SeatCredentials`: Node `rematchFor` (`lobby.ts`: create, join in order, `addBot` for
+  bots, `setHost` to the old host's new seat, `start`), Worker `TableObject.openRematch` over RPC
+  (queued with `nextTable`). The channel's `rematch` request acks the host's seat, sends every other
+  holder `rematch {seat}`, lets go of and `moveOn`s each moved token. Client: transport treats
+  `rematch` like `playAgain` (claims the new seat), `actions.rematch`, `followRematch` (App: takes the
+  sent seat with `resumeSeat`, then goes to `/room/<id>`), and a host-only "Rematch" on the final
+  scoreboard (Play again becomes the outlined button beside it). Harness: `MATCH_OVER=1`. Mutation-tested: 9/9 server mutants killed.
+
 ## Known wrinkles and open questions
 
 ### Settled rules decisions (2026-08-04) — don't relitigate these

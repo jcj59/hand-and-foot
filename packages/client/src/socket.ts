@@ -148,6 +148,10 @@ export function playAgain(socket: HfClientSocket): Promise<Ack<SeatCredentials>>
   return ask((ack) => socket.emit("playAgain", ack));
 }
 
+export function rematch(socket: HfClientSocket): Promise<Ack<SeatCredentials>> {
+  return ask((ack) => socket.emit("rematch", ack));
+}
+
 export function readyForNextRound(socket: HfClientSocket): Promise<Ack<boolean>> {
   return ask((ack) => socket.emit("nextRound", ack));
 }

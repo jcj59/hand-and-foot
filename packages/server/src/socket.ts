@@ -21,7 +21,7 @@ import {
   type Ack,
   type ClientFrame,
 } from "@hf/shared";
-import { nextTableFor, openTable, sitAt } from "./lobby";
+import { nextTableFor, openTable, rematchFor, sitAt } from "./lobby";
 import { InMemoryUserStore, registerUser, verifyUser, type UserStore } from "./users";
 import { InMemoryMatchStore, matchHistory, matchReplay, type MatchStore } from "./matches";
 import type { RoomManager } from "./manager";
@@ -76,6 +76,7 @@ export function attachTables(
     if (existing?.room === room) return existing;
     const channel = new TableChannel(room, {
       nextTable: async (from, player) => nextTableFor(manager, from, player),
+      rematch: async (from, players) => rematchFor(manager, from, players),
     });
     channels.set(room.id, channel);
     return channel;

@@ -482,6 +482,7 @@ describe("listener lifecycle", () => {
         "connect",
         "disconnect",
         "room",
+        "rematch",
         "roundEnded",
         "reaction",
         "seat",

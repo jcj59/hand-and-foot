@@ -730,6 +730,26 @@ export class Room {
     return left;
   }
 
+  /**
+   * Who a rematch brings to the next table, in their seats' order: everyone still in
+   * the match who has not already gone on, computer players included. The host's to
+   * ask for, once the match is over, and only while nobody has opened the next
+   * game's table yet — after that, players join it one by one with play again.
+   */
+  rematchPlayers(bySeat: number): RoomResult<readonly RoomPlayer[]> {
+    const state = this.state;
+    if (!state || !isMatchOver(state)) return fail("the match is not over yet");
+    if (bySeat !== this.hostSeat) return fail("only the host can start a rematch");
+    if (this.next !== null) {
+      return fail("someone has already gone on to a new game; play again to join them");
+    }
+    const coming = this.players.filter(
+      (p) => isSeated(state, p.seat) && !this.wentOn.has(p.token) && !(p.left && !p.bot),
+    );
+    if (coming.length < MIN_PLAYERS) return fail(`a game needs at least ${MIN_PLAYERS} players`);
+    return succeed(coming);
+  }
+
   /** Whether this player has already left for the next game's table. */
   hasGoneOn(token: string): boolean {
     return this.wentOn.has(token);

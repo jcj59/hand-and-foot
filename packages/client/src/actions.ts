@@ -351,6 +351,49 @@ export async function playAgain(
   return result.data.roomId;
 }
 
+/**
+ * Deal the same table again, as the host: everyone moves to the new table, dealt
+ * at once. The ack is the host's own seat there; the others are sent theirs.
+ */
+export async function rematch(
+  socket: HfClientSocket,
+  sink: ActionSink & { leave(): void },
+): Promise<string | null> {
+  const result = await wire.rematch(socket);
+  if (!result.ok) {
+    sink.setNotice(result.error);
+    return null;
+  }
+  sink.leave();
+  sink.seat(result.data);
+  return result.data.roomId;
+}
+
+/**
+ * Go along with a rematch the host dealt: take the seat the server sent, at the
+ * new table, as a reclaim does. Returns the teardown.
+ */
+export function followRematch(
+  socket: HfClientSocket,
+  sink: ActionSink & { leave(): void; go(roomId: string): void },
+): () => void {
+  const onRematch = (seat: SeatCredentials): void => {
+    void wire.resumeSeat(socket, seat).then((result) => {
+      if (!result.ok) {
+        sink.setNotice(result.error);
+        return;
+      }
+      sink.leave();
+      sink.seat(result.data);
+      sink.go(result.data.roomId);
+    });
+  };
+  socket.on("rematch", onRematch);
+  return () => {
+    socket.off("rematch", onRematch);
+  };
+}
+
 /** Sit a computer player at the table. Only the host's client offers this. A refusal is a notice. */
 export async function addComputerPlayer(
   socket: HfClientSocket,
