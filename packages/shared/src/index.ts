@@ -335,6 +335,8 @@ export interface ScoreBreakdown {
   readonly heldCount: number;
   /** Their face value, as a negative number. */
   readonly heldPenalty: number;
+  /** Red threes among them: the penalty card a player was caught holding. */
+  readonly redThreesHeld: number;
 }
 
 /**
@@ -396,3 +398,4 @@ export * from "./rules";
 export * from "./protocol";
 export * from "./wire";
 export * from "./matches";
+export * from "./awards";

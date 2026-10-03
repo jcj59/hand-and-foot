@@ -18,6 +18,7 @@ import type {
   RoomOptions,
   RoundScore,
   RulesConfig,
+  SeatTally,
   UserCredentials,
 } from "./index";
 import type { Avatar } from "./avatar";
@@ -178,6 +179,11 @@ export interface RoundEnded {
    * them as gone, and does not count them for the win. Absent when nobody has left.
    */
   readonly departed?: readonly Departure[];
+  /**
+   * What each seat did over the whole match, for the awards — sent with the last
+   * round's result only. Worked out from the log, as a player's stats are.
+   */
+  readonly tallies?: readonly SeatTally[];
 }
 
 /**

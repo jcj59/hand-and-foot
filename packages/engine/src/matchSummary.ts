@@ -1,6 +1,6 @@
-import type { Action, MatchSummary, RulesConfig, SeatTally } from "@hf/shared";
+import type { Action, MatchSummary, RoundScore, RulesConfig, SeatTally } from "@hf/shared";
 import { matchTotals, isMatchOver } from "./nextRound";
-import { buildTimeline } from "./playback";
+import { buildTimeline, type Timeline } from "./playback";
 import { scoreRound } from "./scoreRound";
 import { isSeated } from "./seats";
 
@@ -38,19 +38,6 @@ export function summarizeMatch(match: PlayedMatch): MatchSummary {
   const best = Math.max(...finishers.map((f) => f.total));
   const winners = finished ? finishers.filter((f) => f.total === best).map((f) => f.seat) : [];
 
-  const tallies: SeatTally[] = end.players.map((_, seat) => {
-    const at = (kind: string): number =>
-      timeline.moments.filter((m) => m.kind === kind && m.seat === seat).length;
-    return {
-      pilesTaken: at("pileTaken"),
-      grabbyPants: at("grabbyPants"),
-      marvaRules: at("marva"),
-      wentOut: at("wentOut"),
-      cleanBooks: rounds.reduce((n, round) => n + round[seat]!.breakdown.cleanBooks, 0),
-      dirtyBooks: rounds.reduce((n, round) => n + round[seat]!.breakdown.dirtyBooks, 0),
-    };
-  });
-
   return {
     roundsPlayed: rounds.length,
     rounds: rounds.map((round) => round.map((r) => r.score)),
@@ -58,6 +45,37 @@ export function summarizeMatch(match: PlayedMatch): MatchSummary {
     finished,
     winners,
     departed: end.departed ?? [],
-    tallies,
+    tallies: seatTallies(timeline, rounds),
   };
+}
+
+/**
+ * What each seat did over a game, for stats and awards: counted from the timeline's
+ * own moments, and from the scores of the rounds played to their end (the whole
+ * game's unless given), so a count can never disagree with what the replay shows.
+ */
+export function seatTallies(
+  timeline: Timeline,
+  rounds: readonly (readonly RoundScore[])[] = finishedRounds(timeline),
+): SeatTally[] {
+  return Array.from({ length: timeline.playerCount }, (_, seat) => {
+    const at = (kind: string): number =>
+      timeline.moments.filter((m) => m.kind === kind && m.seat === seat).length;
+    const sum = (part: "cleanBooks" | "dirtyBooks" | "redThreesHeld"): number =>
+      rounds.reduce((n, round) => n + round[seat]!.breakdown[part], 0);
+    return {
+      pilesTaken: at("pileTaken"),
+      grabbyPants: at("grabbyPants"),
+      marvaRules: at("marva"),
+      wentOut: at("wentOut"),
+      cleanBooks: sum("cleanBooks"),
+      dirtyBooks: sum("dirtyBooks"),
+      redThreesEaten: sum("redThreesHeld"),
+    };
+  });
+}
+
+function finishedRounds(timeline: Timeline): (readonly RoundScore[])[] {
+  const end = timeline.stateAt(timeline.length);
+  return [...(end.pastRounds ?? []), ...(end.roundEnded ? [scoreRound(end)] : [])];
 }

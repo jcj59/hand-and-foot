@@ -8,6 +8,7 @@ import {
   type Rank,
   type Suit,
 } from "@hf/shared";
+import { deal } from "./deal";
 import { scoreRound } from "./scoreRound";
 import { cardValue } from "./scoring";
 
@@ -194,6 +195,7 @@ describe("the score breakdown", () => {
       goOutBonus: scoring.goOutBonus,
       heldCount: 0,
       heldPenalty: 0,
+      redThreesHeld: 0,
     });
     expect(held!.breakdown).toMatchObject({
       cleanBooks: 0,
@@ -209,5 +211,24 @@ describe("the score breakdown", () => {
       const b = row.breakdown;
       expect(row.score).toBe(b.bookBonus + b.meldedCards + b.goOutBonus + b.heldPenalty);
     }
+  });
+});
+
+describe("red threes caught at the end of a round", () => {
+  it("are counted in the breakdown, from the hand and the foot", () => {
+    const red = (id: string) => ({ id, rank: "3" as const, suit: "hearts" as const });
+    const black = { id: "b", rank: "3" as const, suit: "clubs" as const };
+    const state = deal(2, EAST_COAST, 1);
+    const ended = {
+      ...state,
+      roundEnded: true,
+      players: [
+        { ...state.players[0]!, hand: [red("r1"), black], foot: [red("r2")] },
+        { ...state.players[1]!, hand: [], foot: [] },
+      ],
+    };
+    const [a, b] = scoreRound(ended);
+    expect(a!.breakdown.redThreesHeld).toBe(2);
+    expect(b!.breakdown.redThreesHeld).toBe(0);
   });
 });

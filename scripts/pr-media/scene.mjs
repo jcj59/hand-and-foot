@@ -286,6 +286,7 @@ const run = async () => {
             goOutBonus: 0,
             heldCount: 0,
             heldPenalty: 0,
+            redThreesHeld: 0,
           };
           ws.send(
             JSON.stringify({
@@ -307,9 +308,22 @@ const run = async () => {
                     : { seat, score: 900 - seat * 150, breakdown: bd },
                 ),
                 wentOutSeat: 2,
-                roundNumber: 2,
+                roundNumber: process.env.MATCH_OVER ? 4 : 2,
                 totals: names.map((_, seat) => 1500 - seat * 200),
-                matchOver: false,
+                matchOver: !!process.env.MATCH_OVER,
+                ...(process.env.MATCH_OVER
+                  ? {
+                      tallies: names.map((_, seat) => ({
+                        pilesTaken: [6, 2, 9, 1, 3, 0][seat],
+                        grabbyPants: [1, 0, 3, 0, 0, 0][seat],
+                        marvaRules: [0, 1, 0, 0, 0, 0][seat],
+                        wentOut: [2, 1, 1, 0, 0, 0][seat],
+                        cleanBooks: [4, 2, 1, 3, 0, 1][seat],
+                        dirtyBooks: [5, 3, 4, 2, 1, 2][seat],
+                        redThreesEaten: [0, 0, 1, 3, 0, 1][seat],
+                      })),
+                    }
+                  : {}),
                 ...(departed ? { departed } : {}),
               },
             }),
@@ -370,6 +384,7 @@ const run = async () => {
             goOutBonus: 0,
             heldCount: 0,
             heldPenalty: 0,
+            redThreesHeld: 0,
           };
           ws.send(
             JSON.stringify({

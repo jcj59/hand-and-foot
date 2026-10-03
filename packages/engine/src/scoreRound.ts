@@ -1,4 +1,5 @@
 import type { GameState, RoundScore } from "@hf/shared";
+import { isRedThree } from "@hf/shared";
 import { cardValue, classifyBook } from "./scoring";
 
 // Defined in the shared package so the client can render a scoreboard without
@@ -38,6 +39,7 @@ export function scoreRound(state: GameState): readonly RoundScore[] {
       goOutBonus: seat === state.wentOutSeat ? s.goOutBonus : 0,
       heldCount: held.length,
       heldPenalty,
+      redThreesHeld: held.filter(isRedThree).length,
     };
     const score =
       breakdown.bookBonus + breakdown.meldedCards + breakdown.goOutBonus + breakdown.heldPenalty;

@@ -29,7 +29,7 @@ an animation) in its description, under `## Screenshots`.
    `BLACK_BOOK=1` puts the viewer in their foot beside a book of black threes, holding a red
    three and a black one. `PAUSED=1` has Ana pause the table, `SAVED=1` has her save it for later
    (three players back; the viewer hosts unless `SAVED_GUEST=1`), and `ROUND_OVER=1` opens the
-   scoreboard between rounds; with `LEFT=1`, Ana has left the match after round 1 (and Dee,
+   scoreboard between rounds (with `MATCH_OVER=1`, the final one, with awards); with `LEFT=1`, Ana has left the match after round 1 (and Dee,
    seat 4, is not at the table, so the host is offered to carry on without her). `BOTS=1` makes Ben and Dee
    computer players ("Robo Rita", "Robo Ray"); `LOBBY=1` renders the waiting room instead of the
    table. Action `home` renders the home screen

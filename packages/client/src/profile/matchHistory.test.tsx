@@ -45,6 +45,8 @@ const stats: History["stats"] = {
   wentOut: 5,
   cleanBooks: 9,
   dirtyBooks: 11,
+  pilesTaken: 30,
+  redThreesEaten: 2,
 };
 
 /** A server answering the history request, recording what it was asked. */
