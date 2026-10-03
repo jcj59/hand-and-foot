@@ -140,7 +140,7 @@ function LessonTable({ lesson }: { readonly lesson: Lesson }): React.ReactElemen
       />
       <aside
         aria-label="Coach"
-        className="fixed right-4 bottom-4 z-30 flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-2 rounded-lg border border-sky-300/60 bg-felt-900/95 p-4 shadow-2xl"
+        className="fixed top-[calc(env(safe-area-inset-top)+3.5rem)] right-4 z-30 flex w-[min(24rem,calc(100vw-2rem))] max-md:left-4 max-md:w-auto flex-col gap-2 rounded-lg border border-sky-300/60 bg-felt-900/95 p-4 shadow-2xl"
       >
         {run.step === 0 && run.seq === 0 && <p className="text-sm text-white/80">{lesson.intro}</p>}
         {over ? (
