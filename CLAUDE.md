@@ -893,6 +893,21 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   the lobby, which also shows the watch link (`watchLink`). Harness: `WATCHING=1`. Mutation-tested: 9/9 killed
   (engine, server, Worker).
 
+- **Tutorial and demo game (roadmap item 9b).** `@hf/scenarios/tutorial.ts`: `LESSONS` (turn,
+  getting-down, melds, pile, wilds, threes, foot, going-out), each `{table: TableSpec, steps:
+  [{ask, done(before, action, after), hint}], intro, outro}`, `lessonStart`, `LEARNER` (0),
+  `TUTOR_NAMES`; `tutorial.test.ts` plays each through by a solution, the heuristic taking the
+  opponent's turns, and checks wrong moves do not count. Client `learn/`: `lessonRun.ts` (pure:
+  `learnerMove` plays a move only if the engine accepts it **and** the step's `done` holds, else
+  feedback; `computerMove`; `updateFor` = the learner's `project` view, room with pausing off),
+  `progress.ts` (`hf.tutorial`, per device), `narrate.ts` (the demo's words), `Learn.tsx`
+  (`/learn`, `/learn/:id` with a Coach panel and the computer moving every `TUTOR_MOVE_MS` 900,
+  `/learn/demo` in `Player` with its new optional `narrate` prop). Home links "Learn to play".
+  Gotcha found writing the tests: build the `ViewUpdate` once per position (`useMemo`) — a fresh
+  object every render resets the table's chosen card, so its menu never opens; and a test must let
+  the table's play promise settle (`await act(async () => {})`) before the next click, or the
+  table is still busy.
+
 ## Known wrinkles and open questions
 
 ### Settled rules decisions (2026-08-04) — don't relitigate these
