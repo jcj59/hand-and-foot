@@ -129,18 +129,22 @@ function LessonTable({ lesson }: { readonly lesson: Lesson }): React.ReactElemen
   const update = useMemo(() => updateFor(lesson, run), [lesson, run]);
   return (
     <div className="relative flex h-full flex-col">
-      <TableView
-        update={update}
-        room={update.room}
-        result={null}
-        notice={null}
-        controls={controls}
-        onMainMenu={() => navigate("/learn")}
-        heading={`Lesson ${index + 1}: ${lesson.title}`}
-      />
+      <div className="min-h-0 flex-1">
+        <TableView
+          update={update}
+          room={update.room}
+          result={null}
+          notice={null}
+          controls={controls}
+          onMainMenu={() => navigate("/learn")}
+          heading={`Lesson ${index + 1}: ${lesson.title}`}
+        />
+      </div>
       <aside
         aria-label="Coach"
-        className="fixed top-[calc(env(safe-area-inset-top)+3.5rem)] right-4 z-30 flex w-[min(24rem,calc(100vw-2rem))] max-md:left-4 max-md:w-auto flex-col gap-2 rounded-lg border border-sky-300/60 bg-felt-900/95 p-4 shadow-2xl"
+        // Over empty table space on a computer; on a phone, where the table has none
+        // to spare, in its own space above the table, covering nothing.
+        className="fixed top-[calc(env(safe-area-inset-top)+3.5rem)] right-4 z-30 flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-2 rounded-lg border border-sky-300/60 bg-felt-900/95 p-4 shadow-2xl max-md:static max-md:order-first max-md:m-2 max-md:w-auto max-md:p-3 max-md:shadow-none"
       >
         {run.step === 0 && run.seq === 0 && <p className="text-sm text-white/80">{lesson.intro}</p>}
         {over ? (
