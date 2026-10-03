@@ -240,7 +240,14 @@ const run = async () => {
         const now = Date.now();
         ws.send(JSON.stringify({ event: "room", payload: room }));
         const mine = mode !== "theirs" && mode !== "oppdraw" && mode !== "grabby";
-        const v = mine ? view : { ...view, currentSeat: 1, phase: "draw", playedThisTurn: [] };
+        const pileWhy = process.env.PILE_WHY
+          ? "with the pile your best lay-down is worth 45, short of the 90 you need to get down"
+          : null;
+        const v = !mine
+          ? { ...view, currentSeat: 1, phase: "draw", playedThisTurn: [] }
+          : pileWhy
+            ? { ...view, phase: "draw", playedThisTurn: [] }
+            : view;
         const base = {
           view: v,
           room,
@@ -255,6 +262,7 @@ const run = async () => {
             canTakePile: false,
             meldableRanks: ["K", "9", "Q", "5"],
             canGoOut: false,
+            ...(pileWhy ? { phase: "draw", canDraw: true, takePileWhy: pileWhy } : {}),
           },
         };
         ws.send(
@@ -480,6 +488,7 @@ const run = async () => {
   await page.waitForTimeout(800);
   if (action === "collapse") await page.getByRole("button", { name: "Collapse players" }).click();
   if (action === "picker") await page.getByRole("button", { name: "React" }).click();
+  if (action === "suggest") await page.getByRole("button", { name: "Suggest a move" }).click();
   if (action === "chip") await page.getByRole("button", { name: /^Cyrus/ }).click();
   if (action === "card")
     await page.getByRole("button", { name: /Ten of hearts/i }).click({ position: { x: 8, y: 30 } });

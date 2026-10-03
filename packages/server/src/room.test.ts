@@ -376,6 +376,33 @@ describe("projection and results", () => {
     }
   });
 
+  it("tells only the seat on turn why it cannot take the pile", () => {
+    // About the player's own cards and the face-up pile: told to them, and not to
+    // anyone else, whose own hints say nothing about another seat's hand.
+    const room = newRoom();
+    seated(room, ["ana", "ben"]);
+    room.start(0);
+    // Play on until a turn opens where the seat on turn cannot take the pile.
+    for (
+      let guard = 0;
+      legalHints(room.gameState!, room.gameState!.currentSeat).canTakePile;
+      guard++
+    ) {
+      expect(guard).toBeLessThan(50);
+      const seat = room.gameState!.currentSeat;
+      room.submitAction(seat, { type: "draw" });
+      room.submitAction(seat, {
+        type: "discard",
+        cardId: room.gameState!.players[seat]!.hand[0]!.id,
+      });
+    }
+    const state = room.gameState!;
+    const onTurn = state.currentSeat;
+    expect(room.viewFor(onTurn)!.hints.takePileWhy).toBe(legalHints(state, onTurn).takePileWhy);
+    expect(room.viewFor(onTurn)!.hints.takePileWhy).toMatch(/^(none of the pile|with the pile)/);
+    expect("takePileWhy" in room.viewFor(1 - onTurn)!.hints).toBe(false);
+  });
+
   it("moves the hints along with the turn", () => {
     // Pinned because a stale hint is worse than no hint: a client that still
     // believes it may draw will offer an action the reducer now refuses.

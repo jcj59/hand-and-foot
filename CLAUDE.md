@@ -834,6 +834,18 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   check still refuses, since no store finds a non-string id; it is kept so a malformed id never
   reaches a SQL query.
 
+- **In-game hints (roadmap item 9a).** Engine: `canTakePile` returns `why` (`empty` /
+  `unplayable` / `short {value, minimum}`) and `takePileWhy(state, seat)` words it, null unless it
+  is that seat's draw phase and the pile cannot be taken; `legalHints` adds
+  `LegalHints.takePileWhy` (optional, protocol) only then — so it reaches only the seat on turn
+  (pinned in `feasibility.test.ts` and `room.test.ts`). Client: `table/hints.ts` (`hf.hints`,
+  `readHints(mode)` defaults on for family, off for competitive; `suggestionFor(view, config)` runs
+  `heuristicAction` on the client from the seat's own view and words it, `shortCard`), a "Hints"
+  toggle in the table header (only with controls), "Suggest a move" on the player's turn, the
+  suggestion's cards ringed amber in `Hand` (`hintIds`, `aria-description="suggested"`), cleared on
+  every new view, and "You can't take the pile: …" in the draw phase. Harness: action `suggest`,
+  `PILE_WHY=1`. Mutation-tested: 11/11 killed.
+
 ## Known wrinkles and open questions
 
 ### Settled rules decisions (2026-08-04) — don't relitigate these
