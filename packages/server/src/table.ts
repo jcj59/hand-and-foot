@@ -316,9 +316,13 @@ export class TableChannel {
         const token = this.sessions.get(connection);
         if (token === undefined || seated === null) return reply({ ok: false, error: NOT_SEATED });
         if (this.rematching) {
+          if (seated !== this.room.hostSeat) {
+            return reply({ ok: false, error: "only the host can start a rematch" });
+          }
           const first = await this.rematching;
           if (!first.ok) return reply({ ok: false, error: first.error });
-          return reply({ ok: true, data: first.value.get(token)! });
+          const there = first.value.get(token);
+          return reply(there ? { ok: true, data: there } : { ok: false, error: NOT_SEATED });
         }
         const coming = this.room.rematchPlayers(seated);
         if (!coming.ok) return reply({ ok: false, error: coming.error });
