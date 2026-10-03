@@ -846,6 +846,13 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   every new view, and "You can't take the pile: …" in the draw phase. Harness: action `suggest`,
   `PILE_WHY=1`. Mutation-tested: 11/11 killed.
 
+- **Rules page (roadmap item 8).** `rules/howToPlay.ts` (`howToPlay(config)` → sections of
+  paragraphs, every number from the config: deal, decks, minimums per round, wild ratio, Marva,
+  going-out books, scoring; pinned in `howToPlay.test.tsx`), `rules/HowToPlay.tsx` (`RulesText`,
+  `HowToPlayPage` at `/rules` with a preset picker, linked from Home; `RulesDialog` from the table
+  header's "Rules" / "?" button, aria-label "How to play", for the table's own config). Harness
+  action `rules`.
+
 ## Known wrinkles and open questions
 
 ### Settled rules decisions (2026-08-04) — don't relitigate these

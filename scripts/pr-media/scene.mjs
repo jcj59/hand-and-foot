@@ -489,6 +489,7 @@ const run = async () => {
   if (action === "collapse") await page.getByRole("button", { name: "Collapse players" }).click();
   if (action === "picker") await page.getByRole("button", { name: "React" }).click();
   if (action === "suggest") await page.getByRole("button", { name: "Suggest a move" }).click();
+  if (action === "rules") await page.getByRole("button", { name: "How to play" }).click();
   if (action === "chip") await page.getByRole("button", { name: /^Cyrus/ }).click();
   if (action === "card")
     await page.getByRole("button", { name: /Ten of hearts/i }).click({ position: { x: 8, y: 30 } });

@@ -62,6 +62,7 @@ import { useTableSounds } from "./sounds";
 import { useTurnAttention } from "./turnAttention";
 import { readHints, suggestionFor, writeHints, type Suggestion } from "./hints";
 import { PauseBar } from "./PauseBar";
+import { RulesDialog } from "../rules/HowToPlay";
 import { OpponentStrip } from "./OpponentStrip";
 import { Seats } from "./Seats";
 import { RoundResult } from "./RoundResult";
@@ -195,6 +196,7 @@ export function TableView({
   const [suggestion, setSuggestion] = useState<Suggestion | null>(null);
   // A suggestion is for the position it was asked about: any change and it is gone.
   useEffect(() => setSuggestion(null), [update.view]);
+  const [rulesOpen, setRulesOpen] = useState(false);
 
   // One card sound for every move, a chime when it is this player's turn, and
   // a phrase when a round or the match ends.
@@ -595,6 +597,15 @@ export function TableView({
               Hints
             </button>
           )}
+          {/* This table's own rules, over the table: the clock keeps running. */}
+          <button
+            type="button"
+            onClick={() => setRulesOpen(true)}
+            aria-label="How to play"
+            className="rounded border border-white/25 px-2 py-1 text-sm"
+          >
+            {phone ? "?" : "Rules"}
+          </button>
           {/* Away from the table without giving up the seat: the main screen offers
               the way back. The clock keeps running meanwhile. */}
           <button
@@ -940,6 +951,7 @@ export function TableView({
         </div>
       </footer>
 
+      {rulesOpen && <RulesDialog config={room.config} onClose={() => setRulesOpen(false)} />}
       {grabbyHeadline && <GrabbyAnnouncement headline={grabbyHeadline} />}
       {marva && <MarvaCelebration news={marva} />}
 

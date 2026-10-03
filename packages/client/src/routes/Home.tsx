@@ -305,6 +305,14 @@ export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React
 
       <IdentityPanel post={post} />
 
+      <button
+        type="button"
+        onClick={() => navigate("/rules")}
+        className="self-center text-sm text-sky-200 underline"
+      >
+        How to play
+      </button>
+
       {SCENARIOS_LINK && (
         // A full page load, not a route change: the viewer is mounted in place of
         // the app (see main.tsx), and only in builds that carry it.
