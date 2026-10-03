@@ -346,7 +346,7 @@ DESIGN.md, "A heuristic opponent".*
   "a table of defaults never ends a round" problem — but that changes table-lifetime behaviour
   documented in `DESIGN.md`, so make it a deliberate, documented choice.
 
-### 8. Rules page
+### ~~8. Rules page~~
 
 A readable "How to play" page reachable from the home screen and from the table (a modal there): the
 objective, the deal, a turn, melds and books (clean/dirty), wilds and the wild ratio, red and black

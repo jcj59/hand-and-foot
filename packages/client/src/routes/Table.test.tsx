@@ -3350,3 +3350,21 @@ describe("hints at the table", () => {
     expect(screen.queryByRole("button", { name: "Suggest a move" })).toBeNull();
   });
 });
+
+describe("the rules at the table", () => {
+  it("open over the table, for the table's own rules", () => {
+    mount(
+      fakeSocket().socket,
+      update({
+        room: roomInfo({ config: { ...EAST_COAST, layDownMinimums: [70, 90, 120, 150] } }),
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "How to play" }));
+    const dialog = screen.getByRole("dialog", { name: "How to play" });
+    expect(within(dialog).getByRole("region", { name: "Getting down" })).toHaveTextContent(
+      "70 in round 1",
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog", { name: "How to play" })).toBeNull();
+  });
+});

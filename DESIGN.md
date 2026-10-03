@@ -747,6 +747,15 @@ table changes, since it is advice about one position.
 Hints are a per-device choice, on by default at a family table and off at a competitive one, where
 being shown a good move is not the game the table chose to play; a player can still turn them on.
 
+### How to play, for this table
+
+The rules page is written from a table's own rules rather than as a general description of the
+game: every number a player could get wrong — the hand and foot sizes, the decks, each round's
+minimum, the wild ratio, the books going out takes, each card's value — is read from the config,
+and the Marva rule is said to be on or off. So the page opened from a table describes that table,
+custom rules and all, and the one on the home screen describes either preset. It is a pure function
+of the config, so the words are pinned by tests rather than drifting from the rules they describe.
+
 ### Calling a player back to the table
 
 A family game is mostly waiting. Between turns a player reads something else in another tab, and

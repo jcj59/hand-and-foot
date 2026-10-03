@@ -15,7 +15,8 @@ an animation) in its description, under `## Screenshots`.
    ```
 
    Arguments: `<out.png> <width> <height> <action> <mode>`. Actions include `picker`, which opens
-   the reaction picker, and `suggest`, which asks the table's hints for a move; `PILE_WHY=1` puts the viewer in their draw
+   the reaction picker, `suggest`, which asks the table's hints for a move, and `rules`, which opens the
+   table's How to play dialog; `PILE_WHY=1` puts the viewer in their draw
    phase with the pile not takeable, so the hint says why. Modes stage a state
    (`mine`, `theirs`) or a change to capture mid-animation (`draw`, `discard`,
    `oppdraw`, `grabby`, `react` — quick reactions arriving from two opponents and
