@@ -53,6 +53,8 @@ export interface PlayerProps {
   /** Called as the position changes, so a caller can keep a link to it. */
   readonly onPositionChange?: (position: PlayerPosition) => void;
   readonly onMainMenu: () => void;
+  /** Words for what led to each step, shown under the position — the demo game's narration. */
+  readonly narrate?: (step: number) => string;
 }
 
 export function Player({
@@ -66,6 +68,7 @@ export function Player({
   onEnd,
   onPositionChange,
   onMainMenu,
+  narrate,
 }: PlayerProps): React.ReactElement {
   const [pb, dispatch] = useReducer(playbackReducer, undefined, () =>
     initialPlayback(timeline.length, {
@@ -326,6 +329,11 @@ export function Player({
             </span>
           )}
         </p>
+        {narrate && (
+          <p aria-label="Narration" aria-live="polite" className="text-sm text-sky-100">
+            {narrate(pb.step)}
+          </p>
+        )}
       </section>
 
       {revealAll && <EveryHand timeline={timeline} step={pb.step} />}

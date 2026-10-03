@@ -756,6 +756,28 @@ and the Marva rule is said to be on or off. So the page opened from a table desc
 custom rules and all, and the one on the home screen describes either preset. It is a pure function
 of the config, so the words are pinned by tests rather than drifting from the rules they describe.
 
+### Learning to play
+
+The tutorial is eight short lessons, one idea each — a turn, getting down, adding to melds, taking
+the pile, wilds, threes, the foot, going out — played at the real table against a computer player,
+from a local engine with no server. Each lesson is an arranged position from the scenario library
+and a few steps. A step asks for one move and is satisfied by what the move does — the position it
+produces — rather than by particular cards, so any move that does what was asked counts. A move that
+does something else is not played: the coach says why and asks again, because the point of a lesson
+is the move it teaches, and letting a learner wander off it would leave them in a position the
+lesson was not written for. The computer player takes its turns between, by the heuristic, at a
+person's pace. Every lesson is played through by its own solution in continuous integration, so a
+rules change that breaks one fails the build by name.
+
+Progress is kept per device rather than per identity, as the chosen picture is, and for the same
+reason: keeping it on the identity needs the identity to carry more than a name and to travel with
+a transfer code, which waits for accounts.
+
+The demo game is a round of computer players in the replay player, with each move put into words
+beneath the position: what it did, and, where the table can tell, why — that nothing in the pile
+could be melded, what a lay-down was worth against the minimum, that a red three can never be
+melded. The narration is an optional part of the shared player rather than a copy of it.
+
 ### Calling a player back to the table
 
 A family game is mostly waiting. Between turns a player reads something else in another tab, and
