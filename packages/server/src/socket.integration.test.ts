@@ -1526,3 +1526,86 @@ describe("computer players over the wire", () => {
     expect(room.log.entries().at(-1)!.source).toBe("bot");
   });
 });
+
+describe("watching a table over the wire", () => {
+  function watch(socket: Client, roomId: string): Promise<Ack<RoomInfo>> {
+    return new Promise((resolve) => socket.emit("watchRoom", { roomId }, resolve));
+  }
+
+  it("sends a watcher the table with every hand hidden, all game long, and lets it do nothing", async () => {
+    const { server, port, host, guest, roomId } = await seatTwo();
+    const watcher = await connect(port);
+    const seen: ViewUpdate[] = [];
+    watcher.on("view", (u) => seen.push(u));
+    const told = waitForRoom(host, (info) => info.watching === 1);
+    const watched = await watch(watcher, roomId);
+    expect(watched.ok && watched.data.roomId).toBe(roomId);
+    expect((await told).watching).toBe(1);
+
+    const first = waitFor(watcher, "view", () => true);
+    await startGame(host);
+    expect((await first).view.seat).toBe(-1);
+    const room = server.manager.get(roomId)!;
+    // Play a stretch of real moves; the watcher is sent a view after each.
+    // Moves made on the room itself are announced through its change hook, as
+    // the server's own moves are.
+    for (let i = 0; i < 30 && !room.gameState!.roundEnded; i++) {
+      const state = room.gameState!;
+      room.submitAction(state.currentSeat, defaultAction(state)!);
+      room.onChange?.();
+    }
+    const last = waitFor(watcher, "view", () => true);
+    const state = room.gameState!;
+    room.submitAction(state.currentSeat, defaultAction(state)!);
+    room.onChange?.();
+    await last;
+    const hidden = new Set(
+      room.gameState!.players.flatMap((p) => [...p.hand, ...p.foot]).map((c) => c.id),
+    );
+    for (const u of seen) {
+      expect(u.view.hand).toEqual([]);
+      expect(u.view.foot).toBeNull();
+      expect(u.lastMove?.card === undefined || u.lastMove.kind === "discard").toBe(true);
+    }
+    const sent = JSON.stringify(seen.at(-1));
+    for (const id of hidden) expect(sent).not.toContain(`"${id}"`);
+
+    // It can only watch.
+    expect(await submit(watcher, { type: "draw" })).toEqual({
+      ok: false,
+      error: "you are not seated in a room",
+    });
+    // And hears the table's reactions.
+    const heard = waitFor(watcher, "reaction", () => true);
+    await new Promise((resolve) => guest.emit("react", { id: "nice" }, resolve));
+    expect((await heard).id).toBe("nice");
+  });
+
+  it("is refused at a code with no table, and to a player already seated there", async () => {
+    const { port, host, roomId } = await seatTwo();
+    const watcher = await connect(port);
+    expect(await watch(watcher, "ZZZZZZ")).toEqual({ ok: false, error: "no room with that code" });
+    expect(await watch(host, roomId)).toEqual({ ok: false, error: "you are seated at this table" });
+  });
+
+  it("stops watching once the watcher sits down at the table", async () => {
+    const { port, host, roomId } = await seatTwo();
+    const watcher = await connect(port);
+    await watch(watcher, roomId);
+    const sat = waitForRoom(
+      host,
+      (info) => info.players.length === 3 && info.watching === undefined,
+    );
+    expect((await joinRoom(watcher, roomId, "cy")).ok).toBe(true);
+    await sat;
+  });
+
+  it("stops counting a watcher who goes", async () => {
+    const { port, host, roomId } = await seatTwo();
+    const watcher = await connect(port);
+    await watch(watcher, roomId);
+    const gone = waitForRoom(host, (info) => info.watching === undefined);
+    watcher.disconnect();
+    expect((await gone).watching).toBeUndefined();
+  });
+});

@@ -18,7 +18,7 @@ import {
   removeComputerPlayer,
   startTable,
 } from "../actions";
-import { roomLink } from "../roomCode";
+import { roomLink, watchLink } from "../roomCode";
 import { RulesSummary } from "../rules/RulesSummary";
 import { useSession } from "../session";
 import type { HfClientSocket } from "../socket";
@@ -94,6 +94,19 @@ export function Lobby({ socket }: LobbyProps): React.ReactElement {
             {copied ? "Copied" : "Copy"}
           </button>
         </div>
+        <label className="flex flex-col gap-1 text-xs text-white/60">
+          To watch without playing — every hand stays hidden:
+          <input
+            readOnly
+            aria-label="Link to watch the table"
+            value={watchLink(room.roomId, window.location.origin)}
+            onFocus={(e) => e.target.select()}
+            className="rounded border border-white/15 bg-black/20 px-3 py-1.5 text-xs text-white/60"
+          />
+        </label>
+        {room.watching !== undefined && (
+          <p className="text-xs text-white/50">{room.watching} watching</p>
+        )}
       </section>
 
       <section className="flex flex-col gap-2">

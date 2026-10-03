@@ -115,6 +115,8 @@ export interface RoomInfo {
   readonly playAgain: readonly number[];
   /** Seats that are ready for the next round of the match, once a round has ended. */
   readonly nextRoundReady: readonly number[];
+  /** How many people are watching the table without a seat; absent when nobody is. */
+  readonly watching?: number;
 }
 
 /**
@@ -245,6 +247,12 @@ export interface ClientToServerEvents {
    */
   leaveRoom: (ack: (result: Ack) => void) => void;
   startGame: (ack: (result: Ack) => void) => void;
+  /**
+   * Watch a table without a seat: from then on this socket is sent what a spectator
+   * may see — the room, the table with every hand hidden, the results — and can do
+   * nothing at it. The ack is the room as it stands.
+   */
+  watchRoom: (payload: { readonly roomId: string }, ack: (result: Ack<RoomInfo>) => void) => void;
   /** Hand hosting to the player in `seat`. Only the host may, and only before the deal. */
   setHost: (payload: { readonly seat: number }, ack: (result: Ack) => void) => void;
   /**
