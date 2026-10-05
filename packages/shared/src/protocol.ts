@@ -278,6 +278,13 @@ export interface ClientToServerEvents {
    */
   nextRound: (ack: (result: Ack<boolean>) => void) => void;
   /**
+   * Once the match is over, the host deals the same table again: everyone still at
+   * it, computer players included, in the same seats' order, with the same rules,
+   * at a new table dealt at once. The ack carries the host's seat there; every
+   * other player is sent theirs as `rematch`.
+   */
+  rematch: (ack: (result: Ack<SeatCredentials>) => void) => void;
+  /**
    * The lay-down this seat is building but has not played, sent as it changes.
    *
    * Only so the server can play it for them if the turn clock runs out first: the
@@ -381,6 +388,8 @@ export interface ServerToClientEvents {
    */
   seat: (seat: number) => void;
   roundEnded: (result: RoundEnded) => void;
+  /** Per-socket: the host dealt a rematch, and this is this player's seat at it. */
+  rematch: (seat: SeatCredentials) => void;
   /** Broadcast: a player's quick reaction, to show by their seat for a moment. */
   reaction: (reaction: Reaction) => void;
   /** Broadcast: the table has been closed, and why. Nothing more will come. */

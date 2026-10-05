@@ -34,6 +34,11 @@ export interface RoundResultActions {
   readonly onLeave: () => void;
   /** Go to the next game's waiting room. Offered once the match is over. */
   readonly onPlayAgain: () => void;
+  /**
+   * Deal the same table again, everyone moving at once. Offered to the host once
+   * the match is over, until someone has gone on to a new game.
+   */
+  readonly onRematch: () => void;
   /** Say ready for the next round of the match. Offered until the last round. */
   readonly onNextRound: () => void;
   /**
@@ -106,14 +111,29 @@ export function RoundResult({
       ? `${nameOf(result.wentOutSeat)} went out!`
       : "The stock ran out.";
   const iAmReady = room.nextRoundReady.includes(mySeat);
+  // The host can deal the same table again, until someone has gone on to a new game.
+  const canRematch = result.matchOver && mySeat === room.hostSeat && room.playAgain.length === 0;
   // What to do next stays on screen whether or not the scores are.
   const choices = actions && (
     <>
+      {canRematch && (
+        <button
+          type="button"
+          onClick={actions.onRematch}
+          className="rounded bg-amber-300 px-3 py-1.5 text-sm font-medium text-black"
+        >
+          Rematch
+        </button>
+      )}
       {result.matchOver ? (
         <button
           type="button"
           onClick={actions.onPlayAgain}
-          className="rounded bg-amber-300 px-3 py-1.5 text-sm font-medium text-black"
+          className={
+            canRematch
+              ? "rounded border border-amber-200/60 px-3 py-1.5 text-sm text-amber-100"
+              : "rounded bg-amber-300 px-3 py-1.5 text-sm font-medium text-black"
+          }
         >
           Play again
         </button>

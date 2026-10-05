@@ -1526,3 +1526,49 @@ describe("computer players over the wire", () => {
     expect(room.log.entries().at(-1)!.source).toBe("bot");
   });
 });
+
+describe("a rematch over the wire", () => {
+  function rematch(socket: Client): Promise<Ack<SeatCredentials>> {
+    return new Promise((resolve) => socket.emit("rematch", resolve));
+  }
+
+  it("deals the same table again and moves everyone to it, each to their own seat", async () => {
+    const { server, port } = await boot();
+    const [ana, ben] = [await connect(port), await connect(port)];
+    const created = await createRoom(ana, "ana", {
+      rules: { extraDecks: 0, stockExhaustion: "end", rounds: 1, layDownMinimums: [60] },
+    });
+    if (!created.ok) throw new Error(created.error);
+    await joinRoom(ben, created.data.roomId, "ben");
+    await new Promise((resolve) => ana.emit("addBot", resolve));
+    await startGame(ana);
+    const room = server.manager.get(created.data.roomId)!;
+    while (!room.matchOver) {
+      const state = room.gameState!;
+      room.submitAction(state.currentSeat, defaultAction(state)!);
+    }
+
+    expect(await rematch(ben)).toEqual({ ok: false, error: "only the host can start a rematch" });
+    const told = next(ben, "rematch");
+    const mine = await rematch(ana);
+    if (!mine.ok) throw new Error(mine.error);
+    const theirs = await told;
+    expect(theirs.roomId).toBe(mine.data.roomId);
+    expect(theirs.seat).toBe(1);
+    const nextRoom = server.manager.get(mine.data.roomId)!;
+    expect(nextRoom.started).toBe(true);
+    expect(nextRoom.seats().map((p) => p.name)).toEqual(["ana", "ben", "Robo Rita"]);
+
+    // Ben's client takes the seat it was sent, and is dealt in.
+    const dealt = waitFor(ben, "view", (u) => u.room.roomId === mine.data.roomId);
+    expect((await resumeSeat(ben, theirs)).ok).toBe(true);
+    expect((await dealt).view.seat).toBe(1);
+    // Nobody is left speaking for a seat at the finished table.
+    expect(
+      room
+        .seats()
+        .filter((p) => !p.bot)
+        .every((p) => room.hasGoneOn(p.token)),
+    ).toBe(true);
+  });
+});
