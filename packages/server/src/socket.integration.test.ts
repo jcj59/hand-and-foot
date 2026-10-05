@@ -1332,7 +1332,7 @@ describe("identities over HTTP", () => {
     const { port } = await boot();
     expect(await register(port, { ...ana, name: "Ana" })).toEqual({
       ok: true,
-      data: { userId: ana.userId, name: "Ana" },
+      data: { userId: ana.userId, name: "Ana", username: null },
     });
     expect((await register(port, { ...ana, secret: "z".repeat(40) })).ok).toBe(false);
   });
@@ -1366,6 +1366,68 @@ describe("identities over HTTP", () => {
     // And the identity is not a seat: nothing of it reaches the table's broadcast.
     const info = JSON.stringify(server.manager.get(created.data.roomId)!.info());
     expect(info).not.toContain(ana.userId);
+  });
+});
+
+describe("signing in over HTTP", () => {
+  const laptop = { userId: "ana-user-id-0001", secret: "a".repeat(40) };
+
+  async function post(port: number, path: string, body: unknown): Promise<Ack<unknown>> {
+    const response = await fetch(`http://localhost:${port}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return (await response.json()) as Ack<unknown>;
+  }
+
+  it("signs a phone in to the laptop's identity, which it then sits down as, until signed out", async () => {
+    const { server, port } = await boot();
+    await post(port, "/api/users", { ...laptop, name: "Ana" });
+    expect(
+      await post(port, "/api/account/claim", {
+        user: laptop,
+        username: "ana",
+        password: "correct horse",
+      }),
+    ).toEqual({ ok: true, data: { username: "ana" } });
+
+    const signedIn = await post(port, "/api/account/sign-in", {
+      username: "Ana",
+      password: "correct horse",
+    });
+    if (!signedIn.ok) throw new Error(signedIn.error);
+    const phone = signedIn.data as { userId: string; secret: string };
+    expect(phone.userId).toBe(laptop.userId);
+    // Registering as itself tells the phone who it is signed in as.
+    expect(await post(port, "/api/users", phone)).toEqual({
+      ok: true,
+      data: { userId: laptop.userId, name: "Ana", username: "ana" },
+    });
+
+    const host = await connect(port);
+    const created = await new Promise<Ack<SeatCredentials>>((resolve) =>
+      host.emit("createRoom", { name: "Ana", user: phone }, resolve),
+    );
+    if (!created.ok) throw new Error(created.error);
+    expect(server.manager.get(created.data.roomId)!.record().players[0]!.userId).toBe(
+      laptop.userId,
+    );
+
+    // A new password signs the laptop out, and the phone stays.
+    expect(
+      await post(port, "/api/account/password", {
+        user: phone,
+        password: "correct horse",
+        newPassword: "battery staple",
+      }),
+    ).toEqual({ ok: true, data: null });
+    expect((await post(port, "/api/users", laptop)).ok).toBe(false);
+    expect(await post(port, "/api/account/sign-out", { user: phone })).toEqual({
+      ok: true,
+      data: null,
+    });
+    expect((await post(port, "/api/users", phone)).ok).toBe(false);
   });
 });
 

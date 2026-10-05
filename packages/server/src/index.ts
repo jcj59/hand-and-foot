@@ -4,6 +4,7 @@ import { RoomManager } from "./manager";
 import { attachTables, type Tables } from "./socket";
 import type { RoomStore } from "./store";
 import type { UserStore } from "./users";
+import type { LoginStore } from "./accounts";
 import { InMemoryMatchStore, type MatchStore } from "./matches";
 
 export * from "./clock";
@@ -16,6 +17,7 @@ export * from "./socket";
 export * from "./store";
 export * from "./table";
 export * from "./users";
+export * from "./accounts";
 export * from "./matches";
 
 export interface ServerOptions {
@@ -38,6 +40,8 @@ export interface ServerOptions {
   readonly store?: RoomStore;
   /** Where identities are kept; the store's own when it keeps them, else in memory. */
   readonly users?: UserStore;
+  /** Where usernames are kept; the store's own when it keeps them, else in memory. */
+  readonly logins?: LoginStore;
   /** Where finished matches are kept; the store's own when it keeps them, else in memory. */
   readonly matches?: MatchStore;
 }
@@ -76,6 +80,7 @@ export function createServer(options: ServerOptions = {}): HandAndFootServer {
     cors: options.cors,
     heartbeatMs: options.heartbeatMs,
     users: options.users ?? options.store?.users?.(),
+    logins: options.logins ?? options.store?.logins?.(),
     matches,
     now: () => (options.clock ?? systemClock).now(),
   });

@@ -1,34 +1,48 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { IDENTITY_TAKEN, UNKNOWN_IDENTITY, type Ack } from "@hf/shared";
 import {
+  ACCOUNT_KEY,
   IDENTITY_KEY,
   NAME_KEY,
   REGISTER_TIMEOUT_MS,
   adoptTransferCode,
+  changePassword,
+  claimAccount,
   ensureIdentity,
+  loadAccount,
   loadIdentity,
   loadName,
   newIdentity,
   prepareIdentity,
   randomToken,
   rememberName,
+  signIn,
+  signOut,
   type Post,
 } from "./identity";
 
 afterEach(() => {
   window.localStorage.removeItem(IDENTITY_KEY);
   window.localStorage.removeItem(NAME_KEY);
+  window.localStorage.removeItem(ACCOUNT_KEY);
   vi.useRealTimers();
 });
 
-const answering = (...answers: Ack<unknown>[]): Post & { sent: unknown[] } => {
+const answering = (...answers: Ack<unknown>[]): Post & { sent: unknown[]; paths: string[] } => {
   const sent: unknown[] = [];
-  const post = (async (_: string, body: unknown) => {
+  const paths: string[] = [];
+  const post = (async (path: string, body: unknown) => {
     sent.push(body);
+    paths.push(path);
     return answers.shift() ?? { ok: true, data: {} };
-  }) as Post & { sent: unknown[] };
+  }) as Post & { sent: unknown[]; paths: string[] };
   post.sent = sent;
+  post.paths = paths;
   return post;
+};
+
+const offline: Post = async () => {
+  throw new Error("offline");
 };
 
 describe("this browser's identity", () => {
@@ -151,13 +165,121 @@ describe("moving an identity from another device", () => {
         code,
       ),
     ).toEqual({ ok: false, error: "could not check that code; try again" });
-    const offline: Post = async () => {
-      throw new Error("offline");
-    };
     expect(await adoptTransferCode(offline, code)).toEqual({
       ok: false,
       error: "could not reach the server; try again",
     });
     expect(loadIdentity()).toEqual(mine);
+  });
+});
+
+describe("signing in", () => {
+  const phone = { userId: "ana-user-id-0001", secret: "p".repeat(43) };
+
+  it("remembers the username a registration answers with, and forgets it when signed out elsewhere", async () => {
+    await prepareIdentity(answering({ ok: true, data: { username: "ana" } }), "Ana");
+    expect(loadAccount()).toBe("ana");
+    // An older server's answer, with no username in it, says nothing either way.
+    await prepareIdentity(answering({ ok: true, data: {} }), "Ana");
+    expect(loadAccount()).toBeNull();
+    window.localStorage.setItem(ACCOUNT_KEY, "ana");
+    await prepareIdentity(answering({ ok: false, error: IDENTITY_TAKEN }), "Ana");
+    expect(loadAccount()).toBeNull();
+  });
+
+  it("takes on the credentials the server gives this device, and the profile's name", async () => {
+    rememberName("Annie");
+    const post = answering({
+      ok: true,
+      data: { ...phone, username: "Ana", name: "Ana" },
+    });
+    expect((await signIn(post, "ana", "correct horse")).ok).toBe(true);
+    expect(post.paths).toEqual(["/api/account/sign-in"]);
+    expect(post.sent).toEqual([{ username: "ana", password: "correct horse", name: "Annie" }]);
+    expect(loadIdentity()).toEqual(phone);
+    expect(loadAccount()).toBe("Ana");
+    expect(loadName()).toBe("Ana");
+  });
+
+  it("keeps this device's profile when signing in is refused or the server is not there", async () => {
+    const mine = ensureIdentity();
+    expect(await signIn(answering({ ok: false, error: "wrong" }), "ana", "correct horse")).toEqual({
+      ok: false,
+      error: "wrong",
+    });
+    expect(await signIn(offline, "ana", "correct horse")).toEqual({
+      ok: false,
+      error: "could not reach the server; try again",
+    });
+    expect(loadIdentity()).toEqual(mine);
+    expect(loadAccount()).toBeNull();
+  });
+
+  it("gives this device's profile a username once the server knows the profile", async () => {
+    rememberName("Ana");
+    const post = answering({ ok: true, data: {} }, { ok: true, data: { username: "Ana" } });
+    expect(await claimAccount(post, "Ana", "correct horse")).toEqual({ ok: true, data: "Ana" });
+    const mine = loadIdentity();
+    expect(post.paths).toEqual(["/api/users", "/api/account/claim"]);
+    expect(post.sent[1]).toEqual({ user: mine, username: "Ana", password: "correct horse" });
+    expect(loadAccount()).toBe("Ana");
+  });
+
+  it("claims nothing when the profile cannot be registered, or the username is refused", async () => {
+    expect(await claimAccount(offline, "Ana", "correct horse")).toEqual({
+      ok: false,
+      error: "could not reach the server; try again",
+    });
+    const taken = answering({ ok: true, data: {} }, { ok: false, error: "taken" });
+    expect(await claimAccount(taken, "Ana", "correct horse")).toEqual({
+      ok: false,
+      error: "taken",
+    });
+    expect(loadAccount()).toBeNull();
+  });
+
+  it("changes the password as this device", async () => {
+    expect(await changePassword(answering(), "old password", "new password")).toEqual({
+      ok: false,
+      error: "this device is not signed in",
+    });
+    const mine = ensureIdentity();
+    const post = answering({ ok: true, data: null });
+    expect(await changePassword(post, "old password", "new password")).toEqual({
+      ok: true,
+      data: null,
+    });
+    expect(post.paths).toEqual(["/api/account/password"]);
+    expect(post.sent).toEqual([
+      { user: mine, password: "old password", newPassword: "new password" },
+    ]);
+  });
+
+  it("signs out by forgetting the profile here, even when the server cannot be told", async () => {
+    const mine = ensureIdentity();
+    window.localStorage.setItem(ACCOUNT_KEY, "ana");
+    const post = answering();
+    await signOut(post);
+    expect(post.sent).toEqual([{ user: mine }]);
+    expect(loadIdentity()).toBeNull();
+    expect(loadAccount()).toBeNull();
+    ensureIdentity();
+    window.localStorage.setItem(ACCOUNT_KEY, "ana");
+    await signOut(offline);
+    expect(loadIdentity()).toBeNull();
+    expect(loadAccount()).toBeNull();
+    // Nothing to sign out: nothing is sent.
+    const idle = answering();
+    await signOut(idle);
+    expect(idle.sent).toEqual([]);
+  });
+
+  it("comes signed in with a profile moved by a code that has a username", async () => {
+    const other = { userId: "other-device-user-01", secret: "s".repeat(40) };
+    await adoptTransferCode(
+      answering({ ok: true, data: { username: "Ana" } }),
+      `hf1.${other.userId}.${other.secret}`,
+    );
+    expect(loadAccount()).toBe("Ana");
   });
 });

@@ -218,8 +218,8 @@ the one from last week, and none of that justifies passwords for a family game. 
 makes up an identity the first time it is needed — a random user id and a random secret, kept in
 its own storage — and registers it with the server, which keeps only a hash of the secret.
 Presenting both again proves it is the same browser. Clearing storage simply makes a new one, and
-a short code moves an identity to another device; a real sign-in can be layered on later by
-attaching an account to an existing identity rather than migrating anything.
+a short code moves an identity to another device, and a username and password can be attached
+to it later (below) without migrating anything.
 
 An identity says who someone is, never what they may do. Sitting down with one records it against
 the seat, but the seat token remains the only thing that lets a connection act at a table, and
@@ -231,6 +231,45 @@ On Cloudflare each identity is a Durable Object of its own, addressed by its id.
 reads across identities, so a single database would add a resource to create and bind without
 answering any question an object per identity cannot; on the Node host the same records sit in
 a table beside the rooms.
+
+### Signing in
+
+The transfer code moves a profile only between two devices that are both at hand. Playing on a
+phone and a laptop as one person needs a way back to a profile from a device that never held it,
+so an identity can be given a username and password. Signing in does not create a second kind of
+account: it leads to the same identity, so a player's history and stats stay where they are, and
+an identity that never takes a username works exactly as before.
+
+Each device holds a secret of its own. An identity keeps the hash of every device's secret — the
+one that made it, and one more for each device signed in since — rather than handing each new
+device a copy of the first. The difference shows when something goes wrong: changing the password
+keeps only the device that changed it, so a lost phone stops being its owner, and signing out
+forgets one device without touching the others. A device signed out elsewhere finds out the next
+time it registers, which it does before every sit-down, and quietly starts a fresh anonymous
+profile, as it would after clearing its storage.
+
+There is no password recovery. Recovery means a channel the server can reach the player through,
+and a family game has no email addresses to send to. The cost is bounded: a device still signed in
+can change the password, so a forgotten one matters only once every device is signed out, and the
+place a password is chosen says so and asks for it twice.
+
+Passwords are hashed with PBKDF2-SHA256, salted, at 50,000 rounds, which is fewer than the usual
+advice on purpose. A Worker on the free plan has about 10ms of CPU per request, and 50,000 rounds
+take about 5ms. The rounds only protect a password from someone who has read the store; guessing
+over the network is held back instead by locking a username after five wrong passwords, for a
+minute that doubles with each further wrong one, up to an hour. The count is stored with each hash,
+so it can be raised later without breaking anyone's password. A wrong password and an unknown
+username get the same answer, and an unknown one is checked against a decoy hash so it takes as
+long to refuse.
+
+A username is the one lookup that is not by user id, so it is kept apart: on Cloudflare as a
+Durable Object per username, addressed by its lower-case form, and on the Node host as a table.
+That puts the username and the identity in two places that cannot be written in one step, so every
+record carries a version, each write is refused unless the version it was made from is still the one
+stored, and a change that loses a race reads again and retries. A username is claimed before the
+identity records it; if the identity took another username in the meantime, the claim is given
+back. A single database would have made this a transaction, at the price of a resource to create
+and bind that nothing else needs.
 
 ### Pictures made from parts
 

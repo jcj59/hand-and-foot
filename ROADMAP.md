@@ -410,8 +410,9 @@ phones.
 
 - Client and Worker error reporting within the free plan (a minimal logging endpoint is fine).
 - Name filtering and per-identity rate limits now that identities exist.
-- Optional real accounts (sign-in) that an anonymous identity upgrades into, for using the same
-  profile across devices. Only if wanted — the anonymous identity may be enough for one family.
+- ~~Optional real accounts (sign-in) that an anonymous identity upgrades into, for using the same
+  profile across devices.~~ Done: a username and password attached to the identity, a secret per
+  device, no recovery (see DESIGN.md "Signing in").
 
 ---
 

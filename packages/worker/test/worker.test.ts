@@ -624,7 +624,7 @@ describe("identities", () => {
   it("registers one, keeps it in its own object, and refuses it to another secret", async () => {
     expect(await register({ ...ana, name: "Ana" })).toEqual({
       ok: true,
-      data: { userId: ana.userId, name: "Ana" },
+      data: { userId: ana.userId, name: "Ana", username: null },
     });
     expect(await register({ ...ana, secret: "z".repeat(40) })).toEqual({
       ok: false,
@@ -681,6 +681,108 @@ describe("identities", () => {
     expect((await ask<SeatCredentials>(guest, "playAgain")).ok).toBe(true);
     const ids = await insideTable(first.data.roomId, (room) => room.seats().map((p) => p.userId));
     expect(ids).toEqual([ana.userId, ben.userId]);
+  });
+});
+
+describe("signing in", () => {
+  const laptop = { userId: "ana-user-id-0001", secret: "a".repeat(40) };
+
+  async function post<T = unknown>(path: string, body: unknown): Promise<Ack<T>> {
+    const response = await SELF.fetch(`${BASE}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return (await response.json()) as Ack<T>;
+  }
+
+  async function claim(user: unknown, username: string): Promise<Ack<unknown>> {
+    return post("/api/account/claim", { user, username, password: "correct horse" });
+  }
+
+  it("signs a phone in to the laptop's identity, which it sits down as and reads the history of", async () => {
+    await post("/api/users", { ...laptop, name: "Ana" });
+    expect(await claim(laptop, "Ana")).toEqual({ ok: true, data: { username: "Ana" } });
+    const signedIn = await post<{ userId: string; secret: string; username: string }>(
+      "/api/account/sign-in",
+      { username: "ana", password: "correct horse" },
+    );
+    if (!signedIn.ok) throw new Error(signedIn.error);
+    const phone = { userId: signedIn.data.userId, secret: signedIn.data.secret };
+    expect(signedIn.data).toMatchObject({ userId: laptop.userId, username: "Ana" });
+    expect(await post("/api/users", phone)).toEqual({
+      ok: true,
+      data: { userId: laptop.userId, name: "Ana", username: "Ana" },
+    });
+
+    const host = client();
+    const opened = await ask<SeatCredentials>(host, "createRoom", { name: "Ana", user: phone });
+    if (!opened.ok) throw new Error(opened.error);
+    const ids = await insideTable(opened.data.roomId, (room) => room.seats().map((p) => p.userId));
+    expect(ids).toEqual([laptop.userId]);
+    expect((await post("/api/users/matches", { user: phone })).ok).toBe(true);
+
+    // A new password from the phone signs the laptop out; signing out forgets the phone.
+    expect(
+      await post("/api/account/password", {
+        user: phone,
+        password: "correct horse",
+        newPassword: "battery staple",
+      }),
+    ).toEqual({ ok: true, data: null });
+    expect(await post("/api/users", laptop)).toEqual({
+      ok: false,
+      error: "that identity belongs to another browser",
+    });
+    expect(await post("/api/account/sign-out", { user: phone })).toEqual({ ok: true, data: null });
+    expect((await post("/api/users/matches", { user: phone })).ok).toBe(false);
+  });
+
+  it("gives a username to one identity only, and refuses a wrong password", async () => {
+    // Each test here has identities and usernames of its own: storage outlives a test.
+    const cleo = { userId: "cleo-user-id-003", secret: "c".repeat(40) };
+    const ben = { userId: "ben-user-id-0002", secret: "b".repeat(40) };
+    await post("/api/users", cleo);
+    await post("/api/users", ben);
+    expect((await claim(cleo, "cleo")).ok).toBe(true);
+    expect(await claim(ben, "CLEO")).toEqual({ ok: false, error: "that username is taken" });
+    const wrong = { ok: false, error: "that username and password do not match" };
+    expect(
+      await post("/api/account/sign-in", { username: "cleo", password: "wrong horse" }),
+    ).toEqual(wrong);
+    // Not a username at all: no object is addressed by it.
+    expect(
+      await post("/api/account/sign-in", { username: "../cleo", password: "correct horse" }),
+    ).toEqual(wrong);
+  });
+
+  it("upgrades an identity stored before devices, which still proves itself and can sign in", async () => {
+    const dana = { userId: "dana-user-id-004", secret: "d".repeat(40) };
+    const stub = env.USERS.getByName(dana.userId);
+    const secretHash = [
+      ...new Uint8Array(
+        await crypto.subtle.digest("SHA-256", new TextEncoder().encode(dana.secret)),
+      ),
+    ]
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+    await runInDurableObject(stub, (_instance, state) => {
+      state.storage.kv.put("user", {
+        userId: dana.userId,
+        secretHash,
+        name: "Dana",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+    });
+    expect(await post("/api/users", dana)).toEqual({
+      ok: true,
+      data: { userId: dana.userId, name: "Dana", username: null },
+    });
+    expect((await claim(dana, "dana")).ok).toBe(true);
+    expect(
+      (await post("/api/account/sign-in", { username: "dana", password: "correct horse" })).ok,
+    ).toBe(true);
   });
 });
 

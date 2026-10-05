@@ -6,15 +6,29 @@
  * else is the client, served from the static assets.
  */
 import {
+  changePassword,
+  claimUsername,
+  signIn,
+  signOut,
+  type AccountStores,
+} from "@hf/server/core";
+import {
+  CLAIM_PATH,
   HEALTH_PATH,
   isUserCredentials,
+  isUserId,
   MATCHES_PATH,
   MATCH_PATH,
   NOT_AN_IDENTITY,
   parseAvatar,
+  parseUsername,
+  PASSWORD_PATH,
   parseRoomPath,
   resolveRules,
   ROOMS_PATH,
+  SIGN_IN_PATH,
+  SIGN_OUT_PATH,
+  usernameKey,
   USERS_PATH,
 } from "@hf/shared";
 import { newCode } from "./codes";
@@ -23,6 +37,7 @@ import { TAKEN } from "./table";
 
 export { TableObject } from "./table";
 export { UserObject } from "./users";
+export { LoginObject } from "./logins";
 
 /** The largest request body read, well above any real one. */
 const MAX_BODY_BYTES = 16 * 1024;
@@ -63,6 +78,32 @@ async function verified(env: Env, user: unknown): Promise<string | null> {
   }
 }
 
+/**
+ * The account rules' two stores, each record kept in its own object. Only a
+ * well-formed id or username is used to address one, as for sitting down.
+ */
+function accountStores(env: Env): AccountStores {
+  const isKey = (key: string): boolean => parseUsername(key) === key && usernameKey(key) === key;
+  return {
+    users: {
+      get: async (userId) => (isUserId(userId) ? env.USERS.getByName(userId).load(userId) : null),
+      put: async (record) => env.USERS.getByName(record.userId).save(record),
+    },
+    logins: {
+      get: async (key) => (isKey(key) ? env.LOGINS.getByName(key).load(key) : null),
+      put: async (record) => env.LOGINS.getByName(record.key).save(record),
+      delete: async (key, userId) => env.LOGINS.getByName(key).release(key, userId),
+    },
+  };
+}
+
+const ACCOUNT_ROUTES = {
+  [CLAIM_PATH]: claimUsername,
+  [SIGN_IN_PATH]: signIn,
+  [PASSWORD_PATH]: changePassword,
+  [SIGN_OUT_PATH]: signOut,
+} as const;
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const { pathname } = new URL(request.url);
@@ -74,6 +115,13 @@ export default {
       if (!body) return json({ ok: false, error: "that request was not JSON" }, 400);
       if (!isUserCredentials(body)) return json({ ok: false, error: NOT_AN_IDENTITY });
       return json(await env.USERS.getByName(body.userId).register(body, Date.now()));
+    }
+
+    if (Object.hasOwn(ACCOUNT_ROUTES, pathname) && request.method === "POST") {
+      const body = await readJson(request);
+      if (!body) return json({ ok: false, error: "that request was not JSON" }, 400);
+      const handle = ACCOUNT_ROUTES[pathname as keyof typeof ACCOUNT_ROUTES];
+      return json(await handle(accountStores(env), body, Date.now()));
     }
 
     if (pathname === MATCHES_PATH && request.method === "POST") {

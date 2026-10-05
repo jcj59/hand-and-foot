@@ -1,6 +1,7 @@
 /**
  * This browser's identity: a random user id and secret, made up on the first visit
- * and kept in local storage, plus the name the player last went by.
+ * and kept in local storage, plus the name the player last went by, and the
+ * username it is signed in under, if it is.
  *
  * It is registered with the server whenever the player sits down, which both
  * creates it the first time and confirms it after. Nothing here can fail in a way
@@ -9,18 +10,26 @@
  * a server that cannot be reached means sitting down without one this time.
  */
 import {
+  CLAIM_PATH,
   IDENTITY_TAKEN,
   isUserCredentials,
   normalizeName,
   parseTransferCode,
+  PASSWORD_PATH,
+  SIGN_IN_PATH,
+  SIGN_OUT_PATH,
   UNKNOWN_IDENTITY,
   USERS_PATH,
   type Ack,
+  type SignedIn,
   type UserCredentials,
 } from "@hf/shared";
 
 export const IDENTITY_KEY = "hf.identity";
 export const NAME_KEY = "hf.name";
+/** The username this device is signed in under; absent when it is not. */
+export const ACCOUNT_KEY = "hf.account";
+const UNREACHABLE = "could not reach the server; try again";
 /** How long sitting down waits for the identity to be registered before going without. */
 export const REGISTER_TIMEOUT_MS = 4_000;
 
@@ -32,9 +41,10 @@ function read(key: string): string | null {
   }
 }
 
-function write(key: string, value: string): void {
+function write(key: string, value: string | null): void {
   try {
-    window.localStorage.setItem(key, value);
+    if (value === null) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, value);
   } catch {
     // Blocked storage: the identity lasts as long as the page.
   }
@@ -88,6 +98,19 @@ export function rememberName(name: string): void {
   write(NAME_KEY, normalizeName(name));
 }
 
+/**
+ * The username this device is signed in under, or null. Only a label: what proves
+ * who the player is stays the identity, and the server is asked again whenever the
+ * identity is registered, so a device signed out elsewhere learns it then.
+ */
+export function loadAccount(): string | null {
+  return read(ACCOUNT_KEY) || null;
+}
+
+function saveAccount(username: string | null): void {
+  write(ACCOUNT_KEY, username);
+}
+
 /** Just the part of `fetch` this needs, so tests can answer it. */
 export type Post = (url: string, body: unknown) => Promise<Ack<unknown>>;
 
@@ -118,11 +141,15 @@ export async function prepareIdentity(
     let identity = ensureIdentity();
     let answer = await post(USERS_PATH, { ...identity, name });
     if (!answer.ok && answer.error === IDENTITY_TAKEN) {
+      // Signed out from another device, or storage copied from one: start afresh.
       identity = newIdentity();
       saveIdentity(identity);
+      saveAccount(null);
       answer = await post(USERS_PATH, { ...identity, name });
     }
-    return answer.ok ? identity : null;
+    if (!answer.ok) return null;
+    saveAccount(usernameIn(answer.data));
+    return identity;
   };
   let timer: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<null>((resolve) => {
@@ -143,20 +170,103 @@ export async function prepareIdentity(
 export async function adoptTransferCode(post: Post, code: string): Promise<Ack<UserCredentials>> {
   const identity = parseTransferCode(code);
   if (!identity) return { ok: false, error: "that is not a transfer code" };
-  try {
-    const answer = await post(USERS_PATH, { ...identity, existing: true });
-    if (!answer.ok) {
-      const unknown = answer.error === UNKNOWN_IDENTITY || answer.error === IDENTITY_TAKEN;
-      return {
-        ok: false,
-        error: unknown
-          ? "that code is not a known identity"
+  const answer = await ask(post, USERS_PATH, { ...identity, existing: true });
+  if (!answer.ok) {
+    const unknown = answer.error === UNKNOWN_IDENTITY || answer.error === IDENTITY_TAKEN;
+    const unreachable = answer.error === UNREACHABLE;
+    return {
+      ok: false,
+      error: unknown
+        ? "that code is not a known identity"
+        : unreachable
+          ? UNREACHABLE
           : "could not check that code; try again",
-      };
-    }
-  } catch {
-    return { ok: false, error: "could not reach the server; try again" };
+    };
   }
   saveIdentity(identity);
+  // A profile with a username comes signed in under it.
+  saveAccount(usernameIn(answer.data));
   return { ok: true, data: identity };
+}
+
+/** The username a registration answered with, or null for none or an older server's answer. */
+function usernameIn(data: unknown): string | null {
+  const username = (data as { username?: unknown } | null)?.username;
+  return typeof username === "string" ? username : null;
+}
+
+/** Ask the server, answering a request that never arrived as one that can be tried again. */
+async function ask<T>(post: Post, path: string, body: unknown): Promise<Ack<T>> {
+  try {
+    return (await post(path, body)) as Ack<T>;
+  } catch {
+    return { ok: false, error: UNREACHABLE };
+  }
+}
+
+/**
+ * Give this device's profile a username and password, so another device can sign
+ * in to it. The profile is registered first, since the server only gives a
+ * username to an identity it knows.
+ */
+export async function claimAccount(
+  post: Post,
+  username: string,
+  password: string,
+): Promise<Ack<string>> {
+  const identity = await prepareIdentity(post, loadName());
+  if (!identity) return { ok: false, error: UNREACHABLE };
+  const answer = await ask<{ username: string }>(post, CLAIM_PATH, {
+    user: identity,
+    username,
+    password,
+  });
+  if (!answer.ok) return answer;
+  saveAccount(answer.data.username);
+  return { ok: true, data: answer.data.username };
+}
+
+/**
+ * Sign this device in, so it plays as that profile from now on. The device is
+ * given a secret of its own; whatever profile it had before is left behind, with
+ * any games played under it.
+ */
+export async function signIn(
+  post: Post,
+  username: string,
+  password: string,
+): Promise<Ack<SignedIn>> {
+  const answer = await ask<SignedIn>(post, SIGN_IN_PATH, {
+    username,
+    password,
+    name: loadName(),
+  });
+  if (!answer.ok) return answer;
+  saveIdentity({ userId: answer.data.userId, secret: answer.data.secret });
+  saveAccount(answer.data.username);
+  if (answer.data.name) rememberName(answer.data.name);
+  return answer;
+}
+
+/** Change the password from this device, which stays signed in while every other is signed out. */
+export async function changePassword(
+  post: Post,
+  password: string,
+  newPassword: string,
+): Promise<Ack<null>> {
+  const identity = loadIdentity();
+  if (!identity) return { ok: false, error: "this device is not signed in" };
+  return ask<null>(post, PASSWORD_PATH, { user: identity, password, newPassword });
+}
+
+/**
+ * Sign this device out: the server forgets its secret, and the device forgets the
+ * profile, making a fresh one the next time it needs one. Forgotten here even when
+ * the server cannot be told, since a player who signs out means it.
+ */
+export async function signOut(post: Post): Promise<void> {
+  const identity = loadIdentity();
+  if (identity) await ask(post, SIGN_OUT_PATH, { user: identity });
+  write(IDENTITY_KEY, null);
+  saveAccount(null);
 }

@@ -8,7 +8,14 @@
  * secret is checked — are the server's own (`users.ts`), as for tables.
  */
 import { DurableObject } from "cloudflare:workers";
-import { registerUser, verifyUser, type UserRecord, type UserStore } from "@hf/server/core";
+import {
+  follows,
+  registerUser,
+  upgradeUserRecord,
+  verifyUser,
+  type UserRecord,
+  type UserStore,
+} from "@hf/server/core";
 import {
   historyFor,
   NO_SUCH_MATCH,
@@ -29,19 +36,27 @@ const MATCH = "match:";
 export class UserObject extends DurableObject<Env> {
   /** This object's one record, through the store interface the rules are written against. */
   private readonly store: UserStore = {
-    get: async (userId) => {
-      const record = this.ctx.storage.kv.get<UserRecord>(RECORD);
-      return record?.userId === userId ? record : null;
-    },
-    // One object per identity, and an object handles one request at a time, so the
-    // check and the write below cannot be interleaved with another registration.
-    put: async (record) => {
-      const held = this.ctx.storage.kv.get<UserRecord>(RECORD);
-      if (held && held.secretHash !== record.secretHash) return false;
-      this.ctx.storage.kv.put(RECORD, record);
-      return true;
-    },
+    get: async (userId) => this.load(userId),
+    put: async (record) => this.save(record),
   };
+
+  /** The record, in today's shape whatever shape it was stored in, if it is this id's. */
+  load(userId: string): UserRecord | null {
+    const stored = this.ctx.storage.kv.get<Parameters<typeof upgradeUserRecord>[0]>(RECORD);
+    return stored?.userId === userId ? upgradeUserRecord(stored) : null;
+  }
+
+  /**
+   * Write the record if it follows the one stored. The read and the write are both
+   * synchronous, so nothing can come between them: this is the step that makes the
+   * version check hold.
+   */
+  save(record: UserRecord): boolean {
+    const stored = this.ctx.storage.kv.get<Parameters<typeof upgradeUserRecord>[0]>(RECORD);
+    if (!follows(record, stored ? upgradeUserRecord(stored) : null)) return false;
+    this.ctx.storage.kv.put(RECORD, record);
+    return true;
+  }
 
   register(body: unknown, now: number): ReturnType<typeof registerUser> {
     return registerUser(this.store, body, now);

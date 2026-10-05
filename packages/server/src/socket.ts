@@ -16,13 +16,26 @@ import {
   PONG,
   ROOMS_PATH,
   USERS_PATH,
+  CLAIM_PATH,
   MATCHES_PATH,
+  PASSWORD_PATH,
+  SIGN_IN_PATH,
+  SIGN_OUT_PATH,
   MATCH_PATH,
   type Ack,
   type ClientFrame,
 } from "@hf/shared";
 import { nextTableFor, openTable, rematchFor, sitAt } from "./lobby";
 import { InMemoryUserStore, registerUser, verifyUser, type UserStore } from "./users";
+import {
+  changePassword,
+  claimUsername,
+  InMemoryLoginStore,
+  signIn,
+  signOut,
+  type AccountStores,
+  type LoginStore,
+} from "./accounts";
 import { InMemoryMatchStore, matchHistory, matchReplay, type MatchStore } from "./matches";
 import type { RoomManager } from "./manager";
 import type { Room } from "./room";
@@ -40,6 +53,8 @@ export interface TransportOptions {
   readonly heartbeatMs?: number;
   /** Where identities are kept; in memory when unset. */
   readonly users?: UserStore;
+  /** Where usernames are kept; in memory when unset. */
+  readonly logins?: LoginStore;
   /** Where finished matches are kept; in memory when unset. */
   readonly matches?: MatchStore;
   /** The time an identity was registered or updated; the system clock when unset. */
@@ -69,6 +84,13 @@ export function attachTables(
 ): Tables {
   const users = options.users ?? new InMemoryUserStore();
   const matches = options.matches ?? new InMemoryMatchStore();
+  const accounts: AccountStores = { users, logins: options.logins ?? new InMemoryLoginStore() };
+  const accountRoutes = {
+    [CLAIM_PATH]: claimUsername,
+    [SIGN_IN_PATH]: signIn,
+    [PASSWORD_PATH]: changePassword,
+    [SIGN_OUT_PATH]: signOut,
+  } as const;
   const now = options.now ?? Date.now;
   const channels = new Map<string, TableChannel>();
   const channelFor = (room: Room): TableChannel => {
@@ -131,6 +153,10 @@ export function attachTables(
       return json(response, 400, { ok: false, error: "that request was not JSON" });
     if (path === USERS_PATH) {
       return json(response, 200, await registerUser(users, body, now()));
+    }
+    if (Object.hasOwn(accountRoutes, path)) {
+      const handle = accountRoutes[path as keyof typeof accountRoutes];
+      return json(response, 200, await handle(accounts, body, now()));
     }
     if (path === MATCHES_PATH) {
       return json(response, 200, await matchHistory(users, matches, body));

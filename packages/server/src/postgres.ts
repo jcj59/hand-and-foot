@@ -15,6 +15,7 @@
 import postgres from "postgres";
 import type { Action, ActionSource, LoggedAction, MatchRecord, RulesConfig } from "@hf/shared";
 import type { UserRecord, UserStore } from "./users";
+import type { LoginRecord, LoginStore } from "./accounts";
 import { keptFor, type MatchStore } from "./matches";
 import type { RoomRecord, RoomStore, SeatRecord, StoredRoom } from "./store";
 
@@ -82,6 +83,26 @@ export const MIGRATIONS: readonly string[] = [
      user_id text not null,
      match_id text not null references matches (id),
      primary key (user_id, match_id)
+   );`,
+  // Signing in (roadmap item 15): an identity is held by any number of devices,
+  // each with its own secret, and may have a username, found through logins.
+  // Every write to either names the version it replaces.
+  `alter table users add column devices jsonb;
+   update users set devices = jsonb_build_array(secret_hash);
+   alter table users alter column devices set not null;
+   alter table users drop column secret_hash;
+   alter table users add column username text;
+   alter table users add column version integer not null default 1;
+   create table logins (
+     key text primary key,
+     username text not null,
+     user_id text not null,
+     password_hash text not null,
+     failures integer not null,
+     locked_until bigint not null,
+     created_at bigint not null,
+     updated_at bigint not null,
+     version integer not null
    );`,
 ];
 
@@ -346,6 +367,11 @@ export class PostgresRoomStore implements RoomStore {
     return new PostgresUserStore(this.sql);
   }
 
+  /** Usernames, in the same database, read and written directly like identities. */
+  logins(): LoginStore {
+    return new PostgresLoginStore(this.sql);
+  }
+
   /** Finished matches, in the same database. */
   matches(): MatchStore {
     return new PostgresMatchStore(this.sql);
@@ -366,30 +392,92 @@ export class PostgresUserStore implements UserStore {
 
   async get(userId: string): Promise<UserRecord | null> {
     const rows = await this.sql`
-      select user_id, secret_hash, name, created_at, updated_at from users where user_id = ${userId}`;
+      select user_id, devices, name, username, created_at, updated_at, version
+      from users where user_id = ${userId}`;
     const row = rows[0];
     if (!row) return null;
     return {
       userId: row.user_id,
-      secretHash: row.secret_hash,
+      devices: row.devices,
       name: row.name,
+      username: row.username,
       createdAt: Number(row.created_at),
       updatedAt: Number(row.updated_at),
+      version: row.version,
     };
   }
 
   async put(record: UserRecord): Promise<boolean> {
-    // The secret is checked in the statement itself: a row held under another
-    // secret is left alone and nothing is returned, so a race cannot be lost quietly.
-    const written = await this.sql`
-      insert into users (user_id, secret_hash, name, created_at, updated_at)
-      values (${record.userId}, ${record.secretHash}, ${record.name}, ${record.createdAt}, ${record.updatedAt})
-      on conflict (user_id) do update set
-        name = excluded.name,
-        updated_at = excluded.updated_at
-      where users.secret_hash = excluded.secret_hash
-      returning user_id`;
+    // The version is checked in the statement itself: a row changed since it was
+    // read is left alone and nothing is returned, so a race cannot be lost quietly.
+    const values = {
+      user_id: record.userId,
+      devices: this.sql.json(record.devices as string[]),
+      name: record.name,
+      username: record.username,
+      created_at: record.createdAt,
+      updated_at: record.updatedAt,
+      version: record.version,
+    };
+    const written =
+      record.version === 1
+        ? await this.sql`
+            insert into users ${this.sql(values)} on conflict (user_id) do nothing
+            returning user_id`
+        : await this.sql`
+            update users set ${this.sql(values, "devices", "name", "username", "updated_at", "version")}
+            where user_id = ${record.userId} and version = ${record.version - 1}
+            returning user_id`;
     return written.length === 1;
+  }
+}
+
+/** Usernames in Postgres, versioned like identities. */
+export class PostgresLoginStore implements LoginStore {
+  constructor(private readonly sql: postgres.Sql) {}
+
+  async get(key: string): Promise<LoginRecord | null> {
+    const rows = await this.sql`select * from logins where key = ${key}`;
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      key: row.key,
+      username: row.username,
+      userId: row.user_id,
+      passwordHash: row.password_hash,
+      failures: row.failures,
+      lockedUntil: Number(row.locked_until),
+      createdAt: Number(row.created_at),
+      updatedAt: Number(row.updated_at),
+      version: row.version,
+    };
+  }
+
+  async put(record: LoginRecord): Promise<boolean> {
+    const values = {
+      key: record.key,
+      username: record.username,
+      user_id: record.userId,
+      password_hash: record.passwordHash,
+      failures: record.failures,
+      locked_until: record.lockedUntil,
+      created_at: record.createdAt,
+      updated_at: record.updatedAt,
+      version: record.version,
+    };
+    const written =
+      record.version === 1
+        ? await this.sql`
+            insert into logins ${this.sql(values)} on conflict (key) do nothing returning key`
+        : await this.sql`
+            update logins set ${this.sql(values, "password_hash", "failures", "locked_until", "updated_at", "version")}
+            where key = ${record.key} and version = ${record.version - 1}
+            returning key`;
+    return written.length === 1;
+  }
+
+  async delete(key: string, userId: string): Promise<void> {
+    await this.sql`delete from logins where key = ${key} and user_id = ${userId}`;
   }
 }
 
