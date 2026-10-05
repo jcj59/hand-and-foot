@@ -117,6 +117,7 @@ function LessonTable({ lesson }: { readonly lesson: Lesson }): React.ReactElemen
       react: () => undefined,
       leave: () => navigate("/learn"),
       playAgain: () => undefined,
+      rematch: () => undefined,
       nextRound: () => undefined,
       removePlayer: () => undefined,
     }),
