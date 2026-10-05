@@ -18,6 +18,7 @@
     "bindings": [
       { "name": "TABLES", "class_name": "TableObject" },
       { "name": "USERS", "class_name": "UserObject" },
+      { "name": "LOGINS", "class_name": "LoginObject" },
     ],
   },
   // SQLite-backed, which is what the free plan provides and what the synchronous
@@ -26,6 +27,8 @@
     { "tag": "v1", "new_sqlite_classes": ["TableObject"] },
     // Identities: one object per user id (roadmap item 4).
     { "tag": "v2", "new_sqlite_classes": ["UserObject"] },
+    // Usernames for signing in: one object per username (roadmap item 15).
+    { "tag": "v3", "new_sqlite_classes": ["LoginObject"] },
   ],
   "observability": { "enabled": true },
 }

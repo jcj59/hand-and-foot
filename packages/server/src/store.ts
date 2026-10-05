@@ -15,6 +15,7 @@
  */
 import type { Avatar, LoggedAction, RulesConfig } from "@hf/shared";
 import type { UserStore } from "./users";
+import type { LoginStore } from "./accounts";
 import { InMemoryMatchStore, type MatchStore } from "./matches";
 
 /** One seat, as much of it as outlives a process. Connection state does not. */
@@ -80,6 +81,8 @@ export interface RoomStore {
    * does. Without one the server keeps them in memory.
    */
   users?(): UserStore;
+  /** Where usernames are kept, beside the identities they lead to. */
+  logins?(): LoginStore;
   /** Where finished matches are kept, for a store that can keep them too. In memory otherwise. */
   matches?(): MatchStore;
   /** Record the room's current seating and status, replacing what was there. */

@@ -575,15 +575,52 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   on first need (`hf.identity`), name remembered (`hf.name`, pre-filled on Home),
   `prepareIdentity` registers on sit-down (replacing an identity the server says is someone
   else's, giving up after `REGISTER_TIMEOUT_MS` 4s rather than blocking), and Home's folded
-  "Use your profile on another device" panel shows/accepts transfer codes. Seat tokens remain
+  "Use your profile on another device" panel shows/accepts transfer codes (since item 15, folded
+  inside `AccountPanel`). Seat tokens remain
   the only authority to act. Server DB tests now drop `users` too when they wipe.
-  `UserStore.put` resolves whether it wrote and refuses to overwrite an id held under another
-  secret in the same step (Postgres: `on conflict ... where users.secret_hash =
-  excluded.secret_hash returning`), so a registration race is reported as taken, not lost.
+  `UserStore.put` resolves whether it wrote and refuses, in the same step, to overwrite a record
+  that changed since it was read (a version compare-and-set since item 15; Postgres `insert ... on
+  conflict do nothing` / `update ... where version = $prev returning`), so a race is never lost
+  quietly.
   A store that fails never costs a seat: `verifyUser` (and the Worker's `verified`) answer null,
   and the Node `route` catches any rejection and answers 500 instead of letting an unhandled
   rejection kill the process. Home's panel registers the profile when opened and shows the code
   only once the server knows it.
+- **Signing in (roadmap item 15, accounts).** Design in DESIGN.md "Signing in". `@hf/shared/identity.ts`:
+  `CLAIM_PATH`/`SIGN_IN_PATH`/`PASSWORD_PATH`/`SIGN_OUT_PATH` (`/api/account/*`), `SignedIn`,
+  `parseUsername` (3–24 of `[A-Za-z0-9._-]`, trimmed, case kept), `usernameKey` (lower case),
+  `isPassword` (8–128, never trimmed), `isUserId`, and the refusal strings (`WRONG_PASSWORD` is one
+  answer for a wrong password and an unknown username). Server: `UserRecord` is now `{devices`
+  (SHA-256 of each device's secret, oldest first, capped at `MAX_DEVICES` 20)`, username,
+  version}`; **every write is a compare-and-set on `version`** (`put` writes only if the stored
+  version is one less, none for version 1; `follows`), and `changeUser` reads, decides, writes and
+  retries up to 3 times, else `TRY_AGAIN`. `upgradeUserRecord` reads a pre-15 record
+  (`secretHash`) as one device at version 1 — Postgres migration 7 backfills the same, and the
+  version **must** be 1 for those rows, since `put` treats version 1 as an insert (version 0
+  was a real bug, caught by the migration test). `provenUser`. `accounts.ts`: `LoginStore`
+  (`InMemoryLoginStore`, `PostgresLoginStore` — table `logins` — via `RoomStore.logins?()`, same
+  versioning), `claimUsername` (claims the login, then records it on the identity, giving it back
+  if the identity took another meanwhile), `signIn` (mints a fresh device secret with
+  `newSecret`), `changePassword` (needs the current password; keeps only this device),
+  `signOut`. PBKDF2-SHA256 `PASSWORD_ROUNDS` 50,000 (free-plan CPU), `pbkdf2-sha256$rounds$salt$hash`;
+  lock after `FREE_TRIES` 5 for `FIRST_LOCK_MS` 60s doubling to `MAX_LOCK_MS` 1h (`lockFor`, all
+  pinned as literals); every wrong guess counts even concurrently (CAS retry in `unlock`).
+  `registerUser` answers `username` too, so a device learns whether it is still signed in.
+  Worker: `LoginObject` per username key (`LOGINS`, migration tag `v3`), `UserObject.load/save`
+  (RPC used by the Worker's `accountStores`; only well-formed ids/keys address an object).
+  Client: `identity.ts` `hf.account` (`loadAccount`), `claimAccount`, `signIn`, `changePassword`,
+  `signOut` (forgets locally even if the server cannot be told); `prepareIdentity` refreshes
+  `hf.account` and clears it on `IDENTITY_TAKEN`. `profile/AccountPanel.tsx` replaces Home's
+  transfer-code panel (code kept, folded, for profiles without a username); signing in fills an
+  empty name box with the profile's name. Tests: `accounts.test.ts` (contract in memory and
+  Postgres), `account.integration.test.ts` (client, two devices' storage against a real server),
+  Worker `signing in`. **Worker test storage outlives a test**, so each test there needs
+  identities and usernames of its own. Mutation-tested: 41 mutants over `accounts.ts`, `users.ts`
+  and the Postgres stores; all killed but 2 equivalent — `claimUsername`'s early
+  `ALREADY_CLAIMED` check (the later one on the identity refuses and gives the username back, so
+  the outcome is the same) and the decoy hash for an unknown username (timing only). Three died
+  only after tests were added, one a real gap: **registering must not replace the device list**
+  (it would sign out every other device on each sit-down).
 - **Avatars (roadmap item 4b).** `@hf/shared/avatar.ts`: `AVATAR_PARTS` (background, skin, eyes,
   mouth, top; **only ever add** ids — the whole table is pinned in `avatar.test.ts`),
   `isAvatar` (exactly the five known parts, nothing else, not an array), `parseAvatar` (copies part

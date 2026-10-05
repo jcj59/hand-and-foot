@@ -106,7 +106,7 @@ describe.skipIf(DATABASE_URL === undefined)("Postgres", () => {
   });
 
   async function wipe(): Promise<void> {
-    await admin`drop table if exists match_players, matches, actions, rooms, users, schema_migrations`;
+    await admin`drop table if exists match_players, matches, actions, rooms, users, logins, schema_migrations`;
   }
 
   afterAll(async () => {

@@ -17,10 +17,8 @@ import {
   MAX_NAME_LENGTH,
   resolveRules,
   ROOM_CODE_LENGTH,
-  transferCode,
   type GameMode,
   type RulesPreset,
-  type UserCredentials,
 } from "@hf/shared";
 import { createTable, joinTable, resumeSavedGame } from "../actions";
 import { loadAvatar, saveAvatar } from "../profile/avatarStore";
@@ -39,14 +37,8 @@ import {
 import { RulesEditor } from "../rules/RulesEditor";
 import { useSession } from "../session";
 import { serverUrl, type HfClientSocket } from "../socket";
-import {
-  adoptTransferCode,
-  httpPost,
-  loadName,
-  prepareIdentity,
-  rememberName,
-  type Post,
-} from "../identity";
+import { httpPost, loadName, prepareIdentity, rememberName, type Post } from "../identity";
+import { AccountPanel } from "../profile/AccountPanel";
 
 /** Development builds, and the screenshot harness's, carry the scenario viewer. */
 const SCENARIOS_LINK = import.meta.env.DEV || import.meta.env.VITE_SCENARIOS === "1";
@@ -311,7 +303,11 @@ export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React
         New to Hand and Foot? Learn to play
       </button>
 
-      <IdentityPanel post={post} />
+      <AccountPanel
+        post={post}
+        // A device just signed in takes the profile's name, unless one is typed already.
+        onSignedIn={(signedInAs) => setName((typed) => (typed.trim() ? typed : signedInAs))}
+      />
 
       <button
         type="button"
@@ -329,90 +325,6 @@ export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React
         </a>
       )}
     </main>
-  );
-}
-
-/**
- * Moving this player's identity to another device: the code to copy here, and
- * the place to paste one from elsewhere. Folded away — most people never need it.
- */
-function IdentityPanel({ post }: { readonly post: Post }): React.ReactElement {
-  // Shown only once the server knows it: a code for an identity never registered
-  // would be refused on the other device.
-  const [identity, setIdentity] = useState<UserCredentials | null>(null);
-  const [pasted, setPasted] = useState("");
-  const [status, setStatus] = useState<string | null>(null);
-  const [asked, setAsked] = useState(false);
-
-  const open = (): void => {
-    if (asked) return;
-    setAsked(true);
-    void prepareIdentity(post, loadName()).then((ready) => {
-      // A code adopted while this was in flight is the profile now; keep it.
-      if (ready) setIdentity((current) => current ?? ready);
-      else setStatus("Could not reach the server to set up your profile. Try again later.");
-    });
-  };
-
-  return (
-    <details
-      className="rounded border border-white/10 bg-black/15 p-3 text-sm"
-      onToggle={(event) => {
-        if ((event.currentTarget as HTMLDetailsElement).open) open();
-      }}
-    >
-      <summary className="cursor-pointer text-white/70">Use your profile on another device</summary>
-      <div className="mt-3 flex flex-col gap-3">
-        <label className="flex flex-col gap-1">
-          <span className="text-white/70">
-            This device&rsquo;s code. Paste it on the other device to be the same player there. Keep
-            it to yourself: it is your profile.
-          </span>
-          <input
-            readOnly
-            value={identity ? transferCode(identity) : "…"}
-            onFocus={(e) => e.target.select()}
-            aria-label="Your transfer code"
-            className="rounded border border-white/20 bg-black/30 px-2 py-1 font-mono text-xs"
-          />
-        </label>
-        <form
-          className="flex flex-col gap-1"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void adoptTransferCode(post, pasted).then((result) => {
-              if (!result.ok) return setStatus(result.error);
-              setIdentity(result.data);
-              setPasted("");
-              setStatus("This device now uses that profile.");
-            });
-          }}
-        >
-          <span className="text-white/70">Or use a code from another device</span>
-          <div className="flex gap-2">
-            <input
-              value={pasted}
-              onChange={(e) => setPasted(e.target.value)}
-              aria-label="Code from another device"
-              placeholder="hf1.…"
-              className="min-w-0 flex-1 rounded border border-white/20 bg-black/30 px-2 py-1 font-mono text-xs"
-            />
-            <button
-              type="submit"
-              disabled={pasted.trim() === ""}
-              className="rounded border border-white/30 px-3 py-1 disabled:opacity-40"
-            >
-              Use it
-            </button>
-          </div>
-        </form>
-        {status && (
-          <p role="status" className="text-white/80">
-            {status}
-          </p>
-        )}
-      </div>
-    </details>
   );
 }
 
