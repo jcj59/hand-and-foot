@@ -196,8 +196,8 @@ merely one that happened to empty the hand — is decided in the engine by the s
 reducer applied, and the answer travels with the move every seat is already sent. That makes it
 public by construction (the meld is on the table for all to see), keeps it out of the client's
 hands, and lets a replay show it at exactly the moment the live table did. The announcement itself
-is a shared overlay that Grabby Pants also uses, so the awards and tutorial planned later have one
-place to build on.
+is a shared overlay that Grabby Pants and the match awards also use, so each new announcement has
+one place to build on.
 
 ### Grabby Pants
 
