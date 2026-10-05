@@ -878,6 +878,21 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   sent seat with `resumeSeat`, then goes to `/room/<id>`), and a host-only "Rematch" on the final
   scoreboard (Play again becomes the outlined button beside it). Harness: `MATCH_OVER=1`. Mutation-tested: 9/9 server mutants killed.
 
+- **Spectators (roadmap item 12b).** `SPECTATOR_SEAT` (-1) and engine `spectate(state)` (no hand,
+  no foot, every seated player an opponent; `opponentsOf` now shared with `project`), pinned in
+  `view.test.ts` and in `invariants.property.test.ts`'s `assertNoLeak`. Server: `Room.spectatorView()`
+  (lastMove via `moveSeenBy(…, SPECTATOR_SEAT)`, hints that open nothing), `Room.watching` →
+  `RoomInfo.watching` (absent at 0). `TableChannel`: `watchRoom {roomId}` (refused to a seated
+  connection; acks `RoomInfo`, sends the current spectator view and result), `watchers` set,
+  `audience()` = seated + watchers for room/result/reaction/close broadcasts, watchers get the
+  spectator view in `broadcastViews`, `claim` ends watching, `adoptWatcher` + `Peer.watching` for
+  hibernation (Worker attachment `watching`). `refusal("watchRoom")` is "no room with that code".
+  Transport: `watchRoom` goes to the table's socket. Client: `routes/Watch.tsx` at `/watch/:roomId`
+  (re-watches after a reconnect, clears what it showed on leaving without touching a stored seat),
+  `TableView` hides its own melds and hand for `SPECTATOR_SEAT`, "N watching" in the table header and
+  the lobby, which also shows the watch link (`watchLink`). Harness: `WATCHING=1`. Mutation-tested: 9/9 killed
+  (engine, server, Worker).
+
 ## Known wrinkles and open questions
 
 ### Settled rules decisions (2026-08-04) — don't relitigate these

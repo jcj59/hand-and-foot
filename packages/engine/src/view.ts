@@ -1,6 +1,6 @@
 import { matchTotals } from "./nextRound";
 import { isSeated } from "./seats";
-import type { GameState, OpponentView, PlayerView } from "@hf/shared";
+import { SPECTATOR_SEAT, type GameState, type OpponentView, type PlayerView } from "@hf/shared";
 
 /**
  * Project the authoritative game state into the filtered view a single player is
@@ -19,22 +19,60 @@ function playedThisTurn(state: GameState, seat: number): string[] {
   );
 }
 
+/**
+ * The view for someone watching the table rather than playing at it: public
+ * information only. Every player still in the match is an opponent, reduced to
+ * counts and the melds on the table; there is no hand and no foot, so nothing
+ * hidden at a real table can be in it — a spectator sees less than any player,
+ * never more. Its seat is `SPECTATOR_SEAT`.
+ */
+export function spectate(state: GameState): PlayerView {
+  return {
+    seat: SPECTATOR_SEAT,
+    hand: [],
+    foot: null,
+    footCount: 0,
+    melds: [],
+    isDown: false,
+    inFoot: false,
+    opponents: opponentsOf(state, SPECTATOR_SEAT),
+    discard: state.discard,
+    stockCount: state.stock.length,
+    currentSeat: state.currentSeat,
+    phase: state.phase,
+    roundNumber: state.roundNumber,
+    pickedUp: [],
+    playedThisTurn: [],
+    wentOutSeat: state.wentOutSeat ?? null,
+    finalLapRemaining: state.finalLapRemaining ? state.finalLapRemaining : null,
+    scoresSoFar: matchTotals({ ...state, roundEnded: false }),
+    departed: state.departed ?? [],
+  };
+}
+
+/** Every player still in the match but `seat`, as a count of their cards and their melds. */
+function opponentsOf(state: GameState, seat: number): OpponentView[] {
+  return (
+    state.players
+      .map((player, index) => ({ player, index }))
+      // A player who has left the match is not an opponent any more: their seat is
+      // dealt nothing, and the round they left after is over.
+      .filter(({ index }) => index !== seat && isSeated(state, index))
+      .map(({ player, index }) => ({
+        seat: index,
+        handCount: player.hand.length,
+        footCount: player.foot.length,
+        melds: player.melds,
+        isDown: player.isDown,
+        inFoot: player.inFoot,
+      }))
+  );
+}
+
 export function project(state: GameState, seat: number): PlayerView {
   const self = state.players[seat];
 
-  const opponents: OpponentView[] = state.players
-    .map((player, index) => ({ player, index }))
-    // A player who has left the match is not an opponent any more: their seat is
-    // dealt nothing, and the round they left after is over.
-    .filter(({ index }) => index !== seat && isSeated(state, index))
-    .map(({ player, index }) => ({
-      seat: index,
-      handCount: player.hand.length,
-      footCount: player.foot.length,
-      melds: player.melds,
-      isDown: player.isDown,
-      inFoot: player.inFoot,
-    }));
+  const opponents = opponentsOf(state, seat);
 
   return {
     seat,

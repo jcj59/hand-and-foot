@@ -29,6 +29,11 @@ export interface Peer {
    * connection held which seat through `adoptSeat`.
    */
   seated?(token: string | null): void;
+  /**
+   * The connection now watches the table without a seat, or no longer does. A
+   * hibernating host records it, as it does the seat, to bring the watcher back.
+   */
+  watching?(on: boolean): void;
 }
 
 export interface TableHooks {
@@ -57,11 +62,13 @@ export interface TableHooks {
 export const NOT_SEATED = "you are not seated in a room";
 
 /**
- * The answer to anything asked of a table that does not exist: a reclaim is told
- * the room is gone, which sends a client home; anything else, that it holds no seat.
+ * The answer to anything asked of a table that does not exist: a reclaim, or a
+ * request to watch, is told the room is gone, which sends a client home; anything
+ * else, that it holds no seat.
  */
 export function refusal(event: string): Ack<never> {
-  return { ok: false, error: event === "resumeSeat" ? "no room with that code" : NOT_SEATED };
+  const gone = event === "resumeSeat" || event === "watchRoom";
+  return { ok: false, error: gone ? "no room with that code" : NOT_SEATED };
 }
 
 function ackOf<T>(result: RoomResult<T>): Ack<T> {
@@ -84,6 +91,8 @@ export class TableChannel {
    * not seated rather than told the same thing again.
    */
   private readonly sent = new Map<number, Ack<SeatCredentials>>();
+  /** Connections watching the table without a seat. */
+  private readonly watchers = new Set<number>();
   private nextConnection = 1;
   private retired = false;
 
@@ -123,9 +132,18 @@ export class TableChannel {
     return true;
   }
 
+  /**
+   * Bring back a connection that was watching before the table was rebuilt, as a
+   * `watchRoom` would, with nobody to answer.
+   */
+  adoptWatcher(connection: number): void {
+    this.watch(connection);
+  }
+
   /** The connection closed. If it held a seat, the player is gone for now. */
   disconnect(connection: number): void {
     this.peers.delete(connection);
+    this.unwatch(connection);
     this.sent.delete(connection);
     const token = this.unseat(connection);
     if (token === null) return;
@@ -145,6 +163,7 @@ export class TableChannel {
     this.retired = true;
     for (const [connection] of this.sessions) this.hold(connection, null);
     this.owners.clear();
+    this.watchers.clear();
     this.room.onChange = null;
   }
 
@@ -154,7 +173,7 @@ export class TableChannel {
    * when their next click was refused.
    */
   close(reason: CloseReason): void {
-    for (const [connection] of this.sessions) this.send(connection, "tableClosed", { reason });
+    for (const connection of this.audience()) this.send(connection, "tableClosed", { reason });
     this.retire();
   }
 
@@ -191,6 +210,20 @@ export class TableChannel {
         if (update) peer.send({ event: "view", payload: update });
         // The result is broadcast once, when the round ends, so a seat that comes back
         // afterwards would otherwise see a finished table with no scores on it.
+        const result = this.room.result();
+        if (result) peer.send({ event: "roundEnded", payload: result });
+        return;
+      }
+      case "watchRoom": {
+        if (payload?.roomId !== this.room.id)
+          return reply({ ok: false, error: "no room with that code" });
+        // A seat is played, not watched: a seated connection stays a player.
+        if (seated !== null) return reply({ ok: false, error: "you are seated at this table" });
+        this.watch(connection);
+        reply({ ok: true, data: this.room.info() });
+        this.broadcastRoom();
+        const update = this.room.spectatorView();
+        if (update) peer.send({ event: "view", payload: update });
         const result = this.room.result();
         if (result) peer.send({ event: "roundEnded", payload: result });
         return;
@@ -235,7 +268,7 @@ export class TableChannel {
         if (!reacted.ok) return reply({ ok: false, error: reacted.error });
         reply({ ok: true, data: undefined });
         // Everyone, the sender too, so every screen shows it the same way.
-        for (const [other] of this.sessions) this.send(other, "reaction", reacted.value);
+        for (const other of this.audience()) this.send(other, "reaction", reacted.value);
         return;
       }
       case "saveForLater": {
@@ -396,7 +429,26 @@ export class TableChannel {
   /** Tell everyone at the table where things stand, as a newly wired room does. */
   broadcastRoom(): void {
     const info = this.room.info();
-    for (const [connection] of this.sessions) this.send(connection, "room", info);
+    for (const connection of this.audience()) this.send(connection, "room", info);
+  }
+
+  /** Every connection that hears the table: its players' and its watchers'. */
+  private audience(): number[] {
+    return [...this.sessions.keys(), ...this.watchers];
+  }
+
+  private watch(connection: number): void {
+    if (this.watchers.has(connection)) return;
+    this.watchers.add(connection);
+    this.room.watching = this.watchers.size;
+    this.peers.get(connection)?.watching?.(true);
+  }
+
+  private unwatch(connection: number): void {
+    if (!this.watchers.delete(connection)) return;
+    this.room.watching = this.watchers.size;
+    this.peers.get(connection)?.watching?.(false);
+    this.broadcastRoom();
   }
 
   // ------------------------------------------------------------------ seating ---
@@ -415,6 +467,8 @@ export class TableChannel {
 
   /** Seat this connection, taking the seat over from any that held it before. */
   private claim(connection: number, token: string): void {
+    // Taking a seat ends watching: the connection is a player's now.
+    this.unwatch(connection);
     const prior = this.sessions.get(connection);
     if (prior !== undefined && prior !== token) this.disconnectSeat(connection);
     this.hold(connection, token);
@@ -473,6 +527,9 @@ export class TableChannel {
 
   /** Send each seat its own filtered view. Never build one payload for the table. */
   private broadcastViews(): void {
+    // Watchers first, each the same spectator's view: it holds nothing hidden.
+    const watched = this.watchers.size > 0 ? this.room.spectatorView() : null;
+    if (watched) for (const connection of this.watchers) this.send(connection, "view", watched);
     for (const [connection, token] of this.sessions) {
       const player = this.room.seatOf(token);
       /* v8 ignore next -- a departed token's sessions are dropped with it */
@@ -484,6 +541,6 @@ export class TableChannel {
   private broadcastResult(): void {
     const result = this.room.result();
     if (!result) return;
-    for (const [connection] of this.sessions) this.send(connection, "roundEnded", result);
+    for (const connection of this.audience()) this.send(connection, "roundEnded", result);
   }
 }
