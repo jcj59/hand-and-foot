@@ -55,6 +55,7 @@ const noBreakdown = {
   goOutBonus: 0,
   heldCount: 0,
   heldPenalty: 0,
+  redThreesHeld: 0,
 };
 
 describe("project (per-player view)", () => {

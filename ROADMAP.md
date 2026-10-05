@@ -378,7 +378,7 @@ Family games often sit in a background tab. Flash the tab title and favicon on y
 browser notification, and installability as a PWA (manifest, icons). Web push for "your turn" while
 the page is closed is a follow-up only if it fits the free plan.
 
-### 11. Round recap and match awards
+### ~~11. Round recap and match awards~~
 
 At round end, a short recap (who went out, books made, biggest swing). At match end, awards built on
 the celebration overlay: most Grabby Pants (counting each earning of the per-round title, since

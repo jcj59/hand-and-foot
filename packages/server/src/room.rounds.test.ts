@@ -190,3 +190,20 @@ describe("what a table is waiting on, across a restart", () => {
     expect(back.nextRoomId).toBe("NXT234");
   });
 });
+
+describe("the match's tallies, for the awards", () => {
+  it("come with the last round's result only, worked out from the whole match", () => {
+    const { room } = table(["ana", "ben"]);
+    finishRound(room);
+    expect(room.result()!.tallies).toBeUndefined();
+    for (let round = 2; round <= SHORT.rounds; round++) {
+      everyoneReady(room);
+      finishRound(room);
+    }
+    const result = room.result()!;
+    expect(result.matchOver).toBe(true);
+    expect(result.tallies).toEqual(room.matchRecord()!.summary.tallies);
+    // Asked again, the same answer.
+    expect(room.result()!.tallies).toBe(result.tallies);
+  });
+});

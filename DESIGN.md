@@ -654,6 +654,18 @@ What a player is sent about a match is a listing built for them: the names, pict
 the table, where they came, and whether they won — never another player's identity, which a listing
 has no use for.
 
+### Recaps and awards
+
+At the end of each round the scoreboard adds a few lines — the books made, the best and worst round,
+who was caught holding red threes — worked out from the round's result alone, which every seat is
+sent, so it tells nobody anything the scores do not. At the end of a match the table announces the
+awards on the same celebration overlay as Grabby Pants and the Marva Rule: the most Grabby Pants
+earned, Marva Rules, clean books, go-outs, piles taken and red threes eaten, shared on a tie and
+left out when nobody earned one, and never to a player who left before the end. The counts are
+the same per-seat tallies a player's stats are made of, worked out once from the match's log when
+it ends and sent with the final result, so an award and the stats cannot disagree; a replay
+derives them from its own timeline the same way.
+
 ### A heuristic opponent
 
 The safe default above never melds, so it cannot serve as an opponent: it never scores and never

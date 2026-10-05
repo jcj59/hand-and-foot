@@ -18,6 +18,7 @@ const NO_BREAKDOWN = {
   goOutBonus: 0,
   heldCount: 0,
   heldPenalty: 0,
+  redThreesHeld: 0,
 };
 
 function roomInfo(overrides: Partial<RoomInfo> = {}): RoomInfo {

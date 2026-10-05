@@ -17,6 +17,7 @@ import {
   type RoomInfo,
   type RoundEnded,
   type RulesConfig,
+  type SeatTally,
   type ViewUpdate,
 } from "@hf/shared";
 import {
@@ -1389,8 +1390,23 @@ export class Room {
 
   /** Final scores, once the round is over. */
   result(): RoundEnded | null {
-    return this.state && roundResult(this.state);
+    const result = this.state && roundResult(this.state);
+    if (!result?.matchOver) return result;
+    // The awards need the whole match, which is in the log rather than the state.
+    // Worked out once, when first asked: the match is over, so it cannot change.
+    if (this.finalTallies === undefined) {
+      try {
+        this.finalTallies = this.matchRecord()!.summary.tallies;
+      } catch (error) {
+        console.error(`could not tally match ${this.uid}:`, error);
+        this.finalTallies = null;
+      }
+    }
+    return this.finalTallies ? { ...result, tallies: this.finalTallies } : result;
   }
+
+  /** The match's tallies, once it is over; null if they could not be worked out. */
+  private finalTallies: readonly SeatTally[] | null | undefined = undefined;
 
   /**
    * The match as it is kept: who played it, the log that replays it, and its

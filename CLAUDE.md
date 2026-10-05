@@ -853,6 +853,20 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   header's "Rules" / "?" button, aria-label "How to play", for the table's own config). Harness
   action `rules`.
 
+- **Round recap and match awards (roadmap item 11).** `ScoreBreakdown.redThreesHeld` (from
+  `scoreRound`). Engine `seatTallies(timeline, rounds?)` (moments + round breakdowns; now what
+  `summarizeMatch` uses), with `SeatTally.redThreesEaten` (optional — absent from records kept
+  before) and `PlayerStats.pilesTaken`/`redThreesEaten` (two more Home tiles). `@hf/shared/awards.ts`:
+  `AWARDS` (grabby, marva, clean, out, pile, red-threes), `awards(tallies, skip)`. Server
+  `Room.result()` adds `RoundEnded.tallies` at match end only (from `matchRecord()`, once, guarded);
+  replay frames add `seatTallies(timeline)` the same way. Client: `table/recap.ts`
+  (`roundRecap(result, nameOf)`, on every scoreboard), `table/awards.tsx` (`awardsOf` skips
+  departed, `winnersOf`, `useAwardsCelebration` — only on a transition to match over, never the
+  result the page opened on nor a quiet jump, hidden after `AWARDS_MS` 6000 by its own timer so a
+  re-sent result cannot keep it up — and `AwardsCelebration` on `Celebration`), an Awards list on
+  the final scoreboard. Harness: `MATCH_OVER=1` with `ROUND_OVER=1`. Mutation-tested: 8/8 killed, one only after the
+  recap test put a departed player's nought among losing scores.
+
 ## Known wrinkles and open questions
 
 ### Settled rules decisions (2026-08-04) — don't relitigate these

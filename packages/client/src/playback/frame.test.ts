@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { EAST_COAST, type Card } from "@hf/shared";
-import { buildTimeline } from "@hf/engine";
+import { buildTimeline, seatTallies } from "@hf/engine";
 import { recordRich } from "@hf/engine/testing";
 import { SCENARIOS, buildScenario } from "@hf/scenarios";
 import { frameAt } from "./frame";
@@ -82,6 +82,15 @@ describe("a replayed step, as one seat sees it", () => {
     const result = frameAt(out, out.length, 1, null).result!;
     expect(result.wentOutSeat).toBe(0);
     expect(result.scores).toHaveLength(3);
+  });
+
+  it("brings the whole match's tallies with the final result, as the table sends for the awards", () => {
+    const match = buildTimeline(buildScenario(SCENARIOS.find((s) => s.id === "match")!));
+    const end = frameAt(match, match.length, 0, null).result!;
+    expect(end.matchOver).toBe(true);
+    expect(end.tallies).toEqual(seatTallies(match));
+    const roundOne = match.rounds[0]!.end;
+    expect(frameAt(match, roundOne, 0, null).result!.tallies).toBeUndefined();
   });
 
   it("marks a player who has left as departed, and shows no seat of theirs to the others", () => {

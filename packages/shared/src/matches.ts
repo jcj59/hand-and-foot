@@ -34,6 +34,8 @@ export interface SeatTally {
   readonly wentOut: number;
   readonly cleanBooks: number;
   readonly dirtyBooks: number;
+  /** Red threes the seat was caught holding at the end of a round. Absent from records kept before it was counted. */
+  readonly redThreesEaten?: number;
 }
 
 /** A match's outcome, as the home screen needs it without replaying anything. */
@@ -118,6 +120,8 @@ export interface PlayerStats {
   readonly wentOut: number;
   readonly cleanBooks: number;
   readonly dirtyBooks: number;
+  readonly pilesTaken: number;
+  readonly redThreesEaten: number;
 }
 
 /** What the home screen asks for and gets: the player's stats and their latest matches. */
@@ -229,6 +233,8 @@ export function statsFor(records: readonly MatchRecord[], userId: string): Playe
     wentOut: 0,
     cleanBooks: 0,
     dirtyBooks: 0,
+    pilesTaken: 0,
+    redThreesEaten: 0,
   };
   for (const record of records) {
     const seat = seatOf(record, userId);
@@ -259,6 +265,8 @@ export function statsFor(records: readonly MatchRecord[], userId: string): Playe
       counts.wentOut += tally.wentOut;
       counts.cleanBooks += tally.cleanBooks;
       counts.dirtyBooks += tally.dirtyBooks;
+      counts.pilesTaken += tally.pilesTaken;
+      counts.redThreesEaten += tally.redThreesEaten ?? 0;
     }
   }
   return {
