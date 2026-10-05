@@ -397,9 +397,10 @@ describe("when a write loses a race", () => {
     });
   });
 
-  it("says to try again when a new password cannot be written", async () => {
+  it("signs the other devices out first, so a password that cannot be written can be retried", async () => {
     const stores = { users: new InMemoryUserStore(), logins: new InMemoryLoginStore() };
     await claimed(stores);
+    const phone = await signedIn(stores, { username: "ana.b", password: PASSWORD });
     const flaky: LoginStore = {
       get: (key) => stores.logins.get(key),
       delete: (key, userId) => stores.logins.delete(key, userId),
@@ -412,22 +413,32 @@ describe("when a write loses a race", () => {
         20,
       ),
     ).toEqual({ ok: false, error: TRY_AGAIN });
+    expect(await verifyUser(stores.users, phone)).toBeNull();
+    expect(await verifyUser(stores.users, laptop)).toBe(laptop.userId);
+    expect(
+      await changePassword(
+        stores,
+        { user: laptop, password: PASSWORD, newPassword: "battery staple" },
+        21,
+      ),
+    ).toEqual({ ok: true, data: null });
   });
 
-  it("does not sign out the device that changed the password if it was signed out meanwhile", async () => {
+  it("leaves the password alone if the device was signed out meanwhile", async () => {
     const stores = { users: new InMemoryUserStore(), logins: new InMemoryLoginStore() };
     await claimed(stores);
-    const phone = await signedIn(stores, { username: "ana.b", password: PASSWORD });
-    // The laptop signs itself out between the password being written and the devices.
-    const original = (await stores.logins.get("ana.b"))!.passwordHash;
+    let signedOutYet = false;
     const logins: LoginStore = {
-      get: (key) => stores.logins.get(key),
-      delete: (key, userId) => stores.logins.delete(key, userId),
-      put: async (record) => {
-        const written = await stores.logins.put(record);
-        if (record.passwordHash !== original) await signOut(stores, { user: laptop }, 19);
-        return written;
+      get: async (key) => {
+        const found = await stores.logins.get(key);
+        if (!signedOutYet) {
+          signedOutYet = true;
+          await signOut(stores, { user: laptop }, 19);
+        }
+        return found;
       },
+      delete: (key, userId) => stores.logins.delete(key, userId),
+      put: (record) => stores.logins.put(record),
     };
     expect(
       await changePassword(
@@ -436,7 +447,7 @@ describe("when a write loses a race", () => {
         20,
       ),
     ).toEqual({ ok: false, error: NOT_AN_IDENTITY });
-    expect(await verifyUser(stores.users, phone)).toBe(laptop.userId);
+    expect((await signIn(stores, { username: "ana.b", password: PASSWORD }, 21)).ok).toBe(true);
   });
 
   it("never takes a missing password as the word for one", async () => {

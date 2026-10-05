@@ -286,6 +286,9 @@ export async function signIn(
 /**
  * Change the password, from a device signed in to the identity, knowing the
  * current one: `{ user, password, newPassword }`. Every other device is signed out.
+ * The devices go first: if the new password then cannot be written, the old one
+ * still works and a retry succeeds, where the other order could change the
+ * password and leave the devices it was changed to cut off still signed in.
  */
 export async function changePassword(
   { users, logins }: AccountStores,
@@ -301,6 +304,12 @@ export async function changePassword(
   const opened = await unlock(logins, login, body.password, now);
   if (!opened.ok) return opened;
 
+  const pruned = await changeUser<null>(users, record.userId, now, (held) => {
+    if (!held || !held.devices.includes(secretHash)) return { ok: false, error: NOT_AN_IDENTITY };
+    return { write: { devices: [secretHash] }, then: null };
+  });
+  if (!pruned.ok) return pruned;
+
   const changed: LoginRecord = {
     ...opened.data,
     passwordHash: await hashPassword(body.newPassword),
@@ -308,10 +317,7 @@ export async function changePassword(
     version: opened.data.version + 1,
   };
   if (!(await logins.put(changed))) return { ok: false, error: TRY_AGAIN };
-  return changeUser<null>(users, record.userId, now, (held) => {
-    if (!held || !held.devices.includes(secretHash)) return { ok: false, error: NOT_AN_IDENTITY };
-    return { write: { devices: [secretHash] }, then: null };
-  });
+  return { ok: true, data: null };
 }
 
 /** Forget this device's secret: `{ user }`. Nothing to forget is not a failure. */
