@@ -196,8 +196,8 @@ merely one that happened to empty the hand — is decided in the engine by the s
 reducer applied, and the answer travels with the move every seat is already sent. That makes it
 public by construction (the meld is on the table for all to see), keeps it out of the client's
 hands, and lets a replay show it at exactly the moment the live table did. The announcement itself
-is a shared overlay that Grabby Pants also uses, so the awards and tutorial planned later have one
-place to build on.
+is a shared overlay that Grabby Pants and the match awards also use, so each new announcement has
+one place to build on.
 
 ### Grabby Pants
 
@@ -798,6 +798,28 @@ and the Marva rule is said to be on or off. So the page opened from a table desc
 custom rules and all, and the one on the home screen describes either preset. It is a pure function
 of the config, so the words are pinned by tests rather than drifting from the rules they describe.
 
+### Learning to play
+
+The tutorial is eight short lessons, one idea each — a turn, getting down, adding to melds, taking
+the pile, wilds, threes, the foot, going out — played at the real table against a computer player,
+from a local engine with no server. Each lesson is an arranged position from the scenario library
+and a few steps. A step asks for one move and is satisfied by what the move does — the position it
+produces — rather than by particular cards, so any move that does what was asked counts. A move that
+does something else is not played: the coach says why and asks again, because the point of a lesson
+is the move it teaches, and letting a learner wander off it would leave them in a position the
+lesson was not written for. The computer player takes its turns between, by the heuristic, at a
+person's pace. Every lesson is played through by its own solution in continuous integration, so a
+rules change that breaks one fails the build by name.
+
+Progress is kept per device rather than per identity, as the chosen picture is, and for the same
+reason: keeping it on the identity needs the identity to carry more than a name and to travel with
+a transfer code, which waits for accounts.
+
+The demo game is a round of computer players in the replay player, with each move put into words
+beneath the position: what it did, and, where the table can tell, why — that nothing in the pile
+could be melded, what a lay-down was worth against the minimum, that a red three can never be
+melded. The narration is an optional part of the shared player rather than a copy of it.
+
 ### Calling a player back to the table
 
 A family game is mostly waiting. Between turns a player reads something else in another tab, and
@@ -896,7 +918,8 @@ work, in order:
 2. ~~A configurable rules editor, since the engine is already fully config-driven.~~ Done: start
    from a preset and change any rule; the server checks the changes, and the lobby shows every
    player what was changed. See "Rules chosen when a room is opened".
-3. An interactive tutorial that teaches the game through guided scenarios.
+3. ~~An interactive tutorial that teaches the game through guided scenarios.~~ Done: eight
+   short lessons and a narrated demo round; see "Learning to play".
 4. ~~Support for large tables on mobile.~~ Done: below 768px the table stacks vertically, with
    opponents as a strip of summary chips (tap one for its melds), the player's own melds as cards
    that can be collapsed to compact chips, and the hand in even rows sized to the screen, so no

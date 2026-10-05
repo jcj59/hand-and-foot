@@ -303,6 +303,14 @@ export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React
 
       <MatchHistory post={post} />
 
+      <button
+        type="button"
+        onClick={() => navigate("/learn")}
+        className="rounded border border-sky-200/50 px-4 py-2 text-sm text-sky-100"
+      >
+        New to Hand and Foot? Learn to play
+      </button>
+
       <IdentityPanel post={post} />
 
       <button

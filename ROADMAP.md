@@ -356,7 +356,10 @@ table's minimums, wild ratio, and Marva setting rather than generic text.
 
 ### 9. Hints and interactive tutorial *(may split: 9a in-game hints, 9b tutorial)*
 
-*9a (in-game hints) done after 5b; 9b (tutorial) next. See DESIGN.md, "Hints for a learner".*
+*9a (in-game hints) done after 5b; see DESIGN.md, "Hints for a learner".*
+
+*9b (tutorial and demo game) done. Progress is kept per device, not per identity — see DESIGN.md,
+"Learning to play".*
 
 **Depends on** 1 (scenarios) and 7 (the bot as a source of suggestions).
 
