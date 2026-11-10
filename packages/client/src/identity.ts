@@ -50,6 +50,25 @@ function write(key: string, value: string | null): void {
   }
 }
 
+/** The event raised on `window` when the name, username or picture this device shows changes. */
+export const PROFILE_CHANGED = "hf:profile";
+
+export function noteProfileChanged(): void {
+  // Not every host has a full `window` (the integration tests run with only storage).
+  if (typeof window === "undefined" || typeof window.dispatchEvent !== "function") return;
+  window.dispatchEvent(new Event(PROFILE_CHANGED));
+}
+
+/** Call `listener` whenever this tab, or another one, changes the stored profile. */
+export function onProfileChange(listener: () => void): () => void {
+  window.addEventListener(PROFILE_CHANGED, listener);
+  window.addEventListener("storage", listener);
+  return () => {
+    window.removeEventListener(PROFILE_CHANGED, listener);
+    window.removeEventListener("storage", listener);
+  };
+}
+
 /** A random string from the URL-safe alphabet the server accepts. */
 export function randomToken(
   length: number,
@@ -96,6 +115,7 @@ export function loadName(): string {
 
 export function rememberName(name: string): void {
   write(NAME_KEY, normalizeName(name));
+  noteProfileChanged();
 }
 
 /**
@@ -109,6 +129,7 @@ export function loadAccount(): string | null {
 
 function saveAccount(username: string | null): void {
   write(ACCOUNT_KEY, username);
+  noteProfileChanged();
 }
 
 /** Just the part of `fetch` this needs, so tests can answer it. */

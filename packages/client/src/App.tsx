@@ -23,6 +23,9 @@ import { LessonList, LessonPage } from "./learn/Learn";
 import { attachSession, useSession } from "./session";
 import type { HfClientSocket } from "./socket";
 import { installAudio } from "./table/audio";
+import { AppShell, BareFrame } from "./ui/AppShell";
+import { HistoryPage } from "./pages/HistoryPage";
+import { ProfilePage } from "./pages/ProfilePage";
 
 export interface AppProps {
   readonly socket: HfClientSocket;
@@ -101,18 +104,26 @@ export function App({ socket }: AppProps): React.ReactElement {
   return (
     // The window is the frame: the table fits inside it rather than growing a page
     // to scroll, and the other screens scroll within it when they need to.
-    <div className="flex h-dvh flex-col bg-felt-900 text-white">
+    <div className="flex h-dvh flex-col bg-page text-ink">
       <ConnectionBanner />
       <ResumeSeat socket={socket} />
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1">
         <Routes>
-          <Route path="/" element={<Home socket={socket} />} />
-          <Route path="/room/:roomId" element={<RoomRoute socket={socket} />} />
-          <Route path="/rules" element={<HowToPlayPage />} />
-          <Route path="/watch/:roomId" element={<Watch socket={socket} />} />
-          <Route path="/learn" element={<LessonList />} />
-          <Route path="/learn/:lessonId" element={<LessonPage />} />
-          <Route path="/replay/:matchId" element={<Replay />} />
+          {/* The app's own pages, inside its navigation. */}
+          <Route element={<AppShell />}>
+            <Route path="/" element={<Home socket={socket} />} />
+            <Route path="/history" element={<HistoryPage />} />
+            <Route path="/learn" element={<LessonList />} />
+            <Route path="/rules" element={<HowToPlayPage />} />
+            <Route path="/profile" element={<ProfilePage />} />
+          </Route>
+          {/* Places a player goes to and comes back from, full screen. */}
+          <Route element={<BareFrame />}>
+            <Route path="/room/:roomId" element={<RoomRoute socket={socket} />} />
+            <Route path="/watch/:roomId" element={<Watch socket={socket} />} />
+            <Route path="/learn/:lessonId" element={<LessonPage />} />
+            <Route path="/replay/:matchId" element={<Replay />} />
+          </Route>
           {/* Anything else is a mistyped or stale URL; the home screen is recoverable. */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

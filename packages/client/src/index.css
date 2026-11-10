@@ -1,17 +1,87 @@
 @import "tailwindcss";
 
 /*
- * Tailwind v4 is configured in CSS rather than a JS config file, so the table's
- * palette lives here as theme variables the components reference by name.
+ * Tailwind v4 is configured in CSS rather than a JS config file, so the palette
+ * lives here as theme variables the components reference by name (`bg-surface`,
+ * `text-muted`, `font-display`, ...).
  *
- * Only what the client actually needs: a felt green for the table surface and a
- * neutral ramp for the chrome around it. Cards are drawn as SVG against white,
- * so they need no tokens of their own.
+ * The look is the redesign's: charcoal surfaces stepping up in lightness, one green
+ * accent for the thing to press, gold for a highlight (wilds, awards), and a small
+ * set of player colors that faces and chips share. The felt greens are the table's
+ * cloth. Cards are drawn as SVG and take their few colors from here too.
  */
 @theme {
   --color-felt-700: oklch(0.42 0.07 158);
   --color-felt-800: oklch(0.35 0.06 158);
   --color-felt-900: oklch(0.27 0.05 158);
+
+  /* Surfaces, darkest first: the page, the navigation, a card, a sheet, a raised control. */
+  --color-page: #0f1215;
+  --color-nav: #12161a;
+  --color-surface: #171b20;
+  --color-sheet: #15191d;
+  --color-raised: #1e2328;
+  --color-selected: #2a3138;
+
+  /* Text, strongest first. */
+  --color-ink: #eceff2;
+  --color-ink-soft: #c5ccd3;
+  --color-nav-ink: #b5bdc5;
+  --color-muted: #9aa3ad;
+  --color-quiet: #8c96a0;
+  --color-faint: #6f7882;
+
+  /* The accent: what to press. `accent-ink` is text on it. */
+  --color-accent: #4ade9b;
+  --color-accent-hover: #7bedb8;
+  --color-accent-ink: #062115;
+  --color-gold: #f2c14e;
+  --color-gold-soft: #ffe29a;
+  --color-danger: #e5484d;
+  --color-danger-soft: #ff9a9e;
+
+  /* Player and difficulty colors (faces, chips, tiles). */
+  --color-coral: #e9795b;
+  --color-blue: #8fb8e8;
+  --color-violet: #d6a6f0;
+  --color-teal: #7cd9c0;
+  --color-orange: #f59e5b;
+
+  /* Cards. */
+  --color-card: #f7f5ee;
+  --color-suit-red: #c2353a;
+  --color-suit-black: #15181b;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* Self-hosted (public/fonts), Latin subset, one variable file per family. `swap`
+   shows the system font until they arrive rather than invisible text. */
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/inter-latin-wght-normal.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Space Grotesk";
+  src: url("/fonts/space-grotesk-latin-wght-normal.woff2") format("woff2");
+  font-weight: 300 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/jetbrains-mono-latin-wght-normal.woff2") format("woff2");
+  font-weight: 100 800;
+  font-display: swap;
+}
+
+body {
+  background: var(--color-page);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
 }
 
 html,
