@@ -23,6 +23,8 @@ function listing(over: Partial<MatchListing> = {}): MatchListing {
     seat: 0,
     place: 1,
     won: true,
+    preset: "east-coast",
+    awards: [],
     players: [
       { seat: 0, name: "Ana", total: 2400 },
       { seat: 1, name: "Robo Rita", bot: true, total: 1800 },
@@ -47,6 +49,7 @@ const stats: History["stats"] = {
   dirtyBooks: 11,
   pilesTaken: 30,
   redThreesEaten: 2,
+  awards: { grabby: 1, marva: 0, clean: 2, out: 1, pile: 1, "red-threes": 0 },
 };
 
 /** A server answering the history request, recording what it was asked. */

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { EAST_COAST } from "./rules";
+import { EAST_COAST, WEST_COAST } from "./rules";
 import {
+  awardsWon,
   historyFor,
   listingFor,
   RECENT_MATCHES,
@@ -90,6 +91,8 @@ describe("a match in a player's list", () => {
       seat: 0,
       place: 1,
       won: true,
+      preset: "east-coast",
+      awards: ["grabby", "marva", "clean", "out"],
     });
     expect(listing.players).toEqual([
       { seat: 0, name: "Ana", total: 1200 },
@@ -207,6 +210,29 @@ describe("a player's stats", () => {
       dirtyBooks: 0,
       pilesTaken: 0,
       redThreesEaten: 0,
+      awards: { grabby: 0, marva: 0, clean: 0, out: 0, pile: 0, "red-threes": 0 },
+    });
+  });
+
+  it("counts how many matches gave the player each award", () => {
+    const a = record({ id: "a" });
+    const b = record({
+      id: "b",
+      summary: { tallies: [tally({ pilesTaken: 4 }), tally({ pilesTaken: 4 }), tally()] },
+    });
+    // Unfinished: no awards, however the tallies look.
+    const c = record({ id: "c", summary: { finished: false, winners: [] } });
+    const again = record({
+      id: "again",
+      summary: { tallies: [tally({ wentOut: 1 }), tally(), tally()] },
+    });
+    expect(statsFor([a, b, c, again], "u-ana").awards).toEqual({
+      grabby: 1,
+      marva: 1,
+      clean: 1,
+      out: 2,
+      pile: 1,
+      "red-threes": 0,
     });
   });
 
@@ -223,16 +249,16 @@ describe("a player's stats", () => {
 
 describe("a player's history", () => {
   it("lists their matches newest first, up to the limit, and counts them all", () => {
-    expect(RECENT_MATCHES).toBe(20);
-    const records = Array.from({ length: 25 }, (_, i) => record({ id: `m${i}`, endedAt: i }));
+    expect(RECENT_MATCHES).toBe(100);
+    const records = Array.from({ length: 105 }, (_, i) => record({ id: `m${i}`, endedAt: i }));
     const history = historyFor(
       [...records, record({ id: "x", seats: [{ seat: 0, name: "Zed" }] })],
       "u-ana",
     );
-    expect(history.recent).toHaveLength(20);
-    expect(history.recent[0]!.id).toBe("m24");
+    expect(history.recent).toHaveLength(100);
+    expect(history.recent[0]!.id).toBe("m104");
     expect(history.recent.at(-1)!.id).toBe("m5");
-    expect(history.stats.played).toBe(25);
+    expect(history.stats.played).toBe(105);
   });
 });
 
@@ -251,5 +277,43 @@ describe("a match to watch again", () => {
 
   it("is nothing for someone who did not play it", () => {
     expect(replayFor(record(), "u-other")).toBeNull();
+  });
+});
+
+describe("the awards a player won in a match", () => {
+  it("are those the table gave them, shared on a tie, none for doing nothing", () => {
+    const tied = record({
+      summary: {
+        tallies: [tally({ pilesTaken: 2, cleanBooks: 1 }), tally({ pilesTaken: 2 }), tally()],
+      },
+    });
+    expect(awardsWon(tied, 0)).toEqual(["clean", "pile"]);
+    expect(awardsWon(tied, 1)).toEqual(["pile"]);
+    expect(awardsWon(tied, 2)).toEqual([]);
+  });
+
+  it("are none in a match that did not finish", () => {
+    expect(awardsWon(record({ summary: { finished: false, winners: [] } }), 0)).toEqual([]);
+  });
+
+  it("leave out a player who left, so the award goes to the best of those who stayed", () => {
+    const leftEarly = record({
+      summary: {
+        departed: [{ seat: 1, afterRound: 2 }],
+        tallies: [tally({ pilesTaken: 1 }), tally({ pilesTaken: 5 }), tally()],
+      },
+    });
+    expect(awardsWon(leftEarly, 1)).toEqual([]);
+    expect(awardsWon(leftEarly, 0)).toEqual(["pile"]);
+  });
+});
+
+describe("the variant a listed match was played under", () => {
+  it("is its preset, read from the rules it kept", () => {
+    expect(listingFor(record({ config: WEST_COAST }), "u-ana")!.preset).toBe("west-coast");
+    // Rules kept before the preset was recorded are told apart by the wild ratio.
+    const { preset: _p, ...older } = WEST_COAST;
+    void _p;
+    expect(listingFor(record({ config: older }), "u-ana")!.preset).toBe("west-coast");
   });
 });
