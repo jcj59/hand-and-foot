@@ -780,7 +780,7 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   and disabled when permission is `denied`. **jsdom's `document.hasFocus()` is always false**, so
   every table test counts as "away" and flashes the title; tests that care stub it with
   `vi.spyOn(document, "hasFocus")`. PWA: `public/manifest.webmanifest`, icons in `public/icons`
-  (rendered from the SVGs by `packages/client/icons/render.mjs`), theme colour felt-900 `#0d2e1d`,
+  (rendered from the SVGs by `packages/client/icons/render.mjs`), theme colour (and manifest background) the shell charcoal `#0f1215`,
   **no service worker** (Chromium 141 fires `beforeinstallprompt` without one — see DESIGN.md
   "Calling a player back to the table"). The Worker serves them as plain assets; `worker.test.ts`
   checks every icon the manifest names comes back as an image, not the SPA fallback page. For
@@ -882,6 +882,15 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   suggestion's cards ringed amber in `Hand` (`hintIds`, `aria-description="suggested"`), cleared on
   every new view, and "You can't take the pile: …" in the draw phase. Harness: action `suggest`,
   `PILE_WHY=1`. Mutation-tested: 11/11 killed.
+
+- **Redesign shell (redesign PR 0).** Theme tokens live in `client/src/index.css` (charcoal
+  surfaces, green accent, gold); Inter, Space Grotesk and JetBrains Mono are self-hosted variable
+  fonts in `client/public/fonts` (licence in `OFL.txt`, no npm dependency). Shared components are in
+  `client/src/ui/` (`Button`, `Segmented`, `Sheet` = bottom sheet on phone / dialog on desktop,
+  `Chip`, `IconBox`, `PageHeader`, `icons`), and `ui/AppShell.tsx` is a sidebar on desktop and a
+  tab bar on phone. The table, lesson, replay and watch screens hide the shell and keep the felt
+  look until Phase 5. `/history` and `/profile` (`pages/`) host the existing `MatchHistory` and
+  `AccountPanel` for now, so Home and Profile duplicate the account panel until Home is redone.
 
 - **Rules page (roadmap item 8).** `rules/howToPlay.ts` (`howToPlay(config)` → sections of
   paragraphs, every number from the config: deal, decks, minimums per round, wild ratio, Marva,
