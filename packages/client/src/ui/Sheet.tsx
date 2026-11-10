@@ -8,7 +8,7 @@
  * off, and modal: Escape and a tap on the backdrop close it, and focus moves into
  * it on open and back where it was on close.
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePhone } from "../usePhone";
 import { Icon } from "./icons";
@@ -27,10 +27,14 @@ export function Sheet({ title, onClose, children, wide = false }: SheetProps): R
   const panel = useRef<HTMLDivElement>(null);
   const close = useRef(onClose);
   close.current = onClose;
+  // Whatever had focus as the sheet opened, read while rendering: a field inside
+  // the sheet may take focus for itself (autoFocus) before any effect runs.
+  const [before] = useState(() => document.activeElement as HTMLElement | null);
 
   useEffect(() => {
-    const before = document.activeElement as HTMLElement | null;
-    panel.current?.focus();
+    // A field that focused itself keeps it; otherwise the sheet takes it, so
+    // the keyboard starts inside.
+    if (!panel.current?.contains(document.activeElement)) panel.current?.focus();
     const onKey = (event: KeyboardEvent): void => {
       if (event.key === "Escape") close.current();
     };
@@ -39,7 +43,7 @@ export function Sheet({ title, onClose, children, wide = false }: SheetProps): R
       document.removeEventListener("keydown", onKey);
       before?.focus?.();
     };
-  }, []);
+  }, [before]);
 
   return createPortal(
     <div

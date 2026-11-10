@@ -580,9 +580,9 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   checks the id's shape before addressing an object by it. Client `identity.ts`: identity made
   on first need (`hf.identity`), name remembered (`hf.name`, pre-filled on Home),
   `prepareIdentity` registers on sit-down (replacing an identity the server says is someone
-  else's, giving up after `REGISTER_TIMEOUT_MS` 4s rather than blocking), and Home's folded
-  "Use your profile on another device" panel shows/accepts transfer codes (since item 15, folded
-  inside `AccountPanel`). Seat tokens remain
+  else's, giving up after `REGISTER_TIMEOUT_MS` 4s rather than blocking), and the "Use your
+  profile on another device" panel shows/accepts transfer codes (since item 15, folded inside
+  `AccountPanel`, which lives on the Profile page). Seat tokens remain
   the only authority to act. Server DB tests now drop `users` too when they wipe.
   `UserStore.put` resolves whether it wrote and refuses, in the same step, to overwrite a record
   that changed since it was read (a version compare-and-set since item 15; Postgres `insert ... on
@@ -755,7 +755,7 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   Client: `rules/customRules.ts` (the choice as `{preset, mode, rules}`; `hf.rules` per device —
   moves to the identity later; a stored choice the server would refuse is dropped on load),
   `rules/ruleText.ts` (every rule in words, `was` = the preset's value when changed),
-  `rules/RulesEditor.tsx` (folded "Change the rules" on Home; runs `resolveRules` per keystroke and
+  `rules/RulesEditor.tsx` (folded "Change the rules" in Home's New table sheet; runs `resolveRules` per keystroke and
   disables "Open a new table" with the reason shown), `rules/RulesSummary.tsx` (lobby: changed rules
   up front beside the preset's value, all rules in a fold). Real-wire tests in
   `rules.integration.test.ts` (raw HTTP and the client transport), Worker tests in `worker.test.ts`,
@@ -897,7 +897,13 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   `Chip`, `IconBox`, `PageHeader`, `icons`), and `ui/AppShell.tsx` is a sidebar on desktop and a
   tab bar on phone. The table, lesson, replay and watch screens hide the shell and keep the felt
   look until Phase 5. `/history` and `/profile` (`pages/`) host the existing `MatchHistory` and
-  `AccountPanel` for now, so Home and Profile duplicate the account panel until Home is redone.
+  `AccountPanel`. **Home (redesign 3a)** is the greeting with stats (from the match-history request,
+  `PlayerStats.awards` for the awards total), the Play banner, "Your games" (the held seat as "In
+  progress" and saved games as "Saved"), and the Practice / Learn / Demo tiles; the account panel
+  lives only on Profile. "New table" and "Join with code" open `Sheet`s holding the old home
+  controls (name, picture, code or variant/mode/house rules) until 3b-3d; a `/room/:code` link
+  without a seat opens the Join sheet with the code filled in, and the Practice tile opens the New
+  table sheet until redesign 4.
 
 - **Rules page (roadmap item 8).** `rules/howToPlay.ts` (`howToPlay(config)` → sections of
   paragraphs, every number from the config: deal, decks, minimums per round, wild ratio, Marva,
@@ -955,7 +961,7 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   feedback; `computerMove`; `updateFor` = the learner's `project` view, room with pausing off),
   `progress.ts` (`hf.tutorial`, per device), `narrate.ts` (the demo's words), `Learn.tsx`
   (`/learn`, `/learn/:id` with a Coach panel and the computer moving every `TUTOR_MOVE_MS` 900,
-  `/learn/demo` in `Player` with its new optional `narrate` prop). Home links "Learn to play".
+  `/learn/demo` in `Player` with its new optional `narrate` prop). Home's Learn and Demo tiles link to `/learn` and `/learn/demo`.
   Gotcha found writing the tests: build the `ViewUpdate` once per position (`useMemo`) — a fresh
   object every render resets the table's chosen card, so its menu never opens; and a test must let
   the table's play promise settle (`await act(async () => {})`) before the next click, or the
