@@ -900,9 +900,8 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   `AccountPanel`. **Home (redesign 3a)** is the greeting with stats (from the match-history request,
   `PlayerStats.awards` for the awards total), the Play banner, "Your games" (the held seat as "In
   progress" and saved games as "Saved"), and the Practice / Learn / Demo tiles; the account panel
-  lives only on Profile. "New table" and "Join with code" open `Sheet`s holding the old home
-  controls (name, picture, variant/mode/house rules) until 3c-3d, and the Practice tile opens the
-  New table sheet until redesign 4. **Join (redesign 3b):** the Join sheet's first step is
+  lives only on Profile. "New table" and "Join with code" open the `Sheet`s in `home/sheets.tsx`,
+  and the Practice tile opens the New table sheet until redesign 4. **Join (redesign 3b):** the Join sheet's first step is
   `join/CodeBoxes.tsx` (six boxes drawn over **one real input**, so paste, autofill and screen
   readers work; accessible name "Table code") and `join/Scanner.tsx` (camera via the browser's
   `BarcodeDetector` where it exists, else nothing to start); `codeFromScan` (`roomCode.ts`, pure,
@@ -911,7 +910,16 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   link (the latter redirects to the former) skips straight to it. `ui/QrCode.tsx` draws the share
   link (`roomLink`) with `qrcode-generator`, the client's one QR dependency, in the lobby beside
   the link. There is no table preview before sitting down (it would need a lookup endpoint), and
-  no flash button.
+  no flash button. **Player card and New table (redesign 3c, 3d):** `profile/PlayerCard.tsx` ends
+  both flows (Take a seat / Open table): the avatar's background part as the colour swatches,
+  Shuffle, the name, and "Choose each part" for the full `AvatarEditor` so no existing choice is
+  lost; a device with `hf.account` starts on the finished card ("Sit down as <name>", "Not you?
+  Switch account" links to Profile). `NewTableSheet` has the table preview, Variant, Mode, a
+  rounds stepper (the editor's `withRounds`, so minimums follow the count), the existing
+  `RulesEditor` on a sub-view with a "N changed" chip, and computer players: chips with a name
+  (16 max) and Easy/Standard/Hard editor, "Suggest a name" from `BOT_NAME_IDEAS`. After
+  `createRoom` succeeds the client sends `addBot {level, name?}` per computer in order (a blank
+  name lets the server pick). Not built: a "n waiting" table preview on the join card.
 
 - **Rules page (roadmap item 8).** `rules/howToPlay.ts` (`howToPlay(config)` → sections of
   paragraphs, every number from the config: deal, decks, minimums per round, wild ratio, Marva,
