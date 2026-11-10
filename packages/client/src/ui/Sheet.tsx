@@ -20,9 +20,17 @@ export interface SheetProps {
   readonly children: React.ReactNode;
   /** Wider dialogs on a computer (the New table sheet has a preview beside it). */
   readonly wide?: boolean;
+  /** Which sheet this is, whatever its current step's title (`data-sheet`). */
+  readonly id?: string;
 }
 
-export function Sheet({ title, onClose, children, wide = false }: SheetProps): React.ReactElement {
+export function Sheet({
+  title,
+  onClose,
+  children,
+  wide = false,
+  id,
+}: SheetProps): React.ReactElement {
   const phone = usePhone();
   const panel = useRef<HTMLDivElement>(null);
   const close = useRef(onClose);
@@ -55,6 +63,7 @@ export function Sheet({ title, onClose, children, wide = false }: SheetProps): R
       <div
         ref={panel}
         role="dialog"
+        data-sheet={id}
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}

@@ -177,14 +177,16 @@ describe("routing", () => {
 
   it("offers the join form to a visitor arriving at a table with no seat", () => {
     mount(fakeSocket().socket, "/room/abc234");
-    const join = screen.getByRole("dialog", { name: "Join a table" });
+    const join = screen.getByRole("dialog", { name: "Your player card" });
     expect(join).toHaveTextContent("Table ABC234");
-    expect(within(join).getByRole("button", { name: "Join table" })).toBeInTheDocument();
+    expect(within(join).getByRole("button", { name: "Take a seat" })).toBeInTheDocument();
   });
 
   it("takes a join link to the same place", () => {
     mount(fakeSocket().socket, "/join/abc234");
-    expect(screen.getByRole("dialog", { name: "Join a table" })).toHaveTextContent("Table ABC234");
+    expect(screen.getByRole("dialog", { name: "Your player card" })).toHaveTextContent(
+      "Table ABC234",
+    );
   });
 
   it("shows the lobby once seated at a table that has not dealt", () => {
@@ -327,10 +329,11 @@ describe("a new game after an old one", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Main menu" }));
     fireEvent.click(screen.getByRole("button", { name: "New table" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open table" }));
     fireEvent.change(screen.getByRole("textbox", { name: /your name/i }), {
       target: { value: "ana" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /open a new table/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Open table" }));
     await waitFor(() => expect(useSession.getState().credentials?.roomId).toBe("NEW234"));
 
     socket.fire("view", round1(roomInfo({ roomId: "NEW234", started: true })));

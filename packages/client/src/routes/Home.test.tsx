@@ -10,6 +10,7 @@ import { ACCOUNT_KEY, IDENTITY_KEY, NAME_KEY, type Post } from "../identity";
 import { RULES_KEY } from "../rules/customRules";
 import { AVATAR_KEY } from "../profile/avatarStore";
 import { Home, partOfDay } from "./Home";
+import { suggestBotName } from "../home/sheets";
 
 /** A socket that answers each request from a queue and records what was sent. */
 function fakeSocket(answers: Ack<unknown>[] = []): {
@@ -65,45 +66,79 @@ function Landing({ onRender }: { readonly onRender: (path: string) => void }): n
   return null;
 }
 
-/** Open a sheet from the banner, unless it is open already. */
-function opened(sheet: "New table" | "Join a table"): HTMLElement {
-  const open = screen.queryByRole("dialog", { name: sheet });
-  if (open) return open;
-  fireEvent.click(
-    screen.getByRole("button", { name: sheet === "New table" ? "New table" : /join with code/i }),
-  );
-  return screen.getByRole("dialog", { name: sheet });
-}
-const openNew = (): HTMLElement => opened("New table");
-const openJoin = (): HTMLElement => opened("Join a table");
+/** The sheet open now, by which one it is (`data-sheet`), whatever step it is at. */
+const sheetNow = (): HTMLElement | null => document.querySelector<HTMLElement>("[data-sheet]");
 
-/** The name box in whichever sheet is open, opening New table if neither is. */
+/** Open a sheet from the banner, unless it is open already. */
+function opened(which: "new" | "join"): HTMLElement {
+  const open = sheetNow();
+  if (open?.dataset.sheet === which) return open;
+  fireEvent.click(
+    screen.getByRole("button", { name: which === "new" ? "New table" : /join with code/i }),
+  );
+  return sheetNow()!;
+}
+const openNew = (): HTMLElement => opened("new");
+const openJoin = (): HTMLElement => opened("join");
+
+/** The New table sheet at one of its steps: the table, its house rules, your card. */
+function newStep(step: "rules" | "house" | "card"): HTMLElement {
+  let sheet = openNew();
+  const title = (): string | null => sheetNow()!.getAttribute("aria-label");
+  if (title() === "House rules") fireEvent.click(within(sheet).getByText("Back to the table"));
+  if (title() === "Your player card")
+    fireEvent.click(within(sheet).getByRole("button", { name: "Back" }));
+  sheet = sheetNow()!;
+  if (step === "house")
+    fireEvent.click(within(sheet).getByRole("button", { name: /house rules/i }));
+  if (step === "card") {
+    const next = within(sheet).getByRole("button", { name: "Open table" });
+    if (!(next as HTMLButtonElement).disabled) fireEvent.click(next);
+  }
+  return sheetNow()!;
+}
+
+/** The Join sheet at its code step, or past it at your card if the code allows. */
+function joinStep(step: "code" | "card"): HTMLElement {
+  const sheet = openJoin();
+  const back = within(sheet).queryByRole("button", { name: "Back" });
+  if (step === "code" && back) fireEvent.click(back);
+  if (step === "card" && !back) {
+    const next = within(sheetNow()!).getByRole("button", { name: "Continue" });
+    if (!(next as HTMLButtonElement).disabled) fireEvent.click(next);
+  }
+  return sheetNow()!;
+}
+
+/** The name on your card, in whichever sheet is open (New table's if neither). */
 const nameBox = (): HTMLElement => {
-  const sheet = screen.queryByRole("dialog") ?? openNew();
-  return within(sheet).getByLabelText(/your name/i);
+  const open = sheetNow();
+  const here = open && within(open).queryByLabelText(/your name/i);
+  if (here) return here;
+  if (open?.dataset.sheet === "join") {
+    const card = within(joinStep("card")).queryByLabelText(/your name/i);
+    if (card) return card;
+  }
+  return within(newStep("card")).getByLabelText(/your name/i);
 };
-/** The code field, going back to the code step of the join sheet if it is past it. */
-const codeBox = (): HTMLElement => {
-  const sheet = openJoin();
-  const back = within(sheet).queryByRole("button", { name: "Change code" });
-  if (back) fireEvent.click(back);
-  return within(sheet).getByLabelText(/table code/i);
-};
-/**
- * The way to join: Join table once the code is in, or, while the code is not yet
- * one, the Continue that would lead there (disabled).
- */
+const codeBox = (): HTMLElement => within(joinStep("code")).getByLabelText(/table code/i);
+/** Take a seat once the code is in; while it is not yet one, the (disabled) Continue. */
 const joinButton = (): HTMLElement => {
-  const sheet = openJoin();
-  const next = within(sheet).queryByRole("button", { name: "Continue" });
-  if (next && !(next as HTMLButtonElement).disabled) fireEvent.click(next);
+  const sheet = joinStep("card");
   return (
-    within(sheet).queryByRole("button", { name: /join table/i }) ??
+    within(sheet).queryByRole("button", { name: /take a seat/i }) ??
     within(sheet).getByRole("button", { name: "Continue" })
   );
 };
+/** Open table on your card, or, while the rules would be refused, the (disabled) one before it. */
 const createButton = (): HTMLElement =>
-  within(openNew()).getByRole("button", { name: /open a new table/i });
+  within(newStep("card")).getByRole("button", { name: "Open table" });
+/** Choose an option of one of the New table sheet's choices (Variant, Mode). */
+const pick = (option: RegExp | string): void => {
+  fireEvent.click(within(newStep("rules")).getByRole("radio", { name: option }));
+};
+const chosen = (option: RegExp | string): boolean =>
+  (within(newStep("rules")).getByRole("radio", { name: option }) as HTMLInputElement).checked;
 
 beforeEach(() => {
   window.localStorage.removeItem(CREDENTIALS_KEY);
@@ -147,12 +182,8 @@ describe("opening a table", () => {
     const { socket, sent } = fakeSocket();
     mount(socket);
     fireEvent.change(nameBox(), { target: { value: "ana" } });
-    fireEvent.change(within(openNew()).getByLabelText(/variant/i), {
-      target: { value: "west-coast" },
-    });
-    fireEvent.change(within(openNew()).getByLabelText(/mode/i), {
-      target: { value: "competitive" },
-    });
+    pick(/West Coast/);
+    pick(/Competitive/);
     fireEvent.click(createButton());
 
     await waitFor(() => expect(sent).toHaveLength(1));
@@ -177,7 +208,8 @@ describe("opening a table", () => {
     // Not chosen: nothing sent, and every screen draws a face from the name.
     expect(sent[0]!.args[0]).not.toHaveProperty("avatar");
 
-    fireEvent.click(screen.getByRole("button", { name: "Change picture" }));
+    // On the card: the parts, one by one.
+    fireEvent.click(within(newStep("card")).getByRole("button", { name: "Choose each part" }));
     fireEvent.click(screen.getByRole("button", { name: "Hair or hat: crown" }));
     const chosen = JSON.parse(window.localStorage.getItem(AVATAR_KEY)!);
     expect(chosen.top).toBe("crown");
@@ -249,7 +281,8 @@ describe("joining a table", () => {
     // The common case: the code is already known and only a name is missing.
     mount(fakeSocket().socket, "/room/abc234");
     // Straight past the code, which the link gave, to who is sitting down.
-    const sheet = screen.getByRole("dialog", { name: "Join a table" });
+    const sheet = screen.getByRole("dialog", { name: "Your player card" });
+    expect(sheet).toHaveTextContent("Joining");
     expect(sheet).toHaveTextContent("Table ABC234");
     expect(screen.getByText(/invited to a table/i)).not.toBeNull();
     // The name is the only thing missing, so the cursor goes there.
@@ -370,7 +403,7 @@ describe("the scenario viewer", () => {
 });
 
 describe("changing the rules", () => {
-  const field = (label: string): HTMLInputElement => within(openNew()).getByLabelText(label);
+  const field = (label: string): HTMLInputElement => within(newStep("house")).getByLabelText(label);
   const sentOptions = (sent: { args: unknown[] }[]): unknown =>
     (sent[0]!.args[0] as { options: unknown }).options;
 
@@ -512,9 +545,7 @@ describe("changing the rules", () => {
 
   it("will not allow pausing a competitive table", () => {
     mount(fakeSocket().socket);
-    fireEvent.change(within(openNew()).getByLabelText(/mode/i), {
-      target: { value: "competitive" },
-    });
+    pick(/Competitive/);
     expect(field("Pausing allowed").checked).toBe(false);
     fireEvent.click(field("Pausing allowed"));
     expect(screen.getByRole("alert")).toHaveTextContent(/competitive table cannot be paused/);
@@ -524,34 +555,28 @@ describe("changing the rules", () => {
   it("keeps the changes when the variant changes, and can go back to the preset", () => {
     mount(fakeSocket().socket);
     fireEvent.change(field("Hand"), { target: { value: "11" } });
-    fireEvent.change(within(openNew()).getByLabelText(/variant/i), {
-      target: { value: "west-coast" },
-    });
+    pick(/West Coast/);
     expect(field("Hand").value).toBe("11");
     expect(screen.getByLabelText<HTMLSelectElement>("Wild cards in a meld").value).toBe(
       "naturals-equal-wilds",
     );
     fireEvent.click(screen.getByRole("button", { name: /back to the preset/i }));
     expect(field("Hand").value).toBe("14");
-    expect(screen.getByLabelText<HTMLSelectElement>(/variant/i).value).toBe("west-coast");
+    expect(chosen(/West Coast/)).toBe(true);
   });
 
   it("remembers the last rules a table was opened with, on this device", async () => {
     const { socket, sent } = fakeSocket();
     mount(socket);
     fireEvent.change(nameBox(), { target: { value: "ana" } });
-    fireEvent.change(within(openNew()).getByLabelText(/variant/i), {
-      target: { value: "west-coast" },
-    });
+    pick(/West Coast/);
     fireEvent.change(field("Foot"), { target: { value: "9" } });
     fireEvent.click(createButton());
     await waitFor(() => expect(sent).toHaveLength(1));
     cleanup();
 
     mount(fakeSocket().socket);
-    expect(within(openNew()).getByLabelText<HTMLSelectElement>(/variant/i).value).toBe(
-      "west-coast",
-    );
+    expect(chosen(/West Coast/)).toBe(true);
     expect(field("Foot").value).toBe("9");
   });
 
@@ -630,5 +655,93 @@ describe("the home screen's own parts", () => {
     openJoin();
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("the new table sheet", () => {
+  it("seats the computers asked for once the table opens, each named and at its level", async () => {
+    const { socket, sent } = fakeSocket();
+    mount(socket);
+    const sheet = newStep("rules");
+    fireEvent.click(within(sheet).getByRole("button", { name: "+ Add computer" }));
+    fireEvent.change(within(sheet).getByLabelText("Name"), { target: { value: "Shuffles" } });
+    fireEvent.click(within(sheet).getByRole("radio", { name: "Hard" }));
+    fireEvent.click(within(sheet).getByRole("button", { name: "Done" }));
+    // A second, left as it came: Standard, and any name.
+    fireEvent.click(within(sheet).getByRole("button", { name: "+ Add computer" }));
+    expect(within(sheet).getByRole("button", { name: "Edit Shuffles, Hard" })).toBeInTheDocument();
+    expect(
+      within(sheet).getByRole("button", { name: "Edit Computer 2, Standard" }),
+    ).toBeInTheDocument();
+    fireEvent.change(nameBox(), { target: { value: "ana" } });
+    fireEvent.click(createButton());
+    await waitFor(() => expect(sent).toHaveLength(3));
+    expect(sent.map((s) => s.event)).toEqual(["createRoom", "addBot", "addBot"]);
+    expect(sent[1]!.args[0]).toEqual({ level: "hard", name: "Shuffles" });
+    expect(sent[2]!.args[0]).toEqual({ level: "standard" });
+  });
+
+  it("takes a computer away again", () => {
+    mount(fakeSocket().socket);
+    const sheet = newStep("rules");
+    fireEvent.click(within(sheet).getByRole("button", { name: "+ Add computer" }));
+    fireEvent.click(within(sheet).getByRole("button", { name: "Remove" }));
+    expect(within(sheet).queryByRole("button", { name: /^Edit / })).toBeNull();
+    expect(within(sheet).getByText("None yet, friends fill the seats")).toBeInTheDocument();
+  });
+
+  it("sets the rounds with the stepper, giving each a minimum", async () => {
+    const { socket, sent } = fakeSocket();
+    mount(socket);
+    const sheet = newStep("rules");
+    fireEvent.click(within(sheet).getByRole("button", { name: "Fewer rounds" }));
+    expect(within(sheet).getByRole("group", { name: "Rounds" })).toHaveTextContent("3");
+    fireEvent.change(nameBox(), { target: { value: "ana" } });
+    fireEvent.click(createButton());
+    await waitFor(() => expect(sent).toHaveLength(1));
+    const { rules } = (sent[0]!.args[0] as { options: { rules: Record<string, unknown> } }).options;
+    expect(rules.rounds).toBe(3);
+    expect(rules.layDownMinimums).toEqual([60, 90, 120]);
+  });
+
+  it("suggests computer names in turn, skipping ones taken", () => {
+    expect(suggestBotName("", [])).toBe("Shuffles");
+    expect(suggestBotName("Shuffles", ["Shuffles"])).toBe("Card Shark");
+    expect(suggestBotName("", ["Shuffles", "Card Shark"])).toBe("Lady Luck");
+    expect(suggestBotName("Sir Melds-a-Lot", [])).toBe("Shuffles");
+  });
+});
+
+describe("your player card", () => {
+  it("starts on the finished card when signed in, sitting down as that name", async () => {
+    window.localStorage.setItem(NAME_KEY, "Jack");
+    window.localStorage.setItem(ACCOUNT_KEY, "jack");
+    const { socket, sent } = fakeSocket();
+    mount(socket, "/room/abc234");
+    const card = screen.getByRole("dialog", { name: "Your player card" });
+    expect(within(card).getByText("@jack")).toBeInTheDocument();
+    expect(within(card).queryByLabelText(/your name/i)).toBeNull();
+    // Changing it turns it into the editor.
+    fireEvent.click(within(card).getByRole("button", { name: "Change picture or name" }));
+    expect(within(card).getByLabelText(/your name/i)).toHaveValue("Jack");
+    fireEvent.click(within(card).getByRole("button", { name: "Take a seat" }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]!.event).toBe("joinRoom");
+  });
+
+  it("offers Sit down as the name, while signed in and not editing", () => {
+    window.localStorage.setItem(NAME_KEY, "Jack");
+    window.localStorage.setItem(ACCOUNT_KEY, "jack");
+    mount(fakeSocket().socket, "/room/abc234");
+    expect(screen.getByRole("button", { name: "Sit down as Jack" })).toBeInTheDocument();
+  });
+
+  it("picks a color for the face, and shuffles it", () => {
+    mount(fakeSocket().socket);
+    const card = newStep("card");
+    fireEvent.click(within(card).getByRole("radio", { name: "lime" }));
+    expect(JSON.parse(window.localStorage.getItem(AVATAR_KEY)!).background).toBe("lime");
+    fireEvent.click(within(card).getByRole("button", { name: "Shuffle" }));
+    expect(window.localStorage.getItem(AVATAR_KEY)).not.toBeNull();
   });
 });

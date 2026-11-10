@@ -14,34 +14,20 @@
  */
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import {
-  MATCHES_PATH,
-  MAX_NAME_LENGTH,
-  resolveRules,
-  type GameMode,
-  type MatchHistory as History,
-  type RulesPreset,
-} from "@hf/shared";
+import { MATCHES_PATH, type MatchHistory as History } from "@hf/shared";
 import { LESSONS } from "@hf/scenarios";
-import { createTable, joinTable, resumeSavedGame } from "../actions";
+import { addComputerPlayer, createTable, joinTable, resumeSavedGame } from "../actions";
 import { loadAvatar, saveAvatar, faceOf } from "../profile/avatarStore";
-import { AvatarEditor } from "../profile/AvatarEditor";
 import { AvatarFace } from "../profile/Avatar";
 import { loadCredentials } from "../credentials";
-import { isPossibleRoomCode, normalizeRoomCode } from "../roomCode";
+import { normalizeRoomCode } from "../roomCode";
 import { loadSavedGames, type SavedGame } from "../savedGames";
-import {
-  DEFAULT_CHOICE,
-  loadRulesChoice,
-  rebased,
-  rememberRulesChoice,
-  type RulesChoice,
-} from "../rules/customRules";
-import { RulesEditor } from "../rules/RulesEditor";
+import { loadRulesChoice, rememberRulesChoice, type RulesChoice } from "../rules/customRules";
 import { useSession } from "../session";
 import { serverUrl, type HfClientSocket } from "../socket";
 import {
   httpPost,
+  loadAccount,
   loadIdentity,
   loadName,
   prepareIdentity,
@@ -53,9 +39,13 @@ import { Button } from "../ui/Button";
 import { Chip } from "../ui/Chip";
 import { IconBox, type IconBoxColor } from "../ui/IconBox";
 import { Icon, type IconName } from "../ui/icons";
-import { Sheet } from "../ui/Sheet";
-import { CodeBoxes } from "../join/CodeBoxes";
-import { Scanner } from "../join/Scanner";
+import {
+  JoinSheet,
+  NewTableSheet,
+  botSettings,
+  type CardInputs,
+  type PlannedBot,
+} from "../home/sheets";
 
 /** Development builds, and the screenshot harness's, carry the scenario viewer. */
 const SCENARIOS_LINK = import.meta.env.DEV || import.meta.env.VITE_SCENARIOS === "1";
@@ -97,6 +87,28 @@ export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React
   // twice, which double-seats the sender at their own table.
   const [busy, setBusy] = useState(false);
   const history = useHistory(post);
+  // Computers to seat once a new table opens.
+  const [bots, setBots] = useState<readonly PlannedBot[]>([]);
+  const stats = history?.stats;
+  // Your player card: the name and face you sit down with, and your record.
+  const card: CardInputs = {
+    name,
+    onName: setName,
+    avatar,
+    onAvatar: (next) => {
+      setAvatar(next);
+      saveAvatar(next);
+    },
+    account: loadAccount(),
+    stats:
+      stats && stats.played + stats.unfinished > 0
+        ? {
+            games: stats.played,
+            won: stats.played > 0 ? Math.round((100 * stats.wins) / stats.played) : null,
+            awards: Object.values(stats.awards ?? {}).reduce((a, b) => a + b, 0),
+          }
+        : null,
+  };
 
   const named = name.trim() !== "";
   const sink = { seat, setNotice };
@@ -127,6 +139,11 @@ export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React
         : await createTable(socket, name, choice, sink, user, avatar);
       // Remembered once a table has actually been opened with them.
       if (roomId && !join) rememberRulesChoice(choice);
+      // The computers asked for, seated in order as the host would in the waiting
+      // room; one refused leaves a notice there and the rest still sit down.
+      if (roomId && !join) {
+        for (const bot of bots) await addComputerPlayer(socket, sink, botSettings(bot));
+      }
       if (roomId) navigate(`/room/${roomId}`);
     } finally {
       // Cleared even on refusal, so a wrong code can be corrected and retried.
@@ -138,31 +155,6 @@ export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React
     setNotice(null);
     setOpen(which);
   }
-
-  const who = (
-    <>
-      <label className="flex flex-col gap-1.5">
-        <span className="text-sm font-medium text-ink-soft">Your name</span>
-        <input
-          className="min-h-11 rounded-xl border border-white/12 bg-page px-3 text-ink placeholder:text-faint"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="e.g. Ana"
-          // First either way, and from a shared link it is the only thing missing.
-          autoFocus
-          maxLength={MAX_NAME_LENGTH}
-        />
-      </label>
-      <AvatarEditor
-        name={name}
-        avatar={avatar}
-        onChange={(next) => {
-          setAvatar(next);
-          saveAvatar(next);
-        }}
-      />
-    </>
-  );
 
   const alert = notice && (
     <p role="alert" className="rounded-xl bg-danger/15 px-3 py-2 text-sm text-danger-soft">
@@ -203,252 +195,28 @@ export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React
           onCode={setCode}
           // From a shared link the code is already in: on to who is sitting down.
           startWithCode={fromLink !== undefined}
-          who={who}
+          card={card}
           alert={alert}
-          disabled={busy || !named}
+          busy={busy}
           onSubmit={(e) => void submit(e, true)}
           onClose={() => setOpen(null)}
         />
       )}
 
       {open === "new" && (
-        <Sheet title="New table" onClose={() => setOpen(null)}>
-          <NewTableForm
-            who={who}
-            alert={alert}
-            choice={choice}
-            onChoice={setChoice}
-            disabled={busy || !named}
-            onSubmit={(e) => void submit(e, false)}
-          />
-        </Sheet>
+        <NewTableSheet
+          choice={choice}
+          onChoice={setChoice}
+          bots={bots}
+          onBots={setBots}
+          card={card}
+          alert={alert}
+          busy={busy}
+          onSubmit={(e) => void submit(e, false)}
+          onClose={() => setOpen(null)}
+        />
       )}
     </main>
-  );
-}
-
-/**
- * Joining a table: the code first, in six boxes (or read from the table's QR
- * code), then who is sitting down. On a computer the camera sits beside the
- * boxes; on a phone, scanning takes the whole screen.
- */
-function JoinSheet({
-  code,
-  onCode,
-  startWithCode,
-  who,
-  alert,
-  disabled,
-  onSubmit,
-  onClose,
-}: {
-  readonly code: string;
-  readonly onCode: (code: string) => void;
-  readonly startWithCode: boolean;
-  readonly who: React.ReactNode;
-  readonly alert: React.ReactNode;
-  readonly disabled: boolean;
-  readonly onSubmit: (event: FormEvent) => void;
-  readonly onClose: () => void;
-}): React.ReactElement {
-  const phone = usePhone();
-  const [step, setStep] = useState<"code" | "who">(
-    startWithCode && isPossibleRoomCode(code) ? "who" : "code",
-  );
-  const [scanning, setScanning] = useState(false);
-  const read = (found: string): void => {
-    onCode(found);
-    setScanning(false);
-    setStep("who");
-  };
-
-  if (phone && scanning) {
-    return (
-      <Sheet title="Scan the table's QR code" onClose={() => setScanning(false)}>
-        <Scanner onCode={read} autoStart />
-        <Button variant="secondary" size="lg" onClick={() => setScanning(false)}>
-          Type the code instead
-        </Button>
-      </Sheet>
-    );
-  }
-
-  const codeStep = (
-    <form
-      className="flex flex-col gap-4"
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (isPossibleRoomCode(code)) setStep("who");
-      }}
-    >
-      <p className="m-0 text-sm text-muted">Type the six letters from your host</p>
-      <CodeBoxes value={code} onChange={onCode} autoFocus />
-      {alert}
-      <Button
-        type="submit"
-        size="lg"
-        // Disabled rather than validated on submit, so an impossible code never
-        // costs a round trip; the server still has the final say on whether the
-        // table exists.
-        disabled={!isPossibleRoomCode(code)}
-      >
-        Continue
-      </Button>
-      {phone ? (
-        <>
-          <div className="flex items-center gap-3 text-xs text-faint">
-            <span className="h-px flex-1 bg-white/10" />
-            or
-            <span className="h-px flex-1 bg-white/10" />
-          </div>
-          <button
-            type="button"
-            onClick={() => setScanning(true)}
-            className="flex min-h-[60px] items-center gap-3.5 rounded-[18px] border border-white/10 bg-surface px-4 text-left hover:border-white/20"
-          >
-            <IconBox icon="scan" color="accent" size={40} />
-            <span className="flex-1">
-              <span className="block font-display text-[15px] font-semibold">
-                Scan the table&rsquo;s QR code
-              </span>
-              <span className="block text-xs text-muted">From the host&rsquo;s screen</span>
-            </span>
-            <Icon name="forward" size={18} className="text-muted" />
-          </button>
-        </>
-      ) : (
-        <p className="m-0 text-xs text-faint">Got a link instead? Opening it skips this step.</p>
-      )}
-    </form>
-  );
-
-  const whoStep = (
-    <form className="flex flex-col gap-4" onSubmit={onSubmit}>
-      <p className="m-0 flex items-center justify-between gap-3 text-sm text-muted">
-        <span>
-          Table <span className="font-mono font-bold text-ink">{code}</span>
-        </span>
-        <button
-          type="button"
-          onClick={() => setStep("code")}
-          className="text-accent underline hover:text-accent-hover"
-        >
-          Change code
-        </button>
-      </p>
-      {who}
-      {alert}
-      <Button type="submit" size="lg" disabled={disabled || !isPossibleRoomCode(code)}>
-        Join table
-      </Button>
-    </form>
-  );
-
-  return (
-    <Sheet title="Join a table" onClose={onClose} wide={!phone && step === "code"}>
-      {step === "code" && !phone ? (
-        <div className="grid grid-cols-[minmax(0,1fr)_260px] gap-8">
-          {codeStep}
-          <div className="flex flex-col items-center gap-3 border-l border-white/8 pl-8">
-            <h3 className="m-0 text-center font-display text-lg font-semibold">
-              Or scan the table&rsquo;s QR code
-            </h3>
-            <Scanner onCode={read} />
-          </div>
-        </div>
-      ) : step === "code" ? (
-        codeStep
-      ) : (
-        whoStep
-      )}
-    </Sheet>
-  );
-}
-
-/** The house rules for a new table, and the button that opens it. */
-function NewTableForm({
-  who,
-  alert,
-  choice,
-  onChoice,
-  disabled,
-  onSubmit,
-}: {
-  readonly who: React.ReactNode;
-  readonly alert: React.ReactNode;
-  readonly choice: RulesChoice;
-  readonly onChoice: (choice: RulesChoice) => void;
-  readonly disabled: boolean;
-  readonly onSubmit: (event: FormEvent) => void;
-}): React.ReactElement {
-  const { preset, mode } = choice;
-  // The server's own check, asked as the rules are edited; the server asks again.
-  const checked = resolveRules(choice);
-  const changes = Object.keys(choice.rules).length;
-  const select =
-    "min-h-10 rounded-xl border border-white/12 bg-page px-3 text-sm text-ink focus-visible:outline-accent";
-  return (
-    <form className="flex flex-col gap-4" onSubmit={onSubmit}>
-      {who}
-      <fieldset className="m-0 flex flex-col gap-3 border-0 p-0">
-        <legend className="mb-2 text-xs font-semibold tracking-[0.06em] text-quiet uppercase">
-          House rules
-        </legend>
-        <label className="flex items-center justify-between gap-3 text-sm">
-          <span className="text-ink-soft">Variant</span>
-          <select
-            className={select}
-            value={preset}
-            onChange={(e) => onChoice(rebased(choice, e.target.value as RulesPreset, mode))}
-          >
-            <option value="east-coast">East Coast</option>
-            <option value="west-coast">West Coast</option>
-          </select>
-        </label>
-        <label className="flex items-center justify-between gap-3 text-sm">
-          <span className="text-ink-soft">Mode</span>
-          <select
-            className={select}
-            value={mode}
-            onChange={(e) => onChoice(rebased(choice, preset, e.target.value as GameMode))}
-          >
-            <option value="family">Family</option>
-            <option value="competitive">Competitive</option>
-          </select>
-        </label>
-        <details className="rounded-[14px] border border-white/8 bg-raised/60 p-3 text-sm">
-          <summary className="cursor-pointer text-ink-soft">
-            Change the rules
-            {changes > 0 && (
-              <Chip tone="gold" className="ml-2">
-                {changes} changed
-              </Chip>
-            )}
-          </summary>
-          <div className="mt-3 flex flex-col gap-3">
-            <RulesEditor choice={choice} onChange={onChoice} />
-            {changes > 0 && (
-              <button
-                type="button"
-                onClick={() => onChoice({ ...DEFAULT_CHOICE, preset, mode })}
-                className="self-start text-xs text-muted underline"
-              >
-                Back to the preset&rsquo;s rules
-              </button>
-            )}
-          </div>
-        </details>
-        {!checked.ok && (
-          <p role="alert" className="rounded-xl bg-danger/15 px-3 py-2 text-sm text-danger-soft">
-            {capitalize(checked.error)}.
-          </p>
-        )}
-      </fieldset>
-      {alert}
-      <Button type="submit" size="lg" disabled={disabled || !checked.ok}>
-        Open a new table
-      </Button>
-    </form>
   );
 }
 
@@ -760,10 +528,6 @@ function QuickStart({ onPractice }: { readonly onPractice: () => void }): React.
       })}
     </section>
   );
-}
-
-function capitalize(text: string): string {
-  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 function formatDay(at: number): string {

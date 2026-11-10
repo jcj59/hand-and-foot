@@ -37,6 +37,7 @@ export function AvatarEditor({
   avatar,
   onChange,
   random,
+  open: embedded = false,
 }: {
   /** What a face is drawn from until one is chosen. */
   readonly name: string;
@@ -44,12 +45,18 @@ export function AvatarEditor({
   readonly avatar: Avatar | null;
   readonly onChange: (avatar: Avatar | null) => void;
   readonly random?: () => number;
+  /**
+   * Inside the player card: the rows of parts only, already open, since the card
+   * shows the face and has its own Shuffle.
+   */
+  readonly open?: boolean;
 }): React.ReactElement {
-  const [open, setOpen] = useState(false);
+  const [toggled, setOpen] = useState(false);
+  const open = embedded || toggled;
   const face = avatar ?? defaultAvatar(name.trim());
   return (
     <section aria-label="Your picture" className="flex flex-col gap-3">
-      <div className="flex items-center gap-3">
+      <div className={`flex items-center gap-3 ${embedded ? "hidden" : ""}`}>
         <AvatarFace avatar={face} size={56} label="Your picture" />
         <div className="flex flex-wrap gap-2">
           <button
