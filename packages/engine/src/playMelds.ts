@@ -13,6 +13,7 @@ import {
   advanceTurn,
   fail,
   ok,
+  openTurn,
   setActiveCards,
   updatePlayer,
   withoutTurnBase,
@@ -124,14 +125,17 @@ export function applyPlayMelds(state: GameState, plays: readonly MeldPlay[]): Ap
     if (!claimsGoOut(state, nextState.players[seat])) {
       return ok(advanceTurn(nextState, seat));
     }
-    return ok({
-      ...withoutTurnBase(nextState),
-      currentSeat: nextSeated(state, seat),
-      phase: "draw",
-      // One more turn for each of the others still in the match.
-      finalLapRemaining: seatedCount(state) - 1,
-      wentOutSeat: seat,
-    });
+    return ok(
+      openTurn(
+        {
+          ...withoutTurnBase(nextState),
+          // One more turn for each of the others still in the match.
+          finalLapRemaining: seatedCount(state) - 1,
+          wentOutSeat: seat,
+        },
+        nextSeated(state, seat),
+      ),
+    );
   }
 
   return ok(nextState);

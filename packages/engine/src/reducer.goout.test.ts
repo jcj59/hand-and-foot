@@ -115,6 +115,27 @@ describe("going out", () => {
     expect(r.state.currentSeat).toBe(1);
   });
 
+  // Found in a real game at the end of round 4: the seat after the player going out
+  // had emptied their hand with a discard, so their foot was pending. Going out
+  // bypassed the pickup, leaving them in the draw phase drawing into an empty hand.
+  it("without a discard still picks up the next seat's pending foot", () => {
+    const p0 = player({ inFoot: true, foot: cards("10", 3), melds: books });
+    const s = table(p0, 3);
+    const players = s.players.map((p, i) =>
+      i === 1 ? { ...p, footPending: true, foot: [card("5"), card("6")] } : p,
+    );
+    const r = applyAction(
+      { ...s, players },
+      { type: "playMelds", melds: [{ rank: "10", cardIds: p0.foot.map((c) => c.id) }] },
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.state.currentSeat).toBe(1);
+    expect(r.state.phase).toBe("play");
+    expect(r.state.players[1].inFoot).toBe(true);
+    expect(r.state.players[1].footPending).toBe(false);
+  });
+
   it("ends the round when the final lap runs out", () => {
     const p0 = player({ inFoot: false, hand: [card("5"), card("6")] });
     const s = { ...table(p0, 2), finalLapRemaining: 1 };

@@ -63,13 +63,23 @@ export function advanceTurn(state: GameState, seat: number): GameState {
   // The turn is over, so whatever it played is final.
   const passed: GameState = {
     ...withoutTurnBase(state),
-    currentSeat: next,
-    phase: "draw",
     finalLapRemaining: finalLap,
     roundEnded,
   };
-  if (roundEnded || !state.players[next].footPending) return passed;
-  return updatePlayer({ ...passed, phase: "play" }, next, (p) => ({
+  return roundEnded ? { ...passed, currentSeat: next, phase: "draw" } : openTurn(passed, next);
+}
+
+/**
+ * Hand the turn to `seat`, opening it in the draw phase — or, for a player whose
+ * foot is pending, already holding the foot in the play phase (see `advanceTurn`).
+ * Every way a turn can end must pass through here, including going out without a
+ * discard: the seat after the player going out may have emptied their own hand last
+ * turn, and skipping the pickup leaves them drawing into an empty hand.
+ */
+export function openTurn(state: GameState, seat: number): GameState {
+  const opened: GameState = { ...state, currentSeat: seat, phase: "draw" };
+  if (!state.players[seat].footPending) return opened;
+  return updatePlayer({ ...opened, phase: "play" }, seat, (p) => ({
     ...p,
     inFoot: true,
     footPending: false,
