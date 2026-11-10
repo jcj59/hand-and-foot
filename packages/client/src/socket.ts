@@ -8,6 +8,7 @@
  */
 import { connect as connectTransport, type TableSocket } from "@hf/transport";
 import type {
+  BotSettings,
   Ack,
   Action,
   Avatar,
@@ -168,8 +169,16 @@ export function stageMelds(
   return ask((ack) => socket.emit("stageMelds", { melds }, ack));
 }
 
-export function addBot(socket: HfClientSocket): Promise<Ack<undefined>> {
-  return ask((ack) => socket.emit("addBot", ack));
+export function addBot(socket: HfClientSocket, settings?: BotSettings): Promise<Ack<undefined>> {
+  return ask((ack) => socket.emit("addBot", settings, ack));
+}
+
+export function updateBot(
+  socket: HfClientSocket,
+  seat: number,
+  settings: BotSettings,
+): Promise<Ack<undefined>> {
+  return ask((ack) => socket.emit("updateBot", { seat, ...settings }, ack));
 }
 
 export function removeBot(socket: HfClientSocket, seat: number): Promise<Ack<undefined>> {

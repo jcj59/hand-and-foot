@@ -83,7 +83,7 @@ describe("the rematch's table", () => {
     const manager = new RoomManager({ clock: new FakeClock() });
     const room = manager.create(ONE);
     room.join("ana", { userId: "u-ana" });
-    room.addBot(0);
+    room.addBot(0, { level: "easy", name: "Shuffles" });
     room.join("ben", { userId: "u-ben" });
     expect(room.setHost(0, 2).ok).toBe(true);
     room.start(2);
@@ -100,9 +100,11 @@ describe("the rematch's table", () => {
     expect(next.config).toEqual(ONE);
     expect(next.seats().map((p) => [p.name, p.bot ?? false, p.userId])).toEqual([
       ["ana", false, "u-ana"],
-      ["Robo Rita", true, undefined],
+      ["Shuffles", true, undefined],
       ["ben", false, "u-ben"],
     ]);
+    // The computer comes back as it was: its name and its level.
+    expect(next.seats()[1]!.botLevel).toBe("easy");
     expect(next.hostSeat).toBe(2);
     // Each person's seat there, by their token here; the computer has none to carry.
     expect([...moved.value.entries()].map(([t, s]) => [t, s.roomId, s.seat])).toEqual([

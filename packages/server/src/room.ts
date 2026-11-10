@@ -1,6 +1,11 @@
 import {
   CARRIED_ON_WITHOUT_YOU,
+  DEFAULT_BOT_LEVEL,
+  LEGACY_BOT_LEVEL,
+  MAX_BOT_NAME_LENGTH,
   SPECTATOR_SEAT,
+  isBotLevel,
+  normalizeName,
   defaultAvatar,
   MAX_PLAYERS,
   MIN_PLAYERS,
@@ -8,6 +13,7 @@ import {
   type Action,
   type ActionSource,
   type Avatar,
+  type BotLevel,
   type ClockState,
   type CloseReason,
   type GameState,
@@ -26,7 +32,7 @@ import {
   deal,
   firstSeatFor,
   defaultAction,
-  heuristicPolicy,
+  levelPolicy,
   describeMove,
   grabbyPants,
   isMatchOver,
@@ -79,8 +85,36 @@ export const BOT_NAMES = [
  * The move a computer plays for a seat: the heuristic, given only that seat's view,
  * and the safe default should it ever have nothing to offer.
  */
-function botMove(state: GameState, seat: number): Action | null {
-  return heuristicPolicy(state, seat) ?? defaultAction(state);
+function botMove(state: GameState, seat: number, level: BotLevel = "hard"): Action | null {
+  return levelPolicy(level)(state, seat) ?? defaultAction(state);
+}
+
+/** What a host may set about a computer player: how hard it plays, and what it is called. */
+export interface BotOptions {
+  readonly level?: BotLevel;
+  readonly name?: string;
+}
+
+/**
+ * Read a host's choices for a computer player from an untyped payload: a level
+ * must be one of the levels, and a name is tidied like a person's and cut to
+ * `MAX_BOT_NAME_LENGTH`. Anything else is refused rather than ignored, so a typo
+ * in a client never quietly seats a computer at the wrong level.
+ */
+export function parseBotOptions(value: unknown): RoomResult<BotOptions> {
+  if (value === undefined || value === null) return succeed({});
+  if (typeof value !== "object") return fail("that is not a computer player's settings");
+  const { level, name } = value as { level?: unknown; name?: unknown };
+  if (level !== undefined && !isBotLevel(level)) {
+    return fail("a computer player plays easy, standard or hard");
+  }
+  if (name !== undefined && typeof name !== "string") return fail("a name has to be text");
+  return succeed({
+    ...(level !== undefined ? { level } : {}),
+    ...(name !== undefined
+      ? { name: normalizeName(name).slice(0, MAX_BOT_NAME_LENGTH).trim() }
+      : {}),
+  });
 }
 
 /**
@@ -138,6 +172,8 @@ export interface RoomPlayer {
    * plays its moves with the heuristic.
    */
   readonly bot?: true;
+  /** How hard a computer player plays; absent reads as `LEGACY_BOT_LEVEL` (Hard). */
+  readonly botLevel?: BotLevel;
   /** When they dropped, so the reconnect grace can be measured. Null while connected. */
   disconnectedAt: number | null;
   /**
@@ -426,7 +462,7 @@ export class Room {
         left: p.left,
         ...(p.userId ? { userId: p.userId } : {}),
         ...(p.avatar ? { avatar: p.avatar } : {}),
-        ...(p.bot ? { bot: true as const } : {}),
+        ...(p.bot ? { bot: true as const, botLevel: p.botLevel ?? LEGACY_BOT_LEVEL } : {}),
       })),
       started: this.started,
       ...(this.state ? { firstSeat: this.state.firstSeat ?? 0 } : {}),
@@ -561,21 +597,23 @@ export class Room {
 
   /**
    * Sit a computer player at the table, so a person can play alone or fill a short
-   * table. The host's to do, before the deal, while there is a seat free. It takes
-   * the first name not already at the table and the picture drawn from that name.
+   * table. The host's to do, before the deal, while there is a seat free. It plays
+   * at the level asked for (Standard if none) under the name asked for, or, for a
+   * blank one, the first of `BOT_NAMES` not already at the table; its picture is
+   * drawn from that name.
    */
-  addBot(bySeat: number): RoomResult<RoomPlayer> {
+  addBot(bySeat: number, options: BotOptions = {}): RoomResult<RoomPlayer> {
     if (this.started) return fail("computer players can only be added before the deal");
     if (bySeat !== this.hostSeat) return fail("only the host can add a computer player");
     if (this.players.length >= MAX_PLAYERS) return fail(`a table seats at most ${MAX_PLAYERS}`);
-    const taken = new Set(this.players.map((p) => p.name));
-    const name = BOT_NAMES.find((n) => !taken.has(n)) ?? `Robo ${this.players.length + 1}`;
+    const name = options.name || this.freeBotName();
     const bot: RoomPlayer = {
       seat: this.players.length,
       name,
       token: this.deps.newToken(),
       avatar: defaultAvatar(name),
       bot: true,
+      botLevel: options.level ?? DEFAULT_BOT_LEVEL,
       connected: true,
       disconnectedAt: null,
       left: false,
@@ -583,6 +621,35 @@ export class Room {
     this.players.push(bot);
     this.save();
     return succeed(bot);
+  }
+
+  /**
+   * Change a computer player's level or name before the deal; the host's call. A
+   * blank name gives it back a name from `BOT_NAMES`, and a new name a new picture
+   * drawn from it, as when it sat down.
+   */
+  updateBot(bySeat: number, seat: number, options: BotOptions): RoomResult<RoomPlayer> {
+    if (this.started) return fail("computer players can only be changed before the deal");
+    if (bySeat !== this.hostSeat) return fail("only the host can change a computer player");
+    const bot = this.players[seat];
+    if (!bot?.bot) return fail("there is no computer player in that seat");
+    const name =
+      options.name === undefined ? bot.name : options.name || this.freeBotName(bot.token);
+    const changed: RoomPlayer = {
+      ...bot,
+      name,
+      avatar: name === bot.name ? bot.avatar : defaultAvatar(name),
+      botLevel: options.level ?? bot.botLevel ?? LEGACY_BOT_LEVEL,
+    };
+    this.players[seat] = changed;
+    this.save();
+    return succeed(changed);
+  }
+
+  /** The first of `BOT_NAMES` nobody else at the table goes by. */
+  private freeBotName(except?: string): string {
+    const taken = new Set(this.players.filter((p) => p.token !== except).map((p) => p.name));
+    return BOT_NAMES.find((n) => !taken.has(n)) ?? `Robo ${this.players.length + 1}`;
   }
 
   /** Take a computer player away before the deal; the seats after it close up, as for a leave. */
@@ -1157,7 +1224,8 @@ export class Room {
     /* v8 ignore next -- the timer is cancelled whenever the game stops being live */
     if (!state || state.roundEnded) return;
     const seat = state.currentSeat;
-    const action = botMove(state, seat);
+    const player = this.players[seat];
+    const action = botMove(state, seat, player?.botLevel ?? LEGACY_BOT_LEVEL);
     /* v8 ignore next 2 -- the heuristic and the default are proven legal by the engine's property tests */
     if (action === null || !this.apply(seat, action, "bot")) {
       if (!this.applyFallback(seat)) return;
@@ -1378,7 +1446,7 @@ export class Room {
         connected: p.connected,
         ...(p.avatar ? { avatar: p.avatar } : {}),
         ...(this.state && !isSeated(this.state, p.seat) ? { departed: true as const } : {}),
-        ...(p.bot ? { bot: true as const } : {}),
+        ...(p.bot ? { bot: true as const, botLevel: p.botLevel ?? LEGACY_BOT_LEVEL } : {}),
       })),
       hostSeat: this.hostSeat,
       started: this.started,
@@ -1484,7 +1552,7 @@ export class Room {
         name: p.name,
         ...(p.avatar ? { avatar: p.avatar } : {}),
         ...(p.userId ? { userId: p.userId } : {}),
-        ...(p.bot ? { bot: true as const } : {}),
+        ...(p.bot ? { bot: true as const, botLevel: p.botLevel ?? LEGACY_BOT_LEVEL } : {}),
       })),
       log: entries.map((e) => ({ seat: e.seat, action: e.action, source: e.source })),
       summary: summarizeMatch({

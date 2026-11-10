@@ -63,7 +63,7 @@ export function rematchFor(
   let host: number | null = null;
   for (const player of players) {
     if (player.bot) {
-      next.addBot(next.hostSeat);
+      next.addBot(next.hostSeat, { name: player.name, level: player.botLevel });
       continue;
     }
     const joined = next.join(player.name, { userId: player.userId, avatar: player.avatar });

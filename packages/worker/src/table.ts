@@ -36,6 +36,7 @@ import {
   PONG,
   ROOM_CODE_ALPHABET,
   type Ack,
+  type BotLevel,
   type ClientFrame,
   type MatchRecord,
   type RulesConfig,
@@ -56,6 +57,8 @@ interface RematchSeat {
   readonly name: string;
   readonly profile: SeatProfile;
   readonly bot: boolean;
+  /** A computer's level; absent for people. */
+  readonly botLevel?: BotLevel;
   readonly host: boolean;
 }
 
@@ -175,7 +178,7 @@ export class TableObject extends DurableObject<Env> {
     let host: number | null = null;
     for (const seat of seats) {
       if (seat.bot) {
-        room.addBot(room.hostSeat);
+        room.addBot(room.hostSeat, { name: seat.name, level: seat.botLevel });
         out.push(null);
         continue;
       }
@@ -405,6 +408,7 @@ export class TableObject extends DurableObject<Env> {
       name: p.name,
       profile: { userId: p.userId ?? null, avatar: p.avatar ?? null },
       bot: p.bot === true,
+      ...(p.botLevel ? { botLevel: p.botLevel } : {}),
       host: p.seat === room.hostSeat,
     }));
     for (;;) {

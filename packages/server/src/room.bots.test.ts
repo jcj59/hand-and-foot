@@ -5,9 +5,9 @@
  */
 import { describe, it, expect } from "vitest";
 import { defaultAvatar, EAST_COAST, type RulesConfig } from "@hf/shared";
-import { defaultAction, heuristicPolicy } from "@hf/engine";
+import { defaultAction, heuristicPolicy, levelPolicy } from "@hf/engine";
 import { FakeClock } from "./clock";
-import { BOT_MOVE_MS, BOT_NAMES, DEFAULT_RECONNECT_GRACE_MS, Room } from "./room";
+import { BOT_MOVE_MS, BOT_NAMES, DEFAULT_RECONNECT_GRACE_MS, Room, parseBotOptions } from "./room";
 import { InMemoryRoomStore } from "./store";
 
 /** Short rounds: no extra decks, and a round ends when the stock does. */
@@ -147,7 +147,7 @@ describe("a computer player's turn", () => {
     expect(room.log.length).toBe(logged + 2);
   });
 
-  it("plays what the heuristic would, from its own view", () => {
+  it("plays what its level would, from its own view", () => {
     const { room, clock } = withBots();
     const state = room.gameState!;
     room.submitAction(0, defaultAction(state)!);
@@ -155,7 +155,7 @@ describe("a computer player's turn", () => {
     const before = room.gameState!;
     expect(before.currentSeat).toBe(1);
     clock.advance(BOT_MOVE_MS);
-    expect(room.log.entries().at(-1)!.action).toEqual(heuristicPolicy(before, 1));
+    expect(room.log.entries().at(-1)!.action).toEqual(levelPolicy("standard")(before, 1));
   });
 
   it("plays whole rounds that end, getting down along the way", () => {
@@ -297,5 +297,157 @@ describe("computer players across a restart", () => {
 describe("the pace of a computer player", () => {
   it("is a move every 1.2 seconds", () => {
     expect(BOT_MOVE_MS).toBe(1_200);
+  });
+});
+
+describe("a computer player's level and name", () => {
+  it("is Standard and a name from the list unless the host picks", () => {
+    const { room } = lobby();
+    room.addBot(0);
+    expect(room.info().players[1]).toMatchObject({
+      bot: true,
+      botLevel: "standard",
+      name: "Robo Rita",
+    });
+  });
+
+  it("can be chosen as it sits down, its picture drawn from the name given", () => {
+    const { room } = lobby();
+    const added = room.addBot(0, { level: "easy", name: "Shuffles" });
+    expect(added.ok && added.value).toMatchObject({
+      name: "Shuffles",
+      botLevel: "easy",
+      avatar: defaultAvatar("Shuffles"),
+    });
+    // A blank name is no name: it gets one from the list.
+    expect(room.addBot(0, { name: "" }).ok && room.seats()[2]!.name).toBe("Robo Rita");
+  });
+
+  it("can be changed by the host before the deal", () => {
+    const { room } = lobby();
+    room.addBot(0);
+    const changed = room.updateBot(0, 1, { level: "hard", name: "Card Shark" });
+    expect(changed.ok).toBe(true);
+    expect(room.info().players[1]).toMatchObject({
+      name: "Card Shark",
+      botLevel: "hard",
+      avatar: defaultAvatar("Card Shark"),
+    });
+    // The level alone leaves the name and picture as they were.
+    room.updateBot(0, 1, { level: "easy" });
+    expect(room.info().players[1]).toMatchObject({ name: "Card Shark", botLevel: "easy" });
+    // Clearing the name hands it one from the list again.
+    room.updateBot(0, 1, { name: "" });
+    expect(room.info().players[1]!.name).toBe("Robo Rita");
+    // Its own name is not taken from it: clearing it again keeps the same one.
+    room.updateBot(0, 1, { name: "" });
+    expect(room.info().players[1]!.name).toBe("Robo Rita");
+  });
+
+  it("is the host's to change, before the deal, and only for a computer", () => {
+    const { room } = lobby();
+    room.join("ben");
+    room.addBot(0);
+    expect(room.updateBot(1, 2, { level: "easy" })).toEqual({
+      ok: false,
+      error: "only the host can change a computer player",
+    });
+    expect(room.updateBot(0, 1, { level: "easy" })).toEqual({
+      ok: false,
+      error: "there is no computer player in that seat",
+    });
+    expect(room.updateBot(0, 9, { level: "easy" })).toEqual({
+      ok: false,
+      error: "there is no computer player in that seat",
+    });
+    room.start(0);
+    expect(room.updateBot(0, 2, { level: "easy" })).toEqual({
+      ok: false,
+      error: "computer players can only be changed before the deal",
+    });
+  });
+
+  it("decides how it plays: each seat its own level", () => {
+    for (const level of ["easy", "standard", "hard"] as const) {
+      const { room, clock } = lobby();
+      room.addBot(0, { level });
+      room.start(0);
+      for (let guard = 0; guard < 400 && !room.gameState!.roundEnded; guard++) {
+        const state = room.gameState!;
+        if (state.currentSeat === 0) {
+          room.submitAction(0, defaultAction(state)!);
+          continue;
+        }
+        clock.advance(BOT_MOVE_MS);
+        expect(room.log.entries().at(-1)!.action).toEqual(levelPolicy(level)(state, 1));
+      }
+    }
+  });
+
+  it("is kept in the record and comes back after a restart", async () => {
+    const store = new InMemoryRoomStore();
+    const { room } = lobby(store);
+    room.addBot(0, { level: "easy", name: "Shuffles" });
+    const stored = (await store.loadOpen())[0]!;
+    expect(stored.room.players[1]).toMatchObject({ bot: true, botLevel: "easy", name: "Shuffles" });
+    const restored = Room.restore(stored, { clock: new FakeClock(T0), newToken: () => "x" });
+    expect(restored.ok && restored.value.info().players[1]).toMatchObject({
+      botLevel: "easy",
+      name: "Shuffles",
+    });
+  });
+
+  it("reads as Hard for a computer recorded before levels, and plays as one", async () => {
+    const store = new InMemoryRoomStore();
+    const { room } = lobby(store);
+    room.addBot(0);
+    const stored = (await store.loadOpen())[0]!;
+    const legacy = { ...stored.room.players[1]! };
+    delete (legacy as { botLevel?: unknown }).botLevel;
+    const old = { ...stored, room: { ...stored.room, players: [stored.room.players[0]!, legacy] } };
+    const clock = new FakeClock(T0);
+    const restored = Room.restore(old, { clock, newToken: () => "x", pauseWhenIdle: false });
+    expect(restored.ok).toBe(true);
+    if (!restored.ok) return;
+    const back = restored.value;
+    expect(back.info().players[1]).toMatchObject({ bot: true, botLevel: "hard" });
+    back.resume("t0");
+    expect(back.start(0).ok).toBe(true);
+    for (let guard = 0; guard < 200 && !back.gameState!.roundEnded; guard++) {
+      const state = back.gameState!;
+      if (state.currentSeat === 0) back.submitAction(0, defaultAction(state)!);
+      else {
+        clock.advance(BOT_MOVE_MS);
+        expect(back.log.entries().at(-1)!.action).toEqual(heuristicPolicy(state, 1));
+      }
+    }
+  });
+});
+
+describe("parseBotOptions", () => {
+  it("takes a level and a tidied name, or nothing at all", () => {
+    expect(parseBotOptions(undefined)).toEqual({ ok: true, value: {} });
+    expect(parseBotOptions(null)).toEqual({ ok: true, value: {} });
+    expect(parseBotOptions({})).toEqual({ ok: true, value: {} });
+    expect(parseBotOptions({ level: "hard", name: "  Card   Shark " })).toEqual({
+      ok: true,
+      value: { level: "hard", name: "Card Shark" },
+    });
+    expect(parseBotOptions({ name: "Sir Melds-a-Lot the Third" })).toEqual({
+      ok: true,
+      value: { name: "Sir Melds-a-Lot" },
+    });
+  });
+
+  it("refuses a level that is not one, a name that is not text, and a payload that is not settings", () => {
+    expect(parseBotOptions({ level: "impossible" })).toEqual({
+      ok: false,
+      error: "a computer player plays easy, standard or hard",
+    });
+    expect(parseBotOptions({ name: 7 })).toEqual({ ok: false, error: "a name has to be text" });
+    expect(parseBotOptions("hard")).toEqual({
+      ok: false,
+      error: "that is not a computer player's settings",
+    });
   });
 });

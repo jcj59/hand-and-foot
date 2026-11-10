@@ -383,7 +383,7 @@ describe("computer players in the lobby", () => {
     seated(0);
     mount(socket.socket);
     fireEvent.click(screen.getByRole("button", { name: "Add a computer player" }));
-    await waitFor(() => expect(socket.sent).toEqual([{ event: "addBot", args: [] }]));
+    await waitFor(() => expect(socket.sent).toEqual([{ event: "addBot", args: [undefined] }]));
   });
 
   it("marks one as a computer, with no connection dot, and lets the host take it away", async () => {

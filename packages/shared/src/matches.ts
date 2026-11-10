@@ -9,6 +9,7 @@
 
 import type { Ack } from "./protocol";
 import type { Avatar } from "./avatar";
+import type { BotLevel } from "./bots";
 import type { Action, Departure, RulesConfig } from "./index";
 import type { ActionSource } from "./protocol";
 import type { UserCredentials } from "./identity";
@@ -22,6 +23,8 @@ export interface MatchSeat {
   readonly userId?: string;
   /** A computer player: shown in the match, never given stats. */
   readonly bot?: true;
+  /** How hard that computer played. Absent for people and from records kept before levels. */
+  readonly botLevel?: BotLevel;
 }
 
 /** What one seat did over a match, counted from the log. */
@@ -96,6 +99,7 @@ export interface MatchListing {
     readonly name: string;
     readonly avatar?: Avatar;
     readonly bot?: true;
+    readonly botLevel?: BotLevel;
     readonly total: number;
     readonly left?: true;
   }[];
@@ -208,6 +212,7 @@ export function listingFor(record: MatchRecord, userId: string): MatchListing | 
       name: s.name,
       ...(s.avatar ? { avatar: s.avatar } : {}),
       ...(s.bot ? { bot: true as const } : {}),
+      ...(s.botLevel ? { botLevel: s.botLevel } : {}),
       total: summary.totals[s.seat] ?? 0,
       ...(left(record, s.seat) ? { left: true as const } : {}),
     })),

@@ -1538,7 +1538,7 @@ describe("carrying on without a player over the wire", () => {
 
 describe("computer players over the wire", () => {
   function addBot(socket: Client): Promise<Ack<undefined>> {
-    return new Promise((resolve) => socket.emit("addBot", resolve));
+    return new Promise((resolve) => socket.emit("addBot", undefined, resolve));
   }
   function removeBot(socket: Client, seat: number): Promise<Ack<undefined>> {
     return new Promise((resolve) => socket.emit("removeBot", { seat }, resolve));
@@ -1557,6 +1557,36 @@ describe("computer players over the wire", () => {
     const gone = waitForRoom(guest, (i) => i.players.length === 2);
     expect(await removeBot(host, 2)).toEqual({ ok: true, data: undefined });
     await gone;
+  });
+
+  it("seats one at the level and name asked for, and lets the host change both", async () => {
+    const { host, guest } = await seatTwo();
+    const seen = waitForRoom(host, (info) => info.players.length === 3);
+    const added = await new Promise<Ack<undefined>>((resolve) =>
+      host.emit("addBot", { level: "easy", name: "  Shuffles  " }, resolve),
+    );
+    expect(added).toEqual({ ok: true, data: undefined });
+    expect((await seen).players[2]).toMatchObject({
+      name: "Shuffles",
+      bot: true,
+      botLevel: "easy",
+    });
+    const update = (settings: object, by = host): Promise<Ack<undefined>> =>
+      new Promise((resolve) => by.emit("updateBot", { seat: 2, ...settings }, resolve));
+    const changed = waitForRoom(guest, (info) => info.players[2]?.botLevel === "hard");
+    expect(await update({ level: "hard", name: "  Card   Shark " })).toEqual({
+      ok: true,
+      data: undefined,
+    });
+    expect((await changed).players[2]).toMatchObject({ name: "Card Shark", botLevel: "hard" });
+    expect(await update({ level: "impossible" })).toEqual({
+      ok: false,
+      error: "a computer player plays easy, standard or hard",
+    });
+    expect(await update({ level: "easy" }, guest)).toEqual({
+      ok: false,
+      error: "only the host can change a computer player",
+    });
   });
 
   it("tells a guest moved up by a computer player's removal their new seat", async () => {
@@ -1602,7 +1632,7 @@ describe("a rematch over the wire", () => {
     });
     if (!created.ok) throw new Error(created.error);
     await joinRoom(ben, created.data.roomId, "ben");
-    await new Promise((resolve) => ana.emit("addBot", resolve));
+    await new Promise((resolve) => ana.emit("addBot", undefined, resolve));
     await startGame(ana);
     const room = server.manager.get(created.data.roomId)!;
     while (!room.matchOver) {

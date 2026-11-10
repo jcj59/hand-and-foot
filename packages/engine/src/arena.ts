@@ -1,8 +1,9 @@
-import type { Action, GameState, RulesConfig } from "@hf/shared";
+import type { Action, BotLevel, GameState, RulesConfig } from "@hf/shared";
 import { deal } from "./deal";
 import { isMatchOver, matchTotals } from "./nextRound";
 import { defaultAction, heuristicAction } from "./policy";
 import { applyAction } from "./reducer";
+import { prng } from "./rng";
 import { project } from "./view";
 
 /**
@@ -19,6 +20,50 @@ export const defaultPolicy: Policy = (state) => defaultAction(state);
 /** The playing heuristic, given only what the seat itself would be sent. */
 export const heuristicPolicy: Policy = (state, seat) =>
   heuristicAction(project(state, seat), state.config);
+
+/**
+ * The share of the turns on which Hard would take the pile that Standard takes it
+ * too. On the others it draws. Set by head-to-head measurement (`pnpm bot:measure`
+ * with `--levels`) so that Hard beats Standard and Standard beats Easy.
+ */
+export const STANDARD_PILE_SHARE = 0.5;
+
+/**
+ * A coin for one decision: the same position always gives the same answer, so a
+ * Standard computer is reproducible from the game alone, with no generator to
+ * carry between turns. The position is named by the match seed, the round, the
+ * seat and the size of the stock and the pile, which differ from one turn to the
+ * next.
+ */
+export function pileCoin(state: GameState): number {
+  let h = 2166136261;
+  for (const n of [
+    state.seed,
+    state.roundNumber,
+    state.currentSeat,
+    state.stock.length,
+    state.discard.length,
+  ]) {
+    h = Math.imul(h ^ (n | 0), 16777619);
+  }
+  return prng(h >>> 0)();
+}
+
+/**
+ * The policy for a computer player at a level. All three play the heuristic; a
+ * pile take it chooses is kept always (Hard), on a share of turns (Standard), or
+ * never (Easy), and replaced by a draw otherwise, which is always legal in the
+ * draw phase where a take is offered.
+ */
+export function levelPolicy(level: BotLevel): Policy {
+  if (level === "hard") return heuristicPolicy;
+  return (state, seat) => {
+    const action = heuristicPolicy(state, seat);
+    if (action?.type !== "takePile") return action;
+    if (level === "standard" && pileCoin(state) < STANDARD_PILE_SHARE) return action;
+    return { type: "draw" };
+  };
+}
 
 /**
  * Turns allowed in one round before the arena calls it stalled. A round of
