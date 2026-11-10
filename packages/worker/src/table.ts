@@ -41,6 +41,7 @@ import {
   type MatchRecord,
   type RulesConfig,
   type SeatCredentials,
+  LEGACY_BOT_LEVEL,
 } from "@hf/shared";
 import { newCode } from "./codes";
 import type { Env } from "./env";
@@ -178,7 +179,7 @@ export class TableObject extends DurableObject<Env> {
     let host: number | null = null;
     for (const seat of seats) {
       if (seat.bot) {
-        room.addBot(room.hostSeat, { name: seat.name, level: seat.botLevel });
+        room.addBot(room.hostSeat, { name: seat.name, level: seat.botLevel ?? LEGACY_BOT_LEVEL });
         out.push(null);
         continue;
       }
