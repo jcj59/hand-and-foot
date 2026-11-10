@@ -36,7 +36,7 @@ import {
 } from "@hf/shared";
 import { canLayOff, isUnplayable, type PlayContext } from "../cards/handOrder";
 import { faceOf } from "../profile/avatarStore";
-import { DiscardPile, FaceDownPile, PlayingCard } from "../cards/PlayingCard";
+import { CountPill, DiscardPile, FaceDownPile, PlayingCard } from "../cards/PlayingCard";
 import { usePhone } from "../usePhone";
 import { Hand } from "./Hand";
 import { pulseStyle } from "./pulse";
@@ -701,10 +701,10 @@ export function TableView({
               </div>
             )}
             <div className="flex flex-col items-center gap-1" data-anchor="stock">
-              <span className="text-xs text-white/60">Stock</span>
               <FaceDownPile
                 count={view.stockCount}
                 label="Stock"
+                pill="Stock"
                 size={phone ? "normal" : "large"}
                 onClick={canDraw ? () => void send({ type: "draw" }) : undefined}
                 actionLabel="Draw a card"
@@ -716,14 +716,13 @@ export function TableView({
               data-anchor="discard"
               data-zone="pile"
             >
-              <span className="text-xs text-white/60">Discard ({view.discard.length})</span>
               {canTake ? (
                 <button
                   type="button"
                   aria-label={`Take the pile (${view.discard.length} cards)`}
                   onClick={() => void send({ type: "takePile" })}
                   style={pilePulse}
-                  className="pile-prompt rounded p-1 ring-2 ring-amber-300 transition hover:bg-white/10"
+                  className="pile-prompt rounded-xl p-1 transition hover:bg-white/5"
                 >
                   <DiscardPile cards={view.discard} size={phone ? "normal" : "large"} />
                 </button>
@@ -732,6 +731,7 @@ export function TableView({
                   <DiscardPile cards={view.discard} size={phone ? "normal" : "large"} />
                 </div>
               )}
+              <CountPill label="Pile" count={view.discard.length} />
               {canTake && <PilePrompt>Pick up the pile</PilePrompt>}
             </div>
           </section>
@@ -1101,7 +1101,7 @@ function PilePrompt({ children }: { readonly children: React.ReactNode }): React
   return (
     <span
       style={style}
-      className="pile-prompt-label rounded bg-amber-300 px-2 py-0.5 text-xs font-semibold text-black"
+      className="pile-prompt-label rounded-full bg-accent px-2.5 py-0.5 text-xs font-semibold text-accent-ink"
     >
       {children}
     </span>
