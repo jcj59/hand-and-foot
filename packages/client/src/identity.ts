@@ -54,6 +54,8 @@ function write(key: string, value: string | null): void {
 export const PROFILE_CHANGED = "hf:profile";
 
 export function noteProfileChanged(): void {
+  // Not every host has a full `window` (the integration tests run with only storage).
+  if (typeof window === "undefined" || typeof window.dispatchEvent !== "function") return;
   window.dispatchEvent(new Event(PROFILE_CHANGED));
 }
 
