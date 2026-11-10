@@ -405,3 +405,4 @@ export * from "./protocol";
 export * from "./wire";
 export * from "./matches";
 export * from "./awards";
+export * from "./bots";

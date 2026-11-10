@@ -17,7 +17,7 @@
  *   old one's late departure must not mark them absent or give their seat away.
  */
 import type { Ack, ClientFrame, CloseReason, SeatCredentials, ServerFrame } from "@hf/shared";
-import { isDraft, type Room, type RoomPlayer, type RoomResult } from "./room";
+import { isDraft, parseBotOptions, type Room, type RoomPlayer, type RoomResult } from "./room";
 
 /** One connection to the table, as the transport sees it. */
 export interface Peer {
@@ -290,9 +290,20 @@ export class TableChannel {
       }
       case "addBot": {
         if (seated === null) return reply({ ok: false, error: NOT_SEATED });
-        const added = this.room.addBot(seated);
+        const options = parseBotOptions(payload);
+        if (!options.ok) return reply({ ok: false, error: options.error });
+        const added = this.room.addBot(seated, options.value);
         reply(added.ok ? { ok: true, data: undefined } : { ok: false, error: added.error });
         if (added.ok) this.broadcastRoom();
+        return;
+      }
+      case "updateBot": {
+        if (seated === null) return reply({ ok: false, error: NOT_SEATED });
+        const options = parseBotOptions(payload);
+        if (!options.ok) return reply({ ok: false, error: options.error });
+        const updated = this.room.updateBot(seated, Number(payload?.seat), options.value);
+        reply(updated.ok ? { ok: true, data: undefined } : { ok: false, error: updated.error });
+        if (updated.ok) this.broadcastRoom();
         return;
       }
       case "removeBot": {

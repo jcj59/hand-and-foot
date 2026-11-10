@@ -13,7 +13,7 @@
  * the game has already moved on, and nothing on the hot path waits for one: a
  * slow or unreachable database costs recoverability, not a player's turn.
  */
-import type { Avatar, LoggedAction, RulesConfig } from "@hf/shared";
+import type { Avatar, BotLevel, LoggedAction, RulesConfig } from "@hf/shared";
 import type { UserStore } from "./users";
 import type { LoginStore } from "./accounts";
 import { InMemoryMatchStore, type MatchStore } from "./matches";
@@ -30,6 +30,8 @@ export interface SeatRecord {
   readonly avatar?: Avatar;
   /** A computer player the host added. Absent for people, and from older records. */
   readonly bot?: true;
+  /** How hard it plays. Absent from records kept before levels, which read as Hard. */
+  readonly botLevel?: BotLevel;
 }
 
 /** A room, minus its game — which the log reconstructs. */

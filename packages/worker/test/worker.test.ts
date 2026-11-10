@@ -798,7 +798,7 @@ describe("a rematch", () => {
     });
     if (!opened.ok) throw new Error(opened.error);
     await ask(ben, "joinRoom", { roomId: opened.data.roomId, name: "Ben" });
-    await ask(ana, "addBot");
+    await ask(ana, "addBot", { level: "hard", name: "Card Shark" });
     const dealt = nextView(ana);
     await ask(ana, "startGame");
     await dealt;
@@ -816,9 +816,20 @@ describe("a rematch", () => {
     expect(theirs).toMatchObject({ roomId: mine.data.roomId, seat: 1 });
     const seats = await insideTable(mine.data.roomId, (room) => {
       stopClock(room);
-      return { started: room.started, names: room.seats().map((p) => p.name), host: room.hostSeat };
+      return {
+        started: room.started,
+        names: room.seats().map((p) => p.name),
+        level: room.seats()[2]!.botLevel,
+        host: room.hostSeat,
+      };
     });
-    expect(seats).toEqual({ started: true, names: ["Ana", "Ben", "Robo Rita"], host: 0 });
+    // The computer comes back under its own name and at its own level.
+    expect(seats).toEqual({
+      started: true,
+      names: ["Ana", "Ben", "Card Shark"],
+      level: "hard",
+      host: 0,
+    });
     const back = nextView(ben, (u) => u.room.roomId === mine.data.roomId);
     expect((await ask<SeatCredentials>(ben, "resumeSeat", theirs)).ok).toBe(true);
     expect((await back).view.seat).toBe(1);

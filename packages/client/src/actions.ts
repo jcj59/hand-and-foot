@@ -13,6 +13,7 @@
  */
 import { CARRIED_ON_WITHOUT_YOU } from "@hf/shared";
 import type {
+  BotSettings,
   Action,
   Avatar,
   CloseReason,
@@ -398,8 +399,25 @@ export function followRematch(
 export async function addComputerPlayer(
   socket: HfClientSocket,
   sink: ActionSink,
+  settings?: BotSettings,
 ): Promise<boolean> {
-  const result = await wire.addBot(socket);
+  const result = await wire.addBot(socket, settings);
+  if (!result.ok) {
+    sink.setNotice(result.error);
+    return false;
+  }
+  sink.setNotice(null);
+  return true;
+}
+
+/** Change a computer player's level or name, before the deal. A refusal is a notice. */
+export async function updateComputerPlayer(
+  socket: HfClientSocket,
+  seat: number,
+  settings: BotSettings,
+  sink: ActionSink,
+): Promise<boolean> {
+  const result = await wire.updateBot(socket, seat, settings);
   if (!result.ok) {
     sink.setNotice(result.error);
     return false;

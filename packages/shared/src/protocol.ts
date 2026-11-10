@@ -22,6 +22,13 @@ import type {
   UserCredentials,
 } from "./index";
 import type { Avatar } from "./avatar";
+import type { BotLevel } from "./bots";
+
+/** A host's choices for a computer player; either may be left out. A blank name means "any". */
+export interface BotSettings {
+  readonly level?: BotLevel;
+  readonly name?: string;
+}
 
 /** Where an action in the log came from. */
 export type ActionSource = "player" | "timeout" | "disconnect" | "bot";
@@ -74,6 +81,8 @@ export interface RoomPlayerInfo {
   readonly avatar?: Avatar;
   /** A computer player the host added. Always at the table; absent for people. */
   readonly bot?: true;
+  /** How hard that computer plays; with `bot` always, absent for people. */
+  readonly botLevel?: BotLevel;
   /**
    * Left the match between rounds: the seat is kept, for its scores, but no longer
    * plays. Absent for everyone still playing.
@@ -267,8 +276,13 @@ export interface ClientToServerEvents {
    * is for the smaller table.
    */
   removePlayer: (payload: { readonly seat: number }, ack: (result: Ack) => void) => void;
-  /** Sit a computer player at the table. Only the host may, and only before the deal. */
-  addBot: (ack: (result: Ack) => void) => void;
+  /**
+   * Sit a computer player at the table, at a level and under a name if given. Only
+   * the host may, and only before the deal.
+   */
+  addBot: (payload: BotSettings | undefined, ack: (result: Ack) => void) => void;
+  /** Change a computer player's level or name before the deal. The host's call. */
+  updateBot: (payload: BotSettings & { readonly seat: number }, ack: (result: Ack) => void) => void;
   /** Take a computer player away again, before the deal. The host's call. */
   removeBot: (payload: { readonly seat: number }, ack: (result: Ack) => void) => void;
   submitAction: (action: Action, ack: (result: Ack) => void) => void;

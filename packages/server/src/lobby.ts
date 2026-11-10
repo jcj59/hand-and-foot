@@ -6,7 +6,7 @@
  * because until then no connection speaks for it: the player is expected on the
  * table's socket at once, and until they arrive nothing is holding the seat.
  */
-import { resolveRules, type Ack, type SeatCredentials } from "@hf/shared";
+import { LEGACY_BOT_LEVEL, resolveRules, type Ack, type SeatCredentials } from "@hf/shared";
 import type { RoomManager } from "./manager";
 import type { Room, RoomPlayer, RoomResult, SeatProfile } from "./room";
 
@@ -63,7 +63,7 @@ export function rematchFor(
   let host: number | null = null;
   for (const player of players) {
     if (player.bot) {
-      next.addBot(next.hostSeat);
+      next.addBot(next.hostSeat, { name: player.name, level: player.botLevel ?? LEGACY_BOT_LEVEL });
       continue;
     }
     const joined = next.join(player.name, { userId: player.userId, avatar: player.avatar });

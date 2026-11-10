@@ -3,12 +3,17 @@
  *
  *   pnpm bot:measure                       # 500 matches per row, East Coast
  *   pnpm bot:measure --matches 2000 --preset west --seed 100
+ *   pnpm bot:measure --levels              # the computer levels head to head instead
  *
  * Plays whole matches through `playMatch` from `@hf/engine` and reports, for two,
  * three and four players: the heuristic's win rate against `defaultAction`, its
  * win share against copies of itself, and whether the rounds actually end. A
  * table of nothing but `defaultAction` is played too, as the control: it never
  * melds, so it never ends a round, and the arena calls the round stalled.
+ *
+ * With `--levels` it plays the computer levels (Easy, Standard, Hard) against each
+ * other two at a time, seats swapped every other match, which is how
+ * `STANDARD_PILE_SHARE` is checked: Hard must beat Standard and Standard Easy.
  *
  * Every match is seeded (seed = base + match index), so a run is reproducible
  * and two runs with the same arguments print the same numbers.
@@ -18,7 +23,9 @@ import { EAST_COAST, WEST_COAST, type RulesConfig } from "../../packages/shared/
 import {
   type MatchResult,
   type Policy,
+  STANDARD_PILE_SHARE,
   defaultPolicy,
+  levelPolicy,
   heuristicPolicy,
   playMatch,
   winners,
@@ -29,6 +36,7 @@ const { values } = parseArgs({
     matches: { type: "string", default: "500" },
     seed: { type: "string", default: "1" },
     preset: { type: "string", default: "east" },
+    levels: { type: "boolean", default: false },
   },
 });
 const matches = Number(values.matches);
@@ -87,6 +95,32 @@ function run(
 }
 
 const pct = (part: number, whole: number): string => `${((100 * part) / whole).toFixed(1)}%`;
+
+if (values.levels) {
+  console.log(
+    `Computer levels head to head — preset ${values.preset}, ${matches} matches per pair, ` +
+      `Standard takes ${STANDARD_PILE_SHARE * 100}% of Hard's pile chances\n`,
+  );
+  const pairs = [
+    ["hard", "standard"],
+    ["standard", "easy"],
+    ["hard", "easy"],
+  ] as const;
+  for (const [a, b] of pairs) {
+    const t = run(2, matches, (i) => {
+      // Swapped every other match, so neither level always has the first seat.
+      const first = i % 2;
+      const policies =
+        first === 0 ? [levelPolicy(a), levelPolicy(b)] : [levelPolicy(b), levelPolicy(a)];
+      return { policies, heuristicSeat: first };
+    });
+    console.log(
+      `  ${a} vs ${b}: ${a} wins ${pct(t.heuristicWins, matches)}; ` +
+        `rounds ended ${t.roundsEnded}/${t.roundsPlayed}`,
+    );
+  }
+  process.exit(0);
+}
 
 console.log(
   `Heuristic bot measurement — preset ${values.preset}, ${matches} matches per row, ` +
