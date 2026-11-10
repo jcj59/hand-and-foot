@@ -786,10 +786,24 @@ stays.
 
 The heuristic also sits at the table. The host can add computer players in the lobby, so one
 person can play alone or a short table can be filled. Each is an ordinary seat with a token that
-never leaves the server, a name from a short list, and the picture drawn from that name. It is
+never leaves the server, a name (from a short list unless the host types one, tidied like a
+person's and capped at 16 characters), and the picture drawn from that name. It is
 always connected and always ready for the next round, and it never hosts: a table is kept open for
 the people at it, so it counts as abandoned once every person has gone, whatever computers are left,
 and a computer cannot carry on without anyone or deal.
+
+A computer has a level, Easy, Standard or Hard, which the host can change, like its name, until the
+deal. The three are the same heuristic and differ only in how often they take the pile, the move
+that most separates a strong player from a weak one and the one a person can see being declined.
+Hard is the computer as it always played: it takes the pile whenever the engine allows. Easy never
+does and always draws. Standard takes it on about half the turns it could (`STANDARD_PILE_SHARE`),
+the choice made by a coin seeded from the game, the round, the seat and the sizes of the stock and
+pile, so a replay makes the same choices. Measured head to head, two players, seats swapped: Hard
+beats Standard in about 60% of matches, Standard beats Easy in about 96%, and rounds still end
+(`pnpm bot:measure --levels`). The level is stored beside `bot` as `botLevel` rather than inside it,
+so every record and client that only knows `bot: true` keeps working; a computer with no level
+reads as Hard, which is how those played. A rematch keeps each computer's name and level. Players
+who have gone are played at Hard.
 
 A computer plays through exactly the path a timed-out move takes: the server asks the heuristic,
 given only that seat's view, and applies the action through the reducer and the log, where its

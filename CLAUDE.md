@@ -48,6 +48,8 @@ pnpm format           # prettier --write . (use this rather than hand-formatting
 
 The heuristic bot's headless measurement (not part of CI; about a minute at the default 500
 matches per row) is `pnpm bot:measure`, with `--matches N`, `--seed S` and `--preset east|west`.
+`--levels` instead plays the computer levels (Easy/Standard/Hard) head to head, which is how
+`STANDARD_PILE_SHARE` was checked.
 It runs `scripts/bot-eval/measure.ts` through `tsx`, which is why the root carries `tsx` and
 `@types/node`; the script has its own `tsconfig.json`, typechecked by the root `typecheck`.
 
