@@ -196,7 +196,7 @@ describe("routing", () => {
       useSession.getState().seat({ roomId: "ABC234", seat: 1, token: "t1" });
     });
     socket.fire("room", roomInfo());
-    expect(screen.getByRole("heading", { name: /table ABC234/i })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Around the table" })).toBeInTheDocument();
   });
 
   it("shows the table once the room says it has started", () => {

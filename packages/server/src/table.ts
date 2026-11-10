@@ -16,7 +16,14 @@
  *   reconnects is on a new connection before the old one is noticed gone, and the
  *   old one's late departure must not mark them absent or give their seat away.
  */
-import type { Ack, ClientFrame, CloseReason, SeatCredentials, ServerFrame } from "@hf/shared";
+import {
+  parseAvatar,
+  type Ack,
+  type ClientFrame,
+  type CloseReason,
+  type SeatCredentials,
+  type ServerFrame,
+} from "@hf/shared";
 import { isDraft, parseBotOptions, type Room, type RoomPlayer, type RoomResult } from "./room";
 
 /** One connection to the table, as the transport sees it. */
@@ -279,6 +286,24 @@ export class TableChannel {
         this.broadcastRoom();
         // Saving pauses a table that was not paused, which stops every clock.
         this.broadcastViews();
+        return;
+      }
+      case "changeCard": {
+        if (seated === null) return reply({ ok: false, error: NOT_SEATED });
+        const name = payload?.name;
+        if (name !== undefined && typeof name !== "string") {
+          return reply({ ok: false, error: "a name has to be text" });
+        }
+        // A picture that is not one is no change, as at sitting down: never a refusal.
+        const avatar =
+          payload?.avatar === null
+            ? null
+            : payload?.avatar === undefined
+              ? undefined
+              : (parseAvatar(payload.avatar) ?? undefined);
+        const changed = this.room.changeCard(seated, { name, avatar });
+        reply(changed.ok ? { ok: true, data: undefined } : { ok: false, error: changed.error });
+        if (changed.ok) this.broadcastRoom();
         return;
       }
       case "setHost": {

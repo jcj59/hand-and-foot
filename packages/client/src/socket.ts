@@ -173,6 +173,13 @@ export function addBot(socket: HfClientSocket, settings?: BotSettings): Promise<
   return ask((ack) => socket.emit("addBot", settings, ack));
 }
 
+export function changeCard(
+  socket: HfClientSocket,
+  card: { readonly name?: string; readonly avatar?: Avatar | null },
+): Promise<Ack<undefined>> {
+  return ask((ack) => socket.emit("changeCard", card, ack));
+}
+
 export function updateBot(
   socket: HfClientSocket,
   seat: number,

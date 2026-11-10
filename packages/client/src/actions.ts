@@ -410,6 +410,25 @@ export async function addComputerPlayer(
   return true;
 }
 
+/**
+ * Change your own card (name and picture) in the waiting room. Kept on this device
+ * too, as sitting down keeps them, so the next table starts from it. A refusal is
+ * a notice.
+ */
+export async function changeMyCard(
+  socket: HfClientSocket,
+  card: { readonly name: string; readonly avatar: Avatar | null },
+  sink: ActionSink,
+): Promise<boolean> {
+  const result = await wire.changeCard(socket, card);
+  if (!result.ok) {
+    sink.setNotice(result.error);
+    return false;
+  }
+  sink.setNotice(null);
+  return true;
+}
+
 /** Change a computer player's level or name, before the deal. A refusal is a notice. */
 export async function updateComputerPlayer(
   socket: HfClientSocket,

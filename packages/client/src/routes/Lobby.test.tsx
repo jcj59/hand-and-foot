@@ -13,7 +13,7 @@ import { CREDENTIALS_KEY, loadCredentials } from "../credentials";
 import { createServerClock } from "../serverTime";
 import { useSession } from "../session";
 import type { HfClientSocket } from "../socket";
-import { Lobby } from "./Lobby";
+import { Lobby, spacedCode } from "./Lobby";
 
 function fakeSocket(answers: Ack<unknown>[] = []): {
   socket: HfClientSocket;
@@ -111,9 +111,10 @@ describe("the invite", () => {
   it("shows a link built from the running origin", () => {
     seated(0);
     mount(fakeSocket().socket);
-    expect(screen.getByLabelText(/shareable table link/i)).toHaveValue(
-      `${window.location.origin}/room/ABC234`,
-    );
+    // The QR code holds the link anyone can follow to a seat here.
+    expect(
+      screen.getByRole("img", { name: "QR code to join table ABC234" }).getAttribute("data-qr"),
+    ).toBe(`${window.location.origin}/room/ABC234`);
   });
 
   it("names the table in the heading", () => {
@@ -132,8 +133,8 @@ describe("the invite", () => {
       async () => {
         seated(0);
         mount(fakeSocket().socket);
-        fireEvent.click(screen.getByRole("button", { name: /copy/i }));
-        await waitFor(() => expect(screen.getByRole("button", { name: /copied/i })).toBeTruthy());
+        fireEvent.click(screen.getByRole("button", { name: "Copy link" }));
+        await waitFor(() => expect(screen.getByRole("button", { name: "Copied" })).toBeTruthy());
         expect(written).toEqual([`${window.location.origin}/room/ABC234`]);
       },
     );
@@ -147,8 +148,8 @@ describe("the invite", () => {
       async () => {
         seated(0);
         mount(fakeSocket().socket);
-        fireEvent.click(screen.getByRole("button", { name: /copy/i }));
-        await waitFor(() => expect(screen.getByRole("button", { name: /^copy$/i })).toBeTruthy());
+        fireEvent.click(screen.getByRole("button", { name: "Copy link" }));
+        await waitFor(() => expect(screen.getByRole("button", { name: "Copy link" })).toBeTruthy());
         expect(screen.queryByRole("alert")).toBeNull();
       },
     );
@@ -159,10 +160,11 @@ describe("the seat list", () => {
   it("lists everyone, marking the host and yourself", () => {
     seated(1);
     mount(fakeSocket().socket);
-    expect(screen.getByText("ana")).toBeInTheDocument();
-    expect(screen.getByText("ben")).toBeInTheDocument();
-    expect(screen.getByText("host")).toBeInTheDocument();
-    expect(screen.getByText("you")).toBeInTheDocument();
+    const table = screen.getByRole("region", { name: "Around the table" });
+    expect(within(table).getByText("ana")).toBeInTheDocument();
+    expect(within(table).getByText("host")).toBeInTheDocument();
+    // Yourself as You, with your name for a screen reader.
+    expect(within(table).getByText(/You/)).toHaveTextContent("You (ben)");
   });
 
   it("shows who has dropped", () => {
@@ -178,14 +180,16 @@ describe("the seat list", () => {
       }),
     );
     mount(fakeSocket().socket);
-    expect(screen.getByLabelText("disconnected")).toBeInTheDocument();
-    expect(screen.getAllByLabelText("connected")).toHaveLength(1);
+    const table = screen.getByRole("region", { name: "Around the table" });
+    expect(within(table).getAllByText("reconnecting")).toHaveLength(1);
+    expect(within(table).getByText("ben").parentElement).toHaveTextContent("reconnecting");
   });
 
   it("counts the seats against the maximum", () => {
     seated(0);
     mount(fakeSocket().socket);
-    expect(screen.getByText(/players \(2\/8\)/i)).toBeInTheDocument();
+    // Two of eight seats taken; the host sees the rest as invitations.
+    expect(screen.getAllByRole("button", { name: "Invite someone to this seat" })).toHaveLength(4);
   });
 });
 
@@ -194,7 +198,7 @@ describe("dealing", () => {
     const { socket, sent } = fakeSocket();
     seated(0);
     mount(socket);
-    const deal = screen.getByRole("button", { name: /^deal$/i });
+    const deal = screen.getByRole("button", { name: "Deal · 2 players" });
     expect(deal).not.toBeDisabled();
     fireEvent.click(deal);
     await waitFor(() => expect(sent).toHaveLength(1));
@@ -216,14 +220,15 @@ describe("dealing", () => {
     seated(1);
     mount(fakeSocket().socket);
     expect(screen.queryByRole("button", { name: /deal/i })).toBeNull();
-    expect(screen.getByText(/waiting for the host to deal/i)).toBeInTheDocument();
+    expect(screen.getByText("Waiting for ana")).toBeInTheDocument();
+    expect(screen.getByText(/ana is the host/)).toBeInTheDocument();
   });
 
   it("surfaces a refused deal", async () => {
     const { socket } = fakeSocket([{ ok: false, error: "a game needs at least 2 players" }]);
     seated(0);
     mount(socket);
-    fireEvent.click(screen.getByRole("button", { name: /^deal$/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Deal · 2 players" }));
     await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/at least 2/i));
   });
 });
@@ -238,7 +243,7 @@ describe("leaving", () => {
 
     const { socket, sent } = fakeSocket();
     mount(socket);
-    fireEvent.click(screen.getByRole("button", { name: /leave this table/i }));
+    fireEvent.click(screen.getByRole("button", { name: /leave table/i }));
 
     await waitFor(() => expect(useSession.getState().credentials).toBeNull());
     expect(loadCredentials()).toBeNull();
@@ -251,14 +256,22 @@ describe("leaving", () => {
     seated(0);
     useSession.getState().seat({ roomId: "ABC234", seat: 0, token: "t0" });
     mount(fakeSocket([{ ok: false, error: "you are not seated in a room" }]).socket);
-    fireEvent.click(screen.getByRole("button", { name: /leave this table/i }));
+    fireEvent.click(screen.getByRole("button", { name: /leave table/i }));
     await waitFor(() => expect(useSession.getState().credentials).toBeNull());
     expect(loadCredentials()).toBeNull();
   });
 });
 
 describe("the rules summary", () => {
-  const rules = (): HTMLElement => screen.getByRole("region", { name: "Table rules" });
+  /** The table's rules, opened from the waiting room's rules row. */
+  const rules = (): HTMLElement => {
+    const open = screen.queryByRole("region", { name: "Table rules" });
+    if (open) return open;
+    fireEvent.click(
+      screen.getByRole("button", { name: /^(house rules|table rules|read all the table)/i }),
+    );
+    return screen.getByRole("region", { name: "Table rules" });
+  };
 
   it("names the preset and mode the table was opened with", () => {
     seated(0, roomInfo({ config: { ...WEST_COAST, mode: "competitive", pauseEnabled: false } }));
@@ -382,7 +395,7 @@ describe("computer players in the lobby", () => {
     const socket = fakeSocket();
     seated(0);
     mount(socket.socket);
-    fireEvent.click(screen.getByRole("button", { name: "Add a computer player" }));
+    fireEvent.click(screen.getByRole("button", { name: "+ Add computer" }));
     await waitFor(() => expect(socket.sent).toEqual([{ event: "addBot", args: [undefined] }]));
   });
 
@@ -390,11 +403,14 @@ describe("computer players in the lobby", () => {
     const socket = fakeSocket();
     seated(0, withBot);
     mount(socket.socket);
-    const row = screen.getByText("Robo Rita").closest("li")!;
-    expect(row).toHaveTextContent("computer");
-    expect(within(row).queryByLabelText(/connected/)).toBeNull();
+    const table = screen.getByRole("region", { name: "Around the table" });
+    const seat = within(table).getByText("Robo Rita").closest("li")!;
+    // Its level, and never "reconnecting": a computer is always at the table.
+    expect(seat).toHaveTextContent("Hard, computer");
+    expect(seat).not.toHaveTextContent("reconnecting");
     // A computer cannot host, so it is never offered the deal.
     expect(screen.queryByRole("button", { name: "Make Robo Rita the host" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Edit Robo Rita, Hard" }));
     fireEvent.click(screen.getByRole("button", { name: "Take Robo Rita away" }));
     await waitFor(() => expect(socket.sent).toEqual([{ event: "removeBot", args: [{ seat: 1 }] }]));
   });
@@ -408,7 +424,7 @@ describe("computer players in the lobby", () => {
       }),
     );
     mount(fakeSocket().socket);
-    expect(screen.queryByRole("button", { name: "Add a computer player" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "+ Add computer" })).toBeNull();
     expect(screen.queryByRole("button", { name: /take .* away/i })).toBeNull();
   });
 
@@ -422,12 +438,12 @@ describe("computer players in the lobby", () => {
     });
     seated(0, full);
     mount(fakeSocket().socket);
-    expect(screen.getByRole("button", { name: "Add a computer player" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "+ Add computer" })).toBeDisabled();
     cleanup();
     const socket = fakeSocket([{ ok: false, error: "a table seats at most 8" }]);
     seated(0);
     mount(socket.socket);
-    fireEvent.click(screen.getByRole("button", { name: "Add a computer player" }));
+    fireEvent.click(screen.getByRole("button", { name: "+ Add computer" }));
     await waitFor(() =>
       expect(screen.getByRole("alert")).toHaveTextContent("a table seats at most 8"),
     );
@@ -438,9 +454,53 @@ describe("the watch link", () => {
   it("is offered in the lobby, with how many are watching", () => {
     seated(0, roomInfo({ watching: 2 }));
     mount(fakeSocket().socket);
-    expect(screen.getByRole("textbox", { name: "Link to watch the table" })).toHaveValue(
-      `${window.location.origin}/watch/ABC234`,
-    );
+    expect(screen.getByRole("button", { name: "Copy the watch link" })).toBeInTheDocument();
     expect(screen.getByText("2 watching")).toBeInTheDocument();
+  });
+});
+
+describe("the waiting room's new parts", () => {
+  it("lets the host rename a computer and change how well it plays", async () => {
+    const socket = fakeSocket();
+    seated(
+      0,
+      roomInfo({
+        players: [
+          { seat: 0, name: "ana", connected: true },
+          { seat: 1, name: "Robo Rita", connected: true, bot: true, botLevel: "standard" },
+        ],
+      }),
+    );
+    mount(socket.socket);
+    fireEvent.click(screen.getByRole("button", { name: "Edit Robo Rita, Standard" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Easy" }));
+    await waitFor(() =>
+      expect(socket.sent).toEqual([{ event: "updateBot", args: [{ seat: 1, level: "easy" }] }]),
+    );
+    fireEvent.change(screen.getByLabelText("Name at the table"), { target: { value: "Shuffles" } });
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    await waitFor(() =>
+      expect(socket.sent.at(-1)).toEqual({
+        event: "updateBot",
+        args: [{ seat: 1, name: "Shuffles" }],
+      }),
+    );
+  });
+
+  it("lets a guest change their own card", async () => {
+    const socket = fakeSocket();
+    seated(1);
+    mount(socket.socket);
+    fireEvent.click(screen.getByRole("button", { name: "Change my card" }));
+    fireEvent.change(screen.getByLabelText(/your name/i), { target: { value: "Benny" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save my card" }));
+    await waitFor(() => expect(socket.sent).toHaveLength(1));
+    expect(socket.sent[0]!.event).toBe("changeCard");
+    expect(socket.sent[0]!.args[0]).toMatchObject({ name: "Benny" });
+  });
+
+  it("prints the code in two halves", () => {
+    expect(spacedCode("K7QM2P")).toBe("K7Q·M2P");
+    expect(spacedCode("ABC")).toBe("ABC");
   });
 });
