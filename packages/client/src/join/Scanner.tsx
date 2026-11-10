@@ -52,11 +52,16 @@ export function Scanner({ onCode, autoStart = false }: ScannerProps): React.Reac
     let timer: ReturnType<typeof setInterval> | undefined;
     let live = true;
     const detector = new Detector({ formats: ["qr_code"] });
-    navigator.mediaDevices
-      ?.getUserMedia({ video: { facingMode: "environment" } })
+    const asked = navigator.mediaDevices
+      ? navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+      : Promise.reject(new Error("no camera"));
+    asked
       .then(async (s) => {
         stream = s;
-        if (!live || !video.current) return;
+        if (!live || !video.current) {
+          s.getTracks().forEach((track) => track.stop());
+          return;
+        }
         video.current.srcObject = s;
         await video.current.play().catch(() => {});
         setStage("scanning");
