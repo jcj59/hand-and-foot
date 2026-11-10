@@ -61,7 +61,6 @@ import {
 import { useMoveNews } from "./moveNews";
 import { useTableSounds } from "./sounds";
 import { useTurnAttention } from "./turnAttention";
-import { readHints, suggestionFor, writeHints, type Suggestion } from "./hints";
 import { PauseBar } from "./PauseBar";
 import { RulesDialog } from "../rules/HowToPlay";
 import { AwardsCelebration, useAwardsCelebration } from "./awards";
@@ -195,11 +194,6 @@ export function TableView({
   const [compactMelds, setCompactMelds] = useState(() => readFlag(COMPACT_MELDS_KEY));
   // The same, for the other players on a computer: shown in full unless collapsed.
   const [compactSeats, setCompactSeats] = useState(() => readFlag(COMPACT_SEATS_KEY));
-  // Hints for a learner: reasons for a move that is not open, and a suggested move.
-  const [hintsOn, setHintsOn] = useState(() => readHints(latestRoom.config.mode));
-  const [suggestion, setSuggestion] = useState<Suggestion | null>(null);
-  // A suggestion is for the position it was asked about: any change and it is gone.
-  useEffect(() => setSuggestion(null), [update.view]);
   const [rulesOpen, setRulesOpen] = useState(false);
 
   // One card sound for every move, a chime when it is this player's turn, and
@@ -594,23 +588,6 @@ export function TableView({
               <BellIcon on={notify === "on"} />
             </button>
           )}
-          {controls && (
-            <button
-              type="button"
-              aria-pressed={hintsOn}
-              aria-label={hintsOn ? "Turn hints off" : "Turn hints on"}
-              onClick={() => {
-                writeHints(!hintsOn);
-                setHintsOn(!hintsOn);
-                setSuggestion(null);
-              }}
-              className={`rounded border px-2 py-1 text-sm ${
-                hintsOn ? "border-amber-300/80 text-amber-200" : "border-white/25"
-              }`}
-            >
-              Hints
-            </button>
-          )}
           {/* This table's own rules, over the table: the clock keeps running. */}
           <button
             type="button"
@@ -901,29 +878,6 @@ export function TableView({
                   </button>
                 )}
                 <span className="text-sm text-white/60">{guidance()}</span>
-                {hintsOn && (
-                  <button
-                    type="button"
-                    onClick={() => setSuggestion(suggestionFor(view, room.config))}
-                    className="rounded border border-amber-200/50 px-3 py-1.5 text-sm text-amber-100"
-                  >
-                    Suggest a move
-                  </button>
-                )}
-                {hintsOn && hints.takePileWhy && view.discard.length > 0 && (
-                  <p aria-label="Why not the pile" className="w-full text-sm text-amber-100/90">
-                    You can&rsquo;t take the pile: {hints.takePileWhy}.
-                  </p>
-                )}
-                {hintsOn && suggestion && (
-                  <p
-                    role="status"
-                    aria-label="Suggestion"
-                    className="w-full text-sm text-amber-200"
-                  >
-                    Suggested: {suggestion.text}
-                  </p>
-                )}
               </>
             ) : (
               <span className="text-sm text-white/60">Waiting for {nameOf(hints.seatToAct)}.</span>
@@ -949,7 +903,6 @@ export function TableView({
                 interactive={canMeld || canDiscard}
                 stagedIds={staged}
                 owedIds={owed}
-                hintIds={hintsOn ? suggestion?.cardIds : undefined}
                 meldRanks={meldRanks}
                 playContext={playContext}
                 onSelect={onCardSelect}

@@ -29,8 +29,6 @@ export interface HandProps {
   readonly stagedIds: ReadonlySet<string>;
   /** Cards taken from the pile that still owe a play. */
   readonly owedIds: ReadonlySet<string>;
-  /** Cards a hint suggests playing, ringed so the suggestion can be found in the hand. */
-  readonly hintIds?: ReadonlySet<string>;
   /** Ranks the player already has a meld of on the table. */
   readonly meldRanks: ReadonlySet<Rank>;
   /** Whether black threes can be played from these cards; see `isUnplayable`. */
@@ -59,7 +57,6 @@ export function Hand({
   interactive,
   stagedIds,
   owedIds,
-  hintIds,
   meldRanks,
   playContext,
   onSelect,
@@ -96,7 +93,6 @@ export function Hand({
     const melded = canLayOff(card, meldRanks, playContext);
     const lifted = stagedIds.has(card.id) || chosenId === card.id;
     const fresh = card.id === newId;
-    const hinted = hintIds?.has(card.id) ?? false;
     return (
       <span
         key={card.id}
@@ -119,15 +115,13 @@ export function Hand({
         )}
         <span
           className={
-            hinted
-              ? "rounded ring-2 ring-amber-300 ring-offset-2 ring-offset-felt-900"
-              : owed
-                ? "rounded ring-2 ring-sky-300"
-                : fresh
-                  ? "rounded ring-2 ring-sky-300 ring-offset-2 ring-offset-felt-900"
-                  : undefined
+            owed
+              ? "rounded ring-2 ring-sky-300"
+              : fresh
+                ? "rounded ring-2 ring-sky-300 ring-offset-2 ring-offset-felt-900"
+                : undefined
           }
-          aria-description={hinted ? "suggested" : fresh ? "just drawn" : undefined}
+          aria-description={fresh ? "just drawn" : undefined}
         >
           <PlayingCard
             card={card}

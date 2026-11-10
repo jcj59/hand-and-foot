@@ -3280,10 +3280,8 @@ describe("a computer player at the table", () => {
   });
 });
 
-describe("hints at the table", () => {
-  beforeEach(() => window.localStorage.removeItem("hf.hints"));
-
-  it("are on at a family table: a reason for the pile, and a move suggested on request", () => {
+describe("hints", () => {
+  it("are not offered at a real table, even when the server says why the pile is closed", () => {
     mount(
       fakeSocket().socket,
       update({
@@ -3294,63 +3292,10 @@ describe("hints at the table", () => {
         view: { phase: "draw", discard: [card("9", "clubs")] },
       }),
     );
-    expect(screen.getByRole("button", { name: "Turn hints off" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    expect(screen.getByLabelText("Why not the pile")).toHaveTextContent(
-      "You can’t take the pile: with the pile your best lay-down is worth 15, short of the 60 you need.",
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Suggest a move" }));
-    expect(screen.getByRole("status", { name: "Suggestion" })).toHaveTextContent(
-      "Suggested: Draw from the stock.",
-    );
-  });
-
-  it("ring the cards a suggested discard would play, and forget it when the table moves on", () => {
-    const nine = card("9", "diamonds");
-    mount(
-      fakeSocket().socket,
-      update({
-        view: { phase: "play", isDown: true, hand: [nine] },
-        hints: { phase: "play", canDraw: false },
-      }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Suggest a move" }));
-    expect(screen.getByRole("status", { name: "Suggestion" })).toHaveTextContent("Discard the 9♦.");
-    expect(document.querySelector('[aria-description="suggested"]')).not.toBeNull();
-    act(() =>
-      useSession
-        .getState()
-        .applyUpdate(
-          update({ view: { phase: "play", isDown: true, hand: [nine] }, hints: { phase: "play" } }),
-        ),
-    );
-    expect(screen.queryByRole("status", { name: "Suggestion" })).toBeNull();
-    expect(document.querySelector('[aria-description="suggested"]')).toBeNull();
-  });
-
-  it("are off by default at a competitive table, and turned on by the player, remembered", () => {
-    const competitive = roomInfo({
-      config: { ...EAST_COAST, mode: "competitive", pauseEnabled: false },
-    });
-    mount(
-      fakeSocket().socket,
-      update({
-        room: competitive,
-        hints: { canTakePile: false, takePileWhy: "the discard pile is empty" },
-      }),
-    );
+    // Hints belong to the lessons; a game is played without them.
+    expect(screen.queryByRole("button", { name: /hints/i })).toBeNull();
     expect(screen.queryByRole("button", { name: "Suggest a move" })).toBeNull();
-    expect(screen.queryByLabelText("Why not the pile")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Turn hints on" }));
-    expect(screen.getByRole("button", { name: "Suggest a move" })).toBeInTheDocument();
-    expect(window.localStorage.getItem("hf.hints")).toBe("1");
-  });
-
-  it("offer nothing on another player's turn", () => {
-    mount(fakeSocket().socket, update({ hints: { seatToAct: 1 }, view: { currentSeat: 1 } }));
-    expect(screen.queryByRole("button", { name: "Suggest a move" })).toBeNull();
+    expect(screen.queryByText(/short of the 60/)).toBeNull();
   });
 });
 
@@ -3415,7 +3360,7 @@ describe("the recap and the awards on the scoreboard", () => {
     );
     const awards = within(dialog).getByRole("region", { name: "Awards" });
     expect(awards).toHaveTextContent("Grabby Pants champion: ana (Grabby Pants once)");
-    expect(awards).toHaveTextContent("Marva's favourite: ben (one Marva Rule)");
+    expect(awards).toHaveTextContent("Marva's favorite: ben (one Marva Rule)");
     expect(awards).toHaveTextContent("Ate the most red threes: ben (2 red threes)");
   });
 });

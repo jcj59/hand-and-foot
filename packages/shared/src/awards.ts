@@ -35,7 +35,7 @@ export const AWARDS: readonly {
   },
   {
     id: "marva",
-    title: "Marva's favourite",
+    title: "Marva's favorite",
     counts: "marvaRules",
     what: (n) => (n === 1 ? "one Marva Rule" : `${n} Marva Rules`),
   },

@@ -880,13 +880,11 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   `unplayable` / `short {value, minimum}`) and `takePileWhy(state, seat)` words it, null unless it
   is that seat's draw phase and the pile cannot be taken; `legalHints` adds
   `LegalHints.takePileWhy` (optional, protocol) only then — so it reaches only the seat on turn
-  (pinned in `feasibility.test.ts` and `room.test.ts`). Client: `table/hints.ts` (`hf.hints`,
-  `readHints(mode)` defaults on for family, off for competitive; `suggestionFor(view, config)` runs
-  `heuristicAction` on the client from the seat's own view and words it, `shortCard`), a "Hints"
-  toggle in the table header (only with controls), "Suggest a move" on the player's turn, the
-  suggestion's cards ringed amber in `Hand` (`hintIds`, `aria-description="suggested"`), cleared on
-  every new view, and "You can't take the pile: …" in the draw phase. Harness: action `suggest`,
-  `PILE_WHY=1`. Mutation-tested: 11/11 killed.
+  (pinned in `feasibility.test.ts` and `room.test.ts`). **The client's in-game hints were removed
+  in the redesign (1c):** no Hints toggle, no Suggest a move, no "why not the pile" line at a real
+  table (`table/hints.ts` is gone; `Table.test.tsx` "hints" pins their absence). Hints live only in
+  the lessons and the demo, which use their own step hints; `takePileWhy` is kept on the wire but
+  no client code reads it now, so the lessons' coach can use it later.
 
 - **Redesign shell (redesign PR 0).** Theme tokens live in `client/src/index.css` (charcoal
   surfaces, green accent, gold); Inter, Space Grotesk and JetBrains Mono are self-hosted variable

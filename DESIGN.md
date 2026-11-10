@@ -823,24 +823,28 @@ abandoned rounds but not all, so the reaper stays.
 
 ### Hints for a learner
 
-Hints are for someone learning the game at the table, and come in two kinds. The first is a reason
-for a move that is not open. Most of those the table already gives: the lay-down being built shows
-its value against the minimum and names what is wrong with each group. The one it could not was the
-pile, because whether it can be taken is decided by the same solver the reducer uses, over cards the
-client does not hold together. So the server works the reason out for the seat on turn — the pile is
-empty, none of its cards can be played with the player's own, or the best lay-down with it falls
-short of the minimum, by how much — and sends it in that seat's hints alone. It is worked out from
-the player's own cards and the face-up pile, which is everything they could work it out from at a
-real table, so it gives nothing away.
+Hints were first built as teaching aids for someone learning the game at the table, and came in two
+kinds. The first was a reason for a move that is not open. Most of those the table already gave: the
+lay-down being built shows its value against the minimum and names what is wrong with each group.
+The one it could not was the pile, because whether it can be taken is decided by the same solver the
+reducer uses, over cards the client does not hold together. So the server works the reason out for
+the seat on turn (the pile is empty, none of its cards can be played with the player's own, or the
+best lay-down with it falls short of the minimum, by how much) and sends it in that seat's hints
+alone. It is worked out from the player's own cards and the face-up pile, which is everything they
+could work it out from at a real table, so it gives nothing away.
 
-The second is a suggested move: the computer player's choice, asked of it in the browser. The
-heuristic takes only a seat's view, so it runs on the client from exactly what the player is shown
-— a suggestion cannot know a card the player cannot see — and asking costs the server nothing. The
-move is put into words and its cards are ringed in the hand, and it is forgotten the moment the
-table changes, since it is advice about one position.
+The second was a suggested move: the computer player's choice, asked of it in the browser. The
+heuristic takes only a seat's view, so it ran on the client from exactly what the player was shown,
+and a suggestion could not know a card the player cannot see. The move was put into words, its cards
+were ringed in the hand, and it was forgotten the moment the table changed.
 
-Hints are a per-device choice, on by default at a family table and off at a competitive one, where
-being shown a good move is not the game the table chose to play; a player can still turn them on.
+Hints were first a per-device choice at every table, on by default at a family one. The November
+2026 redesign took them out of real games altogether: a hint is a teaching aid, and a family playing
+together would rather work out a move than be shown one, so hints now belong only where someone is
+learning, in the lessons and the narrated demo game. The table's Hints button, the suggested move
+(and with it the browser-side heuristic run) and the "why not the pile" line are gone. The server
+still works out why the pile cannot be taken (`LegalHints.takePileWhy`) and sends it, but nothing in
+the client reads it today; it is kept on the wire so the lessons' coach can use it later.
 
 ### How to play, for this table
 
