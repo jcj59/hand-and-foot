@@ -920,6 +920,19 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   (16 max) and Easy/Standard/Hard editor, "Suggest a name" from `BOT_NAME_IDEAS`. After
   `createRoom` succeeds the client sends `addBot {level, name?}` per computer in order (a blank
   name lets the server pick). Not built: a "n waiting" table preview on the join card.
+  **Waiting room (redesign 3e):** `routes/Lobby.tsx` has a host view (oval table, Share link with
+  QR, computer editor, House rules row, Deal gated on the minimum) and a guest view (waiting for
+  the host, the changed rules listed, "Change my card", Leave). House rules cannot be changed once
+  a table is open (no server support), so the House rules row opens a read-only `RulesSummary`.
+  A computer's name and level change through `updateBot`; removing one stays "Take <name> away"
+  in its editor. A dropped player shows "reconnecting" instead of a dot; the host's "make host"
+  link sits under each person. Phone Back goes home **keeping the seat** (Home's Your games offers
+  Rejoin); the host also gets a small "Leave table" link. **`changeCard {name?, avatar?}`**
+  (`TableChannel` → `Room`, so both hosts): your own seat, before the deal; the name goes through
+  `normalizeName` and is never blank, a picture that is not one is no change (never a refusal, as
+  at sitting down), `null` puts back the drawn picture; the device keeps the new name and picture.
+  The page behind the join flow at `/room/<code>` is the charcoal page, not felt. Harness:
+  `LOBBY_GUEST=1`. Mutation-tested: 8/8 server guards killed.
 
 - **Rules page (roadmap item 8).** `rules/howToPlay.ts` (`howToPlay(config)` → sections of
   paragraphs, every number from the config: deal, decks, minimums per round, wild ratio, Marva,
