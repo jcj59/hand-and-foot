@@ -883,7 +883,8 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   (pinned in `feasibility.test.ts` and `room.test.ts`). **The client's in-game hints were removed
   in the redesign (1c):** no Hints toggle, no Suggest a move, no "why not the pile" line at a real
   table (`table/hints.ts` is gone; `Table.test.tsx` "hints" pins their absence). Hints live only in
-  the lessons and the demo; `takePileWhy` stays on the wire for them.
+  the lessons and the demo, which use their own step hints; `takePileWhy` is kept on the wire but
+  no client code reads it now, so the lessons' coach can use it later.
 
 - **Redesign shell (redesign PR 0).** Theme tokens live in `client/src/index.css` (charcoal
   surfaces, green accent, gold); Inter, Space Grotesk and JetBrains Mono are self-hosted variable
