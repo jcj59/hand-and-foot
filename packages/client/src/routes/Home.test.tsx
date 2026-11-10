@@ -82,9 +82,26 @@ const nameBox = (): HTMLElement => {
   const sheet = screen.queryByRole("dialog") ?? openNew();
   return within(sheet).getByLabelText(/your name/i);
 };
-const codeBox = (): HTMLElement => within(openJoin()).getByLabelText(/table code/i);
-const joinButton = (): HTMLElement =>
-  within(openJoin()).getByRole("button", { name: /join table/i });
+/** The code field, going back to the code step of the join sheet if it is past it. */
+const codeBox = (): HTMLElement => {
+  const sheet = openJoin();
+  const back = within(sheet).queryByRole("button", { name: "Change code" });
+  if (back) fireEvent.click(back);
+  return within(sheet).getByLabelText(/table code/i);
+};
+/**
+ * The way to join: Join table once the code is in, or, while the code is not yet
+ * one, the Continue that would lead there (disabled).
+ */
+const joinButton = (): HTMLElement => {
+  const sheet = openJoin();
+  const next = within(sheet).queryByRole("button", { name: "Continue" });
+  if (next && !(next as HTMLButtonElement).disabled) fireEvent.click(next);
+  return (
+    within(sheet).queryByRole("button", { name: /join table/i }) ??
+    within(sheet).getByRole("button", { name: "Continue" })
+  );
+};
 const createButton = (): HTMLElement =>
   within(openNew()).getByRole("button", { name: /open a new table/i });
 
@@ -231,10 +248,13 @@ describe("joining a table", () => {
   it("fills in the code when arriving from a shared link", () => {
     // The common case: the code is already known and only a name is missing.
     mount(fakeSocket().socket, "/room/abc234");
-    expect(codeBox()).toHaveValue("ABC234");
+    // Straight past the code, which the link gave, to who is sitting down.
+    const sheet = screen.getByRole("dialog", { name: "Join a table" });
+    expect(sheet).toHaveTextContent("Table ABC234");
     expect(screen.getByText(/invited to a table/i)).not.toBeNull();
     // The name is the only thing missing, so the cursor goes there.
     expect(nameBox()).toHaveFocus();
+    expect(codeBox()).toHaveValue("ABC234");
   });
 
   it("starts with the name field focused on a plain visit too", () => {

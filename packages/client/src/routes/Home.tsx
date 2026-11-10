@@ -18,7 +18,6 @@ import {
   MATCHES_PATH,
   MAX_NAME_LENGTH,
   resolveRules,
-  ROOM_CODE_LENGTH,
   type GameMode,
   type MatchHistory as History,
   type RulesPreset,
@@ -55,6 +54,8 @@ import { Chip } from "../ui/Chip";
 import { IconBox, type IconBoxColor } from "../ui/IconBox";
 import { Icon, type IconName } from "../ui/icons";
 import { Sheet } from "../ui/Sheet";
+import { CodeBoxes } from "../join/CodeBoxes";
+import { Scanner } from "../join/Scanner";
 
 /** Development builds, and the screenshot harness's, carry the scenario viewer. */
 const SCENARIOS_LINK = import.meta.env.DEV || import.meta.env.VITE_SCENARIOS === "1";
@@ -197,34 +198,17 @@ export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React
       )}
 
       {open === "join" && (
-        <Sheet title="Join a table" onClose={() => setOpen(null)}>
-          <form className="flex flex-col gap-4" onSubmit={(e) => void submit(e, true)}>
-            {who}
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium text-ink-soft">Table code</span>
-              <input
-                className="min-h-12 rounded-xl border border-white/12 bg-page px-3 font-mono text-lg tracking-[0.3em] text-ink uppercase placeholder:text-faint"
-                value={code}
-                onChange={(e) => setCode(normalizeRoomCode(e.target.value))}
-                placeholder="ABC234"
-                // The browser truncates to this before normalizing ever sees it, so it
-                // leaves room for the separators people type: "ABC-234", "a b c 2 3 4".
-                maxLength={ROOM_CODE_LENGTH * 2}
-              />
-            </label>
-            {alert}
-            <Button
-              type="submit"
-              size="lg"
-              // Disabled rather than validated on submit, so an impossible code never
-              // costs a round trip; the server still has the final say on whether the
-              // table exists.
-              disabled={busy || !named || !isPossibleRoomCode(code)}
-            >
-              Join table
-            </Button>
-          </form>
-        </Sheet>
+        <JoinSheet
+          code={code}
+          onCode={setCode}
+          // From a shared link the code is already in: on to who is sitting down.
+          startWithCode={fromLink !== undefined}
+          who={who}
+          alert={alert}
+          disabled={busy || !named}
+          onSubmit={(e) => void submit(e, true)}
+          onClose={() => setOpen(null)}
+        />
       )}
 
       {open === "new" && (
@@ -240,6 +224,144 @@ export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React
         </Sheet>
       )}
     </main>
+  );
+}
+
+/**
+ * Joining a table: the code first, in six boxes (or read from the table's QR
+ * code), then who is sitting down. On a computer the camera sits beside the
+ * boxes; on a phone, scanning takes the whole screen.
+ */
+function JoinSheet({
+  code,
+  onCode,
+  startWithCode,
+  who,
+  alert,
+  disabled,
+  onSubmit,
+  onClose,
+}: {
+  readonly code: string;
+  readonly onCode: (code: string) => void;
+  readonly startWithCode: boolean;
+  readonly who: React.ReactNode;
+  readonly alert: React.ReactNode;
+  readonly disabled: boolean;
+  readonly onSubmit: (event: FormEvent) => void;
+  readonly onClose: () => void;
+}): React.ReactElement {
+  const phone = usePhone();
+  const [step, setStep] = useState<"code" | "who">(
+    startWithCode && isPossibleRoomCode(code) ? "who" : "code",
+  );
+  const [scanning, setScanning] = useState(false);
+  const read = (found: string): void => {
+    onCode(found);
+    setScanning(false);
+    setStep("who");
+  };
+
+  if (phone && scanning) {
+    return (
+      <Sheet title="Scan the table's QR code" onClose={() => setScanning(false)}>
+        <Scanner onCode={read} autoStart />
+        <Button variant="secondary" size="lg" onClick={() => setScanning(false)}>
+          Type the code instead
+        </Button>
+      </Sheet>
+    );
+  }
+
+  const codeStep = (
+    <form
+      className="flex flex-col gap-4"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (isPossibleRoomCode(code)) setStep("who");
+      }}
+    >
+      <p className="m-0 text-sm text-muted">Type the six letters from your host</p>
+      <CodeBoxes value={code} onChange={onCode} autoFocus />
+      {alert}
+      <Button
+        type="submit"
+        size="lg"
+        // Disabled rather than validated on submit, so an impossible code never
+        // costs a round trip; the server still has the final say on whether the
+        // table exists.
+        disabled={!isPossibleRoomCode(code)}
+      >
+        Continue
+      </Button>
+      {phone ? (
+        <>
+          <div className="flex items-center gap-3 text-xs text-faint">
+            <span className="h-px flex-1 bg-white/10" />
+            or
+            <span className="h-px flex-1 bg-white/10" />
+          </div>
+          <button
+            type="button"
+            onClick={() => setScanning(true)}
+            className="flex min-h-[60px] items-center gap-3.5 rounded-[18px] border border-white/10 bg-surface px-4 text-left hover:border-white/20"
+          >
+            <IconBox icon="scan" color="accent" size={40} />
+            <span className="flex-1">
+              <span className="block font-display text-[15px] font-semibold">
+                Scan the table&rsquo;s QR code
+              </span>
+              <span className="block text-xs text-muted">From the host&rsquo;s screen</span>
+            </span>
+            <Icon name="forward" size={18} className="text-muted" />
+          </button>
+        </>
+      ) : (
+        <p className="m-0 text-xs text-faint">Got a link instead? Opening it skips this step.</p>
+      )}
+    </form>
+  );
+
+  const whoStep = (
+    <form className="flex flex-col gap-4" onSubmit={onSubmit}>
+      <p className="m-0 flex items-center justify-between gap-3 text-sm text-muted">
+        <span>
+          Table <span className="font-mono font-bold text-ink">{code}</span>
+        </span>
+        <button
+          type="button"
+          onClick={() => setStep("code")}
+          className="text-accent underline hover:text-accent-hover"
+        >
+          Change code
+        </button>
+      </p>
+      {who}
+      {alert}
+      <Button type="submit" size="lg" disabled={disabled || !isPossibleRoomCode(code)}>
+        Join table
+      </Button>
+    </form>
+  );
+
+  return (
+    <Sheet title="Join a table" onClose={onClose} wide={!phone && step === "code"}>
+      {step === "code" && !phone ? (
+        <div className="grid grid-cols-[minmax(0,1fr)_260px] gap-8">
+          {codeStep}
+          <div className="flex flex-col items-center gap-3 border-l border-white/8 pl-8">
+            <h3 className="m-0 text-center font-display text-lg font-semibold">
+              Or scan the table&rsquo;s QR code
+            </h3>
+            <Scanner onCode={read} />
+          </div>
+        </div>
+      ) : step === "code" ? (
+        codeStep
+      ) : (
+        whoStep
+      )}
+    </Sheet>
   );
 }
 
