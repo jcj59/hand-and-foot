@@ -10,6 +10,8 @@
 import type { Ack } from "./protocol";
 import type { Avatar } from "./avatar";
 import type { BotLevel } from "./bots";
+import { AWARDS, awards } from "./awards";
+import { presetOf, type RulesPreset } from "./rules";
 import type { Action, Departure, RulesConfig } from "./index";
 import type { ActionSource } from "./protocol";
 import type { UserCredentials } from "./identity";
@@ -94,6 +96,13 @@ export interface MatchListing {
   /** Where they came, from 1, among the players who finished; null if they left or it was unfinished. */
   readonly place: number | null;
   readonly won: boolean;
+  /** The variant it was played under, for filtering by it. */
+  readonly preset: RulesPreset;
+  /**
+   * The awards the player took home from it (ids from `AWARDS`), in their order.
+   * Only a match played to its end gives awards, as at the table.
+   */
+  readonly awards: readonly string[];
   readonly players: readonly {
     readonly seat: number;
     readonly name: string;
@@ -126,6 +135,8 @@ export interface PlayerStats {
   readonly dirtyBooks: number;
   readonly pilesTaken: number;
   readonly redThreesEaten: number;
+  /** How many matches gave the player each award, by award id; an award never won is 0. */
+  readonly awards: Readonly<Record<string, number>>;
 }
 
 /** What the home screen asks for and gets: the player's stats and their latest matches. */
@@ -168,8 +179,12 @@ export function replayFor(record: MatchRecord, userId: string): ReplayMatch | nu
   };
 }
 
-/** How many matches the list shows; the stats count every match kept. */
-export const RECENT_MATCHES = 20;
+/**
+ * How many matches the list shows; the stats count every match kept. Enough for
+ * the history page's filters (by result, date and who was there) to have a
+ * season of games to work on.
+ */
+export const RECENT_MATCHES = 100;
 
 /** The seat a user sat in, if they were in the match at all (a computer never is). */
 export function seatOf(record: MatchRecord, userId: string): number | null {
@@ -179,6 +194,17 @@ export function seatOf(record: MatchRecord, userId: string): number | null {
 /** Whether a seat left the match before its end. */
 function left(record: MatchRecord, seat: number): boolean {
   return record.summary.departed.some((d) => d.seat === seat);
+}
+
+/**
+ * The awards a seat earned in a match: those the table gave at its end, worked out
+ * from the same tallies, leaving out players who left before it.
+ */
+export function awardsWon(record: MatchRecord, seat: number): string[] {
+  if (!record.summary.finished) return [];
+  return awards(record.summary.tallies, (s) => left(record, s))
+    .filter((award) => award.seats.includes(seat))
+    .map((award) => award.id);
 }
 
 /**
@@ -207,6 +233,8 @@ export function listingFor(record: MatchRecord, userId: string): MatchListing | 
     seat,
     place,
     won: summary.winners.includes(seat),
+    preset: presetOf(record.config),
+    awards: awardsWon(record, seat),
     players: record.seats.map((s) => ({
       seat: s.seat,
       name: s.name,
@@ -241,6 +269,7 @@ export function statsFor(records: readonly MatchRecord[], userId: string): Playe
     pilesTaken: 0,
     redThreesEaten: 0,
   };
+  const won: Record<string, number> = Object.fromEntries(AWARDS.map((a) => [a.id, 0]));
   for (const record of records) {
     const seat = seatOf(record, userId);
     if (seat === null) continue;
@@ -273,6 +302,7 @@ export function statsFor(records: readonly MatchRecord[], userId: string): Playe
       counts.pilesTaken += tally.pilesTaken;
       counts.redThreesEaten += tally.redThreesEaten ?? 0;
     }
+    for (const id of awardsWon(record, seat)) won[id] = (won[id] ?? 0) + 1;
   }
   return {
     played,
@@ -283,6 +313,7 @@ export function statsFor(records: readonly MatchRecord[], userId: string): Playe
     bestRound,
     roundsPlayed,
     ...counts,
+    awards: won,
   };
 }
 

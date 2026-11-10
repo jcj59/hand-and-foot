@@ -845,8 +845,11 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   room uid), roomId, startedAt, endedAt, config, seed, firstSeat, seats: MatchSeat[] (userId, bot),
   log: MatchMove[] (seat, action, source), summary}`, `MatchSummary` (rounds, totals, finished,
   winners among those who finished, departed, per-seat `SeatTally`), `listingFor` (no identities in
-  it), `statsFor` (finished matches count as played/won/average; unfinished and left ones count
-  only rounds, best round and tallies), `historyFor` (newest first, `RECENT_MATCHES` 20),
+  it; carries `preset` via `presetOf` and `awards`, from `awardsWon`: the table's own `awards()`
+  over the stored tallies, finished matches only, skipping departed seats), `statsFor` (finished
+  matches count as played/won/average; unfinished and left ones count only rounds, best round and
+  tallies; `awards` counts matches per award id), `historyFor` (newest first, `RECENT_MATCHES` 100,
+  derived at request time so older records get the new fields with no migration),
   `MATCHES_PATH` (`POST /api/users/matches {user}`). Engine `summarizeMatch` replays through
   `buildTimeline` and counts its moments, so stats match the replay by construction. Server:
   `Room.matchRecord()`, `RoomDeps.recordMatch` (called when the last round ends, and by
