@@ -97,10 +97,14 @@ body,
 @keyframes pile-glow {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgb(252 211 77 / 0.7);
+    box-shadow:
+      0 0 0 3px var(--color-accent),
+      0 0 18px 0 rgb(74 222 155 / 0.55);
   }
   50% {
-    box-shadow: 0 0 0 8px rgb(252 211 77 / 0);
+    box-shadow:
+      0 0 0 3px var(--color-accent),
+      0 0 4px 0 rgb(74 222 155 / 0.15);
   }
 }
 @keyframes prompt-fade {
@@ -120,9 +124,13 @@ body,
   animation: prompt-fade 1400ms ease-in-out infinite;
 }
 @media (prefers-reduced-motion: reduce) {
-  .pile-prompt,
   .pile-prompt-label {
     animation: none;
+  }
+  /* Still ringed, just not breathing. */
+  .pile-prompt {
+    animation: none;
+    box-shadow: 0 0 0 3px var(--color-accent);
   }
 }
 /* A celebration (Grabby Pants, the Marva Rule): in with a bounce, and out again

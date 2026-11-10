@@ -257,11 +257,14 @@ describe("the piles", () => {
     expect(screen.getByRole("img", { name: "Stock: 40" })).toBeInTheDocument();
   });
 
+  /** What a whole card face says, in drawing order: the corner, the middle suit, the corner upside down. */
+  const face = (rank: string, suit: string): string[] => [rank, suit, suit, rank, suit];
+
   it("draws one discard as one card", () => {
     mount(fakeSocket().socket, update({ view: { discard: [card("9", "clubs")] } }));
     const pile = screen.getByRole("img", { name: "Discard pile, 1 card, Nine of clubs on top" });
-    // One face: a rank and a suit, and no edges behind it.
-    expect(pile.querySelectorAll("text")).toHaveLength(2);
+    // One face (the corner, the middle suit and the corner again), and no edges behind it.
+    expect([...pile.querySelectorAll("text")].map((t) => t.textContent)).toEqual(face("9", "♣"));
     expect(pile.querySelectorAll("[data-pile-edge]")).toHaveLength(0);
   });
 
@@ -270,15 +273,14 @@ describe("the piles", () => {
       fakeSocket().socket,
       update({ view: { discard: [card("5", "spades"), card("9", "clubs")] } }),
     );
-    expect(screen.getByText(/discard \(2\)/i)).toBeInTheDocument();
+    // The exact count, under the pile.
+    expect(screen.getByText("Pile").nextSibling).toHaveTextContent("2");
     const pile = screen.getByRole("img", {
       name: "Discard pile, 2 cards, Nine of clubs on top, Five of spades beneath",
     });
     expect([...pile.querySelectorAll("text")].map((t) => t.textContent)).toEqual([
-      "5",
-      "♠",
-      "9",
-      "♣",
+      ...face("5", "♠"),
+      ...face("9", "♣"),
     ]);
     expect(pile.querySelectorAll("[data-pile-edge]")).toHaveLength(0);
   });
@@ -295,10 +297,8 @@ describe("the piles", () => {
     });
     // The top two faces, beneath first, and nothing of the third but its edge.
     expect([...pile.querySelectorAll("text")].map((t) => t.textContent)).toEqual([
-      "7",
-      "♥",
-      "9",
-      "♣",
+      ...face("7", "♥"),
+      ...face("9", "♣"),
     ]);
     expect(pile.textContent).not.toMatch(/5/);
     expect(pile.querySelectorAll("[data-pile-edge]")).toHaveLength(1);
@@ -319,7 +319,9 @@ describe("the piles", () => {
     const moving = pile.closest("[data-zone='pile']")!.querySelectorAll("[data-motion]");
     expect([...moving].map((el) => el.getAttribute("data-motion"))).toEqual([top.id]);
     // The marked element is one card's face, not the whole drawing.
-    expect([...moving[0]!.querySelectorAll("text")].map((t) => t.textContent)).toEqual(["9", "♣"]);
+    expect([...moving[0]!.querySelectorAll("text")].map((t) => t.textContent)).toEqual(
+      face("9", "♣"),
+    );
   });
 
   it("says when the pile is empty", () => {
@@ -1478,8 +1480,8 @@ describe("the controls added from play-testing", () => {
     );
     const ink = (name: RegExp): string | null =>
       screen.getByRole("img", { name }).querySelector("text")!.getAttribute("fill");
-    expect(ink(/clean book of 9s/)).toBe("#dc2626");
-    expect(ink(/dirty book of Ks/)).toBe("#0f172a");
+    expect(ink(/clean book of 9s/)).toBe("#C2353A");
+    expect(ink(/dirty book of Ks/)).toBe("#15181B");
   });
 
   it("darkens black threes in the hand, and offers no meld for them", () => {

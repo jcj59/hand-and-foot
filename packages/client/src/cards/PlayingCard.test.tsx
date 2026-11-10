@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { Card, Rank, Suit } from "@hf/shared";
-import { FaceDownPile, PlayingCard } from "./PlayingCard";
+import { FaceDownPile, PlayingCard, STOCK_LAYERS_MAX, stockLayers } from "./PlayingCard";
 
 const card = (rank: Rank, suit: Suit | null): Card => ({ id: `${rank}-${suit}`, rank, suit });
 
@@ -70,5 +70,57 @@ describe("FaceDownPile", () => {
   it("renders an exhausted pile as zero rather than vanishing", () => {
     render(<FaceDownPile count={0} label="Stock" />);
     expect(screen.getByRole("img", { name: "Stock: 0" })).toBeInTheDocument();
+  });
+});
+
+const texts = (el: Element): (string | null)[] =>
+  [...el.querySelectorAll("text")].map((t) => t.textContent);
+
+describe("a card's face", () => {
+  it("shows the corner, a big suit and the corner again when it is big enough", () => {
+    render(<PlayingCard card={card("Q", "hearts")} size="normal" />);
+    expect(texts(screen.getByRole("img", { name: "Queen of hearts" }))).toEqual([
+      "Q",
+      "♥",
+      "♥",
+      "Q",
+      "♥",
+    ]);
+  });
+
+  it("shows only the corner on a phone-sized card", () => {
+    render(<PlayingCard card={card("Q", "hearts")} size="medium" />);
+    expect(texts(screen.getByRole("img", { name: "Queen of hearts" }))).toEqual(["Q", "♥"]);
+  });
+
+  it("marks a wild with a gold line and a warmer face, and a joker as JK in gold", () => {
+    render(
+      <>
+        <PlayingCard card={card("2", "clubs")} size="medium" />
+        <PlayingCard card={card("JOKER", null)} size="medium" />
+        <PlayingCard card={card("9", "clubs")} size="medium" />
+      </>,
+    );
+    const two = screen.getByRole("img", { name: "Two of clubs, wild" });
+    expect(two.querySelector("[stroke='#F2C14E']")).not.toBeNull();
+    expect(two.querySelector("rect")!.getAttribute("fill")).toBe("url(#hf-card-wild)");
+    const joker = screen.getByRole("img", { name: /Joker/ });
+    expect(texts(joker)).toEqual(["JK", "★"]);
+    expect(joker.querySelector("text")!.getAttribute("fill")).toBe("#B07A00");
+    const nine = screen.getByRole("img", { name: "Nine of clubs" });
+    expect(nine.querySelector("[stroke='#F2C14E']")).toBeNull();
+  });
+});
+
+describe("a face-down pile", () => {
+  it("is drawn deeper the more it holds, up to a limit", () => {
+    expect(STOCK_LAYERS_MAX).toBe(5);
+    expect([0, 1, 13, 14, 28, 56, 200].map(stockLayers)).toEqual([0, 1, 1, 2, 3, 5, 5]);
+  });
+
+  it("writes its count in a pill when asked, with the same number in its name", () => {
+    render(<FaceDownPile count={58} label="Stock" pill="Stock" />);
+    const pile = screen.getByRole("img", { name: "Stock: 58" });
+    expect(pile).toHaveTextContent("Stock58");
   });
 });

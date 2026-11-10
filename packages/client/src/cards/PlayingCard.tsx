@@ -10,7 +10,7 @@
  * order for no reason.
  */
 import { useMemo } from "react";
-import type { Card } from "@hf/shared";
+import { isWild, type Card } from "@hf/shared";
 import { cardLabel, rankLabel, suitSymbol } from "./cardText";
 import { pulseStyle } from "../table/pulse";
 import { isDeadWeight, isRedCard } from "./handOrder";
@@ -41,7 +41,69 @@ const DIMENSIONS: Readonly<Record<CardSize, { readonly w: number; readonly h: nu
   small: { w: 36, h: 52 },
 };
 
-/** The face of a card, drawn into a 56×80 viewBox, with the border it is given. */
+/** Card ink: the suit's red or black, a joker's gold. */
+const INK = { red: "#C2353A", black: "#15181B", joker: "#B07A00" } as const;
+/** Where the corner index sits and how big it is, in card units (a card is 56×80). */
+const INDEX = { x: 6, rank: 17, suit: 13 } as const;
+
+function inkOf(card: Card): string {
+  if (card.rank === "JOKER") return INK.joker;
+  return isRedCard(card) ? INK.red : INK.black;
+}
+
+/** The rank as the corner prints it: a joker is "JK" over its star. */
+function cornerRank(card: Card): string {
+  return card.rank === "JOKER" ? "JK" : rankLabel(card.rank);
+}
+
+/**
+ * The rank over the suit, in a card's top-left corner; turned half round, the
+ * same in the bottom-right corner of a card big enough to want both.
+ */
+function CornerIndex({
+  card,
+  colour,
+  flip = false,
+}: {
+  readonly card: Card;
+  readonly colour: string;
+  readonly flip?: boolean;
+}): React.ReactElement {
+  const narrow = cornerRank(card).length > 1;
+  return (
+    <g transform={flip ? "rotate(180 28 40)" : undefined}>
+      <text
+        fill={colour}
+        x={INDEX.x + (narrow ? 6.5 : 4.5)}
+        y={INDEX.x + 13}
+        fontSize={narrow ? 14 : INDEX.rank}
+        fontWeight="700"
+        letterSpacing="-0.5"
+        textAnchor="middle"
+        fontFamily="'Space Grotesk', Inter, ui-sans-serif, system-ui, sans-serif"
+      >
+        {cornerRank(card)}
+      </text>
+      <text
+        fill={colour}
+        x={INDEX.x + (narrow ? 6.5 : 4.5)}
+        y={INDEX.x + 26}
+        fontSize={INDEX.suit}
+        textAnchor="middle"
+        fontFamily="Inter, ui-sans-serif, system-ui, sans-serif"
+      >
+        {suitSymbol(card.suit)}
+      </text>
+    </g>
+  );
+}
+
+/**
+ * The face of a card, drawn into a 56×80 viewBox: warm white (a wild warmer still,
+ * with a gold inner line, so the cards that play anywhere stand out in a hand),
+ * the rank over the suit in the corner, and on a card big enough to read them, a
+ * large suit in the middle and the index again upside down.
+ */
 function CardFace({
   card,
   stroke,
@@ -49,43 +111,96 @@ function CardFace({
   x = 0,
   y = 0,
   tint,
+  full = true,
 }: {
   readonly card: Card;
-  readonly stroke: string;
-  readonly strokeWidth: number;
+  /** An outline to draw around the card (a book's colour, a selection); a hairline if none. */
+  readonly stroke?: string;
+  readonly strokeWidth?: number;
   readonly x?: number;
   readonly y?: number;
   /** Ink to draw the rank and suit in, instead of the suit's own colour. */
   readonly tint?: string;
+  /** The middle suit and the second index; off for the small cards of a phone's hand. */
+  readonly full?: boolean;
 }): React.ReactElement {
-  const colour = tint ?? (isRedCard(card) ? "#dc2626" : "#0f172a");
+  const colour = tint ?? inkOf(card);
+  const wild = isWild(card.rank);
+  const fill = wild ? "url(#hf-card-wild)" : "url(#hf-card-face)";
   return (
     <g transform={`translate(${x} ${y})`}>
       <rect
-        x="1"
-        y="1"
-        width="54"
-        height="78"
-        rx="5"
-        fill="white"
-        stroke={stroke}
-        strokeWidth={strokeWidth}
+        x="0.5"
+        y="0.5"
+        width="55"
+        height="79"
+        rx="6"
+        fill={fill}
+        stroke={stroke ?? "rgba(0,0,0,0.16)"}
+        strokeWidth={strokeWidth ?? 1}
       />
-      <text
-        x="6"
-        y="18"
-        fontSize="15"
-        fontWeight="700"
-        fill={colour}
-        fontFamily="ui-sans-serif, system-ui, sans-serif"
-      >
-        {rankLabel(card.rank)}
-      </text>
-      <text x="28" y="54" fontSize="26" textAnchor="middle" fill={colour}>
-        {suitSymbol(card.suit)}
-      </text>
+      {wild && (
+        <rect
+          x="2.5"
+          y="2.5"
+          width="51"
+          height="75"
+          rx="4.5"
+          fill="none"
+          stroke="#F2C14E"
+          strokeWidth="2"
+        />
+      )}
+      <CornerIndex card={card} colour={colour} />
+      {full && (
+        <>
+          <text
+            x="28"
+            y="52"
+            fontSize="26"
+            textAnchor="middle"
+            fill={colour}
+            fontFamily="Inter, ui-sans-serif, system-ui, sans-serif"
+          >
+            {suitSymbol(card.suit)}
+          </text>
+          <CornerIndex card={card} colour={colour} flip />
+        </>
+      )}
     </g>
   );
+}
+
+/**
+ * The gradients every card face fills with, defined once per drawing. Each SVG
+ * that draws a face carries them, so a face never depends on another drawing
+ * still being on the page; the ids repeat, and every copy says the same thing.
+ */
+function FaceDefs(): React.ReactElement {
+  return (
+    <defs>
+      <linearGradient id="hf-card-face" x1="0" y1="0" x2="0.55" y2="1">
+        <stop offset="0" stopColor="#FFFFFF" />
+        <stop offset="1" stopColor="#EFEADF" />
+      </linearGradient>
+      <linearGradient id="hf-card-wild" x1="0" y1="0" x2="0.55" y2="1">
+        <stop offset="0" stopColor="#FFF9E6" />
+        <stop offset="1" stopColor="#F8E7B8" />
+      </linearGradient>
+      <linearGradient id="hf-card-back" x1="0" y1="0" x2="0.55" y2="1">
+        <stop offset="0" stopColor="#2BB57A" />
+        <stop offset="1" stopColor="#146B45" />
+      </linearGradient>
+      <pattern id="hf-card-weave" width="7" height="7" patternUnits="userSpaceOnUse">
+        <path d="M0 0L7 7M7 0L0 7" stroke="rgba(255,255,255,0.14)" strokeWidth="1.4" />
+      </pattern>
+    </defs>
+  );
+}
+
+/** Whether a size draws the whole face, or only the corner (a phone's hand, a chip). */
+function fullFace(size: CardSize): boolean {
+  return size === "large" || size === "normal";
 }
 
 export function PlayingCard({
@@ -109,10 +224,12 @@ export function PlayingCard({
       aria-hidden="true"
       className="block"
     >
+      <FaceDefs />
       <CardFace
         card={card}
-        stroke={selected ? "#fbbf24" : "#cbd5e1"}
-        strokeWidth={selected ? 3 : 1}
+        stroke={selected ? "#F2C14E" : undefined}
+        strokeWidth={selected ? 3 : undefined}
+        full={fullFace(size)}
       />
     </svg>
   );
@@ -170,7 +287,7 @@ export function BookCard({
 }): React.ReactElement {
   const { w, h } = DIMENSIONS[size];
   const offset = 3;
-  const border = kind === "clean" ? "#dc2626" : "#0f172a";
+  const border = kind === "clean" ? INK.red : INK.black;
   return (
     <span role="img" aria-label={`${kind} book of ${rankLabel(top.rank)}s, ${count} cards`}>
       <svg
@@ -180,33 +297,75 @@ export function BookCard({
         aria-hidden="true"
         className="block"
       >
+        <FaceDefs />
         {[2, 1].map((layer) => (
           <rect
             key={layer}
-            x={1 + layer * offset}
-            y={1 + layer * offset}
-            width="54"
-            height="78"
-            rx="5"
-            fill="white"
+            x={0.5 + layer * offset}
+            y={0.5 + layer * offset}
+            width="55"
+            height="79"
+            rx="6"
+            fill="url(#hf-card-face)"
             stroke={border}
             strokeWidth="2"
           />
         ))}
         {/* The top card is inked in the book's colour too — red for clean, black
             for dirty — so it agrees with its border whatever suit is on top. */}
-        <CardFace card={top} stroke={border} strokeWidth={4} tint={border} />
+        <CardFace card={top} stroke={border} strokeWidth={4} tint={border} full={fullFace(size)} />
       </svg>
     </span>
   );
 }
 
 /** A card back, for stacks and fans of cards nobody may see. */
-function Back({ x, y }: { readonly x: number; readonly y: number }): React.ReactElement {
+function Back({
+  x,
+  y,
+  emblem = true,
+}: {
+  readonly x: number;
+  readonly y: number;
+  /** The diamond in the middle; left off the cards fanned behind the front one. */
+  readonly emblem?: boolean;
+}): React.ReactElement {
   return (
     <g transform={`translate(${x} ${y})`}>
-      <rect x="1" y="1" width="54" height="78" rx="5" fill="#1e3a8a" stroke="#93c5fd" />
-      <path d="M8 8 L48 72 M48 8 L8 72" stroke="#3b82f6" strokeWidth="2" />
+      <rect
+        x="0.5"
+        y="0.5"
+        width="55"
+        height="79"
+        rx="6"
+        fill="#F7F5EE"
+        stroke="rgba(0,0,0,0.25)"
+      />
+      <rect x="3.5" y="3.5" width="49" height="73" rx="4" fill="url(#hf-card-back)" />
+      <rect x="3.5" y="3.5" width="49" height="73" rx="4" fill="url(#hf-card-weave)" />
+      <rect
+        x="3.5"
+        y="3.5"
+        width="49"
+        height="73"
+        rx="4"
+        fill="none"
+        stroke="rgba(6,33,21,0.3)"
+        strokeWidth="2"
+      />
+      {emblem && (
+        <rect
+          x="21"
+          y="33"
+          width="14"
+          height="14"
+          rx="2.5"
+          transform="rotate(45 28 40)"
+          fill="#146B45"
+          stroke="rgba(247,245,238,0.85)"
+          strokeWidth="2"
+        />
+      )}
     </g>
   );
 }
@@ -233,8 +392,9 @@ export function HiddenHand({
           viewBox={`0 0 ${56 + step * (shown - 1)} 80`}
           aria-hidden="true"
         >
+          <FaceDefs />
           {Array.from({ length: shown }, (_, i) => (
-            <Back key={i} x={i * step} y={0} />
+            <Back key={i} x={i * step} y={0} emblem={i === shown - 1} />
           ))}
         </svg>
       )}
@@ -255,10 +415,12 @@ export function pileEdges(count: number): number {
 export const PILE_EDGE_EVERY = 6;
 export const PILE_EDGES_MAX = 4;
 /** How far each edge sits out from the one in front of it, in card units (a card is 56 wide). */
-const PILE_EDGE_STEP = 2;
-/** Room to the left for the card beneath, which is tilted and peeks out (~7 units as it turns). */
-const PILE_PEEK_X = 23;
-const PILE_PEEK_Y = 3;
+const PILE_EDGE_STEP = 3;
+/** Each edge's tilt, front to back, so the pile looks thrown together rather than squared up. */
+const PILE_EDGE_TILT = [3.5, -2.5, 4.5, -1.5] as const;
+/** Room to the left for the card beneath, which is tilted and peeks out. */
+const PILE_PEEK_X = 22;
+const PILE_PEEK_Y = 8;
 
 /**
  * The discard pile, face up, drawn as what it is. The top card, and from two cards
@@ -297,8 +459,9 @@ export function DiscardPile({
           height="78"
           rx="5"
           fill="none"
-          stroke="#ffffff40"
-          strokeDasharray="4 3"
+          stroke="rgba(255,255,255,0.25)"
+          strokeWidth="2"
+          strokeDasharray="5 4"
         />
       </svg>
     );
@@ -326,26 +489,36 @@ export function DiscardPile({
           aria-hidden="true"
           className="absolute inset-0 block"
         >
+          <FaceDefs />
+          <defs>
+            <linearGradient id="hf-pile-edge" x1="0" y1="0" x2="0.55" y2="1">
+              <stop offset="0" stopColor="#FBF8F0" />
+              <stop offset="1" stopColor="#E6E0D0" />
+            </linearGradient>
+          </defs>
           {Array.from({ length: edges }, (_, i) => {
             const d = (edges - i) * PILE_EDGE_STEP;
+            const cx = topX + d + 28;
+            const cy = topY + d + 40;
             return (
               <rect
                 key={d}
                 data-pile-edge=""
-                x={topX + 1 + d}
-                y={topY + 1 + d}
-                width="54"
-                height="78"
-                rx="5"
-                fill="#f8fafc"
-                stroke="#94a3b8"
+                x={topX + 0.5 + d}
+                y={topY + 0.5 + d}
+                width="55"
+                height="79"
+                rx="6"
+                fill="url(#hf-pile-edge)"
+                stroke="rgba(0,0,0,0.2)"
                 strokeWidth="1"
+                transform={`rotate(${PILE_EDGE_TILT[i] ?? 0} ${cx} ${cy})`}
               />
             );
           })}
           {under && (
-            <g transform={`translate(${topX - 14} ${topY}) rotate(-6 28 80)`}>
-              <CardFace card={under} stroke="#cbd5e1" strokeWidth={1} />
+            <g transform={`translate(0 ${topY + 5}) rotate(-9 28 40)`}>
+              <CardFace card={under} />
             </g>
           )}
         </svg>
@@ -359,9 +532,46 @@ export function DiscardPile({
         className="absolute block"
         style={{ left: topX * unit, top: topY * unit }}
       >
-        <CardFace card={top} stroke="#cbd5e1" strokeWidth={1} />
+        <FaceDefs />
+        <CardFace card={top} full={fullFace(size)} />
       </svg>
     </div>
+  );
+}
+
+/** The most cards a face-down stack is drawn as, however many it holds. */
+export const STOCK_LAYERS_MAX = 5;
+
+/**
+ * How many backs a face-down pile is drawn as: one per fourteen cards, from one,
+ * up to `STOCK_LAYERS_MAX`, so a full stock looks deep and a nearly empty one thin.
+ * The exact number is written under it; this is only the look.
+ */
+export function stockLayers(count: number): number {
+  if (count <= 0) return 0;
+  return Math.min(STOCK_LAYERS_MAX, 1 + Math.floor(count / 14));
+}
+
+/**
+ * The exact count under a pile, as the design writes it: "Stock 58", "Pile 9", in
+ * a dark pill on the felt. Decoration for sighted players; the pile's own
+ * accessible name carries the same number.
+ */
+export function CountPill({
+  label,
+  count,
+}: {
+  readonly label: string;
+  readonly count: number;
+}): React.ReactElement {
+  return (
+    <span
+      aria-hidden="true"
+      className="flex items-baseline gap-1.5 rounded-full bg-black/30 px-2.5 py-[3px]"
+    >
+      <span className="text-[11px] font-medium text-ink/70">{label}</span>
+      <span className="font-display text-sm font-bold text-card">{count}</span>
+    </span>
   );
 }
 
@@ -373,9 +583,9 @@ function Stack({
   readonly count: number;
   readonly width: number;
 }): React.ReactElement {
-  const layers = count === 0 ? 0 : Math.min(3, 1 + Math.floor(count / 8));
-  const offset = 3;
-  const pad = offset * 2;
+  const layers = stockLayers(count);
+  const offset = 2;
+  const pad = offset * (STOCK_LAYERS_MAX - 1);
   return (
     <svg
       width={(width * (56 + pad)) / 56}
@@ -384,6 +594,7 @@ function Stack({
       aria-hidden="true"
       className="block"
     >
+      <FaceDefs />
       {count === 0 ? (
         <rect
           x="1"
@@ -392,12 +603,13 @@ function Stack({
           height="78"
           rx="5"
           fill="none"
-          stroke="#ffffff40"
-          strokeDasharray="4 3"
+          stroke="rgba(255,255,255,0.25)"
+          strokeWidth="2"
+          strokeDasharray="5 4"
         />
       ) : (
         Array.from({ length: layers }, (_, i) => layers - 1 - i).map((layer) => (
-          <Back key={layer} x={layer * offset} y={layer * offset} />
+          <Back key={layer} x={layer * offset} y={layer * offset} emblem={layer === 0} />
         ))
       )}
     </svg>
@@ -419,6 +631,7 @@ export function FaceDownPile({
   size = "normal",
   onClick,
   actionLabel,
+  pill,
 }: {
   readonly count: number;
   readonly label: string;
@@ -426,6 +639,8 @@ export function FaceDownPile({
   readonly onClick?: () => void;
   /** What clicking does, for the button's name. */
   readonly actionLabel?: string;
+  /** Write the count in a pill with this word ("Stock 58"), rather than as a bare number. */
+  readonly pill?: string;
 }): React.ReactElement {
   const { w } = DIMENSIONS[size];
   // In phase with every other pulse on the table. The glow starts when the pile
@@ -435,7 +650,11 @@ export function FaceDownPile({
   const body = (
     <>
       <Stack count={count} width={w} />
-      <span className="text-xs text-white/70">{count}</span>
+      {pill ? (
+        <CountPill label={pill} count={count} />
+      ) : (
+        <span className="text-xs text-white/70">{count}</span>
+      )}
     </>
   );
   if (onClick) {
@@ -445,7 +664,7 @@ export function FaceDownPile({
         onClick={onClick}
         style={pulse}
         aria-label={`${actionLabel ?? label} (${count} left)`}
-        className="pile-prompt flex flex-col items-center gap-1 rounded p-1 ring-2 ring-amber-300 transition hover:bg-white/10"
+        className="pile-prompt flex flex-col items-center gap-2 rounded-xl p-1 transition hover:bg-white/5"
       >
         {body}
       </button>
@@ -453,7 +672,7 @@ export function FaceDownPile({
   }
   return (
     <div
-      className="flex flex-col items-center gap-1 p-1"
+      className="flex flex-col items-center gap-2 p-1"
       aria-label={`${label}: ${count}`}
       role="img"
     >

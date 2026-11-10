@@ -12,7 +12,7 @@ const book = (rank, wild) =>
     rank,
     [...Array(wild ? 5 : 7)]
       .map((_, i) => c(rank, ["hearts", "spades", "diamonds", "clubs"][i % 4], i))
-      .concat(wild ? [c("2", "clubs", 9), c("JKR", null, 9)] : []),
+      .concat(wild ? [c("2", "clubs", 9), c("JOKER", null, 9)] : []),
   );
 const view = {
   seat: 0,
@@ -30,7 +30,7 @@ const view = {
     c("K", "hearts"),
     c("A", "clubs"),
     c("2", "hearts"),
-    c("JKR", null),
+    c("JOKER", null),
     c("3", "clubs"),
   ],
   foot: null,
