@@ -518,6 +518,10 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   `lastMove.seq` arrives; jsdom has no `animate` and reduced-motion users get none, so tests see a
   static table. Verify visually with Playwright frames captured right after a change (headless
   Chromium needs `LD_LIBRARY_PATH` at the `pwlibs` conda env for nss/nspr/alsa on this machine).
+  Since redesign 2 the faces, backs and piles in `cards/PlayingCard.tsx` follow the canvas's card
+  kit: a `small` card shows only its corner index, larger ones the full face; the stock stacks one
+  back per 14 cards up to 5 (`stockLayers`); `CountPill` writes the exact "Stock 58" / "Pile 11"
+  under each pile. Motion attributes and accessible names are unchanged.
 - **Sounds.** `table/sounds.ts`. Card sounds are recordings from Kenney's Casino Audio (CC0) in
   `client/public/sounds` (licence file beside them), loaded after the first gesture, with a
   synthesized flick standing in until they arrive; the chimes are synthesized with Web Audio.
