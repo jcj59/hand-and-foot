@@ -839,8 +839,12 @@ heuristic takes only a seat's view, so it runs on the client from exactly what t
 move is put into words and its cards are ringed in the hand, and it is forgotten the moment the
 table changes, since it is advice about one position.
 
-Hints are a per-device choice, on by default at a family table and off at a competitive one, where
-being shown a good move is not the game the table chose to play; a player can still turn them on.
+Hints were first a per-device choice at every table, on by default at a family one. The November
+2026 redesign took them out of real games altogether: a hint is a teaching aid, and a family playing
+together would rather work out a move than be shown one, so they now live only where someone is
+learning, in the lessons and the narrated demo game. The server still works out why the pile cannot
+be taken (`LegalHints.takePileWhy`), because the lessons' coach says it; the suggested move, which
+ran the heuristic in the browser, went with the table's Hints button.
 
 ### How to play, for this table
 

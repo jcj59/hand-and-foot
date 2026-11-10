@@ -27,7 +27,7 @@ describe("the awards at the end of a match", () => {
         count: 2,
         what: "Grabby Pants 2 times",
       },
-      { id: "marva", title: "Marva's favourite", seats: [1], count: 1, what: "one Marva Rule" },
+      { id: "marva", title: "Marva's favorite", seats: [1], count: 1, what: "one Marva Rule" },
       { id: "clean", title: "Cleanest books", seats: [1], count: 4, what: "4 clean books" },
       { id: "out", title: "First out the door", seats: [0], count: 3, what: "went out 3 times" },
       { id: "pile", title: "Pile collector", seats: [0], count: 5, what: "took the pile 5 times" },
