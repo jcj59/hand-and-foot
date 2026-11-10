@@ -503,7 +503,13 @@ describe("listener lifecycle", () => {
 
 describe("a game saved for later", () => {
   const held = { roomId: "ABC234", seat: 0, token: "tok" };
-  const until = new Date(2026, 9, 8, 12, 0).getTime();
+  // A week from now: Home hides a saved game whose date has passed, so a fixed date goes stale.
+  const until = Date.now() + 7 * 24 * 60 * 60 * 1000;
+  const day = new Date(until).toLocaleDateString([], {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
   const savedRoom = (overrides: Partial<RoomInfo> = {}): RoomInfo =>
     roomInfo({ started: true, pausedBy: 1, savedUntil: until, closesAt: until, ...overrides });
 
@@ -527,7 +533,9 @@ describe("a game saved for later", () => {
   it("turns the table into a waiting room for everyone at it, and remembers the game", () => {
     atSavedTable();
     expect(screen.getByRole("heading", { name: "Saved game" })).toBeTruthy();
-    expect(screen.getByText(/Table ABC234 · round 3 of 4 · kept until Thu, Oct 8/)).toBeTruthy();
+    expect(
+      screen.getByText(`Table ABC234 · round 3 of 4 · kept until ${day}`, { exact: false }),
+    ).toBeTruthy();
     expect(loadSavedGames()).toEqual([
       { ...held, savedUntil: until, names: ["ana", "ben"], round: 3 },
     ]);
@@ -540,7 +548,7 @@ describe("a game saved for later", () => {
     expect(socket.sent.map((s) => s.event)).toContain("leaveRoom");
     const saved = screen.getByRole("region", { name: "Saved games" });
     expect(saved.textContent).toMatch(/ana, ben/);
-    expect(saved.textContent).toMatch(/Table ABC234 · round 3 · kept until Thu, Oct 8/);
+    expect(saved.textContent).toContain(`Table ABC234 · round 3 · kept until ${day}`);
     expect(screen.queryByRole("region", { name: "Your table" })).toBeNull();
   });
 
