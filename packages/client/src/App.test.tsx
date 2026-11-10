@@ -249,7 +249,9 @@ describe("reclaiming a stored seat", () => {
     const rejoin = within(screen.getByRole("region", { name: "Your table" })).getByRole("button", {
       name: "Rejoin",
     });
-    expect(screen.getByText(/You still have a seat at table ABC234/)).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Your table" })).toHaveTextContent(
+      "Your seat at table ABC234",
+    );
     act(() => rejoin.click());
     await waitFor(() => expect(socket.sent.map((s) => s.event)).toEqual(["resumeSeat"]));
     await waitFor(() => expect(useSession.getState().credentials?.roomId).toBe("ABC234"));
@@ -317,6 +319,7 @@ describe("a new game after an old one", () => {
     expect(screen.getByText(/Round 1 of 4 over/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Main menu" }));
+    fireEvent.click(screen.getByRole("button", { name: "New table" }));
     fireEvent.change(screen.getByRole("textbox", { name: /your name/i }), {
       target: { value: "ana" },
     });

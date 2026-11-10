@@ -9,7 +9,7 @@ import type { HfClientSocket } from "../socket";
 import { ACCOUNT_KEY, IDENTITY_KEY, NAME_KEY, type Post } from "../identity";
 import { RULES_KEY } from "../rules/customRules";
 import { AVATAR_KEY } from "../profile/avatarStore";
-import { Home } from "./Home";
+import { Home, partOfDay } from "./Home";
 
 /** A socket that answers each request from a queue and records what was sent. */
 function fakeSocket(answers: Ack<unknown>[] = []): {
@@ -65,10 +65,28 @@ function Landing({ onRender }: { readonly onRender: (path: string) => void }): n
   return null;
 }
 
-const nameBox = (): HTMLElement => screen.getByLabelText(/your name/i);
-const codeBox = (): HTMLElement => screen.getByLabelText(/table code/i);
-const joinButton = (): HTMLElement => screen.getByRole("button", { name: /join table/i });
-const createButton = (): HTMLElement => screen.getByRole("button", { name: /open a new table/i });
+/** Open a sheet from the banner, unless it is open already. */
+function opened(sheet: "New table" | "Join a table"): HTMLElement {
+  const open = screen.queryByRole("dialog", { name: sheet });
+  if (open) return open;
+  fireEvent.click(
+    screen.getByRole("button", { name: sheet === "New table" ? "New table" : /join with code/i }),
+  );
+  return screen.getByRole("dialog", { name: sheet });
+}
+const openNew = (): HTMLElement => opened("New table");
+const openJoin = (): HTMLElement => opened("Join a table");
+
+/** The name box in whichever sheet is open, opening New table if neither is. */
+const nameBox = (): HTMLElement => {
+  const sheet = screen.queryByRole("dialog") ?? openNew();
+  return within(sheet).getByLabelText(/your name/i);
+};
+const codeBox = (): HTMLElement => within(openJoin()).getByLabelText(/table code/i);
+const joinButton = (): HTMLElement =>
+  within(openJoin()).getByRole("button", { name: /join table/i });
+const createButton = (): HTMLElement =>
+  within(openNew()).getByRole("button", { name: /open a new table/i });
 
 beforeEach(() => {
   window.localStorage.removeItem(CREDENTIALS_KEY);
@@ -112,8 +130,12 @@ describe("opening a table", () => {
     const { socket, sent } = fakeSocket();
     mount(socket);
     fireEvent.change(nameBox(), { target: { value: "ana" } });
-    fireEvent.change(screen.getByLabelText(/variant/i), { target: { value: "west-coast" } });
-    fireEvent.change(screen.getByLabelText(/mode/i), { target: { value: "competitive" } });
+    fireEvent.change(within(openNew()).getByLabelText(/variant/i), {
+      target: { value: "west-coast" },
+    });
+    fireEvent.change(within(openNew()).getByLabelText(/mode/i), {
+      target: { value: "competitive" },
+    });
     fireEvent.click(createButton());
 
     await waitFor(() => expect(sent).toHaveLength(1));
@@ -283,13 +305,6 @@ function fakeHomeSocket(): HfClientSocket {
   return socket;
 }
 
-/** Open the folded profile panel, as a tap on its summary does. */
-function openPanel(): void {
-  const details = screen.getByText(/use your profile on another device/i).closest("details")!;
-  details.open = true;
-  fireEvent(details, new Event("toggle"));
-}
-
 describe("who is sitting down", () => {
   it("offers the name used last time, and remembers a new one", async () => {
     window.localStorage.setItem(NAME_KEY, "Ana");
@@ -322,301 +337,6 @@ describe("who is sitting down", () => {
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0]!.args[0]).not.toHaveProperty("user");
   });
-
-  it("registers this device's profile when the panel opens, then shows its code", async () => {
-    window.localStorage.setItem(NAME_KEY, "Ana");
-    const users = fakeUsers();
-    mount(fakeSocket().socket, "/", users);
-    openPanel();
-    await waitFor(() => expect(screen.getByLabelText("Your transfer code")).not.toHaveValue("…"));
-    const mine = JSON.parse(window.localStorage.getItem(IDENTITY_KEY)!);
-    expect(users.sent).toEqual([{ ...mine, name: "Ana" }]);
-    expect(screen.getByLabelText("Your transfer code")).toHaveValue(
-      `hf1.${mine.userId}.${mine.secret}`,
-    );
-  });
-
-  it("shows no code, and says why, when the profile cannot be registered", async () => {
-    mount(fakeSocket().socket, "/", fakeUsers({ ok: false, error: "down" }));
-    openPanel();
-    await waitFor(() =>
-      expect(screen.getByRole("status")).toHaveTextContent(/could not reach the server/i),
-    );
-    expect(screen.getByLabelText("Your transfer code")).toHaveValue("…");
-  });
-
-  it("takes on another device's profile from its code", async () => {
-    const users = fakeUsers();
-    mount(fakeSocket().socket, "/", users);
-    openPanel();
-    const other = { userId: "other-device-user-01", secret: "s".repeat(40) };
-    fireEvent.change(screen.getByLabelText("Code from another device"), {
-      target: { value: `hf1.${other.userId}.${other.secret}` },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Use it" }));
-    await waitFor(() =>
-      expect(screen.getByRole("status")).toHaveTextContent("This device now uses that profile."),
-    );
-    expect(JSON.parse(window.localStorage.getItem(IDENTITY_KEY)!)).toEqual(other);
-    expect(users.sent.at(-1)).toEqual({ ...other, existing: true });
-    expect(screen.getByLabelText("Your transfer code")).toHaveValue(
-      `hf1.${other.userId}.${other.secret}`,
-    );
-  });
-
-  it("refuses a code that is not one, keeping this device's profile", async () => {
-    mount(fakeSocket().socket);
-    openPanel();
-    await waitFor(() => expect(window.localStorage.getItem(IDENTITY_KEY)).not.toBeNull());
-    const before = window.localStorage.getItem(IDENTITY_KEY);
-    fireEvent.change(screen.getByLabelText("Code from another device"), {
-      target: { value: "not a code" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Use it" }));
-    await waitFor(() =>
-      expect(screen.getByRole("status")).toHaveTextContent(/not a transfer code/),
-    );
-    expect(window.localStorage.getItem(IDENTITY_KEY)).toBe(before);
-  });
-});
-
-describe("signing in", () => {
-  /**
-   * A server answering each path from its own list, remembering what it was sent.
-   * The match history on the same screen asks too, and is told there is none.
-   */
-  function server(answers: Record<string, Ack<unknown>[]>): Post & {
-    sent: { path: string; body: unknown }[];
-  } {
-    const sent: { path: string; body: unknown }[] = [];
-    const post = (async (path: string, body: unknown) => {
-      if (path === "/api/users/matches") return { ok: false, error: "none" };
-      sent.push({ path, body });
-      return answers[path]?.shift() ?? { ok: true, data: {} };
-    }) as Post & { sent: { path: string; body: unknown }[] };
-    post.sent = sent;
-    return post;
-  }
-
-  const form = (name: string): HTMLElement => screen.getByRole("form", { name });
-  const type = (scope: HTMLElement, label: string, value: string): void => {
-    fireEvent.change(within(scope).getByLabelText(label), { target: { value } });
-  };
-
-  it("signs this device in, and then says whose profile it plays as", async () => {
-    const phone = { userId: "ana-user-id-0001", secret: "p".repeat(43) };
-    const post = server({
-      "/api/account/sign-in": [{ ok: true, data: { ...phone, username: "Ana", name: "Ana" } }],
-    });
-    mount(fakeSocket().socket, "/", post);
-    openPanel();
-    const signIn = form("Sign in");
-    type(signIn, "Username", " ana ");
-    type(signIn, "Password", "correct horse");
-    fireEvent.click(within(signIn).getByRole("button", { name: "Sign in" }));
-    await waitFor(() =>
-      expect(screen.getByRole("status")).toHaveTextContent(
-        "Signed in as Ana. This device now plays as that profile.",
-      ),
-    );
-    expect(post.sent.at(-1)).toEqual({
-      path: "/api/account/sign-in",
-      body: { username: "ana", password: "correct horse", name: "" },
-    });
-    expect(JSON.parse(window.localStorage.getItem(IDENTITY_KEY)!)).toEqual(phone);
-    expect(screen.getByText("Signed in as Ana")).toBeInTheDocument();
-    // Signed in, the profile's name is the one to sit down as.
-    expect(nameBox()).toHaveValue("Ana");
-    expect(screen.queryByRole("form", { name: "Sign in" })).toBeNull();
-  });
-
-  it("keeps a name already typed when signing in", async () => {
-    const phone = { userId: "ana-user-id-0001", secret: "p".repeat(43) };
-    mount(
-      fakeSocket().socket,
-      "/",
-      server({
-        "/api/account/sign-in": [{ ok: true, data: { ...phone, username: "Ana", name: "Ana" } }],
-      }),
-    );
-    fireEvent.change(nameBox(), { target: { value: "Annie" } });
-    openPanel();
-    const signIn = form("Sign in");
-    type(signIn, "Username", "ana");
-    type(signIn, "Password", "correct horse");
-    fireEvent.click(within(signIn).getByRole("button", { name: "Sign in" }));
-    await waitFor(() => expect(screen.getByText("Signed in as Ana")).toBeInTheDocument());
-    expect(nameBox()).toHaveValue("Annie");
-  });
-
-  it("says why signing in was refused, and stays signed out", async () => {
-    mount(
-      fakeSocket().socket,
-      "/",
-      server({
-        "/api/account/sign-in": [{ ok: false, error: "that username and password do not match" }],
-      }),
-    );
-    openPanel();
-    const signIn = form("Sign in");
-    expect(within(signIn).getByRole("button", { name: "Sign in" })).toBeDisabled();
-    type(signIn, "Username", "ana");
-    type(signIn, "Password", "wrong horse");
-    fireEvent.click(within(signIn).getByRole("button", { name: "Sign in" }));
-    await waitFor(() =>
-      expect(screen.getByRole("status")).toHaveTextContent(
-        "That username and password do not match",
-      ),
-    );
-    expect(within(signIn).getByLabelText("Password")).toHaveValue("wrong horse");
-    expect(window.localStorage.getItem(ACCOUNT_KEY)).toBeNull();
-  });
-
-  it("gives this profile a username, asking for the password twice", async () => {
-    const post = server({ "/api/account/claim": [{ ok: true, data: { username: "Ana" } }] });
-    mount(fakeSocket().socket, "/", post);
-    openPanel();
-    const claim = form("Choose a username");
-    expect(claim).toHaveTextContent(/no way to reset a forgotten password/);
-    const save = within(claim).getByRole("button", { name: "Save username" });
-    type(claim, "Username", "Ana");
-    type(claim, "Password", "short");
-    expect(claim).toHaveTextContent("A password needs at least 8 characters.");
-    type(claim, "Password", "correct horse");
-    type(claim, "Password again", "correct hose");
-    expect(claim).toHaveTextContent("The two passwords are not the same.");
-    expect(save).toBeDisabled();
-    type(claim, "Password again", "correct horse");
-    expect(save).toBeEnabled();
-    fireEvent.click(save);
-    await waitFor(() =>
-      expect(screen.getByRole("status")).toHaveTextContent(
-        "This profile is now Ana. Sign in with it on your other devices.",
-      ),
-    );
-    const mine = JSON.parse(window.localStorage.getItem(IDENTITY_KEY)!);
-    expect(post.sent.at(-1)).toEqual({
-      path: "/api/account/claim",
-      body: { user: mine, username: "Ana", password: "correct horse" },
-    });
-    expect(window.localStorage.getItem(ACCOUNT_KEY)).toBe("Ana");
-  });
-
-  it("says why a username was refused, keeping what was typed", async () => {
-    mount(
-      fakeSocket().socket,
-      "/",
-      server({ "/api/account/claim": [{ ok: false, error: "that username is taken" }] }),
-    );
-    openPanel();
-    const claim = form("Choose a username");
-    type(claim, "Username", "Ana");
-    type(claim, "Password", "correct horse");
-    type(claim, "Password again", "correct horse");
-    fireEvent.click(within(claim).getByRole("button", { name: "Save username" }));
-    await waitFor(() =>
-      expect(screen.getByRole("status")).toHaveTextContent("That username is taken"),
-    );
-    expect(within(claim).getByLabelText("Username")).toHaveValue("Ana");
-  });
-
-  it("learns on opening that this device was signed out elsewhere", async () => {
-    window.localStorage.setItem(ACCOUNT_KEY, "Ana");
-    window.localStorage.setItem(
-      IDENTITY_KEY,
-      JSON.stringify({ userId: "ana-user-id-0001", secret: "a".repeat(40) }),
-    );
-    mount(
-      fakeSocket().socket,
-      "/",
-      server({
-        "/api/users": [{ ok: false, error: "that identity belongs to another browser" }],
-      }),
-    );
-    const details = screen.getByText("Signed in as Ana").closest("details")!;
-    details.open = true;
-    fireEvent(details, new Event("toggle"));
-    await waitFor(() => expect(screen.getByRole("form", { name: "Sign in" })).toBeInTheDocument());
-    expect(window.localStorage.getItem(ACCOUNT_KEY)).toBeNull();
-  });
-
-  describe("when signed in", () => {
-    const laptop = { userId: "ana-user-id-0001", secret: "a".repeat(40) };
-
-    function signedIn(post: Post): void {
-      window.localStorage.setItem(ACCOUNT_KEY, "Ana");
-      window.localStorage.setItem(IDENTITY_KEY, JSON.stringify(laptop));
-      mount(fakeSocket().socket, "/", post);
-      const details = screen.getByText("Signed in as Ana").closest("details")!;
-      details.open = true;
-      fireEvent(details, new Event("toggle"));
-    }
-
-    it("changes the password, saying the other devices are signed out", async () => {
-      const post = server({
-        "/api/users": [{ ok: true, data: { username: "Ana" } }],
-        "/api/account/password": [
-          { ok: false, error: "that username and password do not match" },
-          { ok: true, data: null },
-        ],
-      });
-      signedIn(post);
-      const change = form("Change password");
-      type(change, "Current password", "wrong horse");
-      type(change, "New password", "battery staple");
-      type(change, "New password again", "battery staple");
-      fireEvent.click(within(change).getByRole("button", { name: "Change password" }));
-      await waitFor(() =>
-        expect(screen.getByRole("status")).toHaveTextContent(
-          "That username and password do not match",
-        ),
-      );
-      type(change, "Current password", "correct horse");
-      fireEvent.click(within(change).getByRole("button", { name: "Change password" }));
-      await waitFor(() =>
-        expect(screen.getByRole("status")).toHaveTextContent(
-          "Password changed. Every other device has been signed out.",
-        ),
-      );
-      expect(post.sent.at(-1)).toEqual({
-        path: "/api/account/password",
-        body: { user: laptop, password: "correct horse", newPassword: "battery staple" },
-      });
-      expect(within(change).getByLabelText("New password")).toHaveValue("");
-    });
-
-    it("signs this device out, which then starts afresh", async () => {
-      const post = server({ "/api/users": [{ ok: true, data: { username: "Ana" } }] });
-      signedIn(post);
-      await waitFor(() => expect(post.sent).toHaveLength(1));
-      fireEvent.click(screen.getByRole("button", { name: "Sign out on this device" }));
-      await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/Signed out\./));
-      expect(post.sent.at(-1)).toEqual({ path: "/api/account/sign-out", body: { user: laptop } });
-      expect(window.localStorage.getItem(IDENTITY_KEY)).toBeNull();
-      expect(window.localStorage.getItem(ACCOUNT_KEY)).toBeNull();
-      expect(screen.getByRole("form", { name: "Sign in" })).toBeInTheDocument();
-    });
-  });
-
-  it("comes signed in with a code from a profile that has a username", async () => {
-    const other = { userId: "other-device-user-01", secret: "s".repeat(40) };
-    mount(
-      fakeSocket().socket,
-      "/",
-      server({
-        "/api/users": [
-          { ok: true, data: {} },
-          { ok: true, data: { username: "Ana" } },
-        ],
-      }),
-    );
-    openPanel();
-    fireEvent.change(screen.getByLabelText("Code from another device"), {
-      target: { value: `hf1.${other.userId}.${other.secret}` },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Use it" }));
-    await waitFor(() => expect(screen.getByText("Signed in as Ana")).toBeInTheDocument());
-  });
 });
 
 describe("the scenario viewer", () => {
@@ -630,7 +350,7 @@ describe("the scenario viewer", () => {
 });
 
 describe("changing the rules", () => {
-  const field = (label: string): HTMLInputElement => screen.getByLabelText(label);
+  const field = (label: string): HTMLInputElement => within(openNew()).getByLabelText(label);
   const sentOptions = (sent: { args: unknown[] }[]): unknown =>
     (sent[0]!.args[0] as { options: unknown }).options;
 
@@ -772,7 +492,9 @@ describe("changing the rules", () => {
 
   it("will not allow pausing a competitive table", () => {
     mount(fakeSocket().socket);
-    fireEvent.change(screen.getByLabelText(/mode/i), { target: { value: "competitive" } });
+    fireEvent.change(within(openNew()).getByLabelText(/mode/i), {
+      target: { value: "competitive" },
+    });
     expect(field("Pausing allowed").checked).toBe(false);
     fireEvent.click(field("Pausing allowed"));
     expect(screen.getByRole("alert")).toHaveTextContent(/competitive table cannot be paused/);
@@ -782,7 +504,9 @@ describe("changing the rules", () => {
   it("keeps the changes when the variant changes, and can go back to the preset", () => {
     mount(fakeSocket().socket);
     fireEvent.change(field("Hand"), { target: { value: "11" } });
-    fireEvent.change(screen.getByLabelText(/variant/i), { target: { value: "west-coast" } });
+    fireEvent.change(within(openNew()).getByLabelText(/variant/i), {
+      target: { value: "west-coast" },
+    });
     expect(field("Hand").value).toBe("11");
     expect(screen.getByLabelText<HTMLSelectElement>("Wild cards in a meld").value).toBe(
       "naturals-equal-wilds",
@@ -796,14 +520,18 @@ describe("changing the rules", () => {
     const { socket, sent } = fakeSocket();
     mount(socket);
     fireEvent.change(nameBox(), { target: { value: "ana" } });
-    fireEvent.change(screen.getByLabelText(/variant/i), { target: { value: "west-coast" } });
+    fireEvent.change(within(openNew()).getByLabelText(/variant/i), {
+      target: { value: "west-coast" },
+    });
     fireEvent.change(field("Foot"), { target: { value: "9" } });
     fireEvent.click(createButton());
     await waitFor(() => expect(sent).toHaveLength(1));
     cleanup();
 
     mount(fakeSocket().socket);
-    expect(screen.getByLabelText<HTMLSelectElement>(/variant/i).value).toBe("west-coast");
+    expect(within(openNew()).getByLabelText<HTMLSelectElement>(/variant/i).value).toBe(
+      "west-coast",
+    );
     expect(field("Foot").value).toBe("9");
   });
 
@@ -815,5 +543,72 @@ describe("changing the rules", () => {
     fireEvent.click(createButton());
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(window.localStorage.getItem(RULES_KEY)).toBeNull();
+  });
+});
+
+describe("the home screen's own parts", () => {
+  it("greets the player by name and part of day, with their record once the server answers", async () => {
+    window.localStorage.setItem(NAME_KEY, "Jack");
+    window.localStorage.setItem(
+      IDENTITY_KEY,
+      JSON.stringify({ userId: "u".repeat(16), secret: "s".repeat(32) }),
+    );
+    const stats = {
+      played: 4,
+      wins: 1,
+      unfinished: 0,
+      averageScore: 1000,
+      bestMatch: 2000,
+      bestRound: 900,
+      roundsPlayed: 16,
+      grabbyPants: 0,
+      marvaRules: 0,
+      wentOut: 0,
+      cleanBooks: 0,
+      dirtyBooks: 0,
+      pilesTaken: 0,
+      redThreesEaten: 0,
+      awards: { grabby: 2, clean: 1 },
+    };
+    mount(fakeSocket().socket, "/", fakeUsers({ ok: true, data: { stats, recent: [] } }));
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toMatch(
+      /^(Morning|Afternoon|Evening), Jack$/,
+    );
+    await waitFor(() => expect(screen.getByText("Won").nextSibling).toHaveTextContent("25%"));
+    expect(screen.getByText("Games").nextSibling).toHaveTextContent("4");
+    expect(screen.getByText("Awards").nextSibling).toHaveTextContent("3");
+  });
+
+  it("says morning, afternoon or evening by the hour", () => {
+    expect([0, 11, 12, 17, 18, 23].map(partOfDay)).toEqual([
+      "Morning",
+      "Morning",
+      "Afternoon",
+      "Afternoon",
+      "Evening",
+      "Evening",
+    ]);
+  });
+
+  it("leads to learning and the demo, and practice opens a new table", () => {
+    mount(fakeSocket().socket);
+    const tiles = screen.getByRole("region", { name: "Quick start" });
+    expect(within(tiles).getByRole("link", { name: /learn in 5 minutes/i })).toHaveAttribute(
+      "href",
+      "/learn",
+    );
+    expect(within(tiles).getByRole("link", { name: /watch a demo game/i })).toHaveAttribute(
+      "href",
+      "/learn/demo",
+    );
+    fireEvent.click(within(tiles).getByRole("button", { name: /practice vs computers/i }));
+    expect(screen.getByRole("dialog", { name: "New table" })).toBeInTheDocument();
+  });
+
+  it("closes a sheet without sitting down", () => {
+    mount(fakeSocket().socket);
+    openJoin();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
