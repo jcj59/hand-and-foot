@@ -139,3 +139,14 @@ describe("the player's games on the home screen", () => {
     expect(outcome({ ...many, place: 1 })).toBe("1st of 12 · 0");
   });
 });
+
+describe("with no games yet", () => {
+  beforeEach(() => window.localStorage.clear());
+
+  it("shows what it was given for an empty history, once the server has answered", async () => {
+    saveIdentity(user);
+    const { post } = server({ ok: true, data: { stats, recent: [] } });
+    render(<MatchHistory post={post} empty={<p>No games yet.</p>} />);
+    expect(await screen.findByText("No games yet.")).toBeTruthy();
+  });
+});

@@ -15,9 +15,11 @@ import { loadIdentity, type Post } from "../identity";
 
 export interface MatchHistoryProps {
   readonly post: Post;
+  /** Shown once the server has answered with no games; nothing at all by default. */
+  readonly empty?: React.ReactNode;
 }
 
-export function MatchHistory({ post }: MatchHistoryProps): React.ReactElement | null {
+export function MatchHistory({ post, empty }: MatchHistoryProps): React.ReactElement | null {
   const [history, setHistory] = useState<History | null>(null);
 
   useEffect(() => {
@@ -34,7 +36,8 @@ export function MatchHistory({ post }: MatchHistoryProps): React.ReactElement | 
     };
   }, [post]);
 
-  if (!history || history.recent.length === 0) return null;
+  if (!history) return null;
+  if (history.recent.length === 0) return empty ? <>{empty}</> : null;
   const { stats, recent } = history;
   const tiles: [string, string][] = [
     ["Games", String(stats.played)],
