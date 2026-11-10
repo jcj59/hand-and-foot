@@ -8,6 +8,7 @@
  * the same everywhere.
  */
 import { defaultAvatar, parseAvatar, type Avatar, type RoomPlayerInfo } from "@hf/shared";
+import { noteProfileChanged } from "../identity";
 
 export const AVATAR_KEY = "hf.avatar";
 
@@ -29,6 +30,7 @@ export function saveAvatar(avatar: Avatar | null): void {
   } catch {
     // Blocked storage: the picture lasts as long as the page.
   }
+  noteProfileChanged();
 }
 
 /** The face to draw for a seat: the one they chose, or the one their name gives them. */

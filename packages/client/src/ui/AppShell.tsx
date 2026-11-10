@@ -9,8 +9,9 @@
  * Learn is in the sidebar only: a phone has room for four tabs, and Home's
  * "Learn in 5 minutes" tile is the way in there.
  */
+import { useSyncExternalStore } from "react";
 import { NavLink, Outlet } from "react-router-dom";
-import { loadAccount, loadName } from "../identity";
+import { loadAccount, loadName, onProfileChange } from "../identity";
 import { AvatarFace } from "../profile/Avatar";
 import { faceOf, loadAvatar } from "../profile/avatarStore";
 import { usePhone } from "../usePhone";
@@ -125,9 +126,14 @@ function Sidebar(): React.ReactElement {
 }
 
 /** The player this device sits down as: their face, name and username if signed in. */
+function profileSnapshot(): string {
+  return JSON.stringify([loadName().trim(), loadAccount(), loadAvatar()]);
+}
+
 function WhoAmI(): React.ReactElement | null {
-  const name = loadName().trim();
-  const account = loadAccount();
+  const [name, account, avatar] = JSON.parse(
+    useSyncExternalStore(onProfileChange, profileSnapshot),
+  ) as [string, string | null, ReturnType<typeof loadAvatar>];
   if (!name && !account) return null;
   const shown = name || account || "";
   return (
@@ -135,7 +141,7 @@ function WhoAmI(): React.ReactElement | null {
       to="/profile"
       className="mt-auto flex items-center gap-2.5 rounded-[14px] bg-surface p-3 hover:bg-raised"
     >
-      <AvatarFace avatar={loadAvatar() ?? faceOf({ name: shown })} size={40} />
+      <AvatarFace avatar={avatar ?? faceOf({ name: shown })} size={40} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-semibold">{shown}</span>
         {account && <span className="block truncate text-xs text-muted">@{account}</span>}

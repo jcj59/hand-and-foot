@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { useState } from "react";
 import { PHONE_QUERY } from "../usePhone";
 import { AppShell, BareFrame } from "./AppShell";
 import { Segmented } from "./Segmented";
 import { Sheet } from "./Sheet";
-import { NAME_KEY, ACCOUNT_KEY } from "../identity";
+import { NAME_KEY, ACCOUNT_KEY, rememberName } from "../identity";
+import { saveAvatar } from "../profile/avatarStore";
+import { defaultAvatar } from "@hf/shared";
 
 function asPhone(): void {
   Object.defineProperty(window, "matchMedia", {
@@ -86,6 +88,24 @@ describe("the app shell", () => {
     const nav = screen.getByRole("navigation", { name: "Main" });
     expect(within(nav).getByText("Jack")).toBeTruthy();
     expect(within(nav).getByText("@jack")).toBeTruthy();
+  });
+
+  it("follows a change of name, picture or username without leaving the page", () => {
+    window.localStorage.setItem(NAME_KEY, "Jack");
+    app("/profile");
+    const nav = screen.getByRole("navigation", { name: "Main" });
+    act(() => rememberName("Jackie"));
+    expect(within(nav).getByText("Jackie")).toBeTruthy();
+    const picture = defaultAvatar("someone else");
+    act(() => saveAvatar(picture));
+    expect(nav.querySelector("[data-avatar]")?.getAttribute("data-avatar")).toBe(
+      Object.values(picture).join(" "),
+    );
+    act(() => {
+      window.localStorage.setItem(ACCOUNT_KEY, "jackie");
+      window.dispatchEvent(new StorageEvent("storage", { key: ACCOUNT_KEY }));
+    });
+    expect(within(nav).getByText("@jackie")).toBeTruthy();
   });
 
   it("leaves the table full screen, with no navigation", () => {
