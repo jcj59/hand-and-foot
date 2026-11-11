@@ -863,7 +863,7 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   `matchHistory`), `PostgresMatchStore` (migration 6: `matches`, `match_players`; upsert by id), and
   `RoomStore.matches?()`. Worker: `TableObject.keepMatch` sends a copy to each player's `UserObject`
   (`recordMatch`, KV `match:<id>`, `ctx.waitUntil`), and `UserObject.history` answers the route.
-  Client: `pages/HistoryPage.tsx` (see redesign 7), `describe.ts` words a listing. DB tests now drop `match_players, matches`
+  Client: `pages/HistoryPage.tsx` (see redesign 7), `history/describe.ts` words a listing. DB tests now drop `match_players, matches`
   too. Mutation-tested: 29/29 killed across shared, engine and server (with the database
   tests running), three only after tests were added — placing past a player who left ahead, a share
   of a tied win, and a match that did not start at seat 0.
