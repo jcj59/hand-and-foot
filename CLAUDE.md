@@ -937,7 +937,8 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   New table without Mode (always family) and without empty seats: a computer stepper
   (`PRACTICE_BOTS` 1 to 7) and a chip per computer opening `BotEditor` (no Remove: the stepper
   takes the last away). "Deal me in" sends `createRoom`, `addBot` per computer and `startGame`,
-  then goes to the table; a refused deal leaves the notice in the waiting room. Your card is a
+  then goes to the table; a computer that cannot sit down stops there without dealing, and it or
+  a refused deal leaves the notice in the waiting room for the host to deal by hand. Your card is a
   step only when the device has no name. `home/practiceStore.ts` keeps its own setup
   (`hf.practice`), never touching `hf.rules`; until one exists it starts from `hf.rules` as the
   family game with three Standard computers. History tags a game "Practice" when everyone else
