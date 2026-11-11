@@ -86,7 +86,7 @@ describe("watching a past game again", () => {
     mount(server({ ok: true, data: match() }).post, "/replay/m1#step=12&seat=0");
     await screen.findByText(/Table ABC234/);
     expect(screen.getByRole("combobox", { name: "Watch" })).toHaveValue("0");
-    expect(screen.getByText(/Step 12 of 40/)).toBeInTheDocument();
+    expect(screen.getByText(/move 12 of 40/)).toBeInTheDocument();
   });
 
   it("names the watched player in the scores and the result, never as 'you'", async () => {

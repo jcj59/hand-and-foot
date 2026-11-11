@@ -4,7 +4,8 @@
  */
 import { Icon, type IconName } from "./icons";
 
-export type IconBoxColor = "accent" | "gold" | "blue" | "violet" | "teal" | "coral" | "orange";
+export type IconBoxColor =
+  "accent" | "gold" | "blue" | "violet" | "teal" | "coral" | "orange" | "lime" | "salmon";
 
 /** Literal class names, so Tailwind's scanner sees every one. */
 const COLORS: Record<IconBoxColor, string> = {
@@ -15,6 +16,8 @@ const COLORS: Record<IconBoxColor, string> = {
   teal: "bg-teal/18 text-teal",
   coral: "bg-coral/18 text-coral",
   orange: "bg-orange/18 text-orange",
+  lime: "bg-lime/18 text-lime",
+  salmon: "bg-salmon/18 text-salmon",
 };
 
 export interface IconBoxProps {

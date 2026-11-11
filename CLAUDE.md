@@ -973,6 +973,21 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   `Stepper`, `BotEditor`, `TablePreview` with `exact`/`you`) are exported from `home/sheets.tsx`
   for it. Home's tests' `Landing` now reads `useLocation`: it read `window.location`, which a
   `MemoryRouter` never changes, so no navigation assertion there could fail.
+  **Learn and the demo (redesign 6):** `/learn` is the "Up next" card (the first lesson not
+  finished, by `courseOf` in `learn/lessonMeta.ts`, which also holds each lesson's icon, color and
+  one-line blurb) over the lessons, a list on a phone and a grid of cards on a computer, then the
+  Watch a demo game tile (and Practice on a computer). On a phone Learn has its own Back and no
+  tab bar (`AppShell` drops the bar on a destination that is not a tab). A lesson's coach is a
+  card under the table header on a phone and at the top of the side panel on a computer
+  (`TableView`'s `belowHeader` and `aside`). `Player` is redesigned for every caller: its own
+  header (Back, title, "Round n · move s of N" with aria "Position", the Watch select), the table
+  with `TableView`'s `onFelt` (opponents and the watched hand on the felt, the hand a `fan` of
+  corner cards sized by `fanMargin`, no turn bar or foot), and a playback bar (step back, play,
+  step forward, the timeline, Speed). With `narrate` it adds the narration: "What's happening"
+  (the last three steps) in the side panel on a computer, a card under the table on a phone with
+  CC to put it away. The jumps, moments and Every hand are behind `tools` (on by default; the
+  demo turns them off), folded under More on a phone. A player (demo, replay, scenario) has no
+  `TableHeader`, so no sound toggle or rules button: it plays by the device's mute setting.
 
 - **Rules page (roadmap item 8).** `rules/howToPlay.ts` (`howToPlay(config)` → sections of
   paragraphs, every number from the config: deal, decks, minimums per round, wild ratio, Marva,

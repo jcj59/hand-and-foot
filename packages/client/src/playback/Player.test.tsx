@@ -5,7 +5,6 @@ import { buildTimeline, type Timeline } from "@hf/engine";
 import { recordRich } from "@hf/engine/testing";
 import { SCENARIOS, buildScenario } from "@hf/scenarios";
 import { cardLabel } from "../cards/cardText";
-import { describeStep } from "./navigate";
 import { delayAt } from "./playback";
 import { Player, type PlayerProps } from "./Player";
 
@@ -45,14 +44,14 @@ afterEach(() => {
 describe("the player, fed a golden game", () => {
   it("shows the watched seat's own cards at every step it is taken to", () => {
     mount({ timeline: goldenTimeline });
-    expect(position()).toMatch(/^Step 0 of 150/);
+    expect(position()).toMatch(/move 0 of 150/);
     expect(shownCards(/^Seat 0's hand$/)).toEqual(
       labels(goldenTimeline.stateAt(0).players[0]!.hand),
     );
 
     for (const step of [40, 7, 113, 150, 0]) {
       fireEvent.change(screen.getByLabelText("Timeline"), { target: { value: String(step) } });
-      expect(position()).toMatch(new RegExp(`^Step ${step} of 150`));
+      expect(position()).toMatch(new RegExp(`move ${step} of 150`));
       const me = goldenTimeline.stateAt(step).players[0]!;
       expect(shownCards(/^Seat 0's (hand|foot)$/)).toEqual(labels(me.inFoot ? me.foot : me.hand));
     }
@@ -61,21 +60,17 @@ describe("the player, fed a golden game", () => {
   it("steps forward and back one action at a time", () => {
     mount({ timeline: goldenTimeline });
     fireEvent.click(screen.getByRole("button", { name: "Step forward" }));
-    expect(
-      position().startsWith(
-        `Step 1 of 150 · Round 1 · Seat 0's turn · ${describeStep(goldenTimeline, 1)}`,
-      ),
-    ).toBe(true);
+    expect(position()).toBe("Round 1 · move 1 of 150");
     const me = goldenTimeline.stateAt(1).players[0]!;
     expect(shownCards(/^Seat 0's hand$/)).toEqual(labels(me.hand));
     fireEvent.click(screen.getByRole("button", { name: "Step back" }));
-    expect(position()).toMatch(/^Step 0 of 150/);
+    expect(position()).toMatch(/move 0 of 150/);
     expect(screen.getByRole("button", { name: "Step back" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Jump to the end" }));
-    expect(position()).toMatch(/^Step 150 of 150/);
+    expect(position()).toMatch(/move 150 of 150/);
     expect(screen.getByRole("button", { name: "Step forward" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Back to the start" }));
-    expect(position()).toMatch(/^Step 0 of 150/);
+    expect(position()).toMatch(/move 0 of 150/);
   });
 
   it("watches any seat, through that seat's own view", () => {
@@ -103,13 +98,13 @@ describe("the player, fed a golden game", () => {
     mount({ timeline: goldenTimeline, start: { step: 0 } });
     const [first, second] = goldenTimeline.turns;
     fireEvent.click(screen.getByRole("button", { name: "Next turn" }));
-    expect(position()).toMatch(new RegExp(`^Step ${second!.start} of`));
+    expect(position()).toMatch(new RegExp(`move ${second!.start} of`));
     fireEvent.click(screen.getByRole("button", { name: "Previous turn" }));
-    expect(position()).toMatch(new RegExp(`^Step ${first!.start} of`));
+    expect(position()).toMatch(new RegExp(`move ${first!.start} of`));
     fireEvent.click(screen.getByRole("button", { name: "End of this turn" }));
-    expect(position()).toMatch(new RegExp(`^Step ${first!.end} of`));
+    expect(position()).toMatch(new RegExp(`move ${first!.end} of`));
     fireEvent.change(screen.getByLabelText("Jump to a round"), { target: { value: "150" } });
-    expect(position()).toMatch(/^Step 150 of/);
+    expect(position()).toMatch(/move 150 of/);
   });
 
   it("is only watched: nothing on the table can be played, and there is no clock", () => {
@@ -118,22 +113,25 @@ describe("the player, fed a golden game", () => {
     expect(screen.queryByRole("button", { name: "Pause" })).toBeNull();
     expect(screen.queryByRole("timer")).toBeNull();
     expect(screen.queryByRole("button", { name: "React" })).toBeNull();
-    expect(screen.getByText("Seat 0 to play.")).toBeInTheDocument();
+    // No turn bar under the table, and the cards cannot be chosen.
+    expect(screen.queryByRole("region", { name: "Your turn" })).toBeNull();
+    const hand = screen.getByRole("region", { name: /^Seat 0's hand$/ });
+    expect(within(hand).queryAllByRole("button")).toHaveLength(0);
   });
 
   it("plays itself on a timer, and says when it reaches the end of its range", () => {
     vi.useFakeTimers();
     const onEnd = vi.fn();
     mount({ timeline: goldenTimeline, range: { from: 0, to: 3 }, autoplay: true, onEnd });
-    expect(position()).toMatch(/^Step 0 of/);
+    expect(position()).toMatch(/move 0 of/);
     const first = delayAt(goldenTimeline, 0, 1);
     act(() => vi.advanceTimersByTime(first - 1));
-    expect(position()).toMatch(/^Step 0 of/);
+    expect(position()).toMatch(/move 0 of/);
     act(() => vi.advanceTimersByTime(1));
-    expect(position()).toMatch(/^Step 1 of/);
+    expect(position()).toMatch(/move 1 of/);
     // One move per wait: the next is scheduled once the table has shown this one.
     for (let i = 0; i < 6; i++) act(() => vi.advanceTimersByTime(10_000));
-    expect(position()).toMatch(/^Step 3 of/);
+    expect(position()).toMatch(/move 3 of/);
     expect(onEnd).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
   });
@@ -144,7 +142,7 @@ describe("the player, fed a golden game", () => {
     mount({ timeline: goldenTimeline, autoplay: true, onEnd });
     fireEvent.click(screen.getByRole("button", { name: "Jump to the end" }));
     act(() => vi.advanceTimersByTime(60_000));
-    expect(position()).toMatch(/^Step 150 of 150/);
+    expect(position()).toMatch(/move 150 of 150/);
     expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
     expect(onEnd).not.toHaveBeenCalled();
   });
@@ -163,15 +161,15 @@ describe("the player's moments", () => {
     mount({ timeline: t });
     const named = t.moments.find((m) => m.id === "getdown")!;
     fireEvent.click(screen.getByRole("button", { name: `Go to: ${named.label}` }));
-    expect(position()).toMatch(new RegExp(`^Step ${named.step} of`));
+    expect(position()).toMatch(new RegExp(`move ${named.step} of`));
     expect(screen.getByLabelText("Moment")).toHaveTextContent(`★ ${named.label}`);
     // Nothing is marked before it, and the next is the next step that has anything.
     expect(screen.getByRole("button", { name: "Previous moment" })).toBeDisabled();
     const after = t.moments.find((m) => m.step > named.step)!;
     fireEvent.click(screen.getByRole("button", { name: "Next moment" }));
-    expect(position()).toMatch(new RegExp(`^Step ${after.step} of`));
+    expect(position()).toMatch(new RegExp(`move ${after.step} of`));
     fireEvent.click(screen.getByRole("button", { name: "Previous moment" }));
-    expect(position()).toMatch(new RegExp(`^Step ${named.step} of`));
+    expect(position()).toMatch(new RegExp(`move ${named.step} of`));
   });
 
   it("announces Grabby Pants when playing reaches it, and not when a jump lands past it", () => {
@@ -213,10 +211,10 @@ describe("the player's moments", () => {
     expect(within(scores).queryByRole("button", { name: "Back to the main screen" })).toBeNull();
   });
 
-  it("leaves through the table's main menu button", () => {
-    const { onMainMenu } = mount({ timeline: scenario("marva") });
-    fireEvent.click(screen.getByRole("button", { name: "Main menu" }));
-    fireEvent.click(screen.getByRole("button", { name: "Go to the main menu" }));
+  it("leaves by its own Back button, named for where it goes", () => {
+    const { onMainMenu } = mount({ timeline: scenario("marva"), backLabel: "Learn" });
+    expect(screen.queryByRole("button", { name: "Main menu" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Learn" }));
     expect(onMainMenu).toHaveBeenCalled();
   });
 
@@ -224,18 +222,18 @@ describe("the player's moments", () => {
     const t = scenario("marva");
     mount({ timeline: t });
     fireEvent.keyDown(window, { key: "ArrowRight" });
-    expect(position()).toMatch(/^Step 1 of/);
+    expect(position()).toMatch(/move 1 of/);
     fireEvent.keyDown(window, { key: "ArrowLeft" });
-    expect(position()).toMatch(/^Step 0 of/);
+    expect(position()).toMatch(/move 0 of/);
     fireEvent.keyDown(window, { key: "ArrowRight", shiftKey: true });
     const first = t.moments[0]!.step;
-    expect(position()).toMatch(new RegExp(`^Step ${first} of`));
+    expect(position()).toMatch(new RegExp(`move ${first} of`));
     fireEvent.keyDown(window, { key: "ArrowRight", shiftKey: true });
     fireEvent.keyDown(window, { key: "ArrowLeft", shiftKey: true });
-    expect(position()).toMatch(new RegExp(`^Step ${first} of`));
+    expect(position()).toMatch(new RegExp(`move ${first} of`));
     // With no moment before, shift-left stays put.
     fireEvent.keyDown(window, { key: "ArrowLeft", shiftKey: true });
-    expect(position()).toMatch(new RegExp(`^Step ${first} of`));
+    expect(position()).toMatch(new RegExp(`move ${first} of`));
     fireEvent.keyDown(window, { key: " " });
     expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
     // Typing into a control is not a shortcut.

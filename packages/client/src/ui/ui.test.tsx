@@ -81,6 +81,13 @@ describe("the app shell", () => {
     ).toEqual(["Play", "History", "Rules", "Profile"]);
   });
 
+  it("leaves the tab bar off Learn on a phone, where it is a place gone to, not a tab", () => {
+    asPhone();
+    app("/learn");
+    expect(screen.getByText("learn page")).toBeTruthy();
+    expect(screen.queryByRole("navigation", { name: "Main" })).toBeNull();
+  });
+
   it("names the player in the sidebar, with their username once signed in", () => {
     window.localStorage.setItem(NAME_KEY, "Jack");
     window.localStorage.setItem(ACCOUNT_KEY, "jack");
