@@ -222,8 +222,9 @@ describe("your own cards", () => {
       fakeSocket().socket,
       update({ view: { hand: [card("2", "clubs"), card("JOKER", null), card("A", "spades")] } }),
     );
-    expect(screen.getByRole("heading", { name: /your hand \(3\)/i })).toBeInTheDocument();
-    expect(screen.getByText(/2 wild/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /^your hand\s*·\s*3 cards, 2 wild$/i }),
+    ).toBeInTheDocument();
   });
 
   it("shows the foot face down until it is picked up", () => {
@@ -237,7 +238,7 @@ describe("your own cards", () => {
       fakeSocket().socket,
       update({ view: { inFoot: true, foot: [card("K", "diamonds")], hand: [] } }),
     );
-    expect(screen.getByRole("heading", { name: /your foot \(1\)/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^your foot\s*·\s*1 card$/i })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "King of diamonds" })).toBeInTheDocument();
     expect(screen.queryByRole("img", { name: /your foot: / })).toBeNull();
   });
@@ -333,18 +334,37 @@ describe("the piles", () => {
 describe("collapsing the other seats on a computer", () => {
   afterEach(() => window.localStorage.removeItem("hf.compactSeats"));
 
-  it("shows them in full by default, and as chips once collapsed, remembering the choice", () => {
-    mount(fakeSocket().socket);
-    expect(screen.getByLabelText(/ben, 11 in hand, 14 in foot, not down/i).tagName).toBe("LI");
-    fireEvent.click(screen.getByRole("button", { name: "Collapse players" }));
-    // The chip, a tap from the melds, as on a phone.
-    fireEvent.click(screen.getByRole("button", { name: "ben, 11 in hand, not down" }));
-    expect(screen.getByRole("dialog", { name: "ben's melds" })).toBeInTheDocument();
-    expect(window.localStorage.getItem("hf.compactSeats")).toBe("1");
-    expect(screen.getByRole("button", { name: "Show players" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
+  it("shows each player's melds as chips, and their cards once expanded", () => {
+    const kings = [
+      card("K", "clubs"),
+      card("K", "hearts"),
+      card("K", "spades"),
+      card("2", "clubs"),
+    ];
+    mount(
+      fakeSocket().socket,
+      update({
+        view: {
+          opponents: [
+            {
+              seat: 1,
+              handCount: 11,
+              footCount: 14,
+              melds: [{ rank: "K", cards: kings }],
+              isDown: true,
+              inFoot: false,
+            },
+          ],
+        },
+      }),
     );
+    const seat = screen.getByLabelText(/ben, 11 in hand, 14 in foot, down/i);
+    expect(seat.tagName).toBe("LI");
+    expect(seat).toHaveTextContent("K ×3 +★");
+    expect(within(seat).queryByRole("img", { name: "King of clubs" })).toBeNull();
+    fireEvent.click(within(seat).getByRole("button", { name: "Expand ben's melds" }));
+    expect(within(seat).getByRole("img", { name: "King of clubs" })).toBeInTheDocument();
+    expect(seat).toHaveTextContent("3 more for a book");
   });
 });
 
@@ -390,7 +410,7 @@ describe("the other seats", () => {
       }),
     );
     expect(screen.getByLabelText(/playing from the foot/i)).toBeInTheDocument();
-    expect(screen.getByText(/foot \(in\)/i)).toBeInTheDocument();
+    expect(screen.getByText("Foot · 9")).toBeInTheDocument();
   });
 
   it("falls back to a seat number for a player the room does not name", () => {
@@ -436,7 +456,9 @@ describe("your melds", () => {
     // unscoped query cannot tell the two apart.
     mount(fakeSocket().socket);
     const mine = screen.getByLabelText(/your melds/i);
-    expect(within(mine).getByText(/not down yet/i)).toBeInTheDocument();
+    expect(
+      within(mine).getByText(/nothing down yet\. you need 60 to get down/i),
+    ).toBeInTheDocument();
   });
 
   it("labels a clean book and its points", () => {
@@ -451,10 +473,10 @@ describe("your melds", () => {
       fakeSocket().socket,
       update({ view: { isDown: true, melds: [{ rank: "A", cards: sevenAces }] } }),
     );
-    // Collapsed to one stacked card: seven fanned aces would say less, less clearly.
-    expect(screen.getByRole("img", { name: /clean book of As, 7 cards/i })).toBeInTheDocument();
     const mine = screen.getByLabelText(/your melds/i);
-    expect(within(mine).queryByRole("img", { name: "Ace of spades" })).toBeNull();
+    expect(within(mine).getByLabelText(/clean book of As, 7 cards/i)).toHaveTextContent(
+      "Clean book",
+    );
   });
 
   it("keeps a meld still being built fanned out, card by card", () => {
@@ -475,10 +497,12 @@ describe("your melds", () => {
 
   it("shows the round's minimum and whether you are down", () => {
     mount(fakeSocket().socket, update({ view: { isDown: true } }));
-    expect(screen.getByText(/you are down/i)).toBeInTheDocument();
     expect(
-      screen.getByText(new RegExp(`minimum ${EAST_COAST.layDownMinimums[0]}`)),
+      screen.getByText(new RegExp(`^${EAST_COAST.layDownMinimums[0]} to get down$`)),
     ).toBeInTheDocument();
+    cleanup();
+    mount(fakeSocket().socket, update({ view: { isDown: false } }));
+    expect(screen.getByText(/to get down · you are not down yet/)).toBeInTheDocument();
   });
 });
 
@@ -552,8 +576,8 @@ describe("the round result", () => {
       });
     });
     const panel = screen.getByLabelText(/round result/i);
-    expect(within(panel).getByRole("row", { name: "ana: 415" })).toBeInTheDocument();
-    expect(within(panel).getByRole("row", { name: "ben: -20" })).toBeInTheDocument();
+    expect(within(panel).getByRole("listitem", { name: "ana: 415" })).toBeInTheDocument();
+    expect(within(panel).getByRole("listitem", { name: "ben: -20" })).toBeInTheDocument();
   });
 
   it("breaks each score into books, cards melded, going out, and cards left", () => {
@@ -599,18 +623,16 @@ describe("the round result", () => {
         },
       });
     });
-    const ana = screen.getByRole("row", { name: /^ana:/ });
-    expect(ana.textContent).toContain(`2 × ${cleanBookBonus} = +${2 * cleanBookBonus}`);
-    expect(ana.textContent).toContain(`1 × ${dirtyBookBonus} = +${dirtyBookBonus}`);
-    expect(ana.textContent).toContain("+185");
-    expect(ana.textContent).toContain(`+${goOutBonus}`);
-    const ben = screen.getByRole("row", { name: /^ben:/ });
-    expect(ben.textContent).toContain("3 cards: -520");
-    expect(ben.textContent).toContain("—");
+    const ana = screen.getByRole("listitem", { name: /^ana:/ });
+    // The parts as counts, as the design's columns give them: clean books, dirty
+    // books, card points, cards left; then the round and the total.
+    expect(ana.textContent).toMatch(/You\s*Went out\s*2\s*1\s*185\s*0/);
+    const ben = screen.getByRole("listitem", { name: /^ben:/ });
+    expect(ben.textContent).toMatch(/ben\s*\d+\s*\d+\s*\d+\s*3-480/);
     // Highest score first.
     const rows = within(screen.getByLabelText(/round result/i))
-      .getAllByRole("row")
-      .slice(1);
+      .getAllByRole("listitem")
+      .filter((li) => li.getAttribute("aria-label")?.includes(":"));
     expect(rows.map((row) => row.getAttribute("aria-label"))).toEqual([
       `ana: ${2 * cleanBookBonus + dirtyBookBonus + 185 + goOutBonus}`,
       "ben: -480",
@@ -621,7 +643,9 @@ describe("the round result", () => {
     // The update still names a seat to act and carries a live deadline; the result
     // alone has to end the turn on screen.
     mount(fakeSocket().socket, update({ hints: { seatToAct: 1 } }));
-    expect(screen.getByRole("timer")).toBeInTheDocument();
+    // Another player's clock runs on their seat.
+    const others = screen.getByRole("list", { name: "Other players" });
+    expect(others).toHaveTextContent(/playing · \d:\d\d/i);
     expect(screen.getByText(/waiting for ben/i)).toBeInTheDocument();
     act(() => {
       useSession.getState().applyResult(
@@ -636,6 +660,7 @@ describe("the round result", () => {
     });
     expect(screen.getByLabelText(/round result/i)).toBeInTheDocument();
     expect(screen.queryByRole("timer")).toBeNull();
+    expect(others).not.toHaveTextContent(/playing/i);
     expect(screen.queryByText(/waiting for/i)).toBeNull();
     expect(screen.queryByLabelText(/your turn/i)).toBeNull();
   });
@@ -662,7 +687,7 @@ describe("the clock", () => {
   it("says when the table is paused", () => {
     mount(fakeSocket().socket, update({ clock: { deadlineAt: null, paused: true } }));
     expect(screen.getByRole("timer").textContent).toMatch(/—/);
-    expect(screen.getByText(/paused/i)).toBeInTheDocument();
+    expect(screen.getByRole("timer")).toHaveAccessibleName(/paused/i);
   });
 
   it("says when only a discard will be accepted", () => {
@@ -709,8 +734,8 @@ describe("staging a lay-down", () => {
       "aria-pressed",
       "true",
     );
-    // No tag to explain the selection: the highlighted box is the selection.
-    expect(panel.textContent).not.toMatch(/wilds go here/i);
+    // The ringed box is where wilds will go, and says so.
+    expect(panel.textContent).toMatch(/Ks· wilds go here/i);
   });
 
   it("offers a card's choices in a menu rather than acting on the first click", () => {
@@ -750,7 +775,7 @@ describe("staging a lay-down", () => {
     meld("King of clubs");
     meld("King of hearts");
     expect(drafts.at(-1)).toEqual([{ rank: "K", cardIds: ["K-clubs", "K-hearts"] }]);
-    fireEvent.click(screen.getByRole("button", { name: /take them back/i }));
+    fireEvent.click(screen.getByRole("button", { name: /stop melding/i }));
     expect(drafts.at(-1)).toEqual([]);
   });
 
@@ -773,7 +798,7 @@ describe("staging a lay-down", () => {
   it("will not commit a lay-down below the minimum, and says why", () => {
     mount(fakeSocket().socket, inPlay(meldable()));
     for (const name of ["King of clubs", "King of hearts", "King of spades"]) meld(name);
-    expect(screen.getByRole("button", { name: /play these melds/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Play melds" })).toBeDisabled();
     expect(screen.getByText(/below the round minimum of 60/i)).toBeInTheDocument();
   });
 
@@ -793,7 +818,7 @@ describe("staging a lay-down", () => {
     ]) {
       meld(name);
     }
-    const commit = screen.getByRole("button", { name: /play these melds/i });
+    const commit = screen.getByRole("button", { name: "Play melds" });
     expect(commit).not.toBeDisabled();
     fireEvent.click(commit);
 
@@ -866,7 +891,7 @@ describe("staging a lay-down", () => {
   it("clears everything on take-them-back", () => {
     mount(fakeSocket().socket, inPlay(meldable()));
     meld("King of clubs");
-    fireEvent.click(screen.getByRole("button", { name: /take them back/i }));
+    fireEvent.click(screen.getByRole("button", { name: /stop melding/i }));
     expect(screen.queryByLabelText(/lay-down being built/i)).toBeNull();
   });
 
@@ -945,11 +970,13 @@ describe("discarding", () => {
   it("asks again before discarding a wild", async () => {
     const { socket, sent } = fakeSocket();
     mount(socket, readyToDiscard({ hand: [card("JOKER", null), card("9", "hearts")] }));
-    choose("Joker, wild", /^discard$/i);
-    const confirm = screen.getByRole("dialog", { name: /confirm discard/i });
-    expect(confirm.textContent).toMatch(/wild card/i);
+    // The reason is said before the choice, and the button owns up to it.
+    fireEvent.click(handCard("Joker, wild"));
+    const sheet = screen.getByRole("dialog", { name: /actions for joker/i });
+    expect(sheet.textContent).toMatch(/wild card/i);
+    expect(within(sheet).queryByRole("menuitem", { name: /^discard$/i })).toBeNull();
     expect(sent).toEqual([]);
-    fireEvent.click(within(confirm).getByRole("button", { name: /discard anyway/i }));
+    fireEvent.click(within(sheet).getByRole("menuitem", { name: /discard anyway/i }));
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0].args[0]).toEqual({ type: "discard", cardId: "JOKER-null" });
   });
@@ -965,9 +992,9 @@ describe("discarding", () => {
         ],
       }),
     );
-    choose("Nine of hearts", /^discard$/i);
-    expect(screen.getByRole("dialog").textContent).toMatch(/meld of 9s/i);
-    fireEvent.click(screen.getByRole("button", { name: /keep it/i }));
+    fireEvent.click(handCard("Nine of hearts"));
+    expect(screen.getByRole("dialog").textContent).toMatch(/you have 9s down/i);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Cancel" }));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(sent).toEqual([]);
   });
@@ -975,8 +1002,9 @@ describe("discarding", () => {
   it("does not ask about an ordinary card", async () => {
     const { socket, sent } = fakeSocket();
     mount(socket, readyToDiscard());
-    choose("King of spades", /^discard$/i);
-    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(handCard("King of spades"));
+    expect(screen.getByRole("dialog").textContent).not.toMatch(/could|wild/i);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Discard" }));
     await waitFor(() => expect(sent).toHaveLength(1));
   });
 
@@ -1093,7 +1121,7 @@ describe("when the turn ends without the player", () => {
     for (const suit of ["clubs", "hearts", "spades", "diamonds"]) meld(`King of ${suit}`);
 
     deliver(down(kings.slice(0, 3)));
-    fireEvent.click(screen.getByRole("button", { name: /play these melds/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Play melds" }));
     await waitFor(() => expect(sent).toHaveLength(1));
     const action = sent[0].args[0] as { melds: { rank: string; cardIds: string[] }[] };
     expect(action.melds).toEqual([{ rank: "K", cardIds: ["K-clubs", "K-hearts", "K-spades"] }]);
@@ -1133,6 +1161,7 @@ describe("pausing", () => {
   it("is offered at a family table", async () => {
     const { socket, sent } = fakeSocket();
     mount(socket);
+    fireEvent.click(screen.getByRole("button", { name: "Main menu" }));
     fireEvent.click(screen.getByRole("button", { name: /^pause$/i }));
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0]).toEqual({ event: "setPaused", args: [{ paused: true }] });
@@ -1191,7 +1220,7 @@ describe("pausing", () => {
     );
     const bar = screen.getByRole("status", { name: "Paused" });
     const mainMenu = screen.getByRole("button", { name: "Main menu" });
-    const players = screen.getByRole("button", { name: "Collapse players" });
+    const players = screen.getByRole("list", { name: "Other players" });
     expect(mainMenu.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(bar.compareDocumentPosition(players) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
@@ -1276,7 +1305,7 @@ describe("adding to a book already on the table", () => {
     expect(panel.textContent).toMatch(/4 total/);
     expect(panel.textContent).not.toMatch(/dirty|clean/);
 
-    fireEvent.click(screen.getByRole("button", { name: /play these melds/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Play melds" }));
     return waitFor(() => {
       expect(sent).toHaveLength(1);
       const action = sent[0].args[0] as { type: string; melds: { rank: string }[] };
@@ -1329,7 +1358,7 @@ describe("the controls added from play-testing", () => {
     expect(screen.getByLabelText(/lay-down being built/i).textContent).toMatch(/click cards/i);
     fireEvent.click(handCard("King of clubs"));
     expect(screen.queryByRole("menu")).toBeNull();
-    expect(screen.getByLabelText(/lay-down being built/i)).toHaveTextContent(/1 total/);
+    expect(screen.getByLabelText(/lay-down being built/i)).toHaveTextContent(/Ks· wilds go here/);
     fireEvent.click(screen.getByRole("button", { name: /stop melding/i }));
     expect(screen.queryByLabelText(/lay-down being built/i)).toBeNull();
   });
@@ -1408,10 +1437,10 @@ describe("the controls added from play-testing", () => {
     expect(sent.map((s) => s.args[0])).toEqual([{ type: "draw" }, { type: "takePile" }]);
   });
 
-  it("labels the piles with what clicking them does, while they can be clicked", () => {
+  it("names the piles for what clicking them does, while they can be clicked", () => {
     mount(fakeSocket().socket, update({ hints: { canTakePile: true } }));
-    expect(screen.getByText("Draw a card")).toBeInTheDocument();
-    expect(screen.getByText("Pick up the pile")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /draw a card/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /take the pile/i })).toBeInTheDocument();
   });
 
   it("pulses the piles and their labels in step", () => {
@@ -1422,10 +1451,8 @@ describe("the controls added from play-testing", () => {
       const delays = [
         screen.getByRole("button", { name: /draw a card/i }),
         screen.getByRole("button", { name: /take the pile/i }),
-        screen.getByText("Draw a card"),
-        screen.getByText("Pick up the pile"),
       ].map((el) => el.style.animationDelay);
-      expect(delays).toEqual(["-450ms", "-450ms", "-450ms", "-450ms"]);
+      expect(delays).toEqual(["-450ms", "-450ms"]);
     } finally {
       now.mockRestore();
     }
@@ -1458,11 +1485,13 @@ describe("the controls added from play-testing", () => {
   it("goes to the main menu without giving up the seat", () => {
     mount(fakeSocket().socket);
     fireEvent.click(screen.getByRole("button", { name: /main menu/i }));
+    expect(screen.getByRole("dialog", { name: "Table" })).toHaveTextContent(/your seat is kept/i);
+    fireEvent.click(screen.getByRole("button", { name: /go to the main menu/i }));
     expect(screen.getByText("main screen")).toBeInTheDocument();
     expect(useSession.getState().credentials?.roomId).toBe("ABC234");
   });
 
-  it("inks a clean book's top card red and a dirty book's black", () => {
+  it("names each book under it: clean in gold, dirty in silver", () => {
     const clubs = (rank: Rank, i: number): Card => ({ id: `${rank}c${i}`, rank, suit: "clubs" });
     const clean = [...Array.from({ length: 6 }, (_, i) => clubs("9", i)), card("9", "hearts")];
     const dirty = [...Array.from({ length: 6 }, (_, i) => clubs("K", i)), card("JOKER", null)];
@@ -1478,10 +1507,12 @@ describe("the controls added from play-testing", () => {
         },
       }),
     );
-    const ink = (name: RegExp): string | null =>
-      screen.getByRole("img", { name }).querySelector("text")!.getAttribute("fill");
-    expect(ink(/clean book of 9s/)).toBe("#C2353A");
-    expect(ink(/dirty book of Ks/)).toBe("#15181B");
+    const note = (name: RegExp): HTMLElement =>
+      within(screen.getByLabelText(name)).getByText(/book$/);
+    expect(note(/clean book of 9s/)).toHaveTextContent("Clean book");
+    expect(note(/clean book of 9s/).className).toMatch(/text-gold-soft/);
+    expect(note(/dirty book of Ks/)).toHaveTextContent("Dirty book");
+    expect(note(/dirty book of Ks/).className).toMatch(/text-ink-soft/);
   });
 
   it("darkens black threes in the hand, and offers no meld for them", () => {
@@ -1559,10 +1590,10 @@ describe("the controls added from play-testing", () => {
     expect(within(footer).getByRole("region", { name: /your hand/i })).toBeInTheDocument();
   });
 
-  it("shows each opponent's hand as cards, and their foot as a stack", () => {
+  it("says how many cards each opponent holds", () => {
     mount(fakeSocket().socket);
-    expect(screen.getByRole("img", { name: "Hand: 11" })).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "Foot: 14" })).toBeInTheDocument();
+    const seat = screen.getByLabelText(/ben, 11 in hand, 14 in foot/i);
+    expect(seat).toHaveTextContent("11 in hand");
   });
 
   it("announces a go-out and a final lap loudly, and tells the player it is their last turn", () => {
@@ -1583,18 +1614,17 @@ describe("the controls added from play-testing", () => {
     await waitFor(() => expect(sent).toEqual([{ event: "playAgain", args: [] }]));
   });
 
-  it("can be dragged out of the way by its title bar", () => {
+  it("steps aside to show the table, keeping what to do next, and comes back", () => {
     mount(fakeSocket().socket);
     act(() => useSession.setState({ result: scored([[0, 10]], 0) }));
-    const dialog = screen.getByRole("dialog", { name: /round result/i });
-    const handle = screen.getByLabelText(/drag to move the scores/i);
-    fireEvent.pointerDown(handle, { clientX: 100, clientY: 100, pointerId: 1 });
-    fireEvent.pointerMove(handle, { clientX: 160, clientY: 40, pointerId: 1 });
-    fireEvent.pointerUp(handle, { pointerId: 1 });
-    expect(dialog.style.transform).toBe("translate(60px, -60px)");
-    // Moving without a press does nothing.
-    fireEvent.pointerMove(handle, { clientX: 0, clientY: 0, pointerId: 1 });
-    expect(dialog.style.transform).toBe("translate(60px, -60px)");
+    fireEvent.click(screen.getByRole("button", { name: "Look at the table" }));
+    expect(screen.queryByRole("dialog", { name: /round result/i })).toBeNull();
+    const bar = screen.getByRole("region", { name: "Round over" });
+    expect(
+      within(bar).getByRole("button", { name: "Back to the main screen" }),
+    ).toBeInTheDocument();
+    fireEvent.click(within(bar).getByRole("button", { name: "Show the scores" }));
+    expect(screen.getByRole("dialog", { name: /round result/i })).toBeInTheDocument();
   });
 
   it("puts the round result over the table, headed by who went out, and can hide it", () => {
@@ -1727,23 +1757,26 @@ describe("the controls added from play-testing", () => {
       fakeSocket().socket,
       update({ view: { isDown: true, melds: [{ rank: "A", cards: sevenAces }] } }),
     );
-    expect(
-      within(screen.getByLabelText(/your melds/i)).getByText(/7 cards · clean/),
-    ).toBeInTheDocument();
+    const book = within(screen.getByLabelText(/your melds/i)).getByLabelText(
+      "clean book of As, 7 cards",
+    );
+    expect(book).toHaveTextContent("Clean book");
   });
 });
 
 describe("a match of several rounds", () => {
   it("says which round of how many, and the scores so far once past the first", () => {
-    mount(fakeSocket().socket, update({ view: { roundNumber: 2, scoresSoFar: [450, 120] } }));
-    expect(screen.getByText(/round 2 of 4 · minimum 90/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/scores so far/i)).toHaveTextContent("ana 450 · ben 120");
+    mount(fakeSocket().socket, update({ view: { roundNumber: 2, scoresSoFar: [120, 450] } }));
+    expect(screen.getByRole("heading", { name: "Round 2 of 4" })).toBeInTheDocument();
+    expect(screen.getByText(/^90 to get down/)).toBeInTheDocument();
+    // Highest first, the player as "You".
+    expect(screen.getByRole("list", { name: "Scores so far" })).toHaveTextContent("ben450You120");
   });
 
-  it("shows no running scores in the first round", () => {
+  it("shows everyone at nought in the first round", () => {
     mount(fakeSocket().socket);
-    expect(screen.getByText(/round 1 of 4 · minimum 60/i)).toBeInTheDocument();
-    expect(screen.queryByLabelText(/scores so far/i)).toBeNull();
+    expect(screen.getByRole("heading", { name: "Round 1 of 4" })).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Scores so far" })).toHaveTextContent("You0ben0");
   });
 
   it("offers the next round, not a new game, while the match goes on", async () => {
@@ -1762,16 +1795,18 @@ describe("a match of several rounds", () => {
       }),
     );
     const dialog = screen.getByRole("dialog", { name: /round result/i });
-    expect(dialog).toHaveTextContent("Round 1 of 4 over");
+    expect(dialog).toHaveTextContent("Round 1 over");
     expect(within(dialog).queryByRole("button", { name: /^play again$/i })).toBeNull();
     // Ranked by the match so far: ben leads.
-    const rows = within(dialog).getAllByRole("row").slice(1);
+    const rows = within(within(dialog).getByRole("list", { name: /scores/i })).getAllByRole(
+      "listitem",
+    );
     expect(rows[0]).toHaveAccessibleName(/^ben/);
     fireEvent.click(within(dialog).getByRole("button", { name: /^next round$/i }));
     await waitFor(() => expect(sent).toEqual([{ event: "nextRound", args: [] }]));
 
     act(() => useSession.getState().applyRoom(roomInfo({ nextRoundReady: [0] })));
-    expect(within(dialog).getByRole("status")).toHaveTextContent("Ready for round 2: ana (1 of 2)");
+    expect(within(dialog).getByRole("status")).toHaveTextContent("You are ready. Waiting for ben.");
     expect(within(dialog).getByRole("button", { name: /waiting for the others/i })).toBeDisabled();
   });
 
@@ -1791,8 +1826,8 @@ describe("a match of several rounds", () => {
     );
     const dialog = screen.getByRole("dialog", { name: /round result/i });
     expect(dialog).toHaveTextContent("ana wins!");
-    expect(dialog).toHaveTextContent("Final scores after 4 rounds");
-    expect(within(dialog).getByRole("row", { name: /^ana/ })).toHaveTextContent("2400");
+    expect(dialog).toHaveTextContent("Match over · 4 rounds");
+    expect(within(dialog).getByRole("listitem", { name: /^ana/ })).toHaveTextContent("2,400");
     expect(within(dialog).getByRole("button", { name: /^play again$/i })).toBeInTheDocument();
     expect(within(dialog).queryByRole("button", { name: /next round/i })).toBeNull();
   });
@@ -1875,7 +1910,7 @@ describe("on a phone", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.click(chip);
     const sheet = screen.getByRole("dialog", { name: "ben's melds" });
-    expect(sheet.textContent).toMatch(/Playing from the foot, 9 cards left\./);
+    expect(sheet.textContent).toMatch(/In the foot · 9 cards/);
     expect(
       within(sheet).getByRole("listitem", { name: "clean book of Ks, 7 cards" }),
     ).toBeInTheDocument();
@@ -1906,7 +1941,7 @@ describe("on a phone", () => {
     );
     const four = handCard("Four of hearts");
     fireEvent.click(four);
-    const sheet = screen.getByRole("group", { name: "Actions for Four of hearts" });
+    const sheet = screen.getByRole("dialog", { name: "Actions for Four of hearts" });
     // Fixed over the screen, not inside the hand's scrolling footer, so nothing clips it.
     expect(sheet.parentElement).toHaveClass("fixed");
     expect(sheet.closest("footer")).toBeNull();
@@ -1941,13 +1976,13 @@ describe("on a phone", () => {
     // Cards by default, as on the desktop; chips once the player collapses them.
     expect(
       screen.getByRole("button", { name: "Select clean book of Ks, 7 cards" }).textContent,
-    ).toMatch(/7 cards · clean/);
+    ).toMatch(/Clean book/);
     fireEvent.click(screen.getByRole("button", { name: "Collapse" }));
     const chip = screen.getByRole("button", { name: "Select clean book of Ks, 7 cards" });
-    expect(chip.textContent).toBe("K×7");
-    expect(screen.getByRole("button", { name: "Show cards" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
+    expect(chip.textContent).toBe("K ×7");
+    expect(screen.getByRole("button", { name: "Expand" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
     );
     fireEvent.click(chip);
     expect(chip).toHaveAttribute("aria-pressed", "true");
@@ -1956,8 +1991,9 @@ describe("on a phone", () => {
   it("keeps the header's buttons named for what they do, drawn as icons", () => {
     asPhone();
     mount(fakeSocket().socket);
-    expect(screen.getByRole("button", { name: "Pause" }).textContent).toBe("");
-    expect(screen.getByRole("button", { name: "Main menu" }).textContent).toBe("☰");
+    for (const name of ["Main menu", "React", "Scores so far"]) {
+      expect(screen.getByRole("button", { name }).textContent).toBe("");
+    }
     expect(screen.getByText(/Tap the stock to draw/)).toBeInTheDocument();
   });
 });
@@ -2028,9 +2064,10 @@ describe("laying a hand out in rows", () => {
         />,
       );
       const rowSizes = () =>
-        [...screen.getByRole("region", { name: "Your hand" }).querySelector(".pt-3")!.children].map(
-          (row) => within(row as HTMLElement).getAllByRole("img").length,
-        );
+        [
+          ...screen.getByRole("region", { name: "Your hand" }).querySelector("[data-rows]")!
+            .children,
+        ].map((row) => within(row as HTMLElement).getAllByRole("img").length);
       // 330 holds six of a phone's 46-wide cards with their gaps.
       expect(rowSizes()).toEqual([6, 6]);
       act(() => observers.at(-1)!.fire(1_000));
@@ -2118,58 +2155,34 @@ describe("what just happened", () => {
     expect(screen.queryByText("NEW")).toBeNull();
   });
 
-  it("announces another player's discard with the card, then lets it go", async () => {
-    vi.useFakeTimers();
-    try {
-      mount(fakeSocket().socket, update({ lastMove: { seq: 1, seat: 1, kind: "draw" } }));
-      // Nothing is announced for what had already happened when the page opened.
-      expect(screen.queryByRole("status", { name: "Latest move" })).toBeNull();
-      const seven = card("7", "hearts");
-      act(() =>
-        useSession.getState().applyUpdate(
-          update({
-            view: { discard: [seven] },
-            lastMove: { seq: 2, seat: 1, kind: "discard", card: seven },
-          }),
-        ),
-      );
-      const news = screen.getByRole("status", { name: "Latest move" });
-      expect(news.textContent).toMatch(/ben discarded a 7$/);
-      expect(within(news).getByRole("img", { name: "Seven of hearts" })).toBeInTheDocument();
-      // A room broadcast in the meantime does not keep it up, or bring it back.
-      act(() =>
-        useSession.getState().applyUpdate(
-          update({
-            view: { discard: [seven] },
-            lastMove: { seq: 2, seat: 1, kind: "discard", card: seven },
-          }),
-        ),
-      );
-      act(() => vi.advanceTimersByTime(3_500));
-      expect(screen.queryByRole("status", { name: "Latest move" })).toBeNull();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("announces another player picking up the pile, but not this player's own moves", () => {
-    mount(fakeSocket().socket, update({ lastMove: { seq: 1, seat: 0, kind: "draw" } }));
+  it("says the latest move under the piles, and keeps the last few beside the table", () => {
+    mount(fakeSocket().socket, update({ lastMove: { seq: 1, seat: 1, kind: "draw" } }));
+    const line = (): string => screen.getByLabelText("Latest move").textContent ?? "";
+    expect(line()).toBe("ben drew a card");
+    const seven = card("7", "hearts");
+    const discard = update({
+      view: { discard: [seven] },
+      lastMove: { seq: 2, seat: 1, kind: "discard", card: seven },
+    });
+    act(() => useSession.getState().applyUpdate(discard));
+    expect(line()).toBe("ben discarded the 7♥");
+    // The same move again (every view repeats it) is listed once.
+    act(() => useSession.getState().applyUpdate(discard));
     act(() =>
       useSession
         .getState()
-        .applyUpdate(
-          update({ lastMove: { seq: 2, seat: 0, kind: "discard", card: card("4", "clubs") } }),
-        ),
+        .applyUpdate(update({ lastMove: { seq: 3, seat: 0, kind: "takePile", count: 12 } })),
     );
-    expect(screen.queryByRole("status", { name: "Latest move" })).toBeNull();
-    act(() =>
-      useSession
-        .getState()
-        .applyUpdate(update({ lastMove: { seq: 3, seat: 1, kind: "takePile", count: 12 } })),
+    // The player's own move, as theirs.
+    expect(line()).toBe("You took the pile (12 cards)");
+    const moves = within(screen.getByRole("list", { name: "Latest moves" })).getAllByRole(
+      "listitem",
     );
-    expect(screen.getByRole("status", { name: "Latest move" }).textContent).toBe(
-      "ben picked up the pile (12 cards)",
-    );
+    expect(moves.map((m) => m.textContent)).toEqual([
+      "ben drew a card",
+      "ben discarded the 7♥",
+      "You took the pile (12 cards)",
+    ]);
   });
 });
 
@@ -2584,7 +2597,7 @@ describe("Grabby Pants", () => {
     try {
       mount(fakeSocket().socket);
       act(() => useSession.getState().applyRoom(roomInfo({ grabbyPants: { seat: 1, streak: 3 } })));
-      expect(screen.getByRole("status", { name: "Grabby Pants" }).textContent).toBe(
+      expect(screen.getByRole("status", { name: "Grabby Pants" })).toHaveTextContent(
         "ben is Grabby Pants",
       );
       expect(speech.said).toEqual(["Grabby Pants"]);
@@ -2650,7 +2663,7 @@ describe("Grabby Pants", () => {
       act(() => useSession.getState().applyRoom(roomInfo({ grabbyPants: { seat: 0, streak: 3 } })));
       const hand = screen.getByRole("region", { name: "Your hand (Grabby Pants)" });
       const heading = within(hand).getByRole("heading");
-      expect(heading.textContent).toMatch(/^Your hand \(Grabby Pants\) \(\d+\)/);
+      expect(heading.textContent).toMatch(/^Your hand \(Grabby Pants\) · \d+ cards/);
       expect(heading.querySelector("svg path[fill='#2f5da8']")).not.toBeNull();
     } finally {
       speech.restore();
@@ -2666,7 +2679,7 @@ describe("Grabby Pants", () => {
       act(() =>
         useSession.getState().applyRoom(roomInfo({ grabbyPants: { seat: 0, streak: 4, from: 1 } })),
       );
-      expect(screen.getByRole("status", { name: "Grabby Pants" }).textContent).toBe(
+      expect(screen.getByRole("status", { name: "Grabby Pants" })).toHaveTextContent(
         "ana takes Grabby Pants from ben",
       );
     } finally {
@@ -2702,7 +2715,7 @@ describe("Grabby Pants", () => {
       expect(speech.said).toEqual([]);
       // Ben earns it afresh: the same player, but a new earning, so it is announced.
       act(() => useSession.getState().applyRoom(roomInfo({ grabbyPants: { seat: 1, streak: 3 } })));
-      expect(screen.getByRole("status", { name: "Grabby Pants" }).textContent).toBe(
+      expect(screen.getByRole("status", { name: "Grabby Pants" })).toHaveTextContent(
         "ben is Grabby Pants",
       );
       expect(speech.said).toEqual(["Grabby Pants"]);
@@ -2720,7 +2733,7 @@ describe("the Marva Rule", () => {
     expect(screen.queryByRole("status", { name: "Marva Rule" })).toBeNull();
     act(() => useSession.getState().applyUpdate(update({ lastMove: marva })));
     expect(screen.getByRole("status", { name: "Marva Rule" })).toHaveTextContent(
-      "ben got down by emptying the hand",
+      "ben got down with the Marva Rule",
     );
   });
 
@@ -3035,6 +3048,7 @@ describe("your turn, from a background tab", () => {
       },
     });
     mount(fakeSocket().socket);
+    fireEvent.click(screen.getByRole("button", { name: "Main menu" }));
     const bell = screen.getByRole("button", { name: "Notify me when it's my turn" });
     expect(bell).toHaveAttribute("aria-pressed", "false");
     expect(asked).toBe(0);
@@ -3051,6 +3065,7 @@ describe("your turn, from a background tab", () => {
       value: { permission: "denied", requestPermission: () => Promise.resolve("denied") },
     });
     mount(fakeSocket().socket);
+    fireEvent.click(screen.getByRole("button", { name: "Main menu" }));
     expect(
       screen.getByRole("button", { name: "Turn notifications are blocked by the browser" }),
     ).toBeDisabled();
@@ -3121,7 +3136,9 @@ describe("carrying on without a player", () => {
       }),
       roundTwo([{ seat: 1, afterRound: 1 }]),
     );
-    const rows = within(dialog).getAllByRole("row").slice(1);
+    const rows = within(within(dialog).getByRole("list", { name: /scores/i })).getAllByRole(
+      "listitem",
+    );
     // Ben leads the totals, but he has gone: the standing is among the rest.
     expect(rows.map((r) => r.getAttribute("aria-label"))).toEqual([
       "cy: 200",
@@ -3130,7 +3147,8 @@ describe("carrying on without a player", () => {
     ]);
     expect(rows[2]).toHaveTextContent("Left after round 1");
     expect(rows[2]).toHaveTextContent("900");
-    expect(within(dialog).getByRole("status")).toHaveTextContent("(1 of 2)");
+    // Only the people still playing are waited on.
+    expect(within(dialog).getByRole("status")).toHaveTextContent("You are ready. Waiting for cy.");
   });
 
   it("scores a player for the round they leave after, marked as having left", () => {
@@ -3138,7 +3156,9 @@ describe("carrying on without a player", () => {
     const dialog = between(three, {
       ...roundTwo([{ seat: 2, afterRound: 2 }]),
     });
-    expect(within(dialog).getByRole("row", { name: "cy: 200" })).toHaveTextContent("(left)");
+    expect(within(dialog).getByRole("listitem", { name: "cy: 200" })).toHaveTextContent(
+      "Left after round 2",
+    );
   });
 
   it("does not count a player who left for the win", () => {
@@ -3222,8 +3242,9 @@ describe("carrying on without a player", () => {
         },
       }),
     );
-    expect(screen.getByLabelText("Scores so far")).toHaveTextContent(
-      "Scores: ana 300 · ben (left) 900 · cy 500",
+    // Kept, marked, and last: a player who left no longer counts for the win.
+    expect(screen.getByRole("list", { name: "Scores so far" })).toHaveTextContent(
+      "cy500You300ben (left)900",
     );
   });
 
@@ -3278,7 +3299,9 @@ describe("a computer player at the table", () => {
       }),
     );
     act(() => useSession.getState().applyRoom({ ...room, nextRoundReady: [0] }));
-    expect(screen.getByRole("status")).toHaveTextContent("(1 of 2)");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      /^You are ready\. Waiting for \w+\. Computers never hold up the next round\.$/,
+    );
   });
 });
 
@@ -3361,9 +3384,9 @@ describe("the recap and the awards on the scoreboard", () => {
       "Best round: ana, +900.",
     );
     const awards = within(dialog).getByRole("region", { name: "Awards" });
-    expect(awards).toHaveTextContent("Grabby Pants champion: ana (Grabby Pants once)");
-    expect(awards).toHaveTextContent("Marva's favorite: ben (one Marva Rule)");
-    expect(awards).toHaveTextContent("Ate the most red threes: ben (2 red threes)");
+    expect(awards).toHaveTextContent(/Grabby Pants champion\s*ana \(Grabby Pants once\)/);
+    expect(awards).toHaveTextContent(/Marva's favorite\s*ben \(one Marva Rule\)/);
+    expect(awards).toHaveTextContent(/Ate the most red threes\s*ben \(2 red threes\)/);
   });
 });
 

@@ -45,18 +45,18 @@ export function PauseBar({
     <div
       role="status"
       aria-label="Paused"
-      className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded border border-sky-300/60 bg-sky-500/15 px-3 py-2 text-sm text-sky-100"
+      className="mx-3 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border border-blue/50 bg-blue/14 px-3 py-2.5 text-[13px] leading-snug text-[#D6E5F7] md:mx-6 md:mt-3"
     >
-      <p>
+      <p className="m-0 flex-[1_1_200px]">
         {who} {when}
       </p>
-      <div className="flex gap-2">
+      <div className="flex gap-1.5">
         {room.config.pauseEnabled && (
           <button
             type="button"
             disabled={busy}
             onClick={onSaveForLater}
-            className="rounded border border-sky-200/60 px-3 py-1 disabled:opacity-40"
+            className="min-h-10 rounded-xl border border-blue/60 bg-blue/8 px-3.5 text-sm font-semibold text-[#CFE0F5] disabled:opacity-40"
           >
             Save for later
           </button>
@@ -65,7 +65,7 @@ export function PauseBar({
           type="button"
           disabled={busy}
           onClick={onResume}
-          className="rounded bg-sky-300 px-3 py-1 font-medium text-black disabled:opacity-40"
+          className="min-h-10 rounded-xl bg-accent px-3.5 text-sm font-semibold text-accent-ink disabled:opacity-40"
         >
           Resume
         </button>

@@ -30,6 +30,11 @@ export interface PlayingCardProps {
    * never plays anywhere; the player's own cards pass their own answer.
    */
   readonly dimmed?: boolean;
+  /**
+   * Whether a selected card lifts itself. The hand lifts the card's wrapper
+   * instead, so a ring drawn around the card moves with it.
+   */
+  readonly lift?: boolean;
 }
 
 const DIMENSIONS: Readonly<Record<CardSize, { readonly w: number; readonly h: number }>> = {
@@ -210,6 +215,7 @@ export function PlayingCard({
   onSelect,
   disabled = false,
   dimmed = isDeadWeight(card),
+  lift = true,
 }: PlayingCardProps): React.ReactElement {
   const { w, h } = DIMENSIONS[size];
   const label = cardLabel(card);
@@ -255,7 +261,7 @@ export function PlayingCard({
       disabled={disabled}
       data-card-id={card.id}
       onClick={() => onSelect(card)}
-      className={`rounded transition-transform duration-150 ease-out ${selected ? "-translate-y-3" : ""} ${
+      className={`rounded transition-transform duration-150 ease-out ${selected && lift ? "-translate-y-3" : ""} ${
         dimmed ? "opacity-60" : ""
       } disabled:cursor-not-allowed disabled:opacity-40`}
     >

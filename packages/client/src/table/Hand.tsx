@@ -18,7 +18,7 @@ import { useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { isWild, type Card, type Rank } from "@hf/shared";
 import { PlayingCard } from "../cards/PlayingCard";
-import { cardLabel } from "../cards/cardText";
+import { menuTitle } from "./CardMenu";
 import { canLayOff, isUnplayable, sortForDisplay, type PlayContext } from "../cards/handOrder";
 
 export interface HandProps {
@@ -69,16 +69,17 @@ export function Hand({
   rows = false,
 }: HandProps): React.ReactElement {
   const wildCount = cards.filter((card) => isWild(card.rank)).length;
+  const hasOwed = cards.some((card) => owedIds.has(card.id));
   const [rowsRef, rowsWidth] = useWidth<HTMLDivElement>();
 
   if (cards.length === 0) {
     return (
       <section className="flex flex-col gap-2" aria-label={title} data-zone="hand">
-        <h2 className="flex items-center gap-1 text-sm font-medium text-white/80">
+        <h2 className="m-0 flex items-center gap-1 text-xs font-semibold text-nav-ink md:text-[13px]">
           {badge}
-          {title} (0)
+          {title}
         </h2>
-        <p className="text-sm text-white/50">
+        <p className="m-0 text-sm text-muted">
           No cards. You still take a turn: draw, and play from the pile if it fits.
         </p>
       </section>
@@ -91,13 +92,14 @@ export function Hand({
   function renderCard(card: Card, position: number, rowLength: number): React.ReactElement {
     const owed = owedIds.has(card.id);
     const melded = canLayOff(card, meldRanks, playContext);
-    const lifted = stagedIds.has(card.id) || chosenId === card.id;
+    const staged = stagedIds.has(card.id);
+    const lifted = staged || chosenId === card.id;
     const fresh = card.id === newId;
     return (
       <span
         key={card.id}
         data-motion={card.id}
-        className="relative flex flex-col items-center gap-0.5"
+        className={`relative flex flex-col items-center gap-0.5 ${!rows && position > 0 ? "-ml-3" : ""}`}
         title={
           owed
             ? "taken from the pile — owes a play"
@@ -109,24 +111,29 @@ export function Hand({
         {/* A ring rather than a change of the card's own face: the obligation is
             about where the card came from, not what it is. */}
         {fresh && (
-          <span className="absolute -top-2.5 left-1/2 z-10 -translate-x-1/2 rounded bg-sky-300 px-1 text-[10px] font-bold text-black">
+          <span className="absolute -top-2.5 left-1/2 z-10 -translate-x-1/2 rounded bg-blue px-1 text-[10px] font-bold text-[#0B2340]">
             NEW
           </span>
         )}
         <span
-          className={
+          className={`block rounded-md transition-transform duration-150 ease-out ${
+            lifted ? (rows ? "-translate-y-[7px]" : "-translate-y-3.5") : ""
+          } ${
             owed
-              ? "rounded ring-2 ring-sky-300"
-              : fresh
-                ? "rounded ring-2 ring-sky-300 ring-offset-2 ring-offset-felt-900"
-                : undefined
-          }
+              ? "ring-[3px] ring-blue"
+              : staged
+                ? "ring-[3px] ring-accent"
+                : fresh
+                  ? "ring-2 ring-blue ring-offset-2 ring-offset-nav"
+                  : ""
+          }`}
           aria-description={fresh ? "just drawn" : undefined}
         >
           <PlayingCard
             card={card}
             size={rows ? "medium" : "normal"}
             selected={lifted}
+            lift={false}
             dimmed={isUnplayable(card, playContext)}
             onSelect={interactive ? onSelect : undefined}
           />
@@ -140,10 +147,13 @@ export function Hand({
           <div
             // Opens away from the nearer edge, so a card at either end of its
             // row never has its menu pushed off the screen.
-            className={`absolute bottom-full z-20 mb-1 ${
+            role="dialog"
+            aria-label={`Actions for ${menuTitle(card)}`}
+            className={`absolute bottom-full z-20 mb-2 flex w-[280px] flex-col gap-2.5 rounded-2xl border border-white/12 bg-raised p-3 shadow-[0_20px_50px_rgba(0,0,0,0.6)] ${
               position < rowLength / 2 ? "left-0" : "right-0"
             }`}
           >
+            <p className="m-0 font-display text-sm font-semibold">{menuTitle(card)}</p>
             {menu}
           </div>
         )}
@@ -153,16 +163,26 @@ export function Hand({
 
   return (
     <section className="flex flex-col gap-2" aria-label={title} data-zone="hand">
-      <h2 className="flex items-center gap-1 text-sm font-medium text-white/80">
+      <h2 className="m-0 flex items-center gap-1 text-xs font-semibold text-nav-ink md:text-[13px]">
         {badge}
-        {title} ({cards.length})
+        {title}
         {/* Wilds are a resource to plan a lay-down around rather than a rank to
-            collect, so the count is worth stating next to the total. */}
-        {wildCount > 0 && <span className="ml-2 font-normal text-white/50">{wildCount} wild</span>}
+            collect, so the count is worth stating beside the title. */}
+        <span className="font-normal text-muted">
+          {" "}
+          · {cards.length} card{cards.length === 1 ? "" : "s"}
+          {wildCount > 0 && `, ${wildCount} wild`}
+        </span>
+        {hasOwed && (
+          <span className="font-normal text-blue">
+            {" "}
+            · blue ring: the pile card you have to play
+          </span>
+        )}
       </h2>
       {/* Side by side, never overlapping: every card's whole face is readable. */}
       {rows ? (
-        <div ref={rowsRef} className="flex flex-col gap-1 pt-3">
+        <div ref={rowsRef} data-rows className="flex flex-col gap-1.5 pt-1.5">
           {evenRows(sorted, perRow(rowsWidth, PHONE_CARD_W)).map((row) => (
             <div key={row[0]!.id} className="flex gap-1">
               {row.map((card, i) => renderCard(card, i, row.length))}
@@ -174,24 +194,29 @@ export function Hand({
           {chosen &&
             createPortal(
               <div
-                className="fixed inset-0 z-40 flex items-end bg-black/30 text-white"
+                className="fixed inset-0 z-40 flex items-end bg-[rgba(6,10,12,0.5)] text-ink"
                 onClick={onDismiss}
               >
-                <div
-                  aria-label={`Actions for ${cardLabel(chosen)}`}
-                  role="group"
+                <section
+                  aria-label={`Actions for ${menuTitle(chosen)}`}
+                  role="dialog"
                   onClick={(event) => event.stopPropagation()}
-                  className="flex w-full flex-col items-center gap-2 rounded-t-xl border-t border-white/15 bg-felt-900 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]"
+                  className="flex w-full flex-col gap-3 rounded-t-3xl border-t border-white/8 bg-surface px-4 pt-3.5 pb-[calc(1.6rem+env(safe-area-inset-bottom,0px))]"
                 >
-                  <p className="text-sm text-white/70">{cardLabel(chosen)}</p>
+                  <div className="flex items-center gap-3">
+                    <PlayingCard card={chosen} size="medium" />
+                    <p className="m-0 flex-1 font-display text-base font-semibold">
+                      {menuTitle(chosen)}
+                    </p>
+                  </div>
                   {menu}
-                </div>
+                </section>
               </div>,
               document.body,
             )}
         </div>
       ) : (
-        <div className="flex flex-wrap gap-1 pt-3">
+        <div className="flex flex-wrap pt-4">
           {sorted.map((card, i) => renderCard(card, i, sorted.length))}
         </div>
       )}

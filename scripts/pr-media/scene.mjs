@@ -535,7 +535,9 @@ const run = async () => {
     await page.goto(`${base}/${process.env.WATCHING ? "watch" : "room"}/HFDEMO`);
   else await page.goto(base);
   await page.waitForTimeout(800);
-  if (action === "collapse") await page.getByRole("button", { name: "Collapse players" }).click();
+  if (action === "menu") await page.getByRole("button", { name: "Main menu" }).click();
+  if (action === "scores") await page.getByRole("button", { name: "Scores so far" }).click();
+  if (action === "expand") await page.getByRole("button", { name: /^Expand Cyrus/ }).click();
   if (action === "picker") await page.getByRole("button", { name: "React" }).click();
   if (action === "rules") await page.getByRole("button", { name: "How to play" }).click();
   if (action === "chip") await page.getByRole("button", { name: /^Cyrus/ }).click();
@@ -547,10 +549,10 @@ const run = async () => {
     await page.getByRole("button", { name: /Ten of clubs/i }).click({ position: { x: 8, y: 30 } });
   }
   const waitText = {
-    draw: "Your hand (15)",
+    draw: "16 cards",
     discard: `Discard (${view.discard.length + 1})`,
     takepile: "Discard (0)",
-    oppdraw: "picked up the pile",
+    oppdraw: "took the pile",
     grabby: "is Grabby Pants",
     react: "Nice!",
   }[mode];

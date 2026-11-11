@@ -61,15 +61,75 @@ export function AwardsCelebration({
 }): React.ReactElement {
   return (
     <Celebration label="Awards" ms={AWARDS_MS} confetti>
-      <p className="text-3xl font-black text-amber-200 sm:text-4xl">Awards</p>
-      <ul className="flex flex-col gap-1 text-left">
+      <p className="m-0 font-display text-[34px] font-bold tracking-[-0.02em] text-gold-soft">
+        Awards
+      </p>
+      <ul className="m-0 flex w-full list-none flex-col gap-2 p-0 text-left">
         {shown.map((award) => (
-          <li key={award.id} className="text-base sm:text-lg">
-            <span className="font-semibold text-amber-100">{award.title}:</span>{" "}
-            {winnersOf(award, nameOf)}
+          <li key={award.id} className="flex items-center gap-2.5">
+            <AwardIcon id={award.id} size={34} />
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold">{award.title}</span>
+              <span className="block text-xs text-muted">{winnersOf(award, nameOf)}</span>
+            </span>
           </li>
         ))}
       </ul>
     </Celebration>
+  );
+}
+
+/** Each award's drawing and color, as the design gives them. */
+const AWARD_ICON: Record<string, { readonly d: string; readonly color: string }> = {
+  grabby: {
+    d: "M7 11V6a1.5 1.5 0 0 1 3 0v5M10 10V4.5a1.5 1.5 0 0 1 3 0V10M13 10V5.5a1.5 1.5 0 0 1 3 0V12M16 9.5a1.5 1.5 0 0 1 3 0V14a7 7 0 0 1-7 7h-1a6 6 0 0 1-5-3l-2.5-4.5a1.5 1.5 0 0 1 2.6-1.5L7 13",
+    color: "#F2C14E",
+  },
+  marva: {
+    d: "M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.5-7 10-7 10z",
+    color: "#F59E8B",
+  },
+  clean: {
+    d: "M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M6 18l2.5-2.5M15.5 8.5L18 6",
+    color: "#7CD9C0",
+  },
+  out: { d: "M14 4h5v16h-5M10 8l-4 4 4 4M6 12h10", color: "#4ADE9B" },
+  pile: { d: "M4 15l8 4 8-4M4 11l8 4 8-4M4 7l8 4 8-4-8-4z", color: "#8FB8E8" },
+  "red-threes": { d: "M8 5h5a3.5 3.5 0 0 1 0 7h-3h3a3.5 3.5 0 0 1 0 7H8", color: "#E5484D" },
+};
+
+export function AwardIcon({
+  id,
+  size,
+}: {
+  readonly id: string;
+  readonly size: number;
+}): React.ReactElement {
+  const icon = AWARD_ICON[id] ?? AWARD_ICON.out!;
+  return (
+    <span
+      aria-hidden="true"
+      className="flex shrink-0 items-center justify-center"
+      style={{
+        width: size,
+        height: size,
+        borderRadius: Math.round(size * 0.3),
+        background: `${icon.color}2E`,
+        color: icon.color,
+      }}
+    >
+      <svg
+        width={size / 2}
+        height={size / 2}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d={icon.d} />
+      </svg>
+    </span>
   );
 }

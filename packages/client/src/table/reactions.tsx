@@ -10,6 +10,7 @@
  */
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
+import { Icon } from "../ui/icons";
 import { REACTIONS, type Avatar, type Reaction, type ReactionId } from "@hf/shared";
 import { AvatarFace } from "../profile/Avatar";
 
@@ -120,8 +121,8 @@ export function ReactionBubble({
       aria-label={`${name}: ${def.label}`}
       // The fade lasts as long as the bubble is shown; see `.reaction-pop`.
       style={{ "--reaction-ms": `${REACTION_SHOW_MS}ms` } as CSSProperties}
-      className={`reaction-pop pointer-events-none absolute top-1 right-1 z-10 inline-flex items-center gap-1 rounded-2xl rounded-br-sm bg-white font-semibold whitespace-nowrap text-felt-900 shadow-lg shadow-black/40 ${
-        emoji ? "py-0.5 pr-1.5 pl-1 text-2xl leading-none" : "py-1 pr-2 pl-1 text-sm"
+      className={`reaction-pop pointer-events-none absolute -top-3.5 right-1 z-10 inline-flex items-center gap-1 rounded-[12px_12px_12px_3px] bg-card font-semibold whitespace-nowrap text-suit-black shadow-[0_4px_10px_rgba(0,0,0,0.35)] ${
+        emoji ? "py-0.5 pr-1.5 pl-1 text-xl leading-none" : "py-1 pr-2 pl-1 text-xs"
       }`}
     >
       {avatar && <AvatarFace avatar={avatar} size={emoji ? 22 : 18} />}
@@ -172,6 +173,18 @@ export function ReactionPicker({
     rest.current = setTimeout(() => setResting(false), REACTION_COOLDOWN_MS);
   };
 
+  const muteBox = (
+    <label className="flex items-center gap-2 text-xs text-muted">
+      <input
+        type="checkbox"
+        checked={muted}
+        onChange={(event) => onMutedChange(event.target.checked)}
+        className="size-4 accent-accent"
+      />
+      Mute other players' reactions
+    </label>
+  );
+
   const panel = (
     <div
       role="group"
@@ -179,43 +192,46 @@ export function ReactionPicker({
       onClick={(event) => event.stopPropagation()}
       className={
         sheet
-          ? "flex max-h-[70dvh] w-full flex-col gap-2 overflow-y-auto rounded-t-xl border-t border-white/15 bg-felt-900 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]"
-          : `absolute top-full ${alignRight ? "right-0" : "left-0"} z-40 mt-1 flex w-72 flex-col gap-2 rounded-lg border border-white/20 bg-felt-900 p-2 shadow-xl`
+          ? "flex max-h-[70dvh] w-full flex-col gap-3 overflow-y-auto rounded-t-3xl border-t border-white/8 bg-surface px-4 pt-3.5 pb-[calc(1.6rem+env(safe-area-inset-bottom,0px))]"
+          : `absolute top-full ${alignRight ? "right-0" : "left-0"} z-40 mt-2 flex w-[340px] flex-col gap-2.5 rounded-2xl border border-white/12 bg-raised p-3 shadow-[0_20px_50px_rgba(0,0,0,0.6)]`
       }
     >
-      <div className="grid grid-cols-6 gap-1">
+      {sheet && (
+        <div className="flex items-center justify-between gap-3">
+          <p className="m-0 font-display text-base font-semibold">React</p>
+          {muteBox}
+        </div>
+      )}
+      <div className={`grid grid-cols-6 ${sheet ? "gap-1.5" : "gap-1"}`}>
         {REACTIONS.filter((r) => r.text !== r.label).map((r) => (
           <button
             key={r.id}
             type="button"
             aria-label={r.label}
             onClick={() => send(r.id)}
-            className="rounded py-1 text-2xl hover:bg-white/10"
+            className={`rounded-xl hover:bg-white/10 ${
+              sheet ? "min-h-12 bg-raised text-2xl" : "min-h-11 bg-surface text-[22px]"
+            }`}
           >
             {r.text}
           </button>
         ))}
       </div>
-      <div className="flex flex-wrap gap-1">
+      <div className="flex flex-wrap gap-1.5">
         {REACTIONS.filter((r) => r.text === r.label).map((r) => (
           <button
             key={r.id}
             type="button"
             onClick={() => send(r.id)}
-            className="rounded-full border border-white/25 px-3 py-1 text-sm hover:bg-white/10"
+            className={`rounded-full border border-white/12 font-semibold hover:bg-white/10 ${
+              sheet ? "min-h-10 px-3.5 text-[13px]" : "min-h-[34px] px-3 text-xs"
+            }`}
           >
             {r.text}
           </button>
         ))}
       </div>
-      <label className="flex items-center gap-2 border-t border-white/10 pt-2 text-sm text-white/75">
-        <input
-          type="checkbox"
-          checked={muted}
-          onChange={(event) => onMutedChange(event.target.checked)}
-        />
-        Mute other players' reactions
-      </label>
+      {!sheet && muteBox}
     </div>
   );
 
@@ -232,15 +248,15 @@ export function ReactionPicker({
           setAlignRight(left + MENU_WIDTH_PX > window.innerWidth);
           setOpen(!open);
         }}
-        className="rounded border border-white/25 px-2 py-1 text-sm disabled:opacity-40"
+        className={`${ICON_BUTTON} disabled:opacity-40`}
       >
-        <SmileIcon />
+        <Icon name="smile" size={18} />
       </button>
       {open &&
         (sheet
           ? createPortal(
               <div
-                className="fixed inset-0 z-40 flex items-end bg-black/30 text-white"
+                className="fixed inset-0 z-40 flex items-end bg-[rgba(6,10,12,0.45)] text-ink"
                 onClick={() => setOpen(false)}
               >
                 {panel}
@@ -252,17 +268,9 @@ export function ReactionPicker({
   );
 }
 
-/** The menu's width (Tailwind's w-72), to decide which way it opens. */
-const MENU_WIDTH_PX = 288;
+/** The menu's width, to decide which way it opens. */
+const MENU_WIDTH_PX = 340;
 
-/** A smiling face, drawn: the button is the same on every device. */
-function SmileIcon(): React.ReactElement {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 16 16" className="h-4 w-4 fill-none stroke-current">
-      <circle cx="8" cy="8" r="6.5" strokeWidth="1.5" />
-      <circle cx="5.75" cy="6.5" r="0.9" className="fill-current" strokeWidth="0" />
-      <circle cx="10.25" cy="6.5" r="0.9" className="fill-current" strokeWidth="0" />
-      <path d="M5 9.5a3.5 3.5 0 0 0 6 0" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
-}
+/** The table header's square icon buttons, as the design draws them. */
+export const ICON_BUTTON =
+  "flex size-10 shrink-0 items-center justify-center rounded-xl border border-white/8 bg-surface text-ink hover:bg-raised md:size-[42px]";

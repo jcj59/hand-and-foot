@@ -200,7 +200,7 @@ describe("the player's moments", () => {
     mount({ timeline: t, start: { step: marva.step - 1 } });
     fireEvent.click(screen.getByRole("button", { name: "Step forward" }));
     expect(screen.getByRole("status", { name: "Marva Rule" })).toHaveTextContent(
-      "Ana got down by emptying the hand",
+      "Ana got down with the Marva Rule",
     );
   });
 
@@ -208,7 +208,7 @@ describe("the player's moments", () => {
     const t = scenario("black-three-book");
     mount({ timeline: t, start: { step: t.length } });
     const scores = screen.getByRole("dialog", { name: "Round result" });
-    expect(within(scores).getByText("Ana went out!")).toBeInTheDocument();
+    expect(within(scores).getByText(/^Ana went out!/)).toBeInTheDocument();
     expect(within(scores).queryByRole("button", { name: "Next round" })).toBeNull();
     expect(within(scores).queryByRole("button", { name: "Back to the main screen" })).toBeNull();
   });
@@ -216,6 +216,7 @@ describe("the player's moments", () => {
   it("leaves through the table's main menu button", () => {
     const { onMainMenu } = mount({ timeline: scenario("marva") });
     fireEvent.click(screen.getByRole("button", { name: "Main menu" }));
+    fireEvent.click(screen.getByRole("button", { name: "Go to the main menu" }));
     expect(onMainMenu).toHaveBeenCalled();
   });
 

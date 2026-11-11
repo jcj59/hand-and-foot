@@ -16,8 +16,9 @@
  *
  * Clicking a card opens a menu of what it can do right now — meld it, discard it,
  * take it back — rather than one click meaning different things by mode. A discard
- * that looks like a mistake (a wild, or a card the player could lay off on a meld
- * they already have) asks once more before it goes.
+ * that looks like a mistake (a wild, a rank another player has down and could take
+ * the pile with, or a card the player could lay off on a meld they already have) is
+ * warned about in the menu itself, whose button then reads "Discard anyway".
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -36,11 +37,17 @@ import {
 } from "@hf/shared";
 import { canLayOff, isUnplayable, type PlayContext } from "../cards/handOrder";
 import { faceOf } from "../profile/avatarStore";
-import { CountPill, DiscardPile, FaceDownPile, PlayingCard } from "../cards/PlayingCard";
+import { CountPill, DiscardPile, FaceDownPile } from "../cards/PlayingCard";
 import { usePhone } from "../usePhone";
 import { Hand } from "./Hand";
 import { pulseStyle } from "./pulse";
-import { Melds } from "./Melds";
+import { CardMenu } from "./CardMenu";
+import { discardWarning } from "./discardWarning";
+import { MeldsPanel } from "./MeldsPanel";
+import type { MeldOrder } from "./meldView";
+import { moveLine, withMove } from "./moveLine";
+import { ScoresPanel } from "./ScoresPanel";
+import { TableHeader } from "./TableHeader";
 import { useCardMotion } from "./cardMotion";
 import {
   GRABBY_NAME,
@@ -53,7 +60,6 @@ import {
 import { MarvaCelebration, useMarvaCelebration } from "./marva";
 import {
   ReactionBubble,
-  ReactionPicker,
   readMuteReactions,
   useReactionBubbles,
   writeMuteReactions,
@@ -68,7 +74,6 @@ import { OpponentStrip } from "./OpponentStrip";
 import { Seats } from "./Seats";
 import { RoundResult } from "./RoundResult";
 import { StagingPanel } from "./StagingPanel";
-import { TurnClock } from "./TurnClock";
 import {
   EMPTY_STAGING,
   focusGroup,
@@ -149,7 +154,6 @@ export function TableView({
   const [melding, setMelding] = useState(false);
   // The card whose menu is open, and whether its discard is awaiting a second yes.
   const [chosenId, setChosenId] = useState<string | null>(null);
-  const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const phone = usePhone();
 
@@ -158,7 +162,6 @@ export function TableView({
   useEffect(() => {
     if (!turnOpen) {
       setChosenId(null);
-      setConfirming(false);
       setStaging(EMPTY_STAGING);
       setMelding(false);
     }
@@ -183,7 +186,7 @@ export function TableView({
   const realRoom = latestRoom;
   // Everywhere else at the table, the title holder is Grabby Pants.
   const newsRoom = withGrabbyName(realRoom);
-  const { news, drawnId } = useMoveNews(
+  const { drawnId } = useMoveNews(
     update.lastMove,
     update.view.seat,
     (s) => newsRoom.players.find((p) => p.seat === s)?.name ?? `Seat ${s}`,
@@ -192,8 +195,28 @@ export function TableView({
   // On a phone the player's own melds are cards, as on the desktop, unless they
   // choose chips to save room; the choice is remembered on this device.
   const [compactMelds, setCompactMelds] = useState(() => readFlag(COMPACT_MELDS_KEY));
-  // The same, for the other players on a computer: shown in full unless collapsed.
-  const [compactSeats, setCompactSeats] = useState(() => readFlag(COMPACT_SEATS_KEY));
+  // The last few moves, for the side panel and the phone's scores sheet: kept
+  // from the moves this page has seen, each once.
+  const [moves, setMoves] = useState<readonly { readonly seq: number; readonly text: string }[]>(
+    [],
+  );
+  const lastMove = update.lastMove;
+  const lastLine = lastMove
+    ? moveLine(
+        lastMove,
+        newsRoom.players.find((p) => p.seat === lastMove.seat)?.name ?? `Seat ${lastMove.seat}`,
+        lastMove.seat === update.view.seat && controls !== null,
+      )
+    : null;
+  const lastSeq = lastMove?.seq ?? null;
+  useEffect(() => {
+    if (lastSeq !== null && lastLine !== null)
+      setMoves((list) => withMove(list, lastSeq, lastLine));
+  }, [lastSeq, lastLine]);
+  // How melds are sorted, the player's own and everyone else's alike.
+  const [meldOrder, setMeldOrder] = useState<MeldOrder>(() =>
+    readChoice<MeldOrder>(MELD_ORDER_KEY, ["rank", "newest"], "rank"),
+  );
   const [rulesOpen, setRulesOpen] = useState(false);
 
   // One card sound for every move, a chime when it is this player's turn, and
@@ -339,7 +362,6 @@ export function TableView({
 
   function closeMenu(): void {
     setChosenId(null);
-    setConfirming(false);
   }
 
   function stopBuilding(): void {
@@ -358,7 +380,6 @@ export function TableView({
       else if (!outOfPlay(card)) setStaging((current) => stageCard(current, card));
       return;
     }
-    setConfirming(false);
     setChosenId((current) => (current === card.id ? null : card.id));
   }
 
@@ -377,12 +398,13 @@ export function TableView({
   }
 
   /** Why throwing this card away is probably a mistake, if it is. */
-  function discardWarning(card: Card): string | null {
-    if (isWild(card.rank)) return "That is a wild card.";
-    if (canLayOff(card, meldRanks, playContext)) {
-      return `You have a meld of ${card.rank}s it could go on.`;
-    }
-    return null;
+  function warningFor(card: Card): string | null {
+    return discardWarning(card, {
+      canLayOff: canLayOff(card, meldRanks, playContext),
+      others: view.opponents
+        .filter((o) => o.isDown)
+        .map((o) => ({ name: nameOf(o.seat), ranks: new Set(o.melds.map((m) => m.rank)) })),
+    });
   }
 
   const chosen = zone.find((card) => card.id === chosenId) ?? null;
@@ -403,7 +425,7 @@ export function TableView({
       // Discarding would silently throw the staged lay-down away, so the melds have
       // to be played or taken back first.
       discardBlocked={stagedCount(staging) > 0}
-      warning={confirming ? discardWarning(chosen) : null}
+      warning={warningFor(chosen)}
       busy={busy}
       onMeld={() => meld(chosen)}
       onLayOff={() => {
@@ -416,13 +438,7 @@ export function TableView({
         setStaging((current) => unstageCard(current, chosen.id));
         closeMenu();
       }}
-      onDiscard={() => {
-        if (!confirming && discardWarning(chosen)) {
-          setConfirming(true);
-          return;
-        }
-        discard(chosen);
-      }}
+      onDiscard={() => discard(chosen)}
       onCancel={closeMenu}
     />
   );
@@ -434,500 +450,385 @@ export function TableView({
 
   const lastLap = view.finalLapRemaining !== null && view.wentOutSeat !== null;
 
-  return (
-    <main ref={tableRef} className="flex h-full flex-col gap-2 overflow-hidden p-2 sm:p-3">
-      <header
-        className={`flex shrink-0 items-center justify-between gap-2 ${phone ? "" : "flex-wrap"}`}
-      >
-        <div className={`flex min-w-0 flex-wrap items-baseline gap-x-3 ${phone ? "flex-1" : ""}`}>
-          {/* On a phone the header is one line: the table's code is in the link,
-              and the space is worth more to the cards. */}
-          <h1 className={phone ? "sr-only" : "text-lg font-semibold"}>
-            {heading ?? `Table ${room.roomId}`}
-          </h1>
-          {phone ? (
-            <p className="truncate text-xs text-white/70">
-              Round {view.roundNumber}/{room.config.rounds} · min{" "}
-              {room.config.layDownMinimums[view.roundNumber - 1] ?? "—"}
-              {spectating ? " · watching" : view.isDown ? " · down" : " · not down"}
-            </p>
-          ) : (
-            <p className="text-sm text-white/60">
-              Round {view.roundNumber} of {room.config.rounds} · minimum{" "}
-              {room.config.layDownMinimums[view.roundNumber - 1] ?? "—"}
-              {spectating
-                ? " · watching"
-                : view.isDown
-                  ? controls
-                    ? " · you are down"
-                    : ` · ${watched} is down`
-                  : " · not down"}
-            </p>
-          )}
-          {room.watching !== undefined && (
-            <p aria-label="Watching" className="text-xs text-white/50">
-              {room.watching} watching
-            </p>
-          )}
-          {/* The match so far, once there is one: it is what every later round is
-              being played for. */}
-          {view.roundNumber > 1 && (
-            <p
-              aria-label="Scores so far"
-              className={phone ? "w-full truncate text-xs text-white/60" : "text-sm text-white/60"}
-            >
-              Scores:{" "}
-              {view.scoresSoFar
-                .map((total, seat) => {
-                  // A player who has left keeps their total, marked so nobody counts it.
-                  const gone = (view.departed ?? []).some((d) => d.seat === seat);
-                  return `${nameOf(seat)}${gone ? " (left)" : ""} ${total}`;
-                })
-                .join(" · ")}
-            </p>
-          )}
-        </div>
-        {/* Once the round is over no turn is live, so there is no clock to show even
-            if a deadline still arrives. */}
-        <div className={`flex shrink-0 items-center ${phone ? "gap-2" : "gap-3"}`}>
-          {!result && controls && (
-            <div className={`flex items-center ${phone ? "gap-2" : "gap-3"}`}>
-              <TurnClock clock={clock} />
-              {/* Resuming is the pause bar's, beside what the pause means. */}
-              {room.config.pauseEnabled && !clock.paused && (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => {
-                    setBusy(true);
-                    void controls.pause(true).finally(() => setBusy(false));
-                  }}
-                  aria-label="Pause"
-                  className="rounded border border-white/25 px-3 py-1 text-sm disabled:opacity-40"
-                >
-                  {phone ? (
-                    // Drawn, not a glyph: not every phone's font has the pause sign.
-                    <svg aria-hidden="true" viewBox="0 0 10 12" className="h-3.5 w-3 fill-current">
-                      <rect x="0" y="0" width="3.5" height="12" rx="0.5" />
-                      <rect x="6.5" y="0" width="3.5" height="12" rx="0.5" />
-                    </svg>
-                  ) : (
-                    "Pause"
-                  )}
-                </button>
-              )}
-            </div>
-          )}
-          {controls && (
-            <ReactionPicker
-              onSend={controls.react}
-              muted={muteReactions}
-              onMutedChange={(on) => {
-                setMuteReactions(on);
-                writeMuteReactions(on);
-              }}
-              sheet={phone}
-            />
-          )}
-          {/* Sound on but not allowed yet — the browser waits for a tap after a
-              reload, or took it away while the tab was away — says so: any tap
-              brings it back, this one included, and without the hint silence
-              looks like a broken game. */}
-          <button
-            type="button"
-            aria-label={
-              muted ? "Turn sound on" : blocked ? "Tap to let sound play" : "Turn sound off"
+  const minimum = room.config.layDownMinimums[view.roundNumber - 1];
+  const getDown = minimum === undefined ? "No minimum this round" : `${minimum} to get down`;
+  const roundWords = `Round ${view.roundNumber} of ${room.config.rounds}`;
+  const status = spectating
+    ? "watching"
+    : !view.isDown
+      ? controls
+        ? "you are not down yet"
+        : `${watched} is not down yet`
+      : null;
+  const watchers = room.watching !== undefined ? `${room.watching} watching` : null;
+  const title = heading ?? roundWords;
+  const sub = [heading ? roundWords : null, getDown, status, watchers]
+    .filter((part): part is string => part !== null)
+    .join(" · ");
+
+  const scores = (titled: boolean): React.ReactElement => (
+    <ScoresPanel
+      titled={titled}
+      room={room}
+      totals={view.scoresSoFar}
+      mySeat={controls ? view.seat : SPECTATOR_SEAT}
+      departed={view.departed ?? []}
+      moves={moves}
+    />
+  );
+
+  const header = (
+    <TableHeader
+      title={title}
+      sub={sub}
+      // The header's clock is the player's own; another player's runs on their seat.
+      clock={!result && controls && (myTurn || clock.paused) ? clock : null}
+      onReact={controls ? controls.react : null}
+      muteReactions={muteReactions}
+      onMuteReactions={(on) => {
+        setMuteReactions(on);
+        writeMuteReactions(on);
+      }}
+      sound={{
+        muted,
+        blocked,
+        // A tap that only let the browser start sound should not also mute it.
+        onToggle: () => {
+          if (muted || !blocked) setMuted(!muted);
+        },
+      }}
+      notify={notify}
+      onToggleNotify={toggleNotify}
+      onPause={
+        controls && !result && room.config.pauseEnabled && !clock.paused
+          ? () => {
+              setBusy(true);
+              void controls.pause(true).finally(() => setBusy(false));
             }
-            title={!muted && blocked ? "Tap anywhere to let sound play" : undefined}
-            aria-pressed={muted}
-            onClick={() => {
-              // A tap that only let the browser start sound should not also mute it.
-              if (muted || !blocked) setMuted(!muted);
-            }}
-            className={`relative rounded border px-2 py-1 text-sm ${
-              !muted && blocked ? "border-amber-300/80 text-amber-200" : "border-white/25"
-            }`}
-          >
-            <SpeakerIcon muted={muted} />
-            {!muted && blocked && (
-              <span
-                aria-hidden="true"
-                className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-amber-300 motion-safe:animate-pulse"
-              />
-            )}
-          </button>
-          {/* Turn notifications, for a table left in a background tab. Off until
-              turned on here, which is the only place permission is asked for; not
-              shown where the browser has no notifications, and inert once the
-              browser has been told no, since only its own settings can undo that.
-              Not offered on a phone either: Chrome on Android refuses a notification
-              made by a page, and iOS has them only through web push, so the button
-              would promise what never comes — and the header has no room to spare. */}
-          {controls && !phone && notify !== "unsupported" && (
-            <button
-              type="button"
-              aria-label={
-                notify === "on"
-                  ? "Stop notifying me when it's my turn"
-                  : notify === "blocked"
-                    ? "Turn notifications are blocked by the browser"
-                    : "Notify me when it's my turn"
-              }
-              title={
-                notify === "blocked"
-                  ? "Notifications are blocked for this site in the browser's settings"
-                  : undefined
-              }
-              aria-pressed={notify === "on"}
-              disabled={notify === "blocked"}
-              onClick={toggleNotify}
-              className={`rounded border px-2 py-1 text-sm disabled:opacity-40 ${
-                notify === "on" ? "border-amber-300/80 text-amber-200" : "border-white/25"
-              }`}
-            >
-              <BellIcon on={notify === "on"} />
-            </button>
-          )}
-          {/* This table's own rules, over the table: the clock keeps running. */}
+          : null
+      }
+      busy={busy}
+      onRules={() => setRulesOpen(true)}
+      onMainMenu={onMainMenu}
+      scores={scores}
+    />
+  );
+
+  const latest = update.lastMove && (
+    <p
+      aria-label="Latest move"
+      className="m-0 self-center rounded-full bg-black/28 px-3 py-1.5 text-xs text-[#E6EBEF] md:px-3.5 md:text-[13px]"
+    >
+      {lastLine}
+    </p>
+  );
+
+  const piles = (
+    <section
+      aria-label="Piles"
+      className={`flex items-end justify-center ${phone ? "gap-[26px]" : "gap-14"}`}
+    >
+      <div className="flex flex-col items-center gap-1" data-anchor="stock">
+        <FaceDownPile
+          count={view.stockCount}
+          label="Stock"
+          pill="Stock"
+          size={phone ? "normal" : "large"}
+          onClick={canDraw ? () => void send({ type: "draw" }) : undefined}
+          actionLabel="Draw a card"
+        />
+      </div>
+      <div className="flex flex-col items-center gap-1" data-anchor="discard" data-zone="pile">
+        {canTake ? (
           <button
             type="button"
-            onClick={() => setRulesOpen(true)}
-            aria-label="How to play"
-            className="rounded border border-white/25 px-2 py-1 text-sm"
+            aria-label={`Take the pile (${view.discard.length} cards)`}
+            onClick={() => void send({ type: "takePile" })}
+            style={pilePulse}
+            className="pile-prompt rounded-xl p-1 transition hover:bg-white/5"
           >
-            {phone ? "?" : "Rules"}
+            <DiscardPile cards={view.discard} size={phone ? "normal" : "large"} />
           </button>
-          {/* Away from the table without giving up the seat: the main screen offers
-              the way back. The clock keeps running meanwhile. */}
-          <button
-            type="button"
-            onClick={onMainMenu}
-            aria-label="Main menu"
-            className="rounded border border-white/25 px-3 py-1 text-sm"
-          >
-            {phone ? "☰" : "Main menu"}
-          </button>
-        </div>
-      </header>
-
-      {/* Straight under the controls, above everything it holds still: a paused
-          table is the first thing to know about it, and below the players it was
-          pushed out of sight whenever their boxes were tall. */}
-      <PauseBar
-        room={room}
-        nameOf={nameOf}
-        busy={busy}
-        onResume={() => {
-          setBusy(true);
-          void controls?.pause(false).finally(() => setBusy(false));
-        }}
-        onSaveForLater={() => {
-          setBusy(true);
-          void controls?.saveForLater().finally(() => setBusy(false));
-        }}
-      />
-
-      <div className="shrink-0">
-        {!phone && (
-          // On a computer the other players are shown in full, with their melds;
-          // collapsed, they are the phone's strip of chips, a tap from the melds.
-          <div className="mb-1.5 flex items-center justify-between px-3 pt-1 text-xs text-white/60">
-            <span>Players</span>
-            <button
-              type="button"
-              aria-pressed={compactSeats}
-              onClick={() => {
-                setCompactSeats(!compactSeats);
-                writeFlag(COMPACT_SEATS_KEY, !compactSeats);
-              }}
-              className="rounded border border-white/20 px-2 py-0.5 text-white/70"
-            >
-              {compactSeats ? "Show players" : "Collapse players"}
-            </button>
+        ) : (
+          <div className="p-1">
+            <DiscardPile cards={view.discard} size={phone ? "normal" : "large"} />
           </div>
         )}
-        {phone || compactSeats ? (
-          <OpponentStrip
-            opponents={view.opponents}
-            room={room}
-            config={room.config}
-            seatToAct={hints.seatToAct}
-            reactions={bubbles}
-          />
-        ) : (
-          <Seats
-            opponents={view.opponents}
-            room={room}
-            config={room.config}
-            seatToAct={hints.seatToAct}
-            reactions={bubbles}
-          />
-        )}
+        <CountPill label="Pile" count={view.discard.length} />
       </div>
+    </section>
+  );
 
+  const staging_ = building && (
+    <StagingPanel
+      staging={staging}
+      preview={preview}
+      zone={zone}
+      isDown={view.isDown}
+      onUnstage={(id) => setStaging((current) => unstageCard(current, id))}
+      onFocus={(rank) => setStaging((current) => focusGroup(current, rank))}
+    />
+  );
+
+  const meldsPanel = !spectating && (
+    <MeldsPanel
+      title={`${whose} melds`}
+      melds={view.melds}
+      config={room.config}
+      order={meldOrder}
+      onOrder={(order) => {
+        setMeldOrder(order);
+        writeChoice(MELD_ORDER_KEY, order);
+      }}
+      collapsed={compactMelds}
+      onCollapsed={(on) => {
+        setCompactMelds(on);
+        writeFlag(COMPACT_MELDS_KEY, on);
+      }}
+      empty={
+        view.isDown || minimum === undefined
+          ? "Nothing down yet."
+          : `Nothing down yet. ${controls ? "You need" : `${watched} needs`} ${minimum} to get down this round.`
+      }
+      inFoot={view.inFoot}
+      // Clicking a meld on the table aims the next cards at it: the only way to
+      // add a wild to a meld already down.
+      onSelect={canMeld ? (rank) => setStaging((current) => focusGroup(current, rank)) : undefined}
+      selectedRank={canMeld ? staging.focusedRank : null}
+      provisionalIds={provisional}
+    />
+  );
+
+  const banners = (
+    <>
       {lastLap && !result && (
         // Loud on purpose: a player who misses this plays their last turn as if the
         // round went on.
         <p
           role="status"
-          className="shrink-0 rounded border border-amber-300 bg-amber-300/20 px-3 py-2 text-center font-semibold text-amber-100"
+          className={`${BANNER} border-gold/50 bg-gold/12 font-semibold text-[#F7E3B0]`}
         >
           {nameOf(view.wentOutSeat!)} went out!{" "}
           {myTurn ? "This is your last turn." : "Everyone else gets one last turn."}
         </p>
       )}
-
-      <div className="flex min-h-0 flex-1 flex-col gap-2 md:flex-row">
-        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
-          {/* Padded so the glow around a pile that can be taken is never cut off
-              by the edge of the scrolling area. */}
-          {/* The middle of the table: what everyone watches, so it is big and centred. */}
-          <section
-            className={`relative mx-auto flex items-end justify-center rounded-[2rem] bg-black/15 ring-1 ring-white/5 ${
-              phone ? "gap-8 px-5 py-3" : "gap-12 px-10 py-5"
-            }`}
-            aria-label="Piles"
-          >
-            {news && (
-              <div
-                role="status"
-                aria-label="Latest move"
-                // Fixed over the table rather than placed in it: the middle scrolls,
-                // and news clipped by the edge of a scroll area is news missed.
-                className="fixed top-28 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-full border border-sky-300/60 bg-felt-900/95 py-1 pr-4 pl-1 text-base whitespace-nowrap text-sky-50 shadow-lg shadow-black/40"
-              >
-                {news.card && <PlayingCard card={news.card} size="small" />}
-                <span className={news.card ? "" : "pl-2"}>{news.text}</span>
-              </div>
-            )}
-            <div className="flex flex-col items-center gap-1" data-anchor="stock">
-              <FaceDownPile
-                count={view.stockCount}
-                label="Stock"
-                pill="Stock"
-                size={phone ? "normal" : "large"}
-                onClick={canDraw ? () => void send({ type: "draw" }) : undefined}
-                actionLabel="Draw a card"
-              />
-              {canDraw && <PilePrompt>Draw a card</PilePrompt>}
-            </div>
-            <div
-              className="flex flex-col items-center gap-1"
-              data-anchor="discard"
-              data-zone="pile"
-            >
-              {canTake ? (
-                <button
-                  type="button"
-                  aria-label={`Take the pile (${view.discard.length} cards)`}
-                  onClick={() => void send({ type: "takePile" })}
-                  style={pilePulse}
-                  className="pile-prompt rounded-xl p-1 transition hover:bg-white/5"
-                >
-                  <DiscardPile cards={view.discard} size={phone ? "normal" : "large"} />
-                </button>
-              ) : (
-                <div className="p-1">
-                  <DiscardPile cards={view.discard} size={phone ? "normal" : "large"} />
-                </div>
-              )}
-              <CountPill label="Pile" count={view.discard.length} />
-              {canTake && <PilePrompt>Pick up the pile</PilePrompt>}
-            </div>
-          </section>
-
-          {obligationOpen && myTurn && (
-            <p role="status" className="rounded bg-sky-500/15 px-3 py-2 text-sm text-sky-100">
-              You took the pile. Play at least one of the ringed cards before discarding.
-            </p>
-          )}
-
-          {hints.canGoOut && myTurn && (
-            <p
-              role="status"
-              className="rounded bg-emerald-500/15 px-3 py-2 text-sm text-emerald-100"
-            >
-              You have the books to go out. Shed your last card to end the round.
-            </p>
-          )}
-
-          {!spectating && (
-            <section
-              className="flex flex-col gap-2"
-              aria-label={`${whose} melds`}
-              data-zone="melds"
-            >
-              <div className="flex items-center gap-3">
-                <h2 className="text-sm font-medium text-white/80">{whose} melds</h2>
-                {phone && view.melds.length > 0 && (
-                  <button
-                    type="button"
-                    aria-pressed={compactMelds}
-                    onClick={() => {
-                      setCompactMelds(!compactMelds);
-                      writeFlag(COMPACT_MELDS_KEY, !compactMelds);
-                    }}
-                    className="rounded border border-white/20 px-2 py-0.5 text-xs text-white/70"
-                  >
-                    {compactMelds ? "Show cards" : "Collapse"}
-                  </button>
-                )}
-              </div>
-              <Melds
-                melds={view.melds}
-                config={room.config}
-                // Clicking a meld on the table aims the next cards at it — the only way
-                // to add a wild to a meld already down.
-                onSelect={
-                  canMeld ? (rank) => setStaging((current) => focusGroup(current, rank)) : undefined
-                }
-                selectedRank={canMeld ? staging.focusedRank : null}
-                chips={phone && compactMelds}
-                provisionalIds={provisional}
-              />
-            </section>
-          )}
-        </div>
-
-        {building && (
-          // A column beside the table rather than a section inside it, so opening it
-          // moves nothing the player is looking at.
-          <aside className="max-h-[45%] shrink-0 overflow-y-auto md:max-h-none md:w-80">
-            <StagingPanel
-              staging={staging}
-              preview={preview}
-              zone={zone}
-              isDown={view.isDown}
-              busy={busy}
-              onUnstage={(id) => setStaging((current) => unstageCard(current, id))}
-              onFocus={(rank) => setStaging((current) => focusGroup(current, rank))}
-              onCommit={() =>
-                void send({ type: "playMelds", melds: toMeldPlays(staging) }, stopBuilding)
-              }
-              onClear={stopBuilding}
-            />
-          </aside>
-        )}
-      </div>
-
-      {notice && (
-        <p role="alert" className="shrink-0 rounded bg-red-600/20 px-3 py-2 text-sm text-red-200">
-          {notice}
+      {obligationOpen && myTurn && (
+        <p role="status" className={`${BANNER} border-blue/50 bg-blue/14 text-[#D6E5F7]`}>
+          You took the pile. Play at least one of the ringed cards before discarding.
         </p>
       )}
+      {hints.canGoOut && myTurn && (
+        <p role="status" className={`${BANNER} border-accent/45 bg-accent/12 text-[#C9F5DF]`}>
+          You have the books to go out. Shed your last card to end the round.
+        </p>
+      )}
+    </>
+  );
 
-      {/* On a phone the hand may take a little under half the screen and scrolls past
-          that, so the middle of the table is never pushed off it. */}
+  const actionBar = !result && (
+    <section className="flex flex-wrap items-center gap-1.5 md:gap-2" aria-label="Your turn">
+      {phone && <span className="flex-[1_1_100%] text-[13px] text-nav-ink">{guidanceLine()}</span>}
+      {myTurn && (
+        <>
+          {canMeld && (
+            <button
+              type="button"
+              aria-pressed={building}
+              onClick={() => (building ? stopBuilding() : setMelding(true))}
+              className={
+                building
+                  ? `${ACTION} bg-gold text-[#2A1E00]`
+                  : `${ACTION} border border-white/20 text-ink hover:bg-white/5`
+              }
+            >
+              {building ? "Stop melding" : "Meld"}
+            </button>
+          )}
+          {building && (
+            // Right above the cards being chosen, so committing is where the
+            // player is already looking.
+            <button
+              type="button"
+              disabled={busy || !preview.ok || stagedCount(staging) === 0}
+              onClick={() =>
+                void send({ type: "playMelds", melds: toMeldPlays(staging) }, stopBuilding)
+              }
+              className={`${ACTION} bg-accent text-accent-ink`}
+            >
+              Play melds
+            </button>
+          )}
+          {provisional.size > 0 && (
+            // Nothing played this turn is final until the discard: this puts
+            // it all back in the builder, to change and play again.
+            <button
+              type="button"
+              disabled={busy}
+              onClick={takeBack}
+              className={`${ACTION} border border-blue/60 bg-blue/8 text-[#CFE0F5]`}
+            >
+              Take back melds
+            </button>
+          )}
+          {layOffs.length > 0 && !building && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={layOffAll}
+              className={`${ACTION} border border-accent/60 bg-accent/8 text-[#BDF5DA]`}
+            >
+              Add {layOffs.length} to my melds
+            </button>
+          )}
+        </>
+      )}
+      {!phone && <span className="text-sm text-nav-ink">{guidanceLine()}</span>}
+    </section>
+  );
+
+  const hand = spectating ? (
+    <p className="m-0 text-sm text-muted">
+      Watching. Every player&rsquo;s cards stay hidden; only what is on the table is shown.
+    </p>
+  ) : (
+    <div className={`flex items-end ${phone ? "gap-2.5" : "gap-6"}`}>
+      <div className="relative min-w-0 flex-1">
+        {bubbles.get(view.seat) && (
+          <ReactionBubble
+            reaction={bubbles.get(view.seat)!}
+            name={watched}
+            avatar={me && faceOf(me)}
+          />
+        )}
+        <Hand
+          cards={zone}
+          interactive={canMeld || canDiscard}
+          stagedIds={staged}
+          owedIds={owed}
+          meldRanks={meldRanks}
+          playContext={playContext}
+          onSelect={onCardSelect}
+          chosenId={chosenId}
+          menu={menu}
+          onDismiss={closeMenu}
+          title={`${whose} ${view.inFoot ? "foot" : "hand"}${grabby ? ` (${GRABBY_NAME})` : ""}`}
+          badge={grabby && <GrabbyIcon className="h-5 w-5" />}
+          rows={phone}
+          newId={drawnId}
+        />
+      </div>
+      {/* The foot waits beside the hand it will replace. */}
+      {!view.inFoot && (
+        <div className="flex shrink-0 flex-col items-center gap-1">
+          <span className="text-[11px] text-muted md:text-xs">
+            {phone ? "Foot" : `${whose} foot`}
+          </span>
+          <FaceDownPile
+            count={view.footCount}
+            label={`${whose} foot`}
+            size={phone ? "small" : "normal"}
+          />
+        </div>
+      )}
+    </div>
+  );
+
+  const pause = (
+    <PauseBar
+      room={room}
+      nameOf={nameOf}
+      busy={busy}
+      onResume={() => {
+        setBusy(true);
+        void controls?.pause(false).finally(() => setBusy(false));
+      }}
+      onSaveForLater={() => {
+        setBusy(true);
+        void controls?.saveForLater().finally(() => setBusy(false));
+      }}
+    />
+  );
+
+  const alert = notice && (
+    <p
+      role="alert"
+      className="m-0 shrink-0 rounded-xl bg-danger/15 px-3 py-2 text-sm text-danger-soft"
+    >
+      {notice}
+    </p>
+  );
+
+  return (
+    <main ref={tableRef} className="flex h-full flex-col overflow-hidden bg-page text-ink">
+      {header}
+      {pause}
+      {phone ? (
+        <>
+          <OpponentStrip
+            opponents={view.opponents}
+            room={room}
+            // Once the round is over nobody is playing, whatever seat the update names.
+            seatToAct={result ? -1 : hints.seatToAct}
+            clock={clock}
+            order={meldOrder}
+            reactions={bubbles}
+          />
+          <section
+            aria-label="Table"
+            className="mx-3 mt-2 flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto rounded-[22px] px-2.5 pt-3.5 pb-2.5"
+            style={{ background: FELT }}
+          >
+            {banners}
+            {piles}
+            {latest}
+            {staging_}
+            {meldsPanel}
+          </section>
+        </>
+      ) : (
+        <div className="flex min-h-0 flex-1 gap-5 px-6 py-4">
+          <section
+            aria-label="Table"
+            className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto rounded-[26px] p-[26px]"
+            style={{
+              background: FELT_CENTER,
+              boxShadow: "inset 0 0 0 10px #3A2A1C, inset 0 0 0 12px #5A4330",
+            }}
+          >
+            <Seats
+              opponents={view.opponents}
+              room={room}
+              realRoom={realRoom}
+              // Once the round is over nobody is playing, whatever seat the update names.
+              seatToAct={result ? -1 : hints.seatToAct}
+              clock={clock}
+              order={meldOrder}
+              reactions={bubbles}
+            />
+            {banners}
+            <div className="flex flex-col items-center gap-2.5 py-1.5">
+              {piles}
+              {latest}
+            </div>
+            {staging_}
+            {meldsPanel}
+          </section>
+          <aside aria-label="Scores and moves" className="w-[260px] shrink-0 overflow-y-auto">
+            {scores(false)}
+          </aside>
+        </div>
+      )}
+
       <footer
-        className={`flex shrink-0 flex-col gap-2 border-t border-white/10 pt-2 ${
-          phone ? "max-h-[48dvh] overflow-y-auto" : ""
+        className={`mt-2 flex shrink-0 flex-col border-t border-white/7 bg-nav ${
+          phone
+            ? "max-h-[46dvh] gap-2 overflow-y-auto px-3 pt-2.5 pb-[calc(1.1rem+env(safe-area-inset-bottom,0px))]"
+            : "gap-2.5 px-6 pt-3.5 pb-5"
         }`}
       >
-        {!result && (
-          <section className="flex flex-wrap items-center gap-2" aria-label="Your turn">
-            {!controls ? (
-              <span className="text-sm text-white/60">{nameOf(hints.seatToAct)} to play.</span>
-            ) : myTurn ? (
-              <>
-                {canMeld && (
-                  <button
-                    type="button"
-                    aria-pressed={building}
-                    onClick={() => (building ? stopBuilding() : setMelding(true))}
-                    className={`rounded px-3 py-1.5 text-sm font-medium ${
-                      building ? "bg-amber-300 text-black" : "border border-white/30"
-                    }`}
-                  >
-                    {building ? "Stop melding" : "Meld"}
-                  </button>
-                )}
-                {building && (
-                  // Right above the cards being chosen, so committing is where the
-                  // player is already looking.
-                  <button
-                    type="button"
-                    disabled={busy || !preview.ok || stagedCount(staging) === 0}
-                    onClick={() =>
-                      void send({ type: "playMelds", melds: toMeldPlays(staging) }, stopBuilding)
-                    }
-                    className="rounded bg-white px-3 py-1.5 text-sm font-medium text-felt-900 disabled:opacity-40"
-                  >
-                    Play melds
-                  </button>
-                )}
-                {provisional.size > 0 && (
-                  // Nothing played this turn is final until the discard: this puts
-                  // it all back in the builder, to change and play again.
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={takeBack}
-                    className="rounded border border-sky-300/60 px-3 py-1.5 text-sm text-sky-100 disabled:opacity-40"
-                  >
-                    Take back melds
-                  </button>
-                )}
-                {layOffs.length > 0 && !building && (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={layOffAll}
-                    className="rounded border border-emerald-300/60 px-3 py-1.5 text-sm text-emerald-100 disabled:opacity-40"
-                  >
-                    Add {layOffs.length} to my melds
-                  </button>
-                )}
-                <span className="text-sm text-white/60">{guidance()}</span>
-              </>
-            ) : (
-              <span className="text-sm text-white/60">Waiting for {nameOf(hints.seatToAct)}.</span>
-            )}
-          </section>
-        )}
-        {spectating ? (
-          <p className="text-sm text-white/60">
-            Watching. Every player&rsquo;s cards stay hidden; only what is on the table is shown.
-          </p>
-        ) : (
-          <div className="flex items-end gap-3">
-            <div className="relative min-w-0 flex-1">
-              {bubbles.get(view.seat) && (
-                <ReactionBubble
-                  reaction={bubbles.get(view.seat)!}
-                  name={watched}
-                  avatar={me && faceOf(me)}
-                />
-              )}
-              <Hand
-                cards={zone}
-                interactive={canMeld || canDiscard}
-                stagedIds={staged}
-                owedIds={owed}
-                meldRanks={meldRanks}
-                playContext={playContext}
-                onSelect={onCardSelect}
-                chosenId={chosenId}
-                menu={menu}
-                onDismiss={closeMenu}
-                title={`${whose} ${view.inFoot ? "foot" : "hand"}${grabby ? ` (${GRABBY_NAME})` : ""}`}
-                badge={grabby && <GrabbyIcon className="h-5 w-5" />}
-                rows={phone}
-                newId={drawnId}
-              />
-            </div>
-            {/* The foot waits beside the hand it will replace. */}
-            {!view.inFoot && (
-              <div className="flex shrink-0 flex-col items-center gap-1">
-                <span className="text-xs text-white/60">{phone ? "Foot" : `${whose} foot`}</span>
-                <FaceDownPile
-                  count={view.footCount}
-                  label={`${whose} foot`}
-                  size={phone ? "small" : "normal"}
-                />
-              </div>
-            )}
-          </div>
-        )}
+        {alert}
+        {actionBar}
+        {hand}
       </footer>
 
       {rulesOpen && <RulesDialog config={room.config} onClose={() => setRulesOpen(false)} />}
@@ -951,13 +852,22 @@ export function TableView({
             }
           }
           notice={notice}
-          seat={view.seat}
+          seat={controls ? view.seat : SPECTATOR_SEAT}
         />
       )}
     </main>
   );
 
   /** One line saying what the table is waiting for, in the order the rules impose. */
+  function guidanceLine(): string {
+    if (!controls) return `${nameOf(hints.seatToAct)} to play.`;
+    if (!myTurn) {
+      if (clock.paused) return "The table is paused.";
+      return `Waiting for ${nameOf(hints.seatToAct)}.`;
+    }
+    return guidance();
+  }
+
   function guidance(): string {
     const click = phone ? "Tap" : "Click";
     if (hints.phase === "draw") return `${click} the stock to draw, or the pile to take it.`;
@@ -970,146 +880,8 @@ export function TableView({
   }
 }
 
-interface CardMenuProps {
-  readonly card: Card;
-  readonly staged: boolean;
-  readonly canMeld: boolean;
-  /** A melded rank this natural can go straight onto, or null. */
-  readonly layOffTo: Rank | null;
-  readonly wildTarget: Rank | null;
-  readonly canDiscard: boolean;
-  readonly discardBlocked: boolean;
-  /** Set once a risky discard has been asked for, to ask again. */
-  readonly warning: string | null;
-  readonly busy: boolean;
-  readonly onMeld: () => void;
-  readonly onLayOff: () => void;
-  readonly onUnstage: () => void;
-  readonly onDiscard: () => void;
-  readonly onCancel: () => void;
-}
-
-/** What one card can do right now, offered under the card that was clicked. */
-function CardMenu({
-  card,
-  staged,
-  canMeld,
-  layOffTo,
-  wildTarget,
-  canDiscard,
-  discardBlocked,
-  warning,
-  busy,
-  onMeld,
-  onLayOff,
-  onUnstage,
-  onDiscard,
-  onCancel,
-}: CardMenuProps): React.ReactElement {
-  const wild = isWild(card.rank);
-  const item = "rounded px-3 py-1 text-left text-sm whitespace-nowrap disabled:opacity-40";
-  if (warning) {
-    return (
-      <div
-        role="dialog"
-        aria-label="Confirm discard"
-        className="flex w-56 flex-col gap-2 rounded border border-amber-300/50 bg-felt-900 p-2 shadow-lg"
-      >
-        <p className="text-sm text-amber-100">{warning} Discard it anyway?</p>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={onDiscard}
-            className={`${item} bg-red-600 text-white`}
-          >
-            Discard anyway
-          </button>
-          <button type="button" onClick={onCancel} className={`${item} border border-white/25`}>
-            Keep it
-          </button>
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div
-      role="menu"
-      aria-label="Card actions"
-      className="flex flex-col rounded border border-white/20 bg-felt-900 p-1 shadow-lg"
-    >
-      {staged ? (
-        <button
-          type="button"
-          role="menuitem"
-          onClick={onUnstage}
-          className={`${item} hover:bg-white/10`}
-        >
-          Take back
-        </button>
-      ) : layOffTo ? (
-        <button
-          type="button"
-          role="menuitem"
-          disabled={busy}
-          onClick={onLayOff}
-          className={`${item} hover:bg-white/10`}
-        >
-          Add to {layOffTo}s meld
-        </button>
-      ) : (
-        canMeld && (
-          <button
-            type="button"
-            role="menuitem"
-            disabled={wild && wildTarget === null}
-            onClick={onMeld}
-            className={`${item} hover:bg-white/10`}
-          >
-            {wild ? (wildTarget ? `Add to ${wildTarget}s` : "Select a meld for it first") : "Meld"}
-          </button>
-        )
-      )}
-      {canDiscard && !staged && (
-        <button
-          type="button"
-          role="menuitem"
-          disabled={busy || discardBlocked}
-          title={discardBlocked ? "play or take back your staged melds first" : undefined}
-          onClick={onDiscard}
-          className={`${item} hover:bg-white/10`}
-        >
-          Discard
-        </button>
-      )}
-      <button
-        type="button"
-        role="menuitem"
-        onClick={onCancel}
-        className={`${item} text-white/60 hover:bg-white/10`}
-      >
-        Cancel
-      </button>
-    </div>
-  );
-}
-
-/** The word under a pile that is waiting to be clicked, pulsing with it. */
-function PilePrompt({ children }: { readonly children: React.ReactNode }): React.ReactElement {
-  // Fixed at first render: re-reading the clock on every render would jump the phase.
-  const [style] = useState(() => pulseStyle());
-  return (
-    <span
-      style={style}
-      className="pile-prompt-label rounded-full bg-accent px-2.5 py-0.5 text-xs font-semibold text-accent-ink"
-    >
-      {children}
-    </span>
-  );
-}
-
 const COMPACT_MELDS_KEY = "hf.compactMelds";
-const COMPACT_SEATS_KEY = "hf.compactSeats";
+const MELD_ORDER_KEY = "hf.meldOrder";
 
 function readFlag(key: string): boolean {
   try {
@@ -1127,35 +899,31 @@ function writeFlag(key: string, on: boolean): void {
   }
 }
 
-/** A bell, filled when notifications are on and struck through when off. */
-function BellIcon({ on }: { readonly on: boolean }): React.ReactElement {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 16 16" className="h-4 w-4 fill-none stroke-current">
-      <path
-        d="M4 11V7a4 4 0 0 1 8 0v4l1.5 1.5h-11zM6.5 14a1.5 1.5 0 0 0 3 0"
-        className={on ? "fill-current" : undefined}
-        strokeWidth="1.3"
-        strokeLinejoin="round"
-      />
-      {!on && <path d="M2.5 2.5l11 11" strokeWidth="1.3" strokeLinecap="round" />}
-    </svg>
-  );
+/** A choice kept on this device, such as how melds are sorted. */
+function readChoice<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
+  try {
+    const value = window.localStorage.getItem(key);
+    return allowed.includes(value as T) ? (value as T) : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
-/** A speaker, struck through when muted: drawn, as not every font has the glyph. */
-function SpeakerIcon({ muted }: { readonly muted: boolean }): React.ReactElement {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 16 16" className="h-4 w-4 fill-none stroke-current">
-      <path d="M2 6h3l4-3v10l-4-3H2z" className="fill-current" strokeWidth="0" />
-      {muted ? (
-        <path d="M11 6l4 4m0-4l-4 4" strokeWidth="1.5" strokeLinecap="round" />
-      ) : (
-        <path
-          d="M11 5.5a3.5 3.5 0 0 1 0 5M12.5 3.5a6 6 0 0 1 0 9"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-        />
-      )}
-    </svg>
-  );
+function writeChoice(key: string, value: string): void {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Blocked storage: the choice lasts until the page is reloaded.
+  }
 }
+
+/** The felt, lit from above the piles, as the design paints it. */
+const FELT = "radial-gradient(ellipse at 50% 30%, #2C6B53, #1A4535 70%, #143629)";
+const FELT_CENTER = "radial-gradient(ellipse at 50% 35%, #2C6B53, #1A4535 70%, #143629)";
+
+/** A message on the felt: the last lap, a debt to the pile, the books to go out. */
+const BANNER = "m-0 rounded-2xl border px-3 py-2.5 text-center text-[13px] leading-snug";
+
+/** The buttons by the hand, as the design sizes them. */
+const ACTION =
+  "inline-flex min-h-10 items-center justify-center rounded-xl px-3.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40 md:min-h-12 md:px-[18px] md:text-[15px]";

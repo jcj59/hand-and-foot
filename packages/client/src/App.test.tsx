@@ -208,8 +208,7 @@ describe("routing", () => {
       useSession.getState().seat({ roomId: "ABC234", seat: 0, token: "t0" });
     });
     socket.fire("view", viewUpdate());
-    expect(screen.getByRole("heading", { name: /table ABC234/i })).toBeInTheDocument();
-    expect(screen.getByText(/round 3/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /round 3 of/i })).toBeInTheDocument();
     // Seat 1 is on turn in this fixture, so the table offers nothing and says so.
     expect(screen.getByText(/waiting for ben/i)).toBeInTheDocument();
   });
@@ -325,9 +324,10 @@ describe("a new game after an old one", () => {
       totals: [100, 50],
       matchOver: false,
     });
-    expect(screen.getByText(/Round 1 of 4 over/)).toBeInTheDocument();
+    expect(screen.getByText("Round 1 over")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Main menu" }));
+    fireEvent.click(screen.getByRole("button", { name: "Go to the main menu" }));
     fireEvent.click(screen.getByRole("button", { name: "New table" }));
     fireEvent.click(screen.getByRole("button", { name: "Open table" }));
     fireEvent.change(screen.getByRole("textbox", { name: /your name/i }), {
