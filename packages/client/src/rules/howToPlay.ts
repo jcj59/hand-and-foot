@@ -1,18 +1,45 @@
 /**
- * How to play, in words, for one table's rules.
+ * How to play, in words: for one table's rules, or for the game away from a table.
  *
- * Every number a player could get wrong comes from the config — the hand and foot
+ * Every number a player could get wrong comes from the config (the hand and foot
  * sizes, the decks, the minimums, the wild ratio, the books going out takes, every
- * card's value — so a table's rules page describes that table, custom rules and
- * all, rather than the game in general. Pure, so the page and its tests read the
- * same words. The rules it states are the engine's, as settled in `CLAUDE.md`.
+ * card's value), so a table's rules describe that table, custom rules and all.
+ * Away from a table the words are the presets', with the one rule they differ on
+ * (the wild ratio) given for each. Pure, so the page and its tests read the same
+ * words. The rules it states are the engine's, as settled in `CLAUDE.md`.
  */
-import type { RulesConfig } from "@hf/shared";
+import { PRESETS, type RulesConfig, type RulesPreset, type WildRatioRule } from "@hf/shared";
+import { PRESET_NAMES } from "./ruleText";
+
+/** One preset's take on a rule the presets play differently. */
+export interface CoastRule {
+  readonly name: string;
+  readonly text: string;
+}
 
 export interface RulesSection {
   readonly id: string;
   readonly title: string;
   readonly paragraphs: readonly string[];
+  /** Away from a table: how each preset plays this section's rule, where they differ. */
+  readonly coasts?: readonly CoastRule[];
+}
+
+/** The wild ratio, as a player reads it. */
+export const WILD_RATIO_TEXT: Readonly<Record<WildRatioRule, string>> = {
+  "naturals-exceed-wilds":
+    "A meld must have more naturals than wilds. Three naturals carry at most two wilds.",
+  "naturals-equal-wilds": "A meld may have as many wilds as naturals, but never more.",
+};
+
+/** The rules away from a table: what every preset shares, and the wild ratio per preset. */
+export function generalRules(): readonly RulesSection[] {
+  return sections(PRESETS["east-coast"], "general");
+}
+
+/** How to play at one table, from its own rules. */
+export function howToPlay(config: RulesConfig): readonly RulesSection[] {
+  return sections(config, "table");
 }
 
 function count(n: number, one: string, many = `${one}s`): string {
@@ -29,24 +56,32 @@ function signed(n: number): string {
 }
 
 /** The sections of the page, in the order a new player needs them. */
-export function howToPlay(config: RulesConfig): readonly RulesSection[] {
+function sections(config: RulesConfig, where: "table" | "general"): readonly RulesSection[] {
   const s = config.scoring;
   const minimums = config.layDownMinimums;
   const books = [
     ...(config.goOutCleanBooks > 0 ? [count(config.goOutCleanBooks, "clean book")] : []),
     ...(config.goOutDirtyBooks > 0 ? [count(config.goOutDirtyBooks, "dirty book")] : []),
   ];
-  const ratio =
-    config.wildRatio === "naturals-exceed-wilds"
-      ? "a meld must always have more natural cards than wilds (three naturals carry at most two wilds)"
-      : "a meld may have as many wilds as naturals, but never more";
+  const general = where === "general";
+  const wild =
+    "Twos and jokers are wild and can stand in for any rank in a meld." +
+    (general ? "" : ` ${WILD_RATIO_TEXT[config.wildRatio]}`) +
+    " A meld can never be made of wilds alone. A wild can help a meld become a book, but once it is a book no wild can be added to it.";
+  const marva = general
+    ? config.marvaRule
+      ? "Tables play the Marva rule unless the host turns it off"
+      : "Tables do not play the Marva rule unless the host turns it on"
+    : config.marvaRule
+      ? "This table plays the Marva rule"
+      : "This table does not play the Marva rule";
 
   return [
     {
       id: "objective",
       title: "The aim",
       paragraphs: [
-        `Score the most points over ${count(config.rounds, "round")}. Points come from the cards you meld, above all from books — melds of seven or more — and from going out first. Cards still in your hand or foot when a round ends count against you.`,
+        `Score the most points over ${count(config.rounds, "round")}. Points come from the cards you meld, above all from books (melds of seven or more), and from going out first. Cards still in your hand or foot when a round ends count against you.`,
       ],
     },
     {
@@ -62,7 +97,7 @@ export function howToPlay(config: RulesConfig): readonly RulesSection[] {
       title: "A turn",
       paragraphs: [
         "Draw one card from the stock, or take the whole discard pile (see below). Then meld whatever you can and want to, and end your turn by discarding one card.",
-        "Melds you play this turn can be taken back until you discard — or until you pick up your foot, which makes them final. A player who has played every card ends the turn without a discard.",
+        "Melds you play this turn can be taken back until you discard, or until you pick up your foot, which makes them final. A player who has played every card ends the turn without a discard.",
         config.stockExhaustion === "reshuffle"
           ? "When the stock runs out, the discard pile below its top card is shuffled into a new stock."
           : "When the stock runs out, the round ends.",
@@ -79,9 +114,13 @@ export function howToPlay(config: RulesConfig): readonly RulesSection[] {
     {
       id: "wilds",
       title: "Wild cards",
-      paragraphs: [
-        `Twos and jokers are wild and can stand in for any rank in a meld, but ${ratio}. A meld can never be made of wilds alone. A wild can help a meld become a book, but once it is a book no wild can be added to it.`,
-      ],
+      paragraphs: [wild],
+      ...(general && {
+        coasts: (Object.keys(PRESETS) as RulesPreset[]).map((preset) => ({
+          name: PRESET_NAMES[preset],
+          text: WILD_RATIO_TEXT[PRESETS[preset].wildRatio],
+        })),
+      }),
     },
     {
       id: "threes",
@@ -95,7 +134,7 @@ export function howToPlay(config: RulesConfig): readonly RulesSection[] {
       id: "pile",
       title: "Taking the pile",
       paragraphs: [
-        "Instead of drawing, you may take the whole discard pile — but only if you can play at least one of its cards at once, in a meld you make with your own cards (a pair of its rank, or one and a wild) or onto a meld you already have.",
+        "Instead of drawing, you may take the whole discard pile, but only if you can play at least one of its cards at once, in a meld you make with your own cards (a pair of its rank, or one and a wild) or onto a meld you already have.",
         "If you are not down yet, that lay-down has to reach the round's minimum too. Before you discard, you must have played a card from the pile you took.",
       ],
     },
@@ -116,8 +155,8 @@ export function howToPlay(config: RulesConfig): readonly RulesSection[] {
       title: "The Marva rule",
       paragraphs: [
         config.marvaRule
-          ? "This table plays the Marva rule: a first lay-down that empties your hand gets you down whatever it is worth, minimum or not."
-          : "This table does not play the Marva rule: a first lay-down must reach the minimum even if it empties your hand.",
+          ? `${marva}: a first lay-down that empties your hand gets you down whatever it is worth, minimum or not.`
+          : `${marva}: a first lay-down must reach the minimum even if it empties your hand.`,
       ],
     },
     {

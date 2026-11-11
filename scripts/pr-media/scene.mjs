@@ -539,7 +539,12 @@ const run = async () => {
   if (action === "scores") await page.getByRole("button", { name: "Scores so far" }).click();
   if (action === "expand") await page.getByRole("button", { name: /^Expand Cyrus/ }).click();
   if (action === "picker") await page.getByRole("button", { name: "React" }).click();
-  if (action === "rules") await page.getByRole("button", { name: "How to play" }).click();
+  if (action === "rules") {
+    // On a phone the rules are an item in the table's menu.
+    const button = page.getByRole("button", { name: "How to play" });
+    if (!(await button.isVisible())) await page.getByRole("button", { name: "Main menu" }).click();
+    await button.click();
+  }
   if (action === "chip") await page.getByRole("button", { name: /^Cyrus/ }).click();
   if (action === "card")
     await page.getByRole("button", { name: /Ten of hearts/i }).click({ position: { x: 8, y: 30 } });
