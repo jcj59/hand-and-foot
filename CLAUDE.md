@@ -988,6 +988,17 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   CC to put it away. The jumps, moments and Every hand are behind `tools` (on by default; the
   demo turns them off), folded under More on a phone. A player (demo, replay, scenario) has no
   `TableHeader`, so no sound toggle or rules button: it plays by the device's mute setting.
+  **History (redesign 7):** `pages/HistoryPage.tsx` replaces `profile/MatchHistory.tsx`: stat
+  tiles, the fun counts as chips, filters (Place, Played with, When, Sort by) and a card per game
+  colored by result (won, 2nd, 3rd or lower, unfinished; a game the player left counts as
+  unfinished) with a score bar per player and the award chips. The page asks for the history once
+  (`serverPost()`, pinned in `serverPost.test.tsx`) and filters what came back. Pure logic is in
+  `history/describe.ts` (result, title, badge, meta line, rows) and `history/filters.ts`
+  (`filterGames`, `companions`: other people by name, most played with first, `since`: calendar
+  month or three months back, `summary`); 60 mutants, 59 killed, 1 equivalent (`place <= 2` for
+  second, since place 1 is always a win). Resume shows on an unfinished game only while this
+  device holds a live saved seat at that table (`resumeSavedGame`, as Home); since a match is
+  recorded only once its table closes, that is rare today.
 
 - **Rules page (roadmap item 8).** `rules/howToPlay.ts` (`howToPlay(config)` → sections of
   paragraphs, every number from the config: deal, decks, minimums per round, wild ratio, Marva,

@@ -220,3 +220,11 @@ body,
     animation: none;
   }
 }
+
+/* A row that scrolls sideways on a phone (History's chips) without a scroll bar under it. */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

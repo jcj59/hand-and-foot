@@ -113,7 +113,7 @@ export function App({ socket }: AppProps): React.ReactElement {
           <Route element={<AppShell />}>
             <Route path="/" element={<Home socket={socket} />} />
             <Route path="/practice" element={<Home socket={socket} />} />
-            <Route path="/history" element={<HistoryPage />} />
+            <Route path="/history" element={<HistoryPage socket={socket} />} />
             <Route path="/learn" element={<LessonList />} />
             <Route path="/rules" element={<HowToPlayPage />} />
             <Route path="/profile" element={<ProfilePage />} />
