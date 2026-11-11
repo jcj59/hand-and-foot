@@ -3,7 +3,7 @@ import { render as rtlRender, screen, waitFor, within } from "@testing-library/r
 import { MemoryRouter } from "react-router-dom";
 import type { Ack, MatchHistory as History, MatchListing } from "@hf/shared";
 import { IDENTITY_KEY, saveIdentity, type Post } from "../identity";
-import { MatchHistory, outcome } from "./MatchHistory";
+import { MatchHistory, isPractice, outcome } from "./MatchHistory";
 
 /** Rendered inside a router, as on the home screen, since each game links to its replay. */
 function render(ui: React.ReactElement): ReturnType<typeof rtlRender> {
@@ -140,6 +140,41 @@ describe("the player's games on the home screen", () => {
     });
     expect(outcome(many)).toBe("11th of 12 · 0");
     expect(outcome({ ...many, place: 1 })).toBe("1st of 12 · 0");
+  });
+});
+
+describe("practice games", () => {
+  it("are the ones where everyone else was a computer", () => {
+    expect(isPractice(listing())).toBe(false);
+    const practice = listing({
+      players: [
+        { seat: 0, name: "Ana", total: 2400 },
+        { seat: 1, name: "Robo Rita", bot: true, total: 1800 },
+        { seat: 2, name: "Shuffles", bot: true, total: 2100 },
+      ],
+    });
+    expect(isPractice(practice)).toBe(true);
+    // Seen from a computer's seat it would not be: only the others count.
+    expect(isPractice({ ...practice, seat: 1 })).toBe(false);
+    // Alone at a table is not practice against anyone.
+    expect(isPractice(listing({ players: [{ seat: 0, name: "Ana", total: 0 }] }))).toBe(false);
+  });
+
+  it("are tagged in the list", async () => {
+    saveIdentity(user);
+    const practice = listing({
+      id: "p1",
+      players: [
+        { seat: 0, name: "Ana", total: 2400 },
+        { seat: 1, name: "Robo Rita", bot: true, total: 1800 },
+      ],
+    });
+    const post: Post = async () =>
+      ({ ok: true, data: { stats, recent: [practice, listing()] } }) as Ack<unknown>;
+    render(<MatchHistory post={post} />);
+    const games = await screen.findAllByRole("listitem");
+    expect(within(games[0]!).getByText("Practice")).toBeInTheDocument();
+    expect(within(games[1]!).queryByText("Practice")).toBeNull();
   });
 });
 

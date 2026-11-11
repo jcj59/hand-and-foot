@@ -112,6 +112,7 @@ export function App({ socket }: AppProps): React.ReactElement {
           {/* The app's own pages, inside its navigation. */}
           <Route element={<AppShell />}>
             <Route path="/" element={<Home socket={socket} />} />
+            <Route path="/practice" element={<Home socket={socket} />} />
             <Route path="/history" element={<HistoryPage />} />
             <Route path="/learn" element={<LessonList />} />
             <Route path="/rules" element={<HowToPlayPage />} />

@@ -78,6 +78,11 @@ export function MatchHistory({ post, empty }: MatchHistoryProps): React.ReactEle
             <p className="flex items-baseline justify-between gap-2">
               <span className={match.won ? "font-semibold text-amber-200" : "font-medium"}>
                 {outcome(match)}
+                {isPractice(match) && (
+                  <span className="ml-2 rounded-full bg-sky-300/15 px-2 py-0.5 text-[0.65rem] font-semibold text-sky-200">
+                    Practice
+                  </span>
+                )}
               </span>
               <span className="text-xs text-white/50">{formatDate(match.endedAt)}</span>
             </p>
@@ -102,6 +107,16 @@ export function MatchHistory({ post, empty }: MatchHistoryProps): React.ReactEle
       </ul>
     </section>
   );
+}
+
+/**
+ * A practice game: everyone else at the table was a computer. Told from the seats
+ * rather than stored, so games played against computers before Practice existed
+ * are tagged the same way.
+ */
+export function isPractice(match: MatchListing): boolean {
+  const others = match.players.filter((p) => p.seat !== match.seat);
+  return others.length > 0 && others.every((p) => p.bot);
 }
 
 /** How the match went for the player, in a few words. */

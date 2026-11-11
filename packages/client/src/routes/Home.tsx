@@ -13,10 +13,10 @@
  * the start of a gathering, so it leads to that game's waiting room.
  */
 import { useEffect, useState, type FormEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { MATCHES_PATH, type MatchHistory as History } from "@hf/shared";
 import { LESSONS } from "@hf/scenarios";
-import { addComputerPlayer, createTable, joinTable, resumeSavedGame } from "../actions";
+import { addComputerPlayer, createTable, joinTable, resumeSavedGame, startTable } from "../actions";
 import { loadAvatar, saveAvatar, faceOf } from "../profile/avatarStore";
 import { AvatarFace } from "../profile/Avatar";
 import { loadCredentials } from "../credentials";
@@ -46,6 +46,8 @@ import {
   type CardInputs,
   type PlannedBot,
 } from "../home/sheets";
+import { PracticeSheet } from "../home/PracticeSheet";
+import { loadPractice, rememberPractice, type PracticeSetup } from "../home/practiceStore";
 
 /** Development builds, and the screenshot harness's, carry the scenario viewer. */
 const SCENARIOS_LINK = import.meta.env.DEV || import.meta.env.VITE_SCENARIOS === "1";
@@ -56,11 +58,13 @@ export interface HomeProps {
   readonly post?: Post;
 }
 
-type Open = "new" | "join" | null;
+type Open = "new" | "join" | "practice" | null;
 
 export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React.ReactElement {
   const navigate = useNavigate();
   const { roomId: fromLink } = useParams<{ roomId?: string }>();
+  // `/practice` is the Practice sheet open over the home screen, so it can be linked to.
+  const atPractice = useLocation().pathname === "/practice";
   const seat = useSession((s) => s.seat);
   const setNotice = useSession((s) => s.setNotice);
   const notice = useSession((s) => s.notice);
@@ -75,7 +79,8 @@ export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React
   const held = stored && !savedGames.some((g) => g.roomId === stored.roomId) ? stored : null;
 
   // From a shared link the code is known: straight to joining.
-  const [open, setOpen] = useState<Open>(fromLink ? "join" : null);
+  const [chosen, setOpen] = useState<Open>(fromLink ? "join" : null);
+  const open: Open = atPractice ? "practice" : chosen;
   // The name this player went by last time, ready to use again or change.
   const [name, setName] = useState(loadName);
   // The picture this device chose, if any; changed here, kept at once.
@@ -89,6 +94,8 @@ export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React
   const history = useHistory(post);
   // Computers to seat once a new table opens.
   const [bots, setBots] = useState<readonly PlannedBot[]>([]);
+  // Practice's own rules and computers, as this device last dealt them.
+  const [practice, setPractice] = useState<PracticeSetup>(loadPractice);
   const stats = history?.stats;
   // Your player card: the name and face you sit down with, and your record.
   const card: CardInputs = {
@@ -125,7 +132,7 @@ export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React
     }
   }
 
-  async function submit(event: FormEvent, join: boolean): Promise<void> {
+  async function submit(event: FormEvent, kind: "join" | "new" | "practice"): Promise<void> {
     event.preventDefault();
     if (busy || !named) return;
     setBusy(true);
@@ -134,17 +141,42 @@ export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React
       // Who is sitting down, for attributing games later. Without an answer in
       // time the player sits down anyway, as nobody in particular.
       const user = await prepareIdentity(post, name.trim());
-      const roomId = join
-        ? await joinTable(socket, code, name, sink, user, avatar)
-        : await createTable(socket, name, choice, sink, user, avatar);
-      // Remembered once a table has actually been opened with them.
-      if (roomId && !join) rememberRulesChoice(choice);
+      const roomId =
+        kind === "join"
+          ? await joinTable(socket, code, name, sink, user, avatar)
+          : await createTable(
+              socket,
+              name,
+              kind === "practice" ? practice.choice : choice,
+              sink,
+              user,
+              avatar,
+            );
+      if (!roomId) return;
+      // Remembered once a table has actually been opened with them; practice keeps
+      // its own, so it never changes what New table offers.
+      if (kind === "new") rememberRulesChoice(choice);
+      if (kind === "practice") rememberPractice(practice);
       // The computers asked for, seated in order as the host would in the waiting
-      // room; one refused leaves a notice there and the rest still sit down.
-      if (roomId && !join) {
+      // room. At a new table one refused leaves a notice there and the rest still
+      // sit down.
+      if (kind === "new") {
         for (const bot of bots) await addComputerPlayer(socket, sink, botSettings(bot));
       }
-      if (roomId) navigate(`/room/${roomId}`);
+      // Practice deals at once, but only with every computer asked for: one that
+      // could not sit down, or a refused deal, leaves the notice in the waiting
+      // room, where the host can fix the seats and deal by hand.
+      if (kind === "practice") {
+        let seatedAll = true;
+        for (const bot of practice.bots) {
+          if (!(await addComputerPlayer(socket, sink, botSettings(bot)))) {
+            seatedAll = false;
+            break;
+          }
+        }
+        if (seatedAll) await startTable(socket, sink);
+      }
+      navigate(`/room/${roomId}`);
     } finally {
       // Cleared even on refusal, so a wrong code can be corrected and retried.
       setBusy(false);
@@ -154,6 +186,11 @@ export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React
   function openSheet(which: Open): void {
     setNotice(null);
     setOpen(which);
+  }
+
+  function closeSheet(): void {
+    setOpen(null);
+    if (atPractice) navigate("/", { replace: true });
   }
 
   const alert = notice && (
@@ -179,7 +216,7 @@ export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React
         onResume={(game) => void resume(game)}
       />
 
-      <QuickStart onPractice={() => openSheet("new")} />
+      <QuickStart onPractice={() => openSheet("practice")} />
 
       {SCENARIOS_LINK && (
         // A full page load, not a route change: the viewer is mounted in place of
@@ -198,8 +235,8 @@ export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React
           card={card}
           alert={alert}
           busy={busy}
-          onSubmit={(e) => void submit(e, true)}
-          onClose={() => setOpen(null)}
+          onSubmit={(e) => void submit(e, "join")}
+          onClose={closeSheet}
         />
       )}
 
@@ -212,8 +249,22 @@ export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React
           card={card}
           alert={alert}
           busy={busy}
-          onSubmit={(e) => void submit(e, false)}
-          onClose={() => setOpen(null)}
+          onSubmit={(e) => void submit(e, "new")}
+          onClose={closeSheet}
+        />
+      )}
+
+      {open === "practice" && (
+        <PracticeSheet
+          choice={practice.choice}
+          onChoice={(c) => setPractice((p) => ({ ...p, choice: c }))}
+          bots={practice.bots}
+          onBots={(b) => setPractice((p) => ({ ...p, bots: b }))}
+          card={card}
+          alert={alert}
+          busy={busy}
+          onSubmit={(e) => void submit(e, "practice")}
+          onClose={closeSheet}
         />
       )}
     </main>

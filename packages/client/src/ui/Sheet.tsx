@@ -18,8 +18,11 @@ export interface SheetProps {
   readonly title: string;
   readonly onClose: () => void;
   readonly children: React.ReactNode;
-  /** Wider dialogs on a computer (the New table sheet has a preview beside it). */
-  readonly wide?: boolean;
+  /**
+   * Wider dialogs on a computer (the New table sheet has a preview beside it);
+   * `"xl"` wider still, for Practice's three computers to a row.
+   */
+  readonly wide?: boolean | "xl";
   /** Which sheet this is, whatever its current step's title (`data-sheet`). */
   readonly id?: string;
 }
@@ -70,7 +73,7 @@ export function Sheet({
         className={`flex max-h-[92dvh] w-full flex-col gap-4 overflow-y-auto border-white/8 bg-sheet text-ink outline-none ${
           phone
             ? "rounded-t-[28px] border-t px-5 pt-2.5 pb-7"
-            : `rounded-3xl border p-7 shadow-2xl ${wide ? "max-w-3xl" : "max-w-md"}`
+            : `rounded-3xl border p-7 shadow-2xl ${wide === "xl" ? "max-w-[960px]" : wide ? "max-w-3xl" : "max-w-md"}`
         }`}
       >
         {phone && (

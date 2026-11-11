@@ -88,7 +88,7 @@ export const LEVEL_COLOR: Record<BotLevel, string> = {
  * The player card, with what you are sitting down at and the button that does it.
  * A device signed in starts on the finished card; anyone else starts editing it.
  */
-function CardStep({
+export function CardStep({
   card,
   context,
   action,
@@ -336,11 +336,6 @@ export function NewTableSheet({
   const changes = Object.keys(choice.rules).length;
   const summary = `${PRESET_WORDS[preset]} · ${MODE_WORDS[mode]}`;
   const draft = draftRules(choice);
-  const refused = !checked.ok && (
-    <p role="alert" className="rounded-xl bg-danger/15 px-3 py-2 text-sm text-danger-soft">
-      {capitalize(checked.error)}.
-    </p>
-  );
 
   if (step === "card") {
     return (
@@ -360,44 +355,19 @@ export function NewTableSheet({
 
   if (step === "house") {
     return (
-      <Sheet id="new" title="House rules" onClose={onClose}>
-        <div className="flex items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={() => setStep("rules")}
-            className="flex items-center gap-1 text-sm text-muted hover:text-ink"
-          >
-            <Icon name="back" size={16} />
-            Back to the table
-          </button>
-          {changes > 0 && <Chip tone="gold">{changes} changed</Chip>}
-        </div>
-        <RulesEditor choice={choice} onChange={onChoice} />
-        {changes > 0 && (
-          <button
-            type="button"
-            onClick={() => onChoice({ ...DEFAULT_CHOICE, preset, mode })}
-            className="self-start text-xs text-muted underline"
-          >
-            Back to the preset&rsquo;s rules
-          </button>
-        )}
-        {refused}
-      </Sheet>
+      <HouseRulesStep
+        id="new"
+        choice={choice}
+        onChoice={onChoice}
+        onClose={onClose}
+        onBack={() => setStep("rules")}
+      />
     );
   }
 
   const settings = (
     <div className="flex flex-col gap-5">
-      <Segmented
-        label="Variant"
-        value={preset}
-        onChange={(p) => onChoice(rebased(choice, p, mode))}
-        options={[
-          { value: "east-coast", label: "East Coast", detail: "Naturals beat wilds" },
-          { value: "west-coast", label: "West Coast", detail: "Wilds can match" },
-        ]}
-      />
+      <VariantPicker choice={choice} onChoice={onChoice} />
       <Segmented
         label="Mode"
         value={mode}
@@ -407,38 +377,9 @@ export function NewTableSheet({
           { value: "competitive", label: "Competitive", detail: "Strict turn clock" },
         ]}
       />
-      <div className="flex items-center justify-between gap-3">
-        <span>
-          <span className="block text-[15px] font-semibold">Rounds</span>
-          <span className="block text-xs text-quiet">About 25 min each</span>
-        </span>
-        <Stepper
-          label="Rounds"
-          value={draft.rounds}
-          min={RULE_LIMITS.rounds.min}
-          max={RULE_LIMITS.rounds.max}
-          onChange={(n) =>
-            onChoice(withDraft(choice, withRounds(draft, baseRules(preset, mode), n)))
-          }
-        />
-      </div>
-      <button
-        type="button"
-        onClick={() => setStep("house")}
-        className="flex min-h-14 items-center justify-between gap-3 rounded-[14px] border border-white/8 bg-[#1A1F24] px-4 py-2 text-left hover:border-white/15"
-      >
-        <span className="min-w-0">
-          <span className="block text-[15px] font-semibold">House rules</span>
-          <span className="block truncate text-xs text-quiet">
-            Red 3s, meld minimums, wild cards…
-          </span>
-        </span>
-        <span className="flex shrink-0 items-center gap-2">
-          {changes > 0 && <Chip tone="gold">{changes} changed</Chip>}
-          <Icon name="forward" size={18} className="text-muted" />
-        </span>
-      </button>
-      {refused}
+      <RoundsRow choice={choice} onChoice={onChoice} />
+      <HouseRulesRow changes={changes} onOpen={() => setStep("house")} />
+      <RulesRefused choice={choice} />
       <ComputerPlayers bots={bots} onBots={onBots} />
     </div>
   );
@@ -481,8 +422,150 @@ export function NewTableSheet({
   );
 }
 
+/** The house rules, on a step of their own, with the way back to the sheet. */
+export function HouseRulesStep({
+  id,
+  choice,
+  onChoice,
+  onClose,
+  onBack,
+}: {
+  readonly id: string;
+  readonly choice: RulesChoice;
+  readonly onChoice: (choice: RulesChoice) => void;
+  readonly onClose: () => void;
+  readonly onBack: () => void;
+}): React.ReactElement {
+  const changes = Object.keys(choice.rules).length;
+  return (
+    <Sheet id={id} title="House rules" onClose={onClose}>
+      <div className="flex items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex items-center gap-1 text-sm text-muted hover:text-ink"
+        >
+          <Icon name="back" size={16} />
+          Back to the table
+        </button>
+        {changes > 0 && <Chip tone="gold">{changes} changed</Chip>}
+      </div>
+      <RulesEditor choice={choice} onChange={onChoice} />
+      {changes > 0 && (
+        <button
+          type="button"
+          onClick={() => onChoice({ ...DEFAULT_CHOICE, preset: choice.preset, mode: choice.mode })}
+          className="self-start text-xs text-muted underline"
+        >
+          Back to the preset&rsquo;s rules
+        </button>
+      )}
+      <RulesRefused choice={choice} />
+    </Sheet>
+  );
+}
+
+/** East Coast or West Coast, keeping any house rules changed. */
+export function VariantPicker({
+  choice,
+  onChoice,
+}: {
+  readonly choice: RulesChoice;
+  readonly onChoice: (choice: RulesChoice) => void;
+}): React.ReactElement {
+  return (
+    <Segmented
+      label="Variant"
+      value={choice.preset}
+      onChange={(p) => onChoice(rebased(choice, p, choice.mode))}
+      options={[
+        { value: "east-coast", label: "East Coast", detail: "Naturals beat wilds" },
+        { value: "west-coast", label: "West Coast", detail: "Wilds can match" },
+      ]}
+    />
+  );
+}
+
+/** How many rounds, with a minimum for each as the count changes. */
+export function RoundsRow({
+  choice,
+  onChoice,
+  boxed = false,
+}: {
+  readonly choice: RulesChoice;
+  readonly onChoice: (choice: RulesChoice) => void;
+  /** In a box of its own, as Practice sets it beside the house rules on a computer. */
+  readonly boxed?: boolean;
+}): React.ReactElement {
+  const draft = draftRules(choice);
+  return (
+    <div
+      className={`flex items-center justify-between gap-3 ${
+        boxed ? "rounded-[14px] border border-white/8 bg-[#1A1F24] py-2 pr-2 pl-4" : ""
+      }`}
+    >
+      <span>
+        <span className="block text-[15px] font-semibold">Rounds</span>
+        <span className="block text-xs whitespace-nowrap text-quiet">About 25 min each</span>
+      </span>
+      <Stepper
+        label="Rounds"
+        value={draft.rounds}
+        min={RULE_LIMITS.rounds.min}
+        max={RULE_LIMITS.rounds.max}
+        onChange={(n) =>
+          onChoice(withDraft(choice, withRounds(draft, baseRules(choice.preset, choice.mode), n)))
+        }
+      />
+    </div>
+  );
+}
+
+/** The row that opens the house rules, with how many are changed. */
+export function HouseRulesRow({
+  changes,
+  onOpen,
+}: {
+  readonly changes: number;
+  readonly onOpen: () => void;
+}): React.ReactElement {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="flex min-h-14 items-center justify-between gap-3 rounded-[14px] border border-white/8 bg-[#1A1F24] px-4 py-2 text-left hover:border-white/15"
+    >
+      <span className="min-w-0">
+        <span className="block text-[15px] font-semibold">House rules</span>
+        <span className="block truncate text-xs text-quiet">
+          Red 3s, meld minimums, wild cards…
+        </span>
+      </span>
+      <span className="flex shrink-0 items-center gap-2">
+        {changes > 0 && <Chip tone="gold">{changes} changed</Chip>}
+        <Icon name="forward" size={18} className="text-muted" />
+      </span>
+    </button>
+  );
+}
+
+/** Why the server would refuse these rules, asked as they are edited; null when it would not. */
+export function RulesRefused({
+  choice,
+}: {
+  readonly choice: RulesChoice;
+}): React.ReactElement | null {
+  const checked = resolveRules(choice);
+  if (checked.ok) return null;
+  return (
+    <p role="alert" className="rounded-xl bg-danger/15 px-3 py-2 text-sm text-danger-soft">
+      {capitalize(checked.error)}.
+    </p>
+  );
+}
+
 /** A number with − and + beside it, as the design sets the rounds. */
-function Stepper({
+export function Stepper({
   label,
   value,
   min,
@@ -544,9 +627,22 @@ export function BotFace({
   );
 }
 
-/** The oval table with your seat and the others round it: empty, or a computer's. */
-function TablePreview({ bots }: { readonly bots: readonly PlannedBot[] }): React.ReactElement {
-  const total = Math.max(4, bots.length + 2);
+/**
+ * The oval table with your seat and the others round it: empty, or a computer's.
+ * New table always shows room for four or more, the empty ones to be filled by
+ * friends; Practice shows exactly the seats it will deal to.
+ */
+export function TablePreview({
+  bots,
+  you,
+  exact = false,
+}: {
+  readonly bots: readonly PlannedBot[];
+  /** Your own face, when known; a plain seat otherwise. */
+  readonly you?: React.ReactNode;
+  readonly exact?: boolean;
+}): React.ReactElement {
+  const total = exact ? bots.length + 1 : Math.max(4, bots.length + 2);
   return (
     <div aria-hidden="true" className="relative mx-auto h-[150px] w-full max-w-[330px]">
       <div
@@ -568,7 +664,11 @@ function TablePreview({ bots }: { readonly bots: readonly PlannedBot[] }): React
             style={{ left: `${left}%`, top: `${top}%` }}
           >
             {i === 0 ? (
-              <span className="flex size-10 items-center justify-center rounded-full border-[3px] border-accent bg-coral" />
+              you ? (
+                <span className="flex rounded-full border-[3px] border-accent">{you}</span>
+              ) : (
+                <span className="flex size-10 items-center justify-center rounded-full border-[3px] border-accent bg-coral" />
+              )
             ) : bot ? (
               <BotFace level={bot.level} size={32} />
             ) : (
@@ -593,8 +693,6 @@ function ComputerPlayers({
 }): React.ReactElement {
   const [editing, setEditing] = useState<number | null>(null);
   const shown = (bot: PlannedBot, i: number): string => bot.name.trim() || `Computer ${i + 1}`;
-  const set = (i: number, change: Partial<PlannedBot>): void =>
-    onBots(bots.map((b, j) => (j === i ? { ...b, ...change } : b)));
   const room = bots.length < MAX_PLAYERS - 1;
   const bot = editing === null ? undefined : bots[editing];
   return (
@@ -644,75 +742,109 @@ function ComputerPlayers({
         )}
       </div>
       {bot && editing !== null && (
-        <div className="flex flex-col gap-3 rounded-[18px] border border-white/10 bg-surface p-4">
-          <div className="flex items-center gap-3">
-            <BotFace level={bot.level} size={40} />
-            <label className="flex min-w-0 flex-1 flex-col gap-1">
-              <span className="text-xs text-quiet">Name</span>
-              <input
-                value={bot.name}
-                placeholder={`Computer ${editing + 1}`}
-                maxLength={MAX_BOT_NAME_LENGTH}
-                onChange={(e) => set(editing, { name: e.target.value })}
-                className="min-h-10 rounded-xl border border-white/12 bg-page px-3 text-ink placeholder:text-faint"
-              />
-            </label>
-            <button
-              type="button"
-              onClick={() =>
-                set(editing, {
-                  name: suggestBotName(
-                    bot.name,
-                    bots.map((b) => b.name),
-                  ),
-                })
-              }
-              className="self-end rounded-xl border border-white/12 px-3 py-2 text-xs text-ink-soft hover:bg-white/5"
-            >
-              Suggest a name
-            </button>
-          </div>
-          <div
-            role="radiogroup"
-            aria-label="How hard"
-            className="grid grid-cols-3 gap-1 rounded-xl bg-page p-1"
-          >
-            {BOT_LEVELS.map((level) => {
-              const on = bot.level === level;
-              return (
-                <button
-                  key={level}
-                  type="button"
-                  role="radio"
-                  aria-checked={on}
-                  onClick={() => set(editing, { level })}
-                  className="min-h-[38px] rounded-[9px] text-[13px] font-semibold"
-                  style={
-                    on ? { background: LEVEL_COLOR[level], color: "#0B2340" } : { color: "#9AA3AD" }
-                  }
-                >
-                  {LEVEL_WORDS[level]}
-                </button>
-              );
-            })}
-          </div>
-          <div className="flex justify-between gap-2">
-            <Button
-              variant="danger"
-              onClick={() => {
-                onBots(bots.filter((_, j) => j !== editing));
-                setEditing(null);
-              }}
-            >
-              Remove
-            </Button>
-            <Button variant="secondary" onClick={() => setEditing(null)}>
-              Done
-            </Button>
-          </div>
-        </div>
+        <BotEditor
+          bots={bots}
+          index={editing}
+          onBots={onBots}
+          onDone={() => setEditing(null)}
+          removable
+        />
       )}
     </section>
+  );
+}
+
+/**
+ * One planned computer's editor: its name (or a suggested one), how well it plays,
+ * and, where the sheet allows it, taking it away.
+ */
+export function BotEditor({
+  bots,
+  index,
+  onBots,
+  onDone,
+  removable = false,
+}: {
+  readonly bots: readonly PlannedBot[];
+  readonly index: number;
+  readonly onBots: (bots: readonly PlannedBot[]) => void;
+  readonly onDone: () => void;
+  readonly removable?: boolean;
+}): React.ReactElement | null {
+  const bot = bots[index];
+  if (!bot) return null;
+  const set = (change: Partial<PlannedBot>): void =>
+    onBots(bots.map((b, j) => (j === index ? { ...b, ...change } : b)));
+  return (
+    <div className="flex flex-col gap-3 rounded-[18px] border border-white/10 bg-surface p-4">
+      <div className="flex items-center gap-3">
+        <BotFace level={bot.level} size={40} />
+        <label className="flex min-w-0 flex-1 flex-col gap-1">
+          <span className="text-xs text-quiet">Name</span>
+          <input
+            value={bot.name}
+            placeholder={`Computer ${index + 1}`}
+            maxLength={MAX_BOT_NAME_LENGTH}
+            onChange={(e) => set({ name: e.target.value })}
+            className="min-h-10 rounded-xl border border-white/12 bg-page px-3 text-ink placeholder:text-faint"
+          />
+        </label>
+        <button
+          type="button"
+          onClick={() =>
+            set({
+              name: suggestBotName(
+                bot.name,
+                bots.map((b) => b.name),
+              ),
+            })
+          }
+          className="self-end rounded-xl border border-white/12 px-3 py-2 text-xs text-ink-soft hover:bg-white/5"
+        >
+          Suggest a name
+        </button>
+      </div>
+      <div
+        role="radiogroup"
+        aria-label="How hard"
+        className="grid grid-cols-3 gap-1 rounded-xl bg-page p-1"
+      >
+        {BOT_LEVELS.map((level) => {
+          const on = bot.level === level;
+          return (
+            <button
+              key={level}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              onClick={() => set({ level })}
+              className="min-h-[38px] rounded-[9px] text-[13px] font-semibold"
+              style={
+                on ? { background: LEVEL_COLOR[level], color: "#0B2340" } : { color: "#9AA3AD" }
+              }
+            >
+              {LEVEL_WORDS[level]}
+            </button>
+          );
+        })}
+      </div>
+      <div className={`flex gap-2 ${removable ? "justify-between" : "justify-end"}`}>
+        {removable && (
+          <Button
+            variant="danger"
+            onClick={() => {
+              onBots(bots.filter((_, j) => j !== index));
+              onDone();
+            }}
+          >
+            Remove
+          </Button>
+        )}
+        <Button variant="secondary" onClick={onDone}>
+          Done
+        </Button>
+      </div>
+    </div>
   );
 }
 
