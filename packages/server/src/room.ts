@@ -921,6 +921,30 @@ export class Room {
   }
 
   /**
+   * A player changing their own card before the deal: the name the table sees
+   * them by, and their picture (null puts back the one drawn from the name). A
+   * name is tidied as everywhere else and may not be blank; after the deal it is
+   * on the scoreboard, so it stays.
+   */
+  changeCard(
+    seat: number,
+    card: { readonly name?: string; readonly avatar?: Avatar | null },
+  ): RoomResult<RoomPlayer> {
+    if (this.started) return fail("your card can only be changed before the deal");
+    const player = this.players[seat];
+    if (!player || player.bot) return fail("no such seat");
+    const name = card.name === undefined ? player.name : normalizeName(card.name);
+    if (name === "") return fail("your name can't be blank");
+    const { avatar: _old, ...rest } = player;
+    void _old;
+    const avatar = card.avatar === undefined ? player.avatar : card.avatar;
+    const changed: RoomPlayer = { ...rest, name, ...(avatar ? { avatar } : {}) };
+    this.players[seat] = changed;
+    this.save();
+    return succeed(changed);
+  }
+
+  /**
    * Hand hosting to another player. Only the host may, and only before the deal:
    * dealing is the one thing a host does, so afterwards there is nothing to hand on.
    */

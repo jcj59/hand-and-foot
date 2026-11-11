@@ -178,11 +178,19 @@ const room = {
 if (process.env.BOTS) {
   room.players = room.players.map((p) =>
     p.seat === 2 || p.seat === 4
-      ? { ...p, name: p.seat === 2 ? "Robo Rita" : "Robo Ray", connected: true, bot: true }
+      ? {
+          ...p,
+          name: p.seat === 2 ? "Robo Rita" : "Robo Ray",
+          connected: true,
+          bot: true,
+          botLevel: p.seat === 2 ? "standard" : "hard",
+        }
       : p,
   );
 }
 if (process.env.LOBBY) room.started = false;
+// LOBBY_GUEST=1: Ana hosts, so the viewer sees the waiting room as a guest.
+if (process.env.LOBBY_GUEST) room.hostSeat = 1;
 // LEFT=1: Ana left the match after round 1, so round 2 was dealt without her.
 const departed = process.env.LEFT ? [{ seat: 1, afterRound: 1 }] : undefined;
 if (departed) {

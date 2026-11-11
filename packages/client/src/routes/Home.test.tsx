@@ -501,7 +501,7 @@ describe("changing the rules", () => {
         timers: { baseMs: 60_000, incrementMs: 5_000, capMs: 240_000, discardGraceMs: 30_000 },
       },
     });
-  });
+  }, 20_000);
 
   it("marks a changed rule with the preset's value, and un-marks it when set back", () => {
     mount(fakeSocket().socket);

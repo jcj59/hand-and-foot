@@ -281,6 +281,14 @@ export interface ClientToServerEvents {
    * the host may, and only before the deal.
    */
   addBot: (payload: BotSettings | undefined, ack: (result: Ack) => void) => void;
+  /**
+   * Change your own card before the deal: your name, and your picture (null for
+   * the one drawn from your name). Anyone seated may, for themselves.
+   */
+  changeCard: (
+    payload: { readonly name?: string; readonly avatar?: Avatar | null },
+    ack: (result: Ack) => void,
+  ) => void;
   /** Change a computer player's level or name before the deal. The host's call. */
   updateBot: (payload: BotSettings & { readonly seat: number }, ack: (result: Ack) => void) => void;
   /** Take a computer player away again, before the deal. The host's call. */

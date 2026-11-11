@@ -1536,6 +1536,21 @@ describe("carrying on without a player over the wire", () => {
   });
 });
 
+describe("changing your card over the wire", () => {
+  it("renames the sender's own seat for the whole table, and refuses a blank name", async () => {
+    const { host, guest } = await seatTwo();
+    const ask = (payload: object): Promise<Ack<undefined>> =>
+      new Promise((resolve) => guest.emit("changeCard", payload, resolve));
+    const seen = waitForRoom(host, (info) => info.players[1]?.name === "Benny");
+    expect(await ask({ name: " Benny " })).toEqual({ ok: true, data: undefined });
+    await seen;
+    expect(await ask({ name: "" })).toEqual({ ok: false, error: "your name can't be blank" });
+    expect(await ask({ name: 7 })).toEqual({ ok: false, error: "a name has to be text" });
+    // A picture that is not one changes nothing, and is not a refusal.
+    expect(await ask({ avatar: { nonsense: true } })).toEqual({ ok: true, data: undefined });
+  });
+});
+
 describe("computer players over the wire", () => {
   function addBot(socket: Client): Promise<Ack<undefined>> {
     return new Promise((resolve) => socket.emit("addBot", undefined, resolve));

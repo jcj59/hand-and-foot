@@ -71,14 +71,14 @@ export function suggestBotName(current: string, taken: readonly string[]): strin
   return free[(at + 1) % free.length] ?? BOT_NAME_IDEAS[0];
 }
 
-const LEVEL_WORDS: Record<BotLevel, string> = {
+export const LEVEL_WORDS: Record<BotLevel, string> = {
   easy: "Easy",
   standard: "Standard",
   hard: "Hard",
 };
 
 /** Each level's color, as the design gives it: teal, blue, orange. */
-const LEVEL_COLOR: Record<BotLevel, string> = {
+export const LEVEL_COLOR: Record<BotLevel, string> = {
   easy: "#7CD9C0",
   standard: "#8FB8E8",
   hard: "#F59E5B",
