@@ -590,7 +590,7 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   quietly.
   A store that fails never costs a seat: `verifyUser` (and the Worker's `verified`) answer null,
   and the Node `route` catches any rejection and answers 500 instead of letting an unhandled
-  rejection kill the process. Home's panel registers the profile when opened and shows the code
+  rejection kill the process. The Profile page's account panel registers the profile (see redesign 8) and shows the code
   only once the server knows it.
 - **Signing in (roadmap item 15, accounts).** Design in DESIGN.md "Signing in". `@hf/shared/identity.ts`:
   `CLAIM_PATH`/`SIGN_IN_PATH`/`PASSWORD_PATH`/`SIGN_OUT_PATH` (`/api/account/*`), `SignedIn`,
