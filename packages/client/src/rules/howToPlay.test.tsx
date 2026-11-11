@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { EAST_COAST, WEST_COAST, type RulesConfig } from "@hf/shared";
-import { howToPlay } from "./howToPlay";
+import { generalRules, howToPlay, type RulesSection } from "./howToPlay";
+import { PHONE_QUERY } from "../usePhone";
 import { HowToPlayPage, RulesDialog } from "./HowToPlay";
 
 const text = (config: RulesConfig, id: string): string =>
@@ -42,9 +43,20 @@ describe("how to play, from a table's own rules", () => {
     expect(text(custom, "objective")).toContain("over 3 rounds");
   });
 
-  it("states the wild ratio the preset plays", () => {
-    expect(text(EAST_COAST, "wilds")).toContain("more natural cards than wilds");
-    expect(text(WEST_COAST, "wilds")).toContain("as many wilds as naturals, but never more");
+  it("states the wild ratio the table plays, and that a finished book takes no wild", () => {
+    expect(text(EAST_COAST, "wilds")).toContain(
+      "A meld must have more naturals than wilds. Three naturals carry at most two wilds.",
+    );
+    expect(text(EAST_COAST, "wilds")).not.toContain("as many wilds");
+    expect(text(WEST_COAST, "wilds")).toContain(
+      "A meld may have as many wilds as naturals, but never more.",
+    );
+    expect(text(WEST_COAST, "wilds")).not.toContain("more naturals than wilds");
+    for (const config of [EAST_COAST, WEST_COAST]) {
+      expect(text(config, "wilds")).toContain("once it is a book no wild can be added to it");
+      expect(text(config, "melds")).toContain("you can add more naturals to it, but never a wild");
+      expect(howToPlay(config).some((s) => s.coasts)).toBe(false);
+    }
   });
 
   it("says whether the table plays the Marva rule", () => {
@@ -101,26 +113,111 @@ describe("how to play, from a table's own rules", () => {
   });
 });
 
+describe("the rules away from a table", () => {
+  const general = (id: string): RulesSection => generalRules().find((s) => s.id === id)!;
+
+  it("has the same sections as a table's, in the same order", () => {
+    expect(generalRules().map((s) => s.id)).toEqual(howToPlay(EAST_COAST).map((s) => s.id));
+  });
+
+  it("gives the wild ratio for each coast, and only in the call-out", () => {
+    const wilds = general("wilds");
+    expect(wilds.coasts).toEqual([
+      {
+        name: "East Coast",
+        text: "A meld must have more naturals than wilds. Three naturals carry at most two wilds.",
+      },
+      { name: "West Coast", text: "A meld may have as many wilds as naturals, but never more." },
+    ]);
+    const words = wilds.paragraphs.join(" ");
+    expect(words).toBe(
+      "Twos and jokers are wild and can stand in for any rank in a meld. A meld can never be made of wilds alone. A wild can help a meld become a book, but once it is a book no wild can be added to it.",
+    );
+    expect(generalRules().filter((s) => s.coasts)).toHaveLength(1);
+  });
+
+  it("states every other rule as the presets play it, not as one table's", () => {
+    for (const s of generalRules()) {
+      if (s.id === "wilds" || s.id === "marva") {
+        continue;
+      }
+      expect(s.paragraphs).toEqual(howToPlay(EAST_COAST).find((t) => t.id === s.id)!.paragraphs);
+      expect(s.paragraphs).toEqual(howToPlay(WEST_COAST).find((t) => t.id === s.id)!.paragraphs);
+    }
+    expect(general("marva").paragraphs.join(" ")).toBe(
+      "Tables play the Marva rule unless the host turns it off: a first lay-down that empties your hand gets you down whatever it is worth, minimum or not.",
+    );
+  });
+});
+
 describe("the rules page and dialog", () => {
-  it("is a page from the main menu, for either preset", () => {
+  it("is the app's rules page: contents, sections with lessons, both coasts", () => {
     render(
       <MemoryRouter initialEntries={["/rules"]}>
         <Routes>
           <Route path="/rules" element={<HowToPlayPage />} />
-          <Route path="/" element={<p>main screen</p>} />
+          <Route path="/learn/:lessonId" element={<p>lesson page</p>} />
         </Routes>
       </MemoryRouter>,
     );
-    expect(screen.getByRole("heading", { name: "How to play" })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Wild cards" })).toHaveTextContent(
-      "more natural cards",
+    expect(screen.getByRole("heading", { level: 1, name: "How to play" })).toBeInTheDocument();
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    const contents = screen.getByRole("navigation", { name: "Contents" });
+    const links = within(contents).getAllByRole("link");
+    expect(links.map((a) => a.textContent)).toEqual(generalRules().map((s) => s.title));
+    expect(links[0]).toHaveAttribute("aria-current", "location");
+    expect(links[0]).toHaveAttribute("href", "#rules-objective");
+    const scrolled: string[] = [];
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push(this.id);
+    };
+    try {
+      fireEvent.click(within(contents).getByRole("link", { name: "Scoring" }));
+    } finally {
+      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    }
+    expect(scrolled).toEqual(["rules-scoring"]);
+    expect(within(contents).getByRole("link", { name: "Scoring" })).toHaveAttribute(
+      "aria-current",
+      "location",
     );
-    fireEvent.change(screen.getByRole("combobox", { name: "Rules" }), {
-      target: { value: "west-coast" },
-    });
-    expect(screen.getByRole("region", { name: "Wild cards" })).toHaveTextContent("as many wilds");
-    fireEvent.click(screen.getByRole("button", { name: "Main menu" }));
-    expect(screen.getByText("main screen")).toBeInTheDocument();
+    expect(links[0]).not.toHaveAttribute("aria-current");
+
+    const wilds = screen.getByRole("region", { name: "Wild cards" });
+    expect(wilds).toHaveTextContent("The one rule East Coast and West Coast play differently");
+    expect(wilds).toHaveTextContent("more naturals than wilds");
+    expect(wilds).toHaveTextContent("as many wilds as naturals");
+    expect(screen.getByRole("region", { name: "The aim" })).not.toHaveTextContent("Try it");
+    fireEvent.click(within(wilds).getByRole("link", { name: "Try it: Lesson 5" }));
+    expect(screen.getByText("lesson page")).toBeInTheDocument();
+  });
+
+  it("is titled Rules on a phone, with the contents as tiles", () => {
+    window.matchMedia = ((query: string) => ({
+      matches: query === PHONE_QUERY,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })) as unknown as typeof window.matchMedia;
+    try {
+      render(
+        <MemoryRouter>
+          <HowToPlayPage />
+        </MemoryRouter>,
+      );
+      expect(screen.getByRole("heading", { level: 1, name: "Rules" })).toBeInTheDocument();
+      expect(
+        within(screen.getByRole("navigation", { name: "Contents" })).getAllByRole("link"),
+      ).toHaveLength(12);
+      expect(screen.getByRole("region", { name: "Wild cards" })).toHaveTextContent(
+        "East Coast and West Coast differ here",
+      );
+      expect(screen.getByRole("link", { name: "Try it: Lesson 1" })).toHaveAttribute(
+        "href",
+        "/learn/turn",
+      );
+    } finally {
+      delete (window as { matchMedia?: unknown }).matchMedia;
+    }
   });
 
   it("opens over the table for that table's rules, and closes", () => {
@@ -128,8 +225,12 @@ describe("the rules page and dialog", () => {
     render(<RulesDialog config={{ ...EAST_COAST, marvaRule: false }} onClose={() => closed++} />);
     const dialog = screen.getByRole("dialog", { name: "How to play" });
     expect(within(dialog).getByRole("region", { name: "The Marva rule" })).toHaveTextContent(
-      "does not play",
+      "This table does not play",
     );
+    expect(within(dialog).getByRole("region", { name: "Wild cards" })).not.toHaveTextContent(
+      "West Coast",
+    );
+    expect(within(dialog).queryByRole("link")).not.toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
     fireEvent.keyDown(dialog, { key: "Escape" });
     expect(closed).toBe(2);

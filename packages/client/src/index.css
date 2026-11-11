@@ -37,6 +37,8 @@
   --color-accent-ink: #062115;
   --color-gold: #f2c14e;
   --color-gold-soft: #ffe29a;
+  /* Body text on a gold-tinted call-out (the rules page's East and West Coast). */
+  --color-gold-ink: #e6ddc4;
   --color-danger: #e5484d;
   --color-danger-soft: #ff9a9e;
 

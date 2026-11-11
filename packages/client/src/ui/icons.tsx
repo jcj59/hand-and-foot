@@ -55,6 +55,12 @@ export const ICONS = {
   lessonThree: "M8 5h5a3.5 3.5 0 0 1 0 7h-3h3a3.5 3.5 0 0 1 0 7H8",
   lessonFoot: "M6 4h12v16H6zM6 9h12M10 14h4",
   lessonOut: "M14 4h5v16h-5M10 8l-4 4 4 4M6 12h10",
+  // The rules page's sections, where no lesson's icon already fits.
+  target: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 11.5v1",
+  deal: "M3 8h8v12H3zM13 4h8v12h-8z",
+  meldBook: "M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2zM19 19v2H6",
+  getDown: "M12 4v12M7 11l5 5 5-5M4 20h16",
+  heart: "M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.5-7 10-7 10z",
 } as const;
 
 export type IconName = keyof typeof ICONS;
