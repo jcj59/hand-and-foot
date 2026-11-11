@@ -48,7 +48,9 @@ describe("reading the deadline", () => {
     anchorTo(1_000_000);
     render(<TurnClock clock={clockState({ deadlineAt: null, paused: true })} />);
     expect(screen.getByRole("timer").textContent).toMatch(/—/);
-    expect(screen.getByText(/paused/i)).toBeInTheDocument();
+    // Blue, and said to a screen reader; the pause bar says it to everyone.
+    expect(screen.getByRole("timer")).toHaveAccessibleName(/paused/i);
+    expect(screen.getByRole("timer").className).toMatch(/text-blue/);
   });
 
   it("names the discard-only grace", () => {
@@ -95,13 +97,13 @@ describe("ticking", () => {
     vi.setSystemTime(0);
     anchorTo(1_000_000);
     render(<TurnClock clock={clockState()} />);
-    const digits = (): Element => screen.getByRole("timer").firstElementChild!;
-    expect(digits.call(null).className).toMatch(/text-white/);
+    const digits = (): Element => screen.getByRole("timer");
+    expect(digits.call(null).className).toMatch(/text-ink/);
 
     act(() => {
       vi.advanceTimersByTime(52_000);
     });
-    expect(digits.call(null).className).toMatch(/text-red-300/);
+    expect(digits.call(null).className).toMatch(/text-gold/);
   });
 
   it("arms no timer when there is no deadline", () => {

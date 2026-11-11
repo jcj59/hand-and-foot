@@ -144,7 +144,7 @@ describe("the awards", () => {
     expect(screen.queryByRole("status", { name: "Awards" })).toBeNull();
     rerender(<Probe r={final} />);
     expect(screen.getByRole("status", { name: "Awards" })).toHaveTextContent(
-      "Cleanest books: Ben (5 clean books)",
+      /Cleanest books\s*Ben \(5 clean books\)/,
     );
     // The same result sent again does not start it over or keep it up.
     act(() => vi.advanceTimersByTime(AWARDS_MS - 1));

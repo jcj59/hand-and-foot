@@ -123,7 +123,7 @@ describe("watching a table", () => {
     expect(screen.queryByRole("region", { name: /hand$/i })).toBeNull();
     expect(screen.queryByRole("region", { name: /melds$/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /react/i })).toBeNull();
-    expect(screen.getByLabelText("Watching")).toHaveTextContent("1 watching");
+    expect(screen.getByText(/· 1 watching$/)).toBeInTheDocument();
   });
 
   it("says so when there is no table at that code", async () => {

@@ -46,6 +46,8 @@
   --color-violet: #d6a6f0;
   --color-teal: #7cd9c0;
   --color-orange: #f59e5b;
+  /* Losses and a dropped player: softer than danger, on the dark table. */
+  --color-salmon: #f59e8b;
 
   /* Cards. */
   --color-card: #f7f5ee;

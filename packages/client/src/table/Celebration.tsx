@@ -27,13 +27,18 @@ export function Celebration({
   children,
 }: CelebrationProps): React.ReactElement {
   return (
-    <div className="pointer-events-none fixed inset-0 z-50 overflow-hidden">
+    <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-[rgba(6,10,12,0.62)]">
       {confetti && <Confetti />}
       <div
         role="status"
         aria-label={label}
-        style={{ "--celebration-ms": `${ms}ms` } as CSSProperties}
-        className="celebration-pop absolute inset-x-0 top-1/4 mx-auto flex w-fit max-w-[90vw] flex-col items-center gap-2 rounded-3xl border-2 border-amber-300 bg-felt-900/95 px-5 py-5 sm:px-8 text-center shadow-2xl shadow-black/60"
+        style={
+          {
+            "--celebration-ms": `${ms}ms`,
+            background: "linear-gradient(170deg, #1E2A24, #15191D 70%)",
+          } as CSSProperties
+        }
+        className="celebration-pop relative flex w-[min(86%,440px)] flex-col items-center gap-3 rounded-[28px] border border-gold/50 px-6 py-7 text-center shadow-[0_30px_80px_rgba(0,0,0,0.6)]"
       >
         {children}
       </div>
@@ -41,7 +46,7 @@ export function Celebration({
   );
 }
 
-const CONFETTI_COLOURS = ["#fcd34d", "#f472b6", "#60a5fa", "#34d399", "#f87171", "#c084fc"];
+const CONFETTI_COLOURS = ["#F2C14E", "#4ADE9B", "#E9795B", "#8FB8E8", "#D6A6F0", "#F7F5EE"];
 export const CONFETTI_PIECES = 80;
 
 /**
@@ -92,5 +97,52 @@ function Confetti(): React.ReactElement {
         />
       ))}
     </div>
+  );
+}
+
+/**
+ * What every celebration says, laid out the same way: an icon on a tile of its
+ * color, the title in gold, who it is about, and a line on what it means.
+ */
+export function CelebrationCard({
+  icon,
+  color,
+  title,
+  headline,
+  line,
+}: {
+  /** An SVG path on a 24-unit grid, stroked. */
+  readonly icon: string;
+  readonly color: string;
+  readonly title: string;
+  readonly headline: string;
+  readonly line?: string;
+}): React.ReactElement {
+  return (
+    <>
+      <span
+        aria-hidden="true"
+        className="flex size-[76px] items-center justify-center rounded-[23px]"
+        style={{ background: `${color}2E`, color }}
+      >
+        <svg
+          width="40"
+          height="40"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d={icon} />
+        </svg>
+      </span>
+      <p className="m-0 font-display text-[34px] font-bold tracking-[-0.02em] text-gold-soft">
+        {title}
+      </p>
+      <p className="m-0 text-lg font-semibold text-ink">{headline}</p>
+      {line && <p className="m-0 text-sm leading-normal text-ink-soft">{line}</p>}
+    </>
   );
 }

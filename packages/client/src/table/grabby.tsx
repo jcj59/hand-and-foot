@@ -10,7 +10,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { RoomInfo } from "@hf/shared";
 import { faceOf } from "../profile/avatarStore";
-import { Celebration } from "./Celebration";
+import { Celebration, CelebrationCard } from "./Celebration";
 
 /** The holder's name at the table, while they hold the title: until someone else takes it, or the round ends. */
 export const GRABBY_NAME = "Grabby Pants";
@@ -168,15 +168,24 @@ export function useUnlockSpeech(): void {
 }
 
 /** The big announcement, over the table. */
+/** A hand reaching to grab, as the design's announcement draws it. */
+const GRAB_ICON =
+  "M7 11V6a1.5 1.5 0 0 1 3 0v5M10 10V4.5a1.5 1.5 0 0 1 3 0V10M13 10V5.5a1.5 1.5 0 0 1 3 0V12M16 9.5a1.5 1.5 0 0 1 3 0V14a7 7 0 0 1-7 7h-1a6 6 0 0 1-5-3l-2.5-4.5a1.5 1.5 0 0 1 2.6-1.5L7 13";
+
 export function GrabbyAnnouncement({
   headline,
 }: {
   readonly headline: string;
 }): React.ReactElement {
   return (
-    <Celebration label="Grabby Pants" ms={GRABBY_MS}>
-      <GrabbyIcon className="h-28 w-28" />
-      <p className="text-2xl font-extrabold tracking-wide text-amber-200 sm:text-3xl">{headline}</p>
+    <Celebration label="Grabby Pants" ms={GRABBY_MS} confetti>
+      <CelebrationCard
+        icon={GRAB_ICON}
+        color="#F2C14E"
+        title="Grabby Pants"
+        headline={headline}
+        line="Three pile pickups in a row. The name stays until someone else takes it or the round ends."
+      />
     </Celebration>
   );
 }

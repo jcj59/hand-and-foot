@@ -933,6 +933,31 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   at sitting down), `null` puts back the drawn picture; the device keeps the new name and picture.
   The page behind the join flow at `/room/<code>` is the charcoal page, not felt. Harness:
   `LOBBY_GUEST=1`. Mutation-tested: 8/8 server guards killed.
+  **The table (redesign 5, all of 5a to 5d in one PR):** `TableView` lays out the canvas's
+  rows 4 to 6. `TableHeader` is the bar: "Round n of N" over "<min> to get down", the turn
+  clock as a pill (`TurnClock`, only for the player's own turn or a pause; another player's
+  time is on their seat via `useRemaining`), React, and on a phone a trophy (`ScoresPanel` in a
+  `Sheet`) and the menu, which holds Pause, How to play, Sound (phone), turn notifications
+  (computer) and "Go to the main menu" (aria "Main menu" is the menu button now). Other players
+  are `OpponentStrip` chips on a phone (sheet of their melds on felt) and `Seats` boxes on a
+  computer (chips, Expand for cards); both use `seatLine` ("Playing · 0:41", "Foot · 9",
+  "Reconnecting") and `BookMarkers`, and show nobody playing once a result is up. The felt holds
+  the piles, the latest move as a pill (`moveLine`; the side panel keeps the last
+  `MOVES_KEPT` 3 via `withMove`), banners (last lap, pile debt, books to go out), the
+  `StagingPanel` (points bar, gold ring where wilds go, scrolls itself into view) and
+  `MeldsPanel` (sort Rank/Newest, per device `hf.meldOrder`; Collapse `hf.compactMelds`; the
+  go-out tracker `goOutProgress` in the foot). `Melds` fans small cards with a note
+  (`meldView`: `sortMelds`, `meldNote`, `meldChip`, `booksOf`); books are no longer collapsed
+  to one card. "Newest first" is `PlayerState.melds` reversed, which the engine keeps in laid
+  order (pinned in `reducer.meldorder.test.ts`). The card's choices (`CardMenu`) are a sheet on
+  a phone and a popover on a computer; a risky discard (`discardWarning`: a wild, a rank another
+  player has down, or one that fits the player's own meld) is said up front and the button reads
+  "Discard anyway" (no second confirmation). `RoundResult` is a bottom sheet between rounds
+  (ranked rows with counts per column on a computer, the recap, `readiness` sentence, "I'm ready
+  for round n" with aria "Next round", Save for later, Leave with aria "Back to the main screen",
+  Look at the table) and a centered card at match end (winner, awards with `AwardIcon`); the old
+  drag handle is gone. Celebrations use `CelebrationCard`. Faces of computers are `BotFace` via
+  `PlayerFace`. Mutation-tested: 12/12 over `meldView`, `moveLine`, `discardWarning`.
   **Practice (redesign 4):** `home/PracticeSheet.tsx`, also at `/practice` (closing goes home).
   New table without Mode (always family) and without empty seats: a computer stepper
   (`PRACTICE_BOTS` 1 to 7) and a chip per computer opening `BotEditor` (no Remove: the stepper

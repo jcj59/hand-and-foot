@@ -163,7 +163,7 @@ describe("celebrating the Marva Rule", () => {
     const { container } = render(<MarvaCelebration news={{ seq: 1, name: "Ben" }} />);
     const panel = screen.getByRole("status", { name: "Marva Rule" });
     expect(panel).toHaveTextContent("Marva Rule");
-    expect(panel).toHaveTextContent("Ben got down by emptying the hand");
+    expect(panel).toHaveTextContent("Ben got down with the Marva Rule");
     expect(container.querySelectorAll(".confetti-piece")).toHaveLength(CONFETTI_PIECES);
   });
 

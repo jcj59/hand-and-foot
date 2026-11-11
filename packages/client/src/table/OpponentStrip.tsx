@@ -1,48 +1,88 @@
 /**
- * The other players on a phone: one chip each, in a row that scrolls sideways,
- * so six opponents take no more height than one.
+ * The other players on a phone: one chip each, side by side (scrolling sideways
+ * past three), so the table keeps its height for the cards.
  *
- * A chip carries what a player glances at between turns — who, whether they are
- * here, how many cards they hold and whether that is their foot, and how many
- * books they have and of which kind. Their melds in full are one tap away, in a
- * sheet over the table; laid out inline they would push the player's own cards
- * off the screen.
+ * A chip carries what a player glances at between turns: who, whether it is
+ * their turn and how long they have, whether they dropped, how many cards they
+ * hold and whether that is their foot, and a marker per book (gold for clean,
+ * silver for dirty). Their melds in full are one tap away, in a sheet over the
+ * table, sorted the same way as the player's own.
  *
- * As with `Seats`, there is nothing here that could leak: the server sends
- * opponents as counts and melds, never cards in hand.
+ * Nothing here could leak: the server sends opponents as counts and melds, never
+ * cards in hand.
  */
 import { useEffect, useRef, useState } from "react";
-import type { Avatar, OpponentView, Reaction, RoomInfo, RulesConfig } from "@hf/shared";
-import { classifyBook } from "@hf/engine";
+import { createPortal } from "react-dom";
+import type { ClockState, OpponentView, Reaction, RoomInfo, RoomPlayerInfo } from "@hf/shared";
+import { Icon } from "../ui/icons";
+import { faceOf } from "../profile/avatarStore";
 import { GrabbyIcon } from "./grabby";
 import { Melds } from "./Melds";
+import { booksOf, type MeldOrder } from "./meldView";
+import { PlayerFace } from "./PlayerFace";
 import { ReactionBubble } from "./reactions";
-import { AvatarFace } from "../profile/Avatar";
-import { faceOf } from "../profile/avatarStore";
+import { useRemaining } from "./TurnClock";
 
 export interface OpponentStripProps {
   readonly opponents: readonly OpponentView[];
   readonly room: RoomInfo;
-  readonly config: RulesConfig;
   readonly seatToAct: number;
+  readonly clock: ClockState;
+  readonly order: MeldOrder;
   /** A quick reaction to show by each seat that has one up. */
   readonly reactions?: ReadonlyMap<number, Reaction>;
+}
+
+/** What a seat is doing, in the few words under its name. */
+export function seatLine(
+  opponent: OpponentView,
+  info: RoomPlayerInfo | undefined,
+  onTurn: boolean,
+  remaining: string | null,
+): { readonly text: string; readonly tone: "turn" | "warn" | "plain" } {
+  if (info && !info.bot && !info.connected) return { text: "Reconnecting", tone: "warn" };
+  if (onTurn) return { text: remaining ? `Playing · ${remaining}` : "Playing", tone: "turn" };
+  return {
+    text: opponent.inFoot ? `Foot · ${opponent.footCount}` : `${opponent.handCount} in hand`,
+    tone: "plain",
+  };
+}
+
+export const LINE_COLOR = { turn: "text-gold", warn: "text-salmon", plain: "text-ink/70" } as const;
+
+/** One marker per book, as the chips and seat boxes show them. */
+export function BookMarkers({
+  books,
+}: {
+  readonly books: readonly ("clean" | "dirty")[];
+}): React.ReactElement {
+  return (
+    <span aria-hidden="true" className="flex min-h-[13px] gap-[3px]">
+      {books.map((kind, i) => (
+        <span
+          key={i}
+          className={`h-[13px] w-2.5 rounded-[3px] ${
+            kind === "clean" ? "bg-gold shadow-[inset_0_0_0_1px_#FFE29A]" : "bg-ink-soft"
+          }`}
+        />
+      ))}
+    </span>
+  );
 }
 
 export function OpponentStrip({
   opponents,
   room,
-  config,
   seatToAct,
+  clock,
+  order,
   reactions,
 }: OpponentStripProps): React.ReactElement {
   const [open, setOpen] = useState<number | null>(null);
-  const nameOf = (seat: number): string =>
-    room.players.find((p) => p.seat === seat)?.name ?? `Seat ${seat}`;
-  const faceAt = (seat: number): Avatar | undefined => {
-    const player = room.players.find((p) => p.seat === seat);
-    return player && faceOf(player);
-  };
+  const remaining = useRemaining(clock);
+  const infoOf = (seat: number): RoomPlayerInfo | undefined =>
+    room.players.find((p) => p.seat === seat);
+  const nameOf = (seat: number): string => infoOf(seat)?.name ?? `Seat ${seat}`;
   const shown = opponents.find((o) => o.seat === open) ?? null;
   const closeRef = useRef<HTMLButtonElement>(null);
   const showing = shown !== null;
@@ -59,18 +99,25 @@ export function OpponentStrip({
 
   return (
     <>
-      <ul aria-label="Other players" className="-mx-2 flex gap-2 overflow-x-auto px-2 pb-1">
+      <ul
+        aria-label="Other players"
+        className="m-0 flex list-none gap-1.5 overflow-x-auto px-3 pt-3.5 pb-0.5"
+      >
         {opponents.map((opponent) => {
-          const connected = room.players.find((p) => p.seat === opponent.seat)?.connected;
-          const bot = room.players.find((p) => p.seat === opponent.seat)?.bot;
+          const info = infoOf(opponent.seat);
           const onTurn = opponent.seat === seatToAct;
-          const books = opponent.melds.map(classifyBook).filter((kind) => kind !== "incomplete");
-          const clean = books.filter((kind) => kind === "clean").length;
-          const held = opponent.inFoot ? opponent.footCount : opponent.handCount;
+          const books = booksOf(opponent.melds);
+          const line = seatLine(
+            opponent,
+            info,
+            onTurn,
+            clock.deadlineAt === null ? null : remaining,
+          );
+          const grabby = room.grabbyPants?.seat === opponent.seat;
           return (
             <li
               key={opponent.seat}
-              className="relative shrink-0"
+              className="relative min-w-[108px] flex-1"
               data-anchor={`seat-${opponent.seat}`}
               data-zone="seat"
             >
@@ -78,67 +125,29 @@ export function OpponentStrip({
                 <ReactionBubble
                   reaction={reactions.get(opponent.seat)!}
                   name={nameOf(opponent.seat)}
-                  avatar={faceAt(opponent.seat)}
+                  avatar={info && faceOf(info)}
                 />
               )}
               <button
                 type="button"
-                aria-label={chipLabel(nameOf(opponent.seat), opponent, onTurn, clean, books.length)}
+                aria-label={chipLabel(nameOf(opponent.seat), opponent, onTurn, books)}
                 onClick={() => setOpen(opponent.seat)}
-                className={`flex max-w-44 min-w-28 flex-col gap-0.5 rounded border px-2 py-1 text-left ${
-                  onTurn ? "border-amber-300 bg-amber-300/15" : "border-white/15 bg-black/25"
-                }`}
+                className={`flex h-full w-full items-center gap-1.5 rounded-xl border bg-white/5 px-1.5 py-[7px] text-left ${
+                  onTurn ? "border-gold ring-1 ring-gold" : "border-white/6"
+                } ${line.tone === "warn" ? "opacity-55" : ""}`}
               >
-                <span className="flex items-center gap-1.5">
-                  <span
-                    aria-hidden="true"
-                    className={`h-2 w-2 shrink-0 rounded-full ${
-                      bot ? "bg-sky-300" : connected ? "bg-emerald-400" : "bg-red-400"
-                    }`}
-                  />
-                  {faceAt(opponent.seat) && (
-                    <AvatarFace avatar={faceAt(opponent.seat)!} size={18} />
-                  )}
-                  {room.grabbyPants?.seat === opponent.seat && (
-                    <GrabbyIcon className="h-4 w-4 shrink-0" />
-                  )}
-                  <span className="truncate text-sm font-medium">{nameOf(opponent.seat)}</span>
-                </span>
-                <span className="flex items-center gap-1.5 text-xs text-white/70">
-                  <span>
-                    {held} card{held === 1 ? "" : "s"}
+                <PlayerFace player={info} size={30} />
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-1">
+                    {grabby && <GrabbyIcon className="h-3.5 w-3.5 shrink-0" />}
+                    <span className="truncate text-xs font-semibold">{nameOf(opponent.seat)}</span>
                   </span>
-                  {opponent.inFoot && (
-                    <span className="rounded bg-sky-400/25 px-1 text-[10px] font-semibold text-sky-100">
-                      FOOT
-                    </span>
-                  )}
-                </span>
-                <span className="flex items-center gap-1 text-xs text-white/60">
-                  {books.length === 0 ? (
-                    opponent.isDown ? (
-                      "down"
-                    ) : (
-                      "not down"
-                    )
-                  ) : (
-                    <>
-                      {books.map((kind, i) => (
-                        <span
-                          key={i}
-                          aria-hidden="true"
-                          className={`h-2.5 w-2 rounded-sm border ${
-                            kind === "clean"
-                              ? "border-red-300 bg-red-500"
-                              : "border-white/50 bg-neutral-900"
-                          }`}
-                        />
-                      ))}
-                      <span className="ml-0.5">
-                        {books.length} book{books.length === 1 ? "" : "s"}
-                      </span>
-                    </>
-                  )}
+                  <span className={`block text-[11px] leading-tight ${LINE_COLOR[line.tone]}`}>
+                    {line.text}
+                  </span>
+                  <span className="mt-[3px] block">
+                    <BookMarkers books={books} />
+                  </span>
                 </span>
               </button>
             </li>
@@ -146,59 +155,76 @@ export function OpponentStrip({
         })}
       </ul>
 
-      {shown && (
-        <div
-          className="fixed inset-0 z-40 flex items-end bg-black/50"
-          onClick={() => setOpen(null)}
-        >
+      {shown &&
+        createPortal(
           <div
-            role="dialog"
-            aria-modal="true"
-            aria-label={`${nameOf(shown.seat)}'s melds`}
-            onClick={(event) => event.stopPropagation()}
-            className="max-h-[70%] w-full overflow-y-auto rounded-t-xl border-t border-white/15 bg-felt-900 p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]"
+            className="fixed inset-0 z-40 flex items-end bg-[rgba(6,10,12,0.5)] text-ink"
+            onClick={() => setOpen(null)}
           >
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="font-semibold">{nameOf(shown.seat)}</h2>
-              <button
-                ref={closeRef}
-                type="button"
-                onClick={() => setOpen(null)}
-                className="rounded border border-white/25 px-3 py-1 text-sm"
-              >
-                Close
-              </button>
-            </div>
-            <p className="mb-3 text-sm text-white/70">
-              {shown.inFoot
-                ? `Playing from the foot, ${shown.footCount} cards left.`
-                : `${shown.handCount} cards in hand, ${shown.footCount} in the foot.`}
-            </p>
-            <Melds melds={shown.melds} config={config} compact />
-          </div>
-        </div>
-      )}
+            <section
+              role="dialog"
+              aria-modal="true"
+              aria-label={`${nameOf(shown.seat)}'s melds`}
+              onClick={(event) => event.stopPropagation()}
+              className="flex max-h-[70%] w-full flex-col gap-3 overflow-y-auto rounded-t-3xl px-4 pt-3.5 pb-[calc(1.6rem+env(safe-area-inset-bottom,0px))]"
+              style={{ background: FELT_TOP }}
+            >
+              <div className="flex items-center gap-2.5">
+                <PlayerFace player={infoOf(shown.seat)} size={36} />
+                <div className="min-w-0 flex-1">
+                  <h2 className="m-0 font-display text-base font-semibold">
+                    {nameOf(shown.seat)}&rsquo;s melds
+                  </h2>
+                  <p className="m-0 text-xs text-ink/75">
+                    {shown.inFoot
+                      ? `In the foot · ${shown.footCount} cards`
+                      : `${shown.handCount} cards in hand · ${shown.footCount} in the foot`}
+                  </p>
+                </div>
+                <button
+                  ref={closeRef}
+                  type="button"
+                  aria-label="Close"
+                  onClick={() => setOpen(null)}
+                  className="flex size-10 items-center justify-center rounded-xl bg-black/30"
+                >
+                  <Icon name="close" size={16} />
+                </button>
+              </div>
+              {shown.melds.length === 0 ? (
+                <p className="m-0 text-sm text-ink/75">Not down yet.</p>
+              ) : (
+                <Melds melds={shown.melds} order={order} rows />
+              )}
+              <p className="m-0 text-xs text-ink/70">Sorted the same way as your own melds.</p>
+            </section>
+          </div>,
+          document.body,
+        )}
     </>
   );
 }
+
+/** The felt, lit from the top: a sheet that comes up out of the table. */
+export const FELT_TOP = "radial-gradient(ellipse at 50% 0%, #2C6B53, #1A4535 70%, #143629)";
 
 function chipLabel(
   name: string,
   opponent: OpponentView,
   onTurn: boolean,
-  clean: number,
-  books: number,
+  books: readonly ("clean" | "dirty")[],
 ): string {
+  const clean = books.filter((kind) => kind === "clean").length;
   const parts = [
     name,
     opponent.inFoot
       ? `${opponent.footCount} in foot, playing from it`
       : `${opponent.handCount} in hand`,
-    books === 0
+    books.length === 0
       ? opponent.isDown
         ? "down"
         : "not down"
-      : `${books} book${books === 1 ? "" : "s"}, ${clean} clean`,
+      : `${books.length} book${books.length === 1 ? "" : "s"}, ${clean} clean`,
   ];
   if (onTurn) parts.push("to play");
   return parts.join(", ");
