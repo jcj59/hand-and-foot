@@ -24,9 +24,9 @@ import { normalizeRoomCode } from "../roomCode";
 import { loadSavedGames, type SavedGame } from "../savedGames";
 import { loadRulesChoice, rememberRulesChoice, type RulesChoice } from "../rules/customRules";
 import { useSession } from "../session";
-import { serverUrl, type HfClientSocket } from "../socket";
+import { type HfClientSocket } from "../socket";
 import {
-  httpPost,
+  serverPost,
   loadAccount,
   loadIdentity,
   loadName,
@@ -58,7 +58,7 @@ export interface HomeProps {
 
 type Open = "new" | "join" | null;
 
-export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React.ReactElement {
+export function Home({ socket, post = serverPost() }: HomeProps): React.ReactElement {
   const navigate = useNavigate();
   const { roomId: fromLink } = useParams<{ roomId?: string }>();
   const seat = useSession((s) => s.seat);
