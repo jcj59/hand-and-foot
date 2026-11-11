@@ -9,6 +9,7 @@
  * an identity the server says belongs to someone else is replaced by a new one, and
  * a server that cannot be reached means sitting down without one this time.
  */
+import { serverUrl } from "./socket";
 import {
   CLAIM_PATH,
   IDENTITY_TAKEN,
@@ -144,6 +145,19 @@ export function httpPost(base: string): Post {
     });
     return (await response.json()) as Ack<unknown>;
   };
+}
+
+let pagePost: Post | undefined;
+
+/**
+ * Posts to this page's own server, as one function for the page's whole life. A
+ * component must default its `post` prop to this, never to a fresh `httpPost(...)`:
+ * an effect keyed on `post` would then see a new function on every render, and one
+ * that sets state from the answer refetches forever. One open home screen doing that
+ * spent the Workers free plan's daily Durable Object requests in under two hours.
+ */
+export function serverPost(): Post {
+  return (pagePost ??= httpPost(serverUrl()));
 }
 
 /**

@@ -14,10 +14,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { MATCH_PATH, type ReplayMatch } from "@hf/shared";
 import { buildTimeline, type Timeline } from "@hf/engine";
-import { httpPost, loadIdentity, type Post } from "../identity";
+import { serverPost, loadIdentity, type Post } from "../identity";
 import { formatLink, parseLink, stepFor } from "../playback/link";
 import { Player } from "../playback/Player";
-import { serverUrl } from "../socket";
 
 export interface ReplayProps {
   /** How the match is asked for; the page's own origin unless a test answers it. */
@@ -50,7 +49,7 @@ export function timelineOf(match: ReplayMatch): Timeline {
   });
 }
 
-export function Replay({ post = httpPost(serverUrl()) }: ReplayProps): React.ReactElement {
+export function Replay({ post = serverPost() }: ReplayProps): React.ReactElement {
   const { matchId = "" } = useParams();
   const navigate = useNavigate();
   const { hash } = useLocation();
