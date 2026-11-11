@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import type { Ack } from "@hf/shared";
 import { CREDENTIALS_KEY } from "../credentials";
 import { createServerClock } from "../serverTime";
@@ -843,6 +843,45 @@ describe("practice", () => {
     fireEvent.click(within(openPractice()).getByRole("button", { name: "Deal me in" }));
     await waitFor(() => expect(landed()).toBe("/room/ZZZ999"));
     expect(useSession.getState().notice).toBe("the table needs at least 2 players");
+  });
+
+  it("does not deal when a computer could not sit down, leaving the notice in the waiting room", async () => {
+    window.localStorage.setItem(NAME_KEY, "ana");
+    const { socket, sent } = fakeSocket([
+      { ok: true, data: { roomId: "ZZZ999", seat: 0, token: "t" } },
+      { ok: true, data: undefined },
+      { ok: false, error: "the table is full" },
+    ]);
+    const { landed } = mount(socket);
+    fireEvent.click(within(openPractice()).getByRole("button", { name: "Deal me in" }));
+    await waitFor(() => expect(landed()).toBe("/room/ZZZ999"));
+    expect(sent.map((s) => s.event)).toEqual(["createRoom", "addBot", "addBot"]);
+    expect(useSession.getState().notice).toBe("the table is full");
+  });
+
+  it("opens when the app moves to its address from the home screen", () => {
+    let go: (path: string) => void = () => {};
+    function Mover(): null {
+      const navigate = useNavigate();
+      go = (path) => navigate(path);
+      return null;
+    }
+    const socket = fakeSocket().socket;
+    const post = fakeUsers();
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="/" element={<Home socket={socket} post={post} />} />
+          <Route path="/practice" element={<Home socket={socket} post={post} />} />
+        </Routes>
+        <Mover />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+    act(() => go("/practice"));
+    expect(screen.getByRole("dialog", { name: "Practice" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("opens from its own address, and closing it goes home", () => {

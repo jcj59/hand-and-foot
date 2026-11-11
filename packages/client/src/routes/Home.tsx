@@ -79,7 +79,8 @@ export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React
   const held = stored && !savedGames.some((g) => g.roomId === stored.roomId) ? stored : null;
 
   // From a shared link the code is known: straight to joining.
-  const [open, setOpen] = useState<Open>(fromLink ? "join" : atPractice ? "practice" : null);
+  const [chosen, setOpen] = useState<Open>(fromLink ? "join" : null);
+  const open: Open = atPractice ? "practice" : chosen;
   // The name this player went by last time, ready to use again or change.
   const [name, setName] = useState(loadName);
   // The picture this device chose, if any; changed here, kept at once.
@@ -157,14 +158,24 @@ export function Home({ socket, post = httpPost(serverUrl()) }: HomeProps): React
       if (kind === "new") rememberRulesChoice(choice);
       if (kind === "practice") rememberPractice(practice);
       // The computers asked for, seated in order as the host would in the waiting
-      // room; one refused leaves a notice there and the rest still sit down.
-      if (kind !== "join") {
-        const seated = kind === "practice" ? practice.bots : bots;
-        for (const bot of seated) await addComputerPlayer(socket, sink, botSettings(bot));
+      // room. At a new table one refused leaves a notice there and the rest still
+      // sit down.
+      if (kind === "new") {
+        for (const bot of bots) await addComputerPlayer(socket, sink, botSettings(bot));
       }
-      // Practice deals at once. A refusal (a computer that could not sit down)
-      // leaves the notice in the waiting room, where the host can deal by hand.
-      if (kind === "practice") await startTable(socket, sink);
+      // Practice deals at once, but only with every computer asked for: one that
+      // could not sit down, or a refused deal, leaves the notice in the waiting
+      // room, where the host can fix the seats and deal by hand.
+      if (kind === "practice") {
+        let seatedAll = true;
+        for (const bot of practice.bots) {
+          if (!(await addComputerPlayer(socket, sink, botSettings(bot)))) {
+            seatedAll = false;
+            break;
+          }
+        }
+        if (seatedAll) await startTable(socket, sink);
+      }
       navigate(`/room/${roomId}`);
     } finally {
       // Cleared even on refusal, so a wrong code can be corrected and retried.
