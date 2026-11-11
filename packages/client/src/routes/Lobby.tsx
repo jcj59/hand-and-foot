@@ -9,6 +9,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { MAX_PLAYERS, MIN_PLAYERS } from "@hf/shared";
+import { QrCode } from "../ui/QrCode";
 import { AvatarFace } from "../profile/Avatar";
 import { faceOf } from "../profile/avatarStore";
 import {
@@ -93,6 +94,12 @@ export function Lobby({ socket }: LobbyProps): React.ReactElement {
           >
             {copied ? "Copied" : "Copy"}
           </button>
+        </div>
+        <div className="flex items-center gap-3">
+          <QrCode value={link} label={`QR code to join table ${room.roomId}`} size={132} />
+          <p className="text-xs text-white/60">
+            Or scan this with a phone&rsquo;s camera to come to the table.
+          </p>
         </div>
         <label className="flex flex-col gap-1 text-xs text-white/60">
           To watch without playing — every hand stays hidden:

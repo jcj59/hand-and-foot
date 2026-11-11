@@ -43,3 +43,24 @@ export function roomLink(roomId: string, origin: string): string {
 export function watchLink(roomId: string, origin: string): string {
   return `${origin.replace(/\/+$/, "")}/watch/${normalizeRoomCode(roomId)}`;
 }
+
+/**
+ * The table code in something a camera read: the table's own link (as its QR code
+ * holds it, `/room/<code>` or `/join/<code>`, on any origin), or a bare code. Null
+ * for anything else, so a stray QR code — a menu, a Wi-Fi password — is ignored
+ * rather than typed into the boxes.
+ */
+export function codeFromScan(text: string): string | null {
+  // No trimming needed: the URL parser drops surrounding spaces, and so does
+  // normalizing a bare code.
+  let candidate = text;
+  try {
+    const url = new URL(text);
+    const match = /^\/(?:room|join)\/([^/]+)\/?$/i.exec(url.pathname);
+    if (!match) return null;
+    candidate = decodeURIComponent(match[1]!);
+  } catch {
+    // Not a URL: perhaps the code itself.
+  }
+  return isPossibleRoomCode(candidate) ? normalizeRoomCode(candidate) : null;
+}

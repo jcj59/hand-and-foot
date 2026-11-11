@@ -177,7 +177,14 @@ describe("routing", () => {
 
   it("offers the join form to a visitor arriving at a table with no seat", () => {
     mount(fakeSocket().socket, "/room/abc234");
-    expect(screen.getByLabelText(/table code/i)).toHaveValue("ABC234");
+    const join = screen.getByRole("dialog", { name: "Join a table" });
+    expect(join).toHaveTextContent("Table ABC234");
+    expect(within(join).getByRole("button", { name: "Join table" })).toBeInTheDocument();
+  });
+
+  it("takes a join link to the same place", () => {
+    mount(fakeSocket().socket, "/join/abc234");
+    expect(screen.getByRole("dialog", { name: "Join a table" })).toHaveTextContent("Table ABC234");
   });
 
   it("shows the lobby once seated at a table that has not dealt", () => {

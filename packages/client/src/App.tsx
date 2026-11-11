@@ -6,7 +6,7 @@
  * server injects its `Clock`.
  */
 import { useEffect, useRef, useState } from "react";
-import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import { CARRIED_ON_WITHOUT_YOU } from "@hf/shared";
 import { followRematch, leaveOnClose, reclaimOnReconnect, reclaimSeat } from "./actions";
 import { ConnectionBanner } from "./ConnectionBanner";
@@ -124,12 +124,20 @@ export function App({ socket }: AppProps): React.ReactElement {
             <Route path="/learn/:lessonId" element={<LessonPage />} />
             <Route path="/replay/:matchId" element={<Replay />} />
           </Route>
+          {/* A join link: the table's own page, which offers a seat to anyone without one. */}
+          <Route path="/join/:roomId" element={<JoinLink />} />
           {/* Anything else is a mistyped or stale URL; the home screen is recoverable. */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
     </div>
   );
+}
+
+/** `/join/<code>` is `/room/<code>` by another name: the table, or the way to a seat at it. */
+function JoinLink(): React.ReactElement {
+  const { roomId = "" } = useParams<{ roomId: string }>();
+  return <Navigate to={`/room/${encodeURIComponent(roomId)}`} replace />;
 }
 
 /**
