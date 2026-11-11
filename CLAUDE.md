@@ -720,7 +720,8 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   Deterministic, no rng. Wilds: never on a clean book or on the clean meld nearest a book while a
   clean book is still owed; spent from the hand only to complete a book; from the foot also onto a
   *spare* clean book (more clean books than going out needs, too few dirty), then the unfinished
-  meld nearest seven, then a dirty book. The spare-clean rule exists because without it a seat
+  meld nearest seven, then a dirty book (since the finished-book rule below, only a book the same
+  play completes: no wild ever goes on a book already down). The spare-clean rule exists because without it a seat
   melded seven clean books, ran out of cards for a dirty one, and drew and discarded threes forever.
   `arena.ts` has `playMatch(policies, config, seed, roundActionLimit)` (a seat per policy,
   `nextRound` dealt as the table would, **throws** on a refused or missing move, calls a round
@@ -1106,6 +1107,19 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   smaller table from the next deal; the seat keeps its number, its scores stay on the board marked
   as having left, and it does not count for the win. A competitive match keeps the leaver in,
   played for by the default. Don't renumber seats to close the gap — see DESIGN.md.
+- **A finished book takes no wild (redesign plan's rules fix, 2026-11-10).** Once a meld has
+  seven cards its kind is settled: `applyPlayMelds` refuses any wild onto a meld that was a
+  book before the play ("a finished book cannot take a wild card"), clean or dirty, black
+  threes included; naturals still go on, and a play that completes a book may use wilds within
+  the ratio. `isFinishedBook`/`BOOK_SIZE` in `meld.ts`; `plan.ts`'s `accepts` (so
+  `greedyLayDown`, `canTakePile` and the pile's own wild) and the heuristic's `placeWilds`
+  (`closed` ranks) never put a wild on one; the client's `previewLayDown` gives the same reason.
+  The heuristic's spare-clean-book tactic now applies only to a book its own play completes.
+  Measured (`pnpm bot:measure`, 500 per row, East Coast, same seeds): heuristic vs default
+  98.9 / 96.4 / 87.5% at 2 / 3 / 4 seats (before 99.5 / 97.2 / 88.0); self-play rounds ended
+  5,997 of 5,998 (before 5,994 of 5,996). West Coast moves the same way. Tests in
+  `reducer.bookwild.test.ts` (play and take-pile) and `staging.test.ts`; mutation: 12/12 killed
+  over the guards in `playMelds.ts`, `meld.ts`, `plan.ts`, `policy.ts` and `staging.ts`.
 - **Shedding every card is not going out.** A player may legally play or discard their last foot card
   without the go-out books; they keep no cards, the round continues, and they draw one card per turn
   until the books are complete. So `player.hand.length + player.foot.length === 0` does **not** mean

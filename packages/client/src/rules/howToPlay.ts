@@ -73,14 +73,14 @@ export function howToPlay(config: RulesConfig): readonly RulesSection[] {
       title: "Melds and books",
       paragraphs: [
         "A meld is three or more cards of one rank; there are no runs. You keep one meld per rank and add to it as you go.",
-        "A meld of seven or more is a book. A book with no wilds is clean; one with any wild is dirty.",
+        "A meld of seven or more is a book. A book with no wilds is clean; one with any wild is dirty. Once a meld is a book its kind is settled: you can add more naturals to it, but never a wild.",
       ],
     },
     {
       id: "wilds",
       title: "Wild cards",
       paragraphs: [
-        `Twos and jokers are wild and can stand in for any rank in a meld, but ${ratio}. A meld can never be made of wilds alone.`,
+        `Twos and jokers are wild and can stand in for any rank in a meld, but ${ratio}. A meld can never be made of wilds alone. A wild can help a meld become a book, but once it is a book no wild can be added to it.`,
       ],
     },
     {

@@ -283,6 +283,52 @@ describe("whether it would be accepted", () => {
     expect(west.groups[0].problem).toBeNull();
   });
 
+  it("refuses a wild aimed at a finished book, as the reducer does", () => {
+    const book = cards("K", 7);
+    const wild = card("2");
+    const result = preview({
+      staging: stageCard(focusGroup(EMPTY_STAGING, "K"), wild),
+      zone: [wild, card("9")],
+      melds: [{ rank: "K", cards: book }],
+      isDown: true,
+    });
+    expect(result.groups[0].problem).toBe("a finished book cannot take a wild card");
+    expect(result.ok).toBe(false);
+  });
+
+  it("refuses a natural and a wild together on a finished book", () => {
+    const book = cards("K", 7);
+    const king = card("K", "hearts");
+    const wild = card("2");
+    const result = preview({
+      staging: stageCard(stageCard(EMPTY_STAGING, king), wild),
+      zone: [king, wild, card("9")],
+      melds: [{ rank: "K", cards: book }],
+      isDown: true,
+    });
+    expect(result.groups[0].problem).toBe("a finished book cannot take a wild card");
+  });
+
+  it("lets a wild complete a book, and a natural join one", () => {
+    const six = cards("K", 6);
+    const wild = card("2");
+    const completing = preview({
+      staging: stageCard(focusGroup(EMPTY_STAGING, "K"), wild),
+      zone: [wild, card("9")],
+      melds: [{ rank: "K", cards: six }],
+      isDown: true,
+    });
+    expect(completing.ok).toBe(true);
+    const king = card("K", "hearts");
+    const joining = preview({
+      staging: stageCard(EMPTY_STAGING, king),
+      zone: [king, card("9")],
+      melds: [{ rank: "K", cards: [...six, card("K", "spades")] }],
+      isDown: true,
+    });
+    expect(joining.ok).toBe(true);
+  });
+
   it("refuses black threes from the hand", () => {
     const threes = cards("3", 7, "spades");
     const result = preview({ staging: stageAll(threes), zone: threes, isDown: true });

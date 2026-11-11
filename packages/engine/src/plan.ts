@@ -8,7 +8,7 @@ import {
   isRedThree,
   isWild,
 } from "@hf/shared";
-import { validateMeld } from "./meld";
+import { isFinishedBook, validateMeld } from "./meld";
 import { cardValue, classifyBook } from "./scoring";
 
 export interface LayDown {
@@ -160,7 +160,10 @@ export function greedyLayDown(
     if (!groups.includes(g)) groups.push(g);
     g.wilds.push(wild);
   };
+  // A book already down is closed to wilds (see `applyPlayMelds`), however many
+  // naturals the plan adds to it.
   const accepts = (g: Group, extraWild: Card, extraNaturals: readonly Card[] = []): boolean =>
+    !isFinishedBook(g.existing) &&
     validateMeld([...g.existing, ...g.naturals, ...extraNaturals, ...g.wilds, extraWild], config)
       .valid;
 

@@ -762,7 +762,8 @@ is how a player takes the pile; from the foot, when a held wild is only a penalt
 spends them all. One exception was found by watching it fail: a seat that had built more clean books
 than going out needs, and could no longer find the cards for a dirty one, drew and discarded threes
 indefinitely. So a spare clean book is given a wild when a dirty book is missing, trading 200 points
-of bonus for the ability to go out.
+of bonus for the ability to go out. Since the rules close a finished book to wilds, that wild can only
+go on a spare clean book the same play completes; a book already down keeps its kind.
 
 The choices were settled by measurement, not intuition. A small arena plays whole matches
 headlessly with a policy per seat, and a script reports the heuristic's results against the

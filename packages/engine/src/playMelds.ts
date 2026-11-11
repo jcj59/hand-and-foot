@@ -6,6 +6,7 @@ import {
   type Rank,
   isBlackThree,
   isRedThree,
+  isWild,
 } from "@hf/shared";
 import {
   type ApplyResult,
@@ -18,7 +19,7 @@ import {
   updatePlayer,
   withoutTurnBase,
 } from "./core";
-import { naturalRank, validateMeld } from "./meld";
+import { isFinishedBook, naturalRank, validateMeld } from "./meld";
 import { layDownValue } from "./marva";
 import { claimsGoOut } from "./goout";
 import { withTurnBase } from "./takeBack";
@@ -53,6 +54,9 @@ export function applyPlayMelds(state: GameState, plays: readonly MeldPlay[]): Ap
     melds.set(m.rank, [...m.cards]);
   }
 
+  // Books as they stood before this play: closed to wilds, whatever the play adds.
+  const books = new Set(player.melds.filter((m) => isFinishedBook(m.cards)).map((m) => m.rank));
+
   const laid: Card[] = [];
   for (const play of plays) {
     const taken: Card[] = [];
@@ -66,6 +70,9 @@ export function applyPlayMelds(state: GameState, plays: readonly MeldPlay[]): Ap
     }
     if (taken.some(isRedThree)) {
       return fail("red threes can never be melded");
+    }
+    if (books.has(play.rank) && taken.some((c) => isWild(c.rank))) {
+      return fail("a finished book cannot take a wild card");
     }
     laid.push(...taken);
     const combined = [...(melds.get(play.rank) ?? []), ...taken];

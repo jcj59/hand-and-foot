@@ -12,7 +12,7 @@ import {
 } from "@hf/shared";
 import { activeCards } from "./core";
 import { layDownMinimum } from "./feasibility";
-import { validateMeld } from "./meld";
+import { BOOK_SIZE, isFinishedBook, validateMeld } from "./meld";
 import { greedyLayDown } from "./plan";
 import { cardValue, classifyBook } from "./scoring";
 
@@ -148,9 +148,6 @@ export function defaultAction(state: GameState): Action | null {
   return { type: "discard", cardId: card.id };
 }
 
-/** Cards in a book: a meld of this many or more is complete. */
-const BOOK_SIZE = 7;
-
 /**
  * The most red threes a pile may hold for the heuristic to take it. Each one is
  * worth -500 if still held when the round ends, and only one card leaves the
@@ -198,17 +195,18 @@ function wantsPile(view: PlayerView, config: RulesConfig, minimum: number): bool
  * naturals are played. Wilds are the scarcest cards in the game, so they are
  * spent with a purpose rather than as soon as they fit:
  *
+ * - **Never on a book already down**: the rules close a finished book to wilds.
  * - **Never on a clean book**, and never on the seat's best clean prospect while
- *   it still lacks the clean books going out requires — one wild turns a 500
+ *   it still lacks the clean books going out requires: one wild turns a 500
  *   bonus into 300, and can cost the round. The exception is a spare clean book
- *   when a dirty one is missing; see `open` below.
+ *   this very play completes, when a dirty one is missing; see `open` below.
  * - **To complete a book**, in hand or foot: the meld closest to seven that the
  *   wilds in hand can finish within the wild ratio gets as many as it needs.
  * - **Everything else only from the foot.** In the hand a wild is worth more
  *   held, since a natural pair and a wild is how a seat takes the pile; in the
  *   foot the round is closing and a held wild is a 20- or 50-point penalty, so
- *   the rest go one at a time: a spare clean book first, then the unfinished meld
- *   nearest completion, then a dirty book.
+ *   the rest go one at a time: a spare clean book this play completes first, then
+ *   the unfinished meld nearest completion, then a dirty book this play completes.
  *
  * Returns rank → wild cards to add, for `heuristicAction` to merge with the
  * naturals.
@@ -218,6 +216,8 @@ function placeWilds(
   wilds: readonly Card[],
   inFoot: boolean,
   config: RulesConfig,
+  /** Books already down before this play: closed to wilds, as the reducer rules. */
+  closed: ReadonlySet<Rank>,
 ): Map<Rank, Card[]> {
   const added = new Map<Rank, Card[]>();
   const cardsOf = (rank: Rank): Card[] => [...melds.get(rank)!, ...(added.get(rank) ?? [])];
@@ -245,14 +245,13 @@ function placeWilds(
   }
   const guarded = books().clean < config.goOutCleanBooks ? prospect?.rank : undefined;
   /**
-   * Whether a wild may go on this meld. A clean book is closed — unless it is a
-   * spare: more clean books than going out needs, and too few dirty ones. Then one
-   * wild turns it into the dirty book that is missing. Without this a seat can
-   * meld seven clean books, run out of the cards any dirty book could still be
-   * made from, and draw and discard threes forever: a round that never ends.
+   * Whether a wild may go on this meld. A book already down never may (the
+   * reducer refuses it). A clean book this play completes is closed too, unless
+   * it is a spare: more clean books than going out needs, and too few dirty ones.
+   * Then one wild turns it into the dirty book that is missing, while it still can.
    */
   const open = (rank: Rank): boolean => {
-    if (rank === guarded) return false;
+    if (rank === guarded || closed.has(rank)) return false;
     if (classifyBook({ rank, cards: cardsOf(rank) }) !== "clean") return true;
     const { clean, dirty } = books();
     return clean > config.goOutCleanBooks && dirty < config.goOutDirtyBooks;
@@ -389,6 +388,7 @@ function downPlays(zone: readonly Card[], view: PlayerView, config: RulesConfig)
     zone.filter((c) => isWild(c.rank)),
     view.inFoot,
     config,
+    new Set(view.melds.filter((m) => isFinishedBook(m.cards)).map((m) => m.rank)),
   );
 
   const plays = naturals.map((play) => ({

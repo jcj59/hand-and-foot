@@ -48,3 +48,15 @@ export function validateMeld(cards: readonly Card[], config: RulesConfig): MeldV
 export function isValidMeld(cards: readonly Card[], config: RulesConfig): boolean {
   return validateMeld(cards, config).valid;
 }
+
+/** How many cards make a meld a book. */
+export const BOOK_SIZE = 7;
+
+/**
+ * Whether a meld is already a book, and so closed to wild cards: once a meld
+ * reaches seven its kind, clean or dirty, is settled, and only naturals may be
+ * added. A play that completes a book may still use wilds to do it.
+ */
+export function isFinishedBook(cards: readonly unknown[]): boolean {
+  return cards.length >= BOOK_SIZE;
+}

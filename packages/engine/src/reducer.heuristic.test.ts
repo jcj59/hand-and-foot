@@ -348,7 +348,7 @@ describe("heuristicAction — once down", () => {
     expectDiscardKeeping(state, wild);
   });
 
-  it("dirties a spare clean book when a dirty book is missing", () => {
+  it("never dirties a book already down, even a spare clean one when a dirty book is missing", () => {
     const wild = card("2");
     const state = table(
       seat({
@@ -358,14 +358,14 @@ describe("heuristicAction — once down", () => {
         foot: [wild, card("9")],
       }),
     );
-    // The bigger clean book takes it, ahead of the unfinished J meld.
+    // A finished book is closed to wilds, so the unfinished J meld takes it.
     expect(choose(state)).toEqual({
       type: "playMelds",
-      melds: [{ rank: "Q", cardIds: [wild.id] }],
+      melds: [{ rank: "J", cardIds: [wild.id] }],
     });
   });
 
-  it("leaves spare clean books alone once the dirty books are in", () => {
+  it("keeps a wild in the foot when every meld down is a finished book", () => {
     const wild = card("2");
     const state = table(
       seat({
@@ -375,10 +375,8 @@ describe("heuristicAction — once down", () => {
         foot: [wild, card("9"), card("4")],
       }),
     );
-    expect(choose(state)).toEqual({
-      type: "playMelds",
-      melds: [{ rank: "5", cardIds: [wild.id] }],
-    });
+    // Clean or dirty, no book takes it; it is held rather than thrown away.
+    expectDiscardKeeping(state, wild);
   });
 
   it("from the foot, spends a spare wild on an unfinished meld before a dirty book", () => {
