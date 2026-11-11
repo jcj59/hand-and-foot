@@ -1,12 +1,15 @@
 /**
- * The profile page's account panel: signing in, a username, moving a profile
- * between devices. (These moved here from the home screen with the panel.)
+ * The profile page: the player card, the awards, the account (signing in, a
+ * username, moving a profile between devices) and Sounds.
  */
-import { describe, it, expect, beforeEach } from "vitest";
+import { afterEach, describe, it, expect, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import type { Ack } from "@hf/shared";
+import { MATCHES_PATH } from "@hf/shared";
 import { ACCOUNT_KEY, IDENTITY_KEY, NAME_KEY, type Post } from "../identity";
+import { AVATAR_KEY } from "../profile/avatarStore";
+import { PHONE_QUERY } from "../usePhone";
 import { ProfilePage } from "./ProfilePage";
 
 function fakeUsers(answer: Ack<unknown> = { ok: true, data: {} }): Post & { sent: unknown[] } {
@@ -27,14 +30,14 @@ function mount(post: Post = fakeUsers()): void {
   );
 }
 
-/** Open the folded profile panel, as a tap on its summary does. */
-function openPanel(): void {
-  const details = screen.getByText(/use your profile on another device/i).closest("details")!;
-  details.open = true;
-  fireEvent(details, new Event("toggle"));
+/** Open one of the account's sheets, as a tap on its button does. */
+function openSheet(name: "Add a device" | "Sign in" | "Change password"): void {
+  fireEvent.click(screen.getByRole("button", { name }));
 }
 
 beforeEach(() => {
+  window.localStorage.removeItem(AVATAR_KEY);
+  window.localStorage.removeItem("hf.muted");
   window.localStorage.removeItem(NAME_KEY);
   window.localStorage.removeItem(IDENTITY_KEY);
   window.localStorage.removeItem(ACCOUNT_KEY);
@@ -45,7 +48,7 @@ describe("moving a profile between devices", () => {
     window.localStorage.setItem(NAME_KEY, "Ana");
     const users = fakeUsers();
     mount(users);
-    openPanel();
+    openSheet("Add a device");
     await waitFor(() => expect(screen.getByLabelText("Your transfer code")).not.toHaveValue("…"));
     const mine = JSON.parse(window.localStorage.getItem(IDENTITY_KEY)!);
     expect(users.sent).toEqual([{ ...mine, name: "Ana" }]);
@@ -56,7 +59,7 @@ describe("moving a profile between devices", () => {
 
   it("shows no code, and says why, when the profile cannot be registered", async () => {
     mount(fakeUsers({ ok: false, error: "down" }));
-    openPanel();
+    openSheet("Add a device");
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveTextContent(/could not reach the server/i),
     );
@@ -66,7 +69,7 @@ describe("moving a profile between devices", () => {
   it("takes on another device's profile from its code", async () => {
     const users = fakeUsers();
     mount(users);
-    openPanel();
+    openSheet("Add a device");
     const other = { userId: "other-device-user-01", secret: "s".repeat(40) };
     fireEvent.change(screen.getByLabelText("Code from another device"), {
       target: { value: `hf1.${other.userId}.${other.secret}` },
@@ -84,7 +87,7 @@ describe("moving a profile between devices", () => {
 
   it("refuses a code that is not one, keeping this device's profile", async () => {
     mount();
-    openPanel();
+    openSheet("Add a device");
     await waitFor(() => expect(window.localStorage.getItem(IDENTITY_KEY)).not.toBeNull());
     const before = window.localStorage.getItem(IDENTITY_KEY);
     fireEvent.change(screen.getByLabelText("Code from another device"), {
@@ -127,7 +130,7 @@ describe("signing in", () => {
       "/api/account/sign-in": [{ ok: true, data: { ...phone, username: "Ana", name: "Ana" } }],
     });
     mount(post);
-    openPanel();
+    openSheet("Sign in");
     const signIn = form("Sign in");
     type(signIn, "Username", " ana ");
     type(signIn, "Password", "correct horse");
@@ -142,7 +145,7 @@ describe("signing in", () => {
       body: { username: "ana", password: "correct horse", name: "" },
     });
     expect(JSON.parse(window.localStorage.getItem(IDENTITY_KEY)!)).toEqual(phone);
-    expect(screen.getByText("Signed in as Ana")).toBeInTheDocument();
+    expect(screen.getByText("@Ana")).toBeInTheDocument();
     // Signed in, the profile's name is the one this device sits down as.
     expect(window.localStorage.getItem(NAME_KEY)).toBe("Ana");
     expect(screen.queryByRole("form", { name: "Sign in" })).toBeNull();
@@ -154,7 +157,7 @@ describe("signing in", () => {
         "/api/account/sign-in": [{ ok: false, error: "that username and password do not match" }],
       }),
     );
-    openPanel();
+    openSheet("Sign in");
     const signIn = form("Sign in");
     expect(within(signIn).getByRole("button", { name: "Sign in" })).toBeDisabled();
     type(signIn, "Username", "ana");
@@ -172,7 +175,7 @@ describe("signing in", () => {
   it("gives this profile a username, asking for the password twice", async () => {
     const post = server({ "/api/account/claim": [{ ok: true, data: { username: "Ana" } }] });
     mount(post);
-    openPanel();
+    openSheet("Sign in");
     const claim = form("Choose a username");
     expect(claim).toHaveTextContent(/no way to reset a forgotten password/);
     const save = within(claim).getByRole("button", { name: "Save username" });
@@ -201,7 +204,7 @@ describe("signing in", () => {
 
   it("says why a username was refused, keeping what was typed", async () => {
     mount(server({ "/api/account/claim": [{ ok: false, error: "that username is taken" }] }));
-    openPanel();
+    openSheet("Sign in");
     const claim = form("Choose a username");
     type(claim, "Username", "Ana");
     type(claim, "Password", "correct horse");
@@ -224,11 +227,11 @@ describe("signing in", () => {
         "/api/users": [{ ok: false, error: "that identity belongs to another browser" }],
       }),
     );
-    const details = screen.getByText("Signed in as Ana").closest("details")!;
-    details.open = true;
-    fireEvent(details, new Event("toggle"));
-    await waitFor(() => expect(screen.getByRole("form", { name: "Sign in" })).toBeInTheDocument());
+    expect(screen.getByText("@Ana")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("Not signed in")).toBeInTheDocument());
     expect(window.localStorage.getItem(ACCOUNT_KEY)).toBeNull();
+    openSheet("Sign in");
+    expect(screen.getByRole("form", { name: "Sign in" })).toBeInTheDocument();
   });
 
   describe("when signed in", () => {
@@ -238,9 +241,6 @@ describe("signing in", () => {
       window.localStorage.setItem(ACCOUNT_KEY, "Ana");
       window.localStorage.setItem(IDENTITY_KEY, JSON.stringify(laptop));
       mount(post);
-      const details = screen.getByText("Signed in as Ana").closest("details")!;
-      details.open = true;
-      fireEvent(details, new Event("toggle"));
     }
 
     it("changes the password, saying the other devices are signed out", async () => {
@@ -252,6 +252,7 @@ describe("signing in", () => {
         ],
       });
       signedIn(post);
+      openSheet("Change password");
       const change = form("Change password");
       type(change, "Current password", "wrong horse");
       type(change, "New password", "battery staple");
@@ -280,11 +281,13 @@ describe("signing in", () => {
       const post = server({ "/api/users": [{ ok: true, data: { username: "Ana" } }] });
       signedIn(post);
       await waitFor(() => expect(post.sent).toHaveLength(1));
-      fireEvent.click(screen.getByRole("button", { name: "Sign out on this device" }));
+      fireEvent.click(screen.getByRole("button", { name: "Sign out of this browser" }));
       await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/Signed out\./));
       expect(post.sent.at(-1)).toEqual({ path: "/api/account/sign-out", body: { user: laptop } });
       expect(window.localStorage.getItem(IDENTITY_KEY)).toBeNull();
       expect(window.localStorage.getItem(ACCOUNT_KEY)).toBeNull();
+      expect(screen.getByText("Not signed in")).toBeInTheDocument();
+      openSheet("Sign in");
       expect(screen.getByRole("form", { name: "Sign in" })).toBeInTheDocument();
     });
   });
@@ -299,11 +302,129 @@ describe("signing in", () => {
         ],
       }),
     );
-    openPanel();
+    openSheet("Add a device");
     fireEvent.change(screen.getByLabelText("Code from another device"), {
       target: { value: `hf1.${other.userId}.${other.secret}` },
     });
     fireEvent.click(screen.getByRole("button", { name: "Use it" }));
-    await waitFor(() => expect(screen.getByText("Signed in as Ana")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByText("@Ana").length).toBeGreaterThan(0));
+    // Signed in, the sheet now says how to add a device rather than giving a code.
+    expect(screen.getByRole("dialog", { name: "Other devices" })).toHaveTextContent(
+      "open Profile on it and sign in as @Ana",
+    );
+  });
+});
+
+describe("the card, awards and sounds", () => {
+  const me = { userId: "ana-user-id-0001", secret: "a".repeat(40) };
+
+  /** A server that knows this player's history: two awards won, the rest not yet. */
+  function withHistory(): Post & { asked: number } {
+    const post = (async (path: string): Promise<Ack<unknown>> => {
+      if (path === MATCHES_PATH) {
+        post.asked++;
+        return { ok: true, data: { stats: { awards: { grabby: 2, clean: 1 } }, recent: [] } };
+      }
+      return { ok: true, data: {} };
+    }) as unknown as Post & { asked: number };
+    post.asked = 0;
+    return post;
+  }
+
+  const tile = (id: string): HTMLElement =>
+    document.querySelector<HTMLElement>(`[data-award="${id}"]`)!;
+
+  it("shows every award, with how often it was won or Not yet", async () => {
+    window.localStorage.setItem(IDENTITY_KEY, JSON.stringify(me));
+    const post = withHistory();
+    mount(post);
+    const awards = screen.getByRole("region", { name: "Awards" });
+    expect(within(awards).getAllByRole("listitem")).toHaveLength(6);
+    // Before the history answers, nothing is claimed.
+    expect(tile("grabby")).toHaveTextContent("Not yet");
+    await waitFor(() => expect(tile("grabby")).toHaveTextContent("×2"));
+    expect(tile("grabby")).toHaveTextContent("Grabby Pants champion");
+    expect(tile("grabby")).toHaveTextContent("won 2 times");
+    expect(tile("clean")).toHaveTextContent("×1");
+    expect(tile("clean")).toHaveTextContent("won once");
+    expect(tile("marva")).toHaveTextContent("Marva's favorite");
+    expect(tile("marva")).toHaveTextContent("Not yet");
+    expect(tile("red-threes")).toHaveTextContent("not won yet");
+    expect(post.asked).toBe(1);
+  });
+
+  it("does not ask for a history, or make a profile, for a device that never played", async () => {
+    const post = withHistory();
+    mount(post);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(post.asked).toBe(0);
+    expect(window.localStorage.getItem(IDENTITY_KEY)).toBeNull();
+    expect(tile("grabby")).toHaveTextContent("Not yet");
+  });
+
+  it("keeps a new name and picture on this device as they change", () => {
+    window.localStorage.setItem(NAME_KEY, "Ana");
+    mount();
+    fireEvent.change(screen.getByLabelText("Name at the table"), { target: { value: "Anabel" } });
+    expect(window.localStorage.getItem(NAME_KEY)).toBe("Anabel");
+    fireEvent.click(screen.getByRole("radio", { name: "lime" }));
+    expect(JSON.parse(window.localStorage.getItem(AVATAR_KEY)!).background).toBe("lime");
+    expect(screen.getByRole("radio", { name: "lime" })).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Choose each part" }));
+    expect(screen.getByRole("group", { name: "Eyes" })).toBeInTheDocument();
+  });
+
+  it("turns the table's sounds off and on", () => {
+    mount();
+    const sounds = screen.getByRole("switch", { name: "Sounds" });
+    expect(sounds).toBeChecked();
+    fireEvent.click(sounds);
+    expect(window.localStorage.getItem("hf.muted")).toBe("1");
+    expect(sounds).not.toBeChecked();
+    fireEvent.click(sounds);
+    expect(window.localStorage.getItem("hf.muted")).toBe("0");
+  });
+
+  describe("on a phone", () => {
+    beforeEach(() => {
+      Object.defineProperty(window, "matchMedia", {
+        configurable: true,
+        value: (query: string) => ({
+          matches: query === PHONE_QUERY,
+          addEventListener: () => {},
+          removeEventListener: () => {},
+        }),
+      });
+    });
+    afterEach(() => {
+      delete (window as { matchMedia?: unknown }).matchMedia;
+    });
+
+    it("lists the account and Sounds as rows, each opening its sheet", async () => {
+      window.localStorage.setItem(ACCOUNT_KEY, "Ana");
+      window.localStorage.setItem(IDENTITY_KEY, JSON.stringify(me));
+      mount(fakeUsers({ ok: true, data: { username: "Ana" } }));
+      fireEvent.click(screen.getByRole("button", { name: /Signed in as\s*@Ana/ }));
+      const account = screen.getByRole("dialog", { name: "Your account" });
+      fireEvent.click(within(account).getByRole("button", { name: "Change password" }));
+      expect(screen.getByRole("form", { name: "Change password" })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Close" }));
+      fireEvent.click(screen.getByRole("button", { name: /Other devices\s*Add or sign out/ }));
+      expect(screen.getByRole("dialog", { name: "Other devices" })).toHaveTextContent(
+        "Changing your password signs out every other device",
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Close" }));
+      const sounds = screen.getByRole("switch", { name: "Sounds" });
+      expect(sounds).toHaveTextContent("On");
+      fireEvent.click(sounds);
+      expect(sounds).toHaveAttribute("aria-checked", "false");
+      expect(sounds).toHaveTextContent("Off");
+    });
+
+    it("offers signing in from the first row when signed out", () => {
+      mount();
+      fireEvent.click(screen.getByRole("button", { name: /Account\s*Sign in/ }));
+      expect(screen.getByRole("form", { name: "Sign in" })).toBeInTheDocument();
+    });
   });
 });

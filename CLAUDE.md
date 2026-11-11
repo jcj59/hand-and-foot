@@ -581,8 +581,8 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   on first need (`hf.identity`), name remembered (`hf.name`, pre-filled on Home),
   `prepareIdentity` registers on sit-down (replacing an identity the server says is someone
   else's, giving up after `REGISTER_TIMEOUT_MS` 4s rather than blocking), and the "Use your
-  profile on another device" panel shows/accepts transfer codes (since item 15, folded inside
-  `AccountPanel`, which lives on the Profile page). Seat tokens remain
+  profile on another device" panel shows/accepts transfer codes (since item 15 inside
+  `AccountPanel`, which lives on the Profile page, under "Add a device"). Seat tokens remain
   the only authority to act. Server DB tests now drop `users` too when they wipe.
   `UserStore.put` resolves whether it wrote and refuses, in the same step, to overwrite a record
   that changed since it was read (a version compare-and-set since item 15; Postgres `insert ... on
@@ -617,8 +617,8 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   Client: `identity.ts` `hf.account` (`loadAccount`), `claimAccount`, `signIn`, `changePassword`,
   `signOut` (forgets locally even if the server cannot be told); `prepareIdentity` refreshes
   `hf.account` and clears it on `IDENTITY_TAKEN`. `profile/AccountPanel.tsx` replaces Home's
-  transfer-code panel (code kept, folded, for profiles without a username); signing in fills an
-  empty name box with the profile's name. Tests: `accounts.test.ts` (contract in memory and
+  transfer-code panel (code kept, under "Add a device", for profiles without a username); signing
+  in fills the Profile card's name with the profile's name. Tests: `accounts.test.ts` (contract in memory and
   Postgres), `account.integration.test.ts` (client, two devices' storage against a real server),
   Worker `signing in`. **Worker test storage outlives a test**, so each test there needs
   identities and usernames of its own. Mutation-tested: 41 mutants over `accounts.ts`, `users.ts`
@@ -998,6 +998,21 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   second, since place 1 is always a win). Resume shows on an unfinished game only while this
   device holds a live saved seat at that table (`resumeSavedGame`, as Home); since a match is
   recorded only once its table closes, that is rare today.
+  **Profile (redesign 8):** `pages/ProfilePage.tsx` is the player card (`profile/ProfileCard.tsx`:
+  a row of face and name on a phone, stacked and centered with corner indices on a computer;
+  Shuffle, the background colors, "Choose each part" for `AvatarEditor`; name and picture are kept
+  on every change, `rememberName` / `saveAvatar`), the award grid (`profile/AwardGrid.tsx`: every
+  award in `AWARDS` order with "×n" from `PlayerStats.awards`, else "Not yet" and a gray
+  `AwardIcon` (`earned={false}`); the page asks for the history once, only for a browser that has
+  an identity), the account and Sounds. `AccountPanel` is a card on a computer (username or "Not
+  signed in", Change password or Sign in, Add a device, Sign out of this browser) and rows on a
+  phone ("Signed in as" / "Account", "Other devices", plus Sounds passed in as `rows`), each
+  opening a `Sheet` (Your account, Sign in, Change password, Other devices); the transfer code is
+  the signed-out Other devices sheet. It registers the profile on mount when the device has an
+  identity (so a device signed out elsewhere learns it as the page opens), otherwise when a sheet
+  first opens. Sounds is `hf.muted` (`readMuted` / `writeMuted` exported from `table/sounds.ts`).
+  Not built: the mockup's per-device list with "Sign out" per device, which needs the server to
+  list and name a profile's devices; the sign-in redesign is a later PR.
 
 - **Rules page (roadmap item 8).** `rules/howToPlay.ts` (`howToPlay(config)` → sections of
   paragraphs, every number from the config: deal, decks, minimums per round, wild ratio, Marva,
