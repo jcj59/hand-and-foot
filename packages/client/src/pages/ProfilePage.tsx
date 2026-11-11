@@ -6,7 +6,7 @@
  * A phone stacks it all, the account and Sounds as one settings list; a computer
  * puts the card and awards beside the account and an "At the table" card. The
  * award counts come from the match history, asked of the server once for this
- * browser's identity; until (and unless) it answers, every award reads "Not yet".
+ * browser's identity (and again if signing in or out changes it); until (and unless) it answers, every award reads "Not yet".
  */
 import { useEffect, useState } from "react";
 import { MATCHES_PATH, type MatchHistory } from "@hf/shared";
@@ -14,7 +14,14 @@ import { AccountPanel, SettingsRow } from "../profile/AccountPanel";
 import { AwardGrid, SectionHeading } from "../profile/AwardGrid";
 import { ProfileCard } from "../profile/ProfileCard";
 import { loadAvatar, saveAvatar } from "../profile/avatarStore";
-import { loadIdentity, loadName, rememberName, serverPost, type Post } from "../identity";
+import {
+  loadIdentity,
+  loadName,
+  onProfileChange,
+  rememberName,
+  serverPost,
+  type Post,
+} from "../identity";
 import { readMuted, writeMuted } from "../table/sounds";
 import { PageHeader } from "../ui/PageHeader";
 import { usePhone } from "../usePhone";
@@ -112,10 +119,13 @@ export function ProfilePage({ post = serverPost() }: { readonly post?: Post }) {
  * an identity just to ask).
  */
 function useAwardCounts(post: Post): Readonly<Record<string, number>> | null {
+  const [userId, setUserId] = useState(() => loadIdentity()?.userId ?? null);
   const [counts, setCounts] = useState<Readonly<Record<string, number>> | null>(null);
+  useEffect(() => onProfileChange(() => setUserId(loadIdentity()?.userId ?? null)), []);
   useEffect(() => {
+    setCounts(null);
     const user = loadIdentity();
-    if (!user) return;
+    if (!user || user.userId !== userId) return;
     let live = true;
     post(MATCHES_PATH, { user })
       .then((answer) => {
@@ -125,6 +135,6 @@ function useAwardCounts(post: Post): Readonly<Record<string, number>> | null {
     return () => {
       live = false;
     };
-  }, [post]);
+  }, [post, userId]);
   return counts;
 }

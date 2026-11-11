@@ -15,7 +15,7 @@ import { ProfilePage } from "./ProfilePage";
 function fakeUsers(answer: Ack<unknown> = { ok: true, data: {} }): Post & { sent: unknown[] } {
   const sent: unknown[] = [];
   const post = (async (_path: string, body: unknown) => {
-    sent.push(body);
+    if (_path !== MATCHES_PATH) sent.push(body);
     return answer;
   }) as Post & { sent: unknown[] };
   post.sent = sent;
@@ -351,6 +351,37 @@ describe("the card, awards and sounds", () => {
     expect(tile("marva")).toHaveTextContent("Not yet");
     expect(tile("red-threes")).toHaveTextContent("not won yet");
     expect(post.asked).toBe(1);
+  });
+
+  it("asks again, once, for the new profile when this device signs in", async () => {
+    window.localStorage.setItem(IDENTITY_KEY, JSON.stringify(me));
+    const phone = { userId: "bo-user-id-000002", secret: "p".repeat(43) };
+    const asked: unknown[] = [];
+    const post = (async (path: string, body: unknown): Promise<Ack<unknown>> => {
+      if (path === MATCHES_PATH) {
+        asked.push(body);
+        const who = (body as { user: { userId: string } }).user.userId;
+        const awards = who === phone.userId ? { marva: 3 } : { grabby: 2 };
+        return { ok: true, data: { stats: { awards }, recent: [] } };
+      }
+      if (path === "/api/account/sign-in") {
+        return { ok: true, data: { ...phone, username: "Bo", name: "Bo" } };
+      }
+      return { ok: true, data: {} };
+    }) as Post;
+    mount(post);
+    await waitFor(() => expect(tile("grabby")).toHaveTextContent("×2"));
+    openSheet("Sign in");
+    const signIn = screen.getByRole("form", { name: "Sign in" });
+    fireEvent.change(within(signIn).getByLabelText("Username"), { target: { value: "bo" } });
+    fireEvent.change(within(signIn).getByLabelText("Password"), {
+      target: { value: "correct horse" },
+    });
+    fireEvent.click(within(signIn).getByRole("button", { name: "Sign in" }));
+    await waitFor(() => expect(tile("marva")).toHaveTextContent("×3"));
+    expect(tile("grabby")).toHaveTextContent("Not yet");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(asked).toHaveLength(2);
   });
 
   it("does not ask for a history, or make a profile, for a device that never played", async () => {
