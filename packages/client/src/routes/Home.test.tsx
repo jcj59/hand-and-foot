@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import type { Ack } from "@hf/shared";
 import { CREDENTIALS_KEY } from "../credentials";
 import { createServerClock } from "../serverTime";
@@ -11,6 +11,7 @@ import { RULES_KEY } from "../rules/customRules";
 import { AVATAR_KEY } from "../profile/avatarStore";
 import { Home, partOfDay } from "./Home";
 import { suggestBotName } from "../home/sheets";
+import { PRACTICE_KEY } from "../home/practiceStore";
 
 /** A socket that answers each request from a queue and records what was sent. */
 function fakeSocket(answers: Ack<unknown>[] = []): {
@@ -53,6 +54,7 @@ function mount(
       <Routes>
         <Route path="/" element={<Home socket={socket} post={post} />} />
         <Route path="/room/:roomId" element={<Home socket={socket} post={post} />} />
+        <Route path="/practice" element={<Home socket={socket} post={post} />} />
       </Routes>
       <Landing onRender={(p) => (landed = p)} />
     </MemoryRouter>,
@@ -62,7 +64,7 @@ function mount(
 
 /** Reports the current location, so a navigation is observable. */
 function Landing({ onRender }: { readonly onRender: (path: string) => void }): null {
-  onRender(window.location.pathname);
+  onRender(useLocation().pathname);
   return null;
 }
 
@@ -147,6 +149,7 @@ beforeEach(() => {
   window.localStorage.removeItem(ACCOUNT_KEY);
   window.localStorage.removeItem(RULES_KEY);
   window.localStorage.removeItem(AVATAR_KEY);
+  window.localStorage.removeItem(PRACTICE_KEY);
   useSession.setState({
     status: "connected",
     credentials: null,
@@ -635,7 +638,7 @@ describe("the home screen's own parts", () => {
     ]);
   });
 
-  it("leads to learning and the demo, and practice opens a new table", () => {
+  it("leads to learning and the demo, and to practice", () => {
     mount(fakeSocket().socket);
     const tiles = screen.getByRole("region", { name: "Quick start" });
     expect(within(tiles).getByRole("link", { name: /learn in 5 minutes/i })).toHaveAttribute(
@@ -647,7 +650,7 @@ describe("the home screen's own parts", () => {
       "/learn/demo",
     );
     fireEvent.click(within(tiles).getByRole("button", { name: /practice vs computers/i }));
-    expect(screen.getByRole("dialog", { name: "New table" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Practice" })).toBeInTheDocument();
   });
 
   it("closes a sheet without sitting down", () => {
@@ -711,6 +714,150 @@ describe("the new table sheet", () => {
     expect(suggestBotName("Sir Melds-a-Lot", [])).toBe("Shuffles");
   });
 });
+
+describe("practice", () => {
+  const openPractice = (): HTMLElement => {
+    fireEvent.click(screen.getByRole("button", { name: /practice vs computers/i }));
+    return screen.getByRole("dialog", { name: "Practice" });
+  };
+
+  it("opens a family table, seats three Standard computers and deals, in one go", async () => {
+    window.localStorage.setItem(NAME_KEY, "ana");
+    const { socket, sent } = fakeSocket();
+    const { landed } = mount(socket);
+    const sheet = openPractice();
+    // No mode to choose: practice is always the family game.
+    expect(within(sheet).queryByRole("radio", { name: /competitive/i })).toBeNull();
+    expect(within(sheet).getByRole("group", { name: "Computer players" })).toHaveTextContent("3");
+    fireEvent.click(within(sheet).getByRole("button", { name: "Deal me in" }));
+    await waitFor(() => expect(sent).toHaveLength(5));
+    expect(sent.map((s) => s.event)).toEqual([
+      "createRoom",
+      "addBot",
+      "addBot",
+      "addBot",
+      "startGame",
+    ]);
+    expect(sent[0]!.args[0]).toMatchObject({
+      name: "ana",
+      options: { preset: "east-coast", mode: "family", rules: {} },
+    });
+    expect(sent[1]!.args[0]).toEqual({ level: "standard" });
+    await waitFor(() => expect(landed()).toBe("/room/ABC234"));
+  });
+
+  it("sets how many computers, and each one's name and level", async () => {
+    window.localStorage.setItem(NAME_KEY, "ana");
+    const { socket, sent } = fakeSocket();
+    mount(socket);
+    const sheet = openPractice();
+    fireEvent.click(within(sheet).getByRole("button", { name: "Fewer computer players" }));
+    fireEvent.click(within(sheet).getByRole("button", { name: "Fewer computer players" }));
+    // One opponent at least.
+    expect(within(sheet).getByRole("button", { name: "Fewer computer players" })).toBeDisabled();
+    fireEvent.click(within(sheet).getByRole("button", { name: "More computer players" }));
+    fireEvent.click(within(sheet).getByRole("button", { name: "Edit Computer 2, Standard" }));
+    fireEvent.change(within(sheet).getByLabelText("Name"), { target: { value: "Card Shark" } });
+    fireEvent.click(within(sheet).getByRole("radio", { name: "Hard" }));
+    fireEvent.click(within(sheet).getByRole("button", { name: "Done" }));
+    expect(
+      within(sheet).getByRole("button", { name: "Edit Card Shark, Hard" }),
+    ).toBeInTheDocument();
+    pickIn(sheet, /West Coast/);
+    fireEvent.click(within(sheet).getByRole("button", { name: "Deal me in" }));
+    await waitFor(() => expect(sent).toHaveLength(4));
+    expect(sent[0]!.args[0]).toMatchObject({ options: { preset: "west-coast", mode: "family" } });
+    expect(sent.slice(1, 3).map((s) => s.args[0])).toEqual([
+      { level: "standard" },
+      { level: "hard", name: "Card Shark" },
+    ]);
+    expect(sent[3]!.event).toBe("startGame");
+  });
+
+  it("stops at most seven computers, a full table", () => {
+    mount(fakeSocket().socket);
+    const sheet = openPractice();
+    const more = within(sheet).getByRole("button", { name: "More computer players" });
+    for (let i = 0; i < 10; i++) fireEvent.click(more);
+    expect(within(sheet).getByRole("group", { name: "Computer players" })).toHaveTextContent("7");
+    expect(more).toBeDisabled();
+  });
+
+  it("asks for your card first when this device has no name yet", async () => {
+    const { socket, sent } = fakeSocket();
+    mount(socket);
+    fireEvent.click(within(openPractice()).getByRole("button", { name: "Deal me in" }));
+    expect(sent).toHaveLength(0);
+    const card = screen.getByRole("dialog", { name: "Your player card" });
+    fireEvent.change(within(card).getByLabelText(/your name/i), { target: { value: "ana" } });
+    fireEvent.click(within(card).getByRole("button", { name: "Deal me in" }));
+    await waitFor(() => expect(sent).toHaveLength(5));
+    expect(sent[0]!.args[0]).toMatchObject({ name: "ana" });
+  });
+
+  it("remembers its own setup, and leaves New table's rules alone", async () => {
+    window.localStorage.setItem(NAME_KEY, "ana");
+    const { socket, sent } = fakeSocket();
+    mount(socket);
+    let sheet = openPractice();
+    fireEvent.click(within(sheet).getByRole("button", { name: "Fewer rounds" }));
+    fireEvent.click(within(sheet).getByRole("button", { name: "Fewer computer players" }));
+    fireEvent.click(within(sheet).getByRole("button", { name: "Deal me in" }));
+    await waitFor(() => expect(sent).toHaveLength(4));
+    expect(window.localStorage.getItem(RULES_KEY)).toBeNull();
+    cleanup();
+
+    mount(fakeSocket().socket);
+    sheet = openPractice();
+    expect(within(sheet).getByRole("group", { name: "Rounds" })).toHaveTextContent("3");
+    expect(within(sheet).getByRole("group", { name: "Computer players" })).toHaveTextContent("2");
+  });
+
+  it("starts from New table's rules as the family game, until it has its own", async () => {
+    window.localStorage.setItem(NAME_KEY, "ana");
+    window.localStorage.setItem(
+      RULES_KEY,
+      JSON.stringify({ preset: "west-coast", mode: "competitive", rules: {} }),
+    );
+    const { socket, sent } = fakeSocket();
+    mount(socket);
+    const sheet = openPractice();
+    expect(
+      (within(sheet).getByRole("radio", { name: /West Coast/ }) as HTMLInputElement).checked,
+    ).toBe(true);
+    fireEvent.click(within(sheet).getByRole("button", { name: "Deal me in" }));
+    await waitFor(() => expect(sent.length).toBeGreaterThan(0));
+    expect(sent[0]!.args[0]).toMatchObject({ options: { preset: "west-coast", mode: "family" } });
+  });
+
+  it("deals at once but stays in the waiting room when the deal is refused", async () => {
+    window.localStorage.setItem(NAME_KEY, "ana");
+    const { socket } = fakeSocket([
+      { ok: true, data: { roomId: "ZZZ999", seat: 0, token: "t" } },
+      { ok: true, data: undefined },
+      { ok: true, data: undefined },
+      { ok: true, data: undefined },
+      { ok: false, error: "the table needs at least 2 players" },
+    ]);
+    const { landed } = mount(socket);
+    fireEvent.click(within(openPractice()).getByRole("button", { name: "Deal me in" }));
+    await waitFor(() => expect(landed()).toBe("/room/ZZZ999"));
+    expect(useSession.getState().notice).toBe("the table needs at least 2 players");
+  });
+
+  it("opens from its own address, and closing it goes home", () => {
+    const { landed } = mount(fakeSocket().socket, "/practice");
+    expect(screen.getByRole("dialog", { name: "Practice" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(landed()).toBe("/");
+  });
+});
+
+/** Choose an option of a choice in the given sheet. */
+function pickIn(sheet: HTMLElement, option: RegExp | string): void {
+  fireEvent.click(within(sheet).getByRole("radio", { name: option }));
+}
 
 describe("your player card", () => {
   it("starts on the finished card when signed in, sitting down as that name", async () => {

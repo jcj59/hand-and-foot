@@ -901,7 +901,7 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   `PlayerStats.awards` for the awards total), the Play banner, "Your games" (the held seat as "In
   progress" and saved games as "Saved"), and the Practice / Learn / Demo tiles; the account panel
   lives only on Profile. "New table" and "Join with code" open the `Sheet`s in `home/sheets.tsx`,
-  and the Practice tile opens the New table sheet until redesign 4. **Join (redesign 3b):** the Join sheet's first step is
+  and the Practice tile opens the Practice sheet (redesign 4, below). **Join (redesign 3b):** the Join sheet's first step is
   `join/CodeBoxes.tsx` (six boxes drawn over **one real input**, so paste, autofill and screen
   readers work; accessible name "Table code") and `join/Scanner.tsx` (camera via the browser's
   `BarcodeDetector` where it exists, else nothing to start); `codeFromScan` (`roomCode.ts`, pure,
@@ -933,6 +933,19 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   at sitting down), `null` puts back the drawn picture; the device keeps the new name and picture.
   The page behind the join flow at `/room/<code>` is the charcoal page, not felt. Harness:
   `LOBBY_GUEST=1`. Mutation-tested: 8/8 server guards killed.
+  **Practice (redesign 4):** `home/PracticeSheet.tsx`, also at `/practice` (closing goes home).
+  New table without Mode (always family) and without empty seats: a computer stepper
+  (`PRACTICE_BOTS` 1 to 7) and a chip per computer opening `BotEditor` (no Remove: the stepper
+  takes the last away). "Deal me in" sends `createRoom`, `addBot` per computer and `startGame`,
+  then goes to the table; a refused deal leaves the notice in the waiting room. Your card is a
+  step only when the device has no name. `home/practiceStore.ts` keeps its own setup
+  (`hf.practice`), never touching `hf.rules`; until one exists it starts from `hf.rules` as the
+  family game with three Standard computers. History tags a game "Practice" when everyone else
+  was a computer (`isPractice`, derived, so older games are tagged too). The New table sheet's
+  parts (`VariantPicker`, `RoundsRow`, `HouseRulesRow`, `HouseRulesStep`, `RulesRefused`,
+  `Stepper`, `BotEditor`, `TablePreview` with `exact`/`you`) are exported from `home/sheets.tsx`
+  for it. Home's tests' `Landing` now reads `useLocation`: it read `window.location`, which a
+  `MemoryRouter` never changes, so no navigation assertion there could fail.
 
 - **Rules page (roadmap item 8).** `rules/howToPlay.ts` (`howToPlay(config)` → sections of
   paragraphs, every number from the config: deal, decks, minimums per round, wild ratio, Marva,
