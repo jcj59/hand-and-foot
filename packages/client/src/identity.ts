@@ -52,7 +52,7 @@ function write(key: string, value: string | null): void {
 }
 
 /** The event raised on `window` when the name, username or picture this device shows changes. */
-export const PROFILE_CHANGED = "hf:profile";
+const PROFILE_CHANGED = "hf:profile";
 
 export function noteProfileChanged(): void {
   // Not every host has a full `window` (the integration tests run with only storage).

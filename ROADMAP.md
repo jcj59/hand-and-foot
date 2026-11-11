@@ -395,17 +395,32 @@ item 5's stats.
 - A read-only watch link for people not playing. A spectator sees only public information during the
   match — this is a new view projection and needs its own `view.test.ts` guarantees.
 
+### ~~Visual redesign~~ (November 2026, #52 onward)
+
+Every screen redrawn for phone and computer against the mockups: the app shell (sidebar and tab
+bar), Home, Join, the player card, New table and Practice sheets, the waiting room, the table and
+its pop-ups, Learn and the demo, History, Profile and the Rules page. Computer players gained
+levels (Easy, Standard, Hard), and in-game hints were taken out of real games (they live in the
+lessons and the demo). DESIGN.md, "Visual design", describes the result.
+
 ### 13. Browser end-to-end tests in CI
 
 Playwright, driving the item 1 scenarios through the real client and comparing screenshots, so a UI
 regression in any situation fails CI. Reuse the existing `scripts/pr-media/` harness setup. Keep it
 fast enough to run on every PR, or split a quick smoke set from a nightly full run.
 
+*Best taken now that the redesign has landed: baselines captured today are of the new look and will
+not all need retaking after a later restyle.*
+
 ### 14. Accessibility and cosmetics
 
-Four-colour deck option (colour-blind friendly), card-back and table themes (cheap avatar-style
+Four-color deck option (color-blind friendly), card-back and table themes (cheap avatar-style
 customization), a reduced-motion and screen-reader pass over the table, and larger-text support on
 phones.
+
+*Overlaps the redesign: the new palette, type scale, focus rings and the table's reduced-motion
+handling came with it, so start this item with an audit of what is left rather than from the list
+above.*
 
 ### 15. Operations: error reporting, moderation, accounts
 
@@ -429,3 +444,19 @@ and evaluation against random, `defaultAction`, the heuristic bot, and humans. T
 follow-up PRs: a headless environment wrapper, training, and serving the trained agent as a seat
 option beside the heuristic bot. Recorded games for imitation learning must exclude forced moves
 (`LoggedAction.source`).
+
+---
+
+## Later
+
+Deferred from the redesign, each its own PR when taken:
+
+- **"My order" meld sort.** The table mockup offers a third sort beside By rank and Newest first, an
+  order the player arranges by hand; only the first two were built.
+- **Sign-in redesign.** The sign-in and change-password sheets work but were not redrawn, and the
+  Profile mockup's per-device list (with Sign out per device) needs the server to list and name a
+  profile's devices.
+- **Live "Your turn" on Home.** Home's "Your games" shows a held seat as In progress; the mockup's
+  "Your turn" chip needs Home to hear about a table's turn without sitting at it.
+- **The RL agent as Hard.** Once item 16 has a trained agent, it replaces the heuristic behind the
+  Hard computer level (see `@hf/shared/bots.ts`).

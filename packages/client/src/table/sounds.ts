@@ -32,7 +32,7 @@ const CARD_SOUND: Readonly<Record<LastMove["kind"], Sound>> = {
   takeBack: "take-back",
 };
 
-export const CARD_SOUNDS: readonly CardSound[] = ["draw", "discard", "meld", "take-back"];
+const CARD_SOUNDS: readonly CardSound[] = ["draw", "discard", "meld", "take-back"];
 
 /** What the table looked like at one moment, as far as sound is concerned. */
 export interface Moment {
@@ -184,7 +184,7 @@ export function play(
 }
 
 /** The DJ air horn's rhythm: three stabs and a long blast, as [start, length] in seconds. */
-export const AIR_HORN_BLASTS: readonly (readonly [number, number])[] = [
+const AIR_HORN_BLASTS: readonly (readonly [number, number])[] = [
   [0, 0.11],
   [0.16, 0.11],
   [0.32, 0.11],

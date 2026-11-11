@@ -30,7 +30,7 @@ type AudioContextCtor = new () => AudioContext;
 const GESTURES = ["pointerdown", "pointerup", "touchend", "click", "keydown"] as const;
 
 /** How long a sound may wait for the context to resume and still be worth playing. */
-export const LATE_MS = 300;
+const LATE_MS = 300;
 
 /** How long a gesture's resume may take before the context is given up as stuck. */
 export const STUCK_MS = 1_000;
@@ -110,7 +110,7 @@ function resume(ctx: AudioContext): Promise<void> {
  * Get the context running if the browser will allow it. `gesture` says the call is
  * inside one, which is when a context may be made, and a stuck one replaced.
  */
-export function wake(gesture: boolean): void {
+function wake(gesture: boolean): void {
   const Ctor = ctor();
   if (!Ctor) return;
   const old = state.ctx;

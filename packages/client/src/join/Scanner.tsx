@@ -17,7 +17,7 @@ interface Detector {
 type DetectorClass = new (options: { formats: string[] }) => Detector;
 
 /** The browser's barcode detector, if it has one. */
-export function barcodeDetector(): DetectorClass | null {
+function barcodeDetector(): DetectorClass | null {
   const found = (globalThis as { BarcodeDetector?: DetectorClass }).BarcodeDetector;
   return typeof found === "function" ? found : null;
 }

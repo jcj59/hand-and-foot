@@ -14,7 +14,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Card, LastMove, Rank } from "@hf/shared";
 
 /** How long an announcement stays up. Long enough to read a name and a card. */
-export const NEWS_MS = 3_500;
+const NEWS_MS = 3_500;
 
 export interface News {
   readonly seq: number;
@@ -34,7 +34,7 @@ const FACE_WORDS: Partial<Record<Rank, string>> = {
  * A rank as it is said aloud at the table: "a 9", "an 8", "an Ace", "a Joker".
  * Numbers stay digits, as they are printed on the card.
  */
-export function aRank(rank: Rank): string {
+function aRank(rank: Rank): string {
   const word = FACE_WORDS[rank] ?? rank;
   return `${rank === "8" || rank === "A" ? "an" : "a"} ${word}`;
 }

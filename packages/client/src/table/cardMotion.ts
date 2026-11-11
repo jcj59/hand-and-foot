@@ -12,9 +12,9 @@ import type { LastMove } from "@hf/shared";
 import { planMotion, type Box, type Ghost, type Slide, type Spot } from "./motion";
 
 /** How long a card takes to slide into place. */
-export const SLIDE_MS = 420;
+const SLIDE_MS = 420;
 /** How long the player's own draw is shown before it goes into the hand. */
-export const REVEAL_MS = 1_400;
+const REVEAL_MS = 1_400;
 
 const EASE = "cubic-bezier(0.2, 0.8, 0.2, 1)";
 

@@ -24,10 +24,6 @@ export const REACTION_COOLDOWN_MS = 1_500;
 
 const MUTE_REACTIONS_KEY = "hf.muteReactions";
 
-export function reactionText(id: ReactionId): string {
-  return REACTIONS.find((r) => r.id === id)?.text ?? "";
-}
-
 export function readMuteReactions(): boolean {
   try {
     return window.localStorage.getItem(MUTE_REACTIONS_KEY) === "1";

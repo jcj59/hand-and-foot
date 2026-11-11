@@ -38,7 +38,7 @@ import {
 const PRESET_WORDS = { "east-coast": "East Coast", "west-coast": "West Coast" } as const;
 
 /** The fewest and most computers a practice table can have: one opponent, up to a full table. */
-export const PRACTICE_BOTS = { min: 1, max: MAX_PLAYERS - 1 } as const;
+const PRACTICE_BOTS = { min: 1, max: MAX_PLAYERS - 1 } as const;
 
 export function PracticeSheet({
   choice,

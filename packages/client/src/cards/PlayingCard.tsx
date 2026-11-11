@@ -270,61 +270,6 @@ export function PlayingCard({
   );
 }
 
-/**
- * A completed book, collapsed to one card with the rest stacked beneath it.
- *
- * A finished book is a single scoring unit, and seven fanned cards say that far
- * less clearly than one card that is visibly a pile. The top card is drawn like
- * any other, so the table reads the same everywhere; what marks the book is the
- * stack and its border — red for a clean book, black for a dirty one — so which
- * bonus it earned reads at a glance without counting wilds.
- */
-export function BookCard({
-  top,
-  kind,
-  count,
-  size = "normal",
-}: {
-  /** The card shown on top: a natural, so the book's rank is what shows. */
-  readonly top: Card;
-  readonly kind: "clean" | "dirty";
-  readonly count: number;
-  readonly size?: CardSize;
-}): React.ReactElement {
-  const { w, h } = DIMENSIONS[size];
-  const offset = 3;
-  const border = kind === "clean" ? INK.red : INK.black;
-  return (
-    <span role="img" aria-label={`${kind} book of ${rankLabel(top.rank)}s, ${count} cards`}>
-      <svg
-        width={(w * (56 + offset * 2)) / 56}
-        height={(h * (80 + offset * 2)) / 80}
-        viewBox={`0 0 ${56 + offset * 2} ${80 + offset * 2}`}
-        aria-hidden="true"
-        className="block"
-      >
-        <FaceDefs />
-        {[2, 1].map((layer) => (
-          <rect
-            key={layer}
-            x={0.5 + layer * offset}
-            y={0.5 + layer * offset}
-            width="55"
-            height="79"
-            rx="6"
-            fill="url(#hf-card-face)"
-            stroke={border}
-            strokeWidth="2"
-          />
-        ))}
-        {/* The top card is inked in the book's colour too — red for clean, black
-            for dirty — so it agrees with its border whatever suit is on top. */}
-        <CardFace card={top} stroke={border} strokeWidth={4} tint={border} full={fullFace(size)} />
-      </svg>
-    </span>
-  );
-}
-
 /** A card back, for stacks and fans of cards nobody may see. */
 function Back({
   x,
@@ -377,49 +322,16 @@ function Back({
 }
 
 /**
- * A hand of cards held face down, fanned so its size reads at a glance. A dozen
- * cards look like a dozen; the exact count is written beside it.
- */
-export function HiddenHand({
-  count,
-  label,
-}: {
-  readonly count: number;
-  readonly label: string;
-}): React.ReactElement {
-  const shown = Math.min(count, 10);
-  const step = 9;
-  return (
-    <span role="img" aria-label={`${label}: ${count}`} className="flex items-center gap-1">
-      {shown > 0 && (
-        <svg
-          width={(24 * (56 + step * (shown - 1))) / 56}
-          height={34}
-          viewBox={`0 0 ${56 + step * (shown - 1)} 80`}
-          aria-hidden="true"
-        >
-          <FaceDefs />
-          {Array.from({ length: shown }, (_, i) => (
-            <Back key={i} x={i * step} y={0} emblem={i === shown - 1} />
-          ))}
-        </svg>
-      )}
-      <span className="text-xs text-white/70">{count}</span>
-    </span>
-  );
-}
-
-/**
  * The edges drawn behind a discard pile's two cards: none for a pile of two or
  * fewer, then one more for every `PILE_EDGE_EVERY` cards, up to `PILE_EDGES_MAX`,
  * so a big pile reads as big without the exact count having to be read.
  */
-export function pileEdges(count: number): number {
+function pileEdges(count: number): number {
   if (count <= 2) return 0;
   return Math.min(PILE_EDGES_MAX, 1 + Math.floor((count - 3) / PILE_EDGE_EVERY));
 }
-export const PILE_EDGE_EVERY = 6;
-export const PILE_EDGES_MAX = 4;
+const PILE_EDGE_EVERY = 6;
+const PILE_EDGES_MAX = 4;
 /** How far each edge sits out from the one in front of it, in card units (a card is 56 wide). */
 const PILE_EDGE_STEP = 3;
 /** Each edge's tilt, front to back, so the pile looks thrown together rather than squared up. */

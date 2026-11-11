@@ -853,7 +853,9 @@ The rules page is written from a table's own rules rather than as a general desc
 game: every number a player could get wrong — the hand and foot sizes, the decks, each round's
 minimum, the wild ratio, the books going out takes, each card's value — is read from the config,
 and the Marva rule is said to be on or off. So the page opened from a table describes that table,
-custom rules and all, and the one on the home screen describes either preset. It is a pure function
+custom rules and all. The Rules page away from a table describes no table in particular: it states
+what both presets share and gives the one rule they differ on, the wild ratio, as an East Coast and
+West Coast call-out, rather than asking the reader to pick a preset first. It is a pure function
 of the config, so the words are pinned by tests rather than drifting from the rules they describe.
 
 ### Learning to play
@@ -911,6 +913,56 @@ Worker test checks each icon the manifest names is a real file rather than the p
 single-page fallback would answer with. Telling a player it is their turn while the page is closed
 would need web push and a service worker after all; that is left as a follow-up, to be taken up only
 if it fits the free plan.
+
+## Visual design
+
+The client was redesigned in November 2026, screen by screen, against a set of mockups drawn for
+both a phone and a computer. The aim was a calm, dark app around a table that still looks like a
+card table: the game is played by families in the evening, often on a phone on the sofa, and the
+cards and the one thing to press next should be the brightest things on the screen.
+
+**Color.** The page is charcoal (`#0F1215`), and everything on it is a step lighter: the navigation,
+then a card, a sheet and a raised control, each a few points brighter than the one beneath, with
+thin white borders at a few percent opacity rather than shadows. Text comes in a handful of greys
+from near white down to a faint label. One green (`#4ADE9B`) is the accent: the primary button, the
+current tab, a ring around what can be played now. Gold (`#F2C14E`) is kept for highlights that
+mean something in the game: wilds, clean books, awards, and the East and West Coast call-out on the
+rules page. A small set of softer colors (coral, blue, violet, teal, orange, lime, salmon) is shared
+by player faces, computer levels, chips and icon tiles, so a color says the same thing everywhere it
+appears. Red is reserved for danger and suits. The palette lives once, as Tailwind theme variables
+in `client/src/index.css`, and components refer to it by name.
+
+**Type.** Three self-hosted variable fonts, with no font service at run time: Space Grotesk for
+titles, buttons and numbers that are read at a glance (scores, the clock, stats), Inter for
+everything else, and JetBrains Mono for table codes, where a zero and an O must not be confused.
+
+**Shared components.** A short list in `client/src/ui/` carries most of the look, so a size, radius
+or focus ring is decided once: `Button` (primary green, an outlined secondary beside it, a text-weight
+ghost, and danger), `Segmented` for a choice among two to four options (a radio group underneath),
+`Sheet` for anything that needs room over a screen, `Chip` for a status or a count, `IconBox` for an
+icon on a tinted square (tiles, lessons, rules sections, awards), `PageHeader`, and the icon set: a
+few dozen single-path stroke icons kept as data rather than an icon library.
+
+**The shell.** The app's own pages (Play, History, Learn, Rules, Profile) sit in a frame: a sidebar
+on a computer, with the player's face and name at its foot, and a tab bar along the bottom of a
+phone. Learn is in the sidebar only; a phone has room for four tabs, and Home's Learn tile is the way
+in there. The table, a lesson, a replay and a watched game are places a player goes to and comes
+back from, so they leave the frame and take the whole screen, each with its own way out.
+
+**Cards.** Cards are drawn as SVG on a warm white face with real text for rank and suit, so they
+scale to any size with no image assets and a screen reader can name each one. A wild is a little
+warmer still, with a gold inner line, so the cards that play anywhere stand out in a hand. Small
+cards show only the corner index; larger ones the full face. The table itself is a green felt with a
+wooden rim, the one place the old look survives, because a card table is what the game is.
+
+**Phone and computer.** The two layouts share their content but not their markup. Below 768 pixels
+(`usePhone`, read from `matchMedia` so a narrow desktop window gets the phone layout too) a sheet
+rises from the bottom edge instead of opening as a centered dialog, page content is a single
+column, and the table stacks vertically: opponents as a strip of chips, the scores behind a trophy
+button, the hand in even rows sized to the screen. On a computer pages widen into grids of cards
+(Home's tiles and games, the lessons, History's games), the rules page gains a contents column that
+follows the reader, and the table gains a side panel with the scores and the latest moves. Each
+screen was checked against its mockup at both sizes as it was built.
 
 ## Testing
 
@@ -982,4 +1034,6 @@ work, in order:
    opponents as a strip of summary chips (tap one for its melds), the player's own melds as cards
    that can be collapsed to compact chips, and the hand in even rows sized to the screen, so no
    card ever overlaps another.
-5. A competitive layer with accounts, matchmaking, and ranked play.
+5. ~~A visual redesign of every screen, for phone and computer.~~ Done: see "Visual design".
+6. A competitive layer with accounts, matchmaking, and ranked play. Accounts exist (see "Signing
+   in"); matchmaking and ranked play do not.

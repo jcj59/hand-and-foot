@@ -74,7 +74,7 @@ function listed(names: readonly string[]): string {
  * Who is ready for the next round and who the table waits on, in a sentence:
  * "Kate is ready. Waiting for Mom and you. Computers never hold up the next round."
  */
-export function readiness(
+function readiness(
   people: readonly { readonly seat: number; readonly name: string }[],
   ready: readonly number[],
   mySeat: number,

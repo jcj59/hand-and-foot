@@ -131,7 +131,7 @@ function SectionCard({
 }
 
 /** The section cards on their own, for whichever frame shows them. */
-export function RulesText({
+function RulesText({
   sections,
   phone,
   lessons,
