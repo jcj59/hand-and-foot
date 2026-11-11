@@ -863,8 +863,7 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   `matchHistory`), `PostgresMatchStore` (migration 6: `matches`, `match_players`; upsert by id), and
   `RoomStore.matches?()`. Worker: `TableObject.keepMatch` sends a copy to each player's `UserObject`
   (`recordMatch`, KV `match:<id>`, `ctx.waitUntil`), and `UserObject.history` answers the route.
-  Client: `profile/MatchHistory.tsx` on Home (only with a stored identity and at least one match;
-  silent on any failure), `outcome()` words a listing. DB tests now drop `match_players, matches`
+  Client: `pages/HistoryPage.tsx` (see redesign 7), `describe.ts` words a listing. DB tests now drop `match_players, matches`
   too. Mutation-tested: 29/29 killed across shared, engine and server (with the database
   tests running), three only after tests were added — placing past a player who left ahead, a share
   of a tied win, and a match that did not start at seat 0.
@@ -897,7 +896,7 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   `client/src/ui/` (`Button`, `Segmented`, `Sheet` = bottom sheet on phone / dialog on desktop,
   `Chip`, `IconBox`, `PageHeader`, `icons`), and `ui/AppShell.tsx` is a sidebar on desktop and a
   tab bar on phone. The table, lesson, replay and watch screens hide the shell and keep the felt
-  look until Phase 5. `/history` and `/profile` (`pages/`) host the existing `MatchHistory` and
+  look until Phase 5. `/history` and `/profile` (`pages/`) host `HistoryPage` and
   `AccountPanel`. **Home (redesign 3a)** is the greeting with stats (from the match-history request,
   `PlayerStats.awards` for the awards total), the Play banner, "Your games" (the held seat as "In
   progress" and saved games as "Saved"), and the Practice / Learn / Demo tiles; the account panel
