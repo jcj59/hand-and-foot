@@ -16,8 +16,9 @@
  *
  * Clicking a card opens a menu of what it can do right now — meld it, discard it,
  * take it back — rather than one click meaning different things by mode. A discard
- * that looks like a mistake (a wild, or a card the player could lay off on a meld
- * they already have) asks once more before it goes.
+ * that looks like a mistake (a wild, a rank another player has down and could take
+ * the pile with, or a card the player could lay off on a meld they already have) is
+ * warned about in the menu itself, whose button then reads "Discard anyway".
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -470,7 +471,7 @@ export function TableView({
       titled={titled}
       room={room}
       totals={view.scoresSoFar}
-      mySeat={view.seat}
+      mySeat={controls ? view.seat : SPECTATOR_SEAT}
       departed={view.departed ?? []}
       moves={moves}
     />
@@ -851,7 +852,7 @@ export function TableView({
             }
           }
           notice={notice}
-          seat={view.seat}
+          seat={controls ? view.seat : SPECTATOR_SEAT}
         />
       )}
     </main>

@@ -625,7 +625,7 @@ describe("the round result", () => {
     });
     const ana = screen.getByRole("listitem", { name: /^ana:/ });
     // The parts as counts, as the design's columns give them: clean books, dirty
-    // books, cards melded, cards left; then the round and the total.
+    // books, card points, cards left; then the round and the total.
     expect(ana.textContent).toMatch(/You\s*Went out\s*2\s*1\s*185\s*0/);
     const ben = screen.getByRole("listitem", { name: /^ben:/ });
     expect(ben.textContent).toMatch(/ben\s*\d+\s*\d+\s*\d+\s*3-480/);

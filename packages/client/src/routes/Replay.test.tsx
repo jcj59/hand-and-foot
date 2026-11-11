@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { EAST_COAST, type Ack, type Action, type GameState, type ReplayMatch } from "@hf/shared";
 import { applyAction, deal, heuristicPolicy } from "@hf/engine";
@@ -9,10 +9,10 @@ import { NO_PROFILE, Replay, timelineOf, UNPLAYABLE, UNREACHABLE } from "./Repla
 const user = { userId: "u".repeat(16), secret: "s".repeat(32) };
 
 /** Forty real moves of a three-seat game, recorded as the server keeps them. */
-function match(): ReplayMatch {
+function match(moves = 40): ReplayMatch {
   let state: GameState = deal(3, EAST_COAST, 7, 1, 2);
   const log: { seat: number; action: Action; source: "player" | "bot" }[] = [];
-  for (let i = 0; i < 40 && !state.roundEnded; i++) {
+  for (let i = 0; i < moves && !state.roundEnded; i++) {
     const seat = state.currentSeat;
     const action = heuristicPolicy(state, seat)!;
     log.push({ seat, action, source: seat === 2 ? "bot" : "player" });
@@ -87,6 +87,18 @@ describe("watching a past game again", () => {
     await screen.findByText(/Table ABC234/);
     expect(screen.getByRole("combobox", { name: "Watch" })).toHaveValue("0");
     expect(screen.getByText(/Step 12 of 40/)).toBeInTheDocument();
+  });
+
+  it("names the watched player in the scores and the result, never as 'you'", async () => {
+    saveIdentity(user);
+    const whole = match(5000);
+    mount(server({ ok: true, data: whole }).post, `/replay/m1#step=${whole.log.length}&seat=1`);
+    const result = await screen.findByLabelText(/round result/i);
+    expect(within(result).getByRole("listitem", { name: /^Ben:/ }).textContent).toMatch(/^\d+Ben/);
+    expect(result.textContent).not.toMatch(/\byou\b/i);
+    const sidePanel = screen.getAllByText("Ben");
+    expect(sidePanel.length).toBeGreaterThan(1);
+    expect(screen.queryByText("You")).not.toBeInTheDocument();
   });
 
   it("says why a browser without the player's profile cannot watch it, and asks nothing", async () => {

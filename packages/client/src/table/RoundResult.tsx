@@ -3,10 +3,11 @@
  *
  * A total alone invites the question of where it came from, and in Hand and Foot
  * the answer is usually the books: a player can lay down fewer card points and
- * still win on two clean books. So each player's score is broken into the parts the
- * engine added up — books by kind at the table's bonus, the face value of what was
- * melded, the go-out bonus, and the cards left over — and the parts are the
- * engine's own, so they always sum to the total.
+ * still win on two clean books. So on a computer each row shows, beside the round's
+ * score and the total, the engine's own breakdown as the board draws it: how many
+ * clean and dirty books, the face value of the cards melded, and how many cards were
+ * left in hand. These explain the score rather than add up to it, since the go-out
+ * bonus and the book bonuses are not columns of their own.
  *
  * It opens over the table, headed by how the round ended, because the end of a
  * round is the biggest thing that happens in it and a line of text among the
@@ -236,7 +237,7 @@ export function RoundResult({
           <>
             <span>Clean books</span>
             <span>Dirty books</span>
-            <span>Cards melded</span>
+            <span>Card points</span>
             <span>Cards left</span>
           </>
         )}
