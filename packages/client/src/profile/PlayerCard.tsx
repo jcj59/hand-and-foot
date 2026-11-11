@@ -159,7 +159,7 @@ export function PlayerCard({
 }
 
 /** The card's corner index: the player's initial, as a playing card has its rank. */
-function CornerIndex({ initial }: { readonly initial: string }): React.ReactElement {
+export function CornerIndex({ initial }: { readonly initial: string }): React.ReactElement {
   return (
     <span
       aria-hidden="true"

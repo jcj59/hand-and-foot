@@ -98,12 +98,23 @@ const AWARD_ICON: Record<string, { readonly d: string; readonly color: string }>
   "red-threes": { d: "M8 5h5a3.5 3.5 0 0 1 0 7h-3h3a3.5 3.5 0 0 1 0 7H8", color: "#E5484D" },
 };
 
+/** An award's own color, which tints its icon and, on Profile, its tile. */
+export function awardColor(id: string): string {
+  return (AWARD_ICON[id] ?? AWARD_ICON.out!).color;
+}
+
 export function AwardIcon({
   id,
   size,
+  earned = true,
+  glyph = size / 2,
 }: {
   readonly id: string;
   readonly size: number;
+  /** False draws it gray, for an award not won yet. */
+  readonly earned?: boolean;
+  /** The drawing's own size inside its box. */
+  readonly glyph?: number;
 }): React.ReactElement {
   const icon = AWARD_ICON[id] ?? AWARD_ICON.out!;
   return (
@@ -114,13 +125,13 @@ export function AwardIcon({
         width: size,
         height: size,
         borderRadius: Math.round(size * 0.3),
-        background: `${icon.color}2E`,
-        color: icon.color,
+        background: earned ? `${icon.color}2E` : "rgba(255,255,255,0.05)",
+        color: earned ? icon.color : "var(--color-faint)",
       }}
     >
       <svg
-        width={size / 2}
-        height={size / 2}
+        width={glyph}
+        height={glyph}
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"

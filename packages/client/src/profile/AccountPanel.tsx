@@ -1,17 +1,24 @@
 /**
  * Being the same player on every device: sign in with a username and password, or
- * give this device's profile one so the others can.
+ * give this device's profile one so the others can. It is the Account part of the
+ * Profile page.
  *
- * Folded away on the home screen, like the rest of the profile — most people play
- * on one device and never open it. Signed in, it offers changing the password
- * (which signs every other device out, the one thing to do about a lost phone) and
- * signing this device out. There is no reset for a forgotten password, so the
- * place a password is chosen says so, and asks for it twice.
+ * On a computer it is a card: the username (or "Not signed in") with Change
+ * password (or Sign in) beside it, then Add a device and Sign out of this browser.
+ * On a phone it is rows ("Signed in as", "Other devices") in Profile's settings
+ * list, each opening a sheet. Changing the password signs every other device out,
+ * the one thing to do about a lost phone. There is no reset for a forgotten
+ * password, so the place a password is chosen says so, and asks for it twice.
  *
- * The transfer code is still here, folded inside, for a profile that has no
+ * The transfer code is still here, under Add a device, for a profile that has no
  * username: it moves the whole profile without choosing anything.
+ *
+ * The profile is registered with the server when the page opens on a device that
+ * already has one (which also says whether it is still signed in), or else when a
+ * sheet is first opened, so a device that never played is not given a profile
+ * just for looking.
  */
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import {
   MAX_PASSWORD_LENGTH,
   MAX_USERNAME_LENGTH,
@@ -25,29 +32,48 @@ import {
   changePassword,
   claimAccount,
   loadAccount,
+  loadIdentity,
   loadName,
   prepareIdentity,
   signIn,
   signOut,
   type Post,
 } from "../identity";
+import { Button, buttonClass } from "../ui/Button";
+import { Sheet } from "../ui/Sheet";
+import { SectionHeading } from "./AwardGrid";
+
+type SheetName = "account" | "signIn" | "password" | "devices";
+
+const SHEET_TITLE: Record<SheetName, string> = {
+  account: "Your account",
+  signIn: "Sign in",
+  password: "Change password",
+  devices: "Other devices",
+};
 
 export function AccountPanel({
   post,
+  phone = false,
+  rows,
   onSignedIn,
 }: {
   readonly post: Post;
-  /** Told the profile's name when this device signs in, to offer it for sitting down. */
+  readonly phone?: boolean;
+  /** On a phone, more rows for the same list (Sounds), under the account's own. */
+  readonly rows?: ReactNode;
+  /** Told the profile's name when this device signs in, to show it on the card. */
   readonly onSignedIn?: (name: string) => void;
 }): React.ReactElement {
   const [account, setAccount] = useState<string | null>(() => loadAccount());
   const [status, setStatus] = useState<string | null>(null);
+  const [sheet, setSheet] = useState<SheetName | null>(null);
   // Shown only once the server knows it: a code for an identity never registered
   // would be refused on the other device.
   const [identity, setIdentity] = useState<UserCredentials | null>(null);
   const [asked, setAsked] = useState(false);
 
-  const open = (): void => {
+  const prepare = (): void => {
     if (asked) return;
     setAsked(true);
     void prepareIdentity(post, loadName()).then((ready) => {
@@ -59,74 +85,86 @@ export function AccountPanel({
     });
   };
 
+  // A device that has a profile checks it as the page opens: one signed out
+  // elsewhere should not go on saying it is signed in.
+  useEffect(() => {
+    if (loadIdentity()) prepare();
+    // Once, as the page opens: `prepare` itself guards against asking twice.
+  }, []);
+
+  const show = (name: SheetName): void => {
+    prepare();
+    setStatus(null);
+    setSheet(name);
+  };
+
   const signedIn = (username: string, credentials: UserCredentials | null): void => {
     setAccount(username);
     setIdentity(credentials);
   };
 
-  return (
-    <details
-      className="rounded border border-white/10 bg-black/15 p-3 text-sm"
-      onToggle={(event) => {
-        if ((event.currentTarget as HTMLDetailsElement).open) open();
-      }}
+  const [leaving, setLeaving] = useState(false);
+  const leave = (): void => {
+    setLeaving(true);
+    void signOut(post).then(() => {
+      setLeaving(false);
+      setAccount(null);
+      setIdentity(null);
+      setAsked(false);
+      setSheet(null);
+      setStatus("Signed out. This device will start a new profile when you next play.");
+    });
+  };
+
+  const statusLine = status && (
+    <p role="status" className="m-0 text-sm text-ink-soft">
+      {status}
+    </p>
+  );
+
+  const signOutButton = (
+    <button
+      type="button"
+      disabled={leaving}
+      onClick={leave}
+      className={buttonClass("ghost", "md", "text-salmon! font-medium")}
     >
-      <summary className="cursor-pointer text-white/70">
-        {account ? `Signed in as ${account}` : "Sign in, or use your profile on another device"}
-      </summary>
-      <div className="mt-3 flex flex-col gap-4">
-        {account ? (
-          <SignedIn
-            post={post}
-            account={account}
-            onStatus={setStatus}
-            onSignedOut={() => {
-              setAccount(null);
-              setIdentity(null);
-              setAsked(false);
-            }}
-          />
-        ) : (
+      Sign out of this browser
+    </button>
+  );
+
+  const body = (name: SheetName): ReactNode => {
+    switch (name) {
+      case "account":
+        return (
+          <>
+            <p className="m-0 text-muted">
+              <span className="font-semibold text-ink">@{account}</span> is the same player on every
+              device you sign in on.
+            </p>
+            <div className="flex flex-wrap gap-2.5">
+              <Button variant="secondary" onClick={() => setSheet("password")}>
+                Change password
+              </Button>
+              {signOutButton}
+            </div>
+          </>
+        );
+      case "signIn":
+        return (
           <SignedOut
             post={post}
             identity={identity}
             onStatus={setStatus}
-            onSignedIn={signedIn}
-            onName={(name) => onSignedIn?.(name)}
-            onAdopted={setIdentity}
+            onSignedIn={(username, credentials) => {
+              signedIn(username, credentials);
+              setSheet(null);
+            }}
+            onName={(n) => onSignedIn?.(n)}
           />
-        )}
-        {status && (
-          <p role="status" className="text-white/80">
-            {status}
-          </p>
-        )}
-      </div>
-    </details>
-  );
-}
-
-function SignedIn({
-  post,
-  account,
-  onStatus,
-  onSignedOut,
-}: {
-  readonly post: Post;
-  readonly account: string;
-  readonly onStatus: (status: string) => void;
-  readonly onSignedOut: () => void;
-}): React.ReactElement {
-  const [busy, setBusy] = useState(false);
-  return (
-    <>
-      <p className="text-white/70">
-        Sign in as <span className="font-medium text-white">{account}</span> on your other devices
-        to be the same player there.
-      </p>
-      <details>
-        <summary className="cursor-pointer text-white/70">Change password</summary>
-        <div className="mt-2">
+        );
+      case "password":
+        return (
           <PasswordForm
             label="Change password"
             intro="Changing it signs out every other device, so a lost phone stops being you."
@@ -134,7 +172,7 @@ function SignedIn({
             submit="Change password"
             onSubmit={async ({ password, newPassword }) => {
               const answer = await changePassword(post, password, newPassword);
-              onStatus(
+              setStatus(
                 answer.ok
                   ? "Password changed. Every other device has been signed out."
                   : capitalize(answer.error),
@@ -142,23 +180,140 @@ function SignedIn({
               return answer.ok;
             }}
           />
+        );
+      case "devices":
+        return account ? (
+          <>
+            <p className="m-0 text-muted">
+              To add a device, open Profile on it and sign in as{" "}
+              <span className="font-semibold text-ink">@{account}</span>.
+            </p>
+            <p className="m-0 text-muted">
+              Lost one? Changing your password signs out every other device.
+            </p>
+            <Button variant="secondary" className="self-start" onClick={() => setSheet("password")}>
+              Change password
+            </Button>
+          </>
+        ) : (
+          <TransferCode
+            post={post}
+            identity={identity}
+            onStatus={setStatus}
+            onAdopted={(credentials, username) => {
+              if (username) signedIn(username, credentials);
+              else setIdentity(credentials);
+            }}
+          />
+        );
+    }
+  };
+
+  const open = sheet && (
+    <Sheet title={SHEET_TITLE[sheet]} id={`account-${sheet}`} onClose={() => setSheet(null)}>
+      <div className="flex flex-col gap-4 text-sm">
+        {body(sheet)}
+        {statusLine}
+      </div>
+    </Sheet>
+  );
+
+  if (phone) {
+    return (
+      <section aria-label="Account" className="flex flex-col gap-2">
+        <SectionHeading>Account &amp; settings</SectionHeading>
+        <div className="rounded-2xl border border-white/6 bg-surface">
+          <SettingsRow
+            label={account ? "Signed in as" : "Account"}
+            value={account ? `@${account}` : "Sign in"}
+            onClick={() => show(account ? "account" : "signIn")}
+            first
+          />
+          <SettingsRow
+            label="Other devices"
+            value={account ? "Add or sign out" : "Add a device"}
+            onClick={() => show("devices")}
+          />
+          {rows}
         </div>
-      </details>
-      <button
-        type="button"
-        disabled={busy}
-        onClick={() => {
-          setBusy(true);
-          void signOut(post).then(() => {
-            onSignedOut();
-            onStatus("Signed out. This device will start a new profile when you next play.");
-          });
-        }}
-        className="self-start rounded border border-white/30 px-3 py-1 disabled:opacity-40"
-      >
-        Sign out on this device
-      </button>
-    </>
+        {!sheet && statusLine}
+        {open}
+      </section>
+    );
+  }
+
+  return (
+    <section aria-label="Account" className="flex flex-col gap-2.5">
+      <SectionHeading>Account</SectionHeading>
+      <div className="flex flex-col gap-3.5 rounded-[18px] border border-white/6 bg-surface p-[18px]">
+        <div className="flex items-center justify-between gap-3">
+          <span className="min-w-0">
+            <span className="block font-semibold">{account ? `@${account}` : "Not signed in"}</span>
+            <span className="block text-[13px] text-muted">
+              {account
+                ? "The same player on every device you sign in on"
+                : "Sign in to be the same player on every device"}
+            </span>
+          </span>
+          <Button
+            variant="secondary"
+            className="shrink-0"
+            onClick={() => show(account ? "password" : "signIn")}
+          >
+            {account ? "Change password" : "Sign in"}
+          </Button>
+        </div>
+        <div className="flex flex-wrap gap-2.5 border-t border-white/6 pt-3.5">
+          <button
+            type="button"
+            onClick={() => show("devices")}
+            className={buttonClass("ghost", "md", "bg-accent/10! text-accent! hover:bg-accent/15!")}
+          >
+            Add a device
+          </button>
+          {account && signOutButton}
+        </div>
+        {!sheet && statusLine}
+      </div>
+      {open}
+    </section>
+  );
+}
+
+/** One row of the phone's settings list: what it is, and what it is set to. */
+export function SettingsRow({
+  label,
+  value,
+  onClick,
+  first = false,
+  role,
+  checked,
+}: {
+  readonly label: string;
+  readonly value: string;
+  readonly onClick: () => void;
+  readonly first?: boolean;
+  /** `"switch"` for a row that turns something on and off rather than opening a sheet. */
+  readonly role?: "switch";
+  readonly checked?: boolean;
+}): React.ReactElement {
+  return (
+    <button
+      type="button"
+      role={role}
+      aria-checked={role ? checked : undefined}
+      aria-label={role ? label : undefined}
+      onClick={onClick}
+      className={`flex min-h-[52px] w-full items-center justify-between px-3.5 text-left text-[15px] font-medium hover:bg-white/3 ${
+        first ? "" : "border-t border-white/5"
+      }`}
+    >
+      <span>{label}</span>
+      <span className="text-sm text-muted">
+        {value}
+        {!role && <span aria-hidden="true"> ›</span>}
+      </span>
+    </button>
   );
 }
 
@@ -168,14 +323,12 @@ function SignedOut({
   onStatus,
   onSignedIn,
   onName,
-  onAdopted,
 }: {
   readonly post: Post;
   readonly identity: UserCredentials | null;
   readonly onStatus: (status: string) => void;
   readonly onSignedIn: (username: string, credentials: UserCredentials | null) => void;
   readonly onName: (name: string) => void;
-  readonly onAdopted: (credentials: UserCredentials) => void;
 }): React.ReactElement {
   return (
     <>
@@ -195,7 +348,7 @@ function SignedOut({
           return true;
         }}
       />
-      <hr className="border-white/10" />
+      <hr className="m-0 border-white/10" />
       <PasswordForm
         label="Choose a username"
         heading="New here? Choose a username"
@@ -215,18 +368,6 @@ function SignedOut({
           return true;
         }}
       />
-      <details>
-        <summary className="cursor-pointer text-white/70">Or move it with a code</summary>
-        <TransferCode
-          post={post}
-          identity={identity}
-          onStatus={onStatus}
-          onAdopted={(credentials, username) => {
-            if (username) onSignedIn(username, credentials);
-            else onAdopted(credentials);
-          }}
-        />
-      </details>
     </>
   );
 }
@@ -249,8 +390,7 @@ function SignInForm({
   };
   return (
     <form aria-label="Sign in" className="flex flex-col gap-2" onSubmit={submit}>
-      <h3 className="font-medium text-white">Sign in</h3>
-      <span className="text-white/70">
+      <span className="text-muted">
         Have a username already? Sign in to play as that profile here. Games played on this device
         before signing in stay with its old profile.
       </span>
@@ -339,8 +479,8 @@ function PasswordForm({
 
   return (
     <form aria-label={label} className="flex flex-col gap-2" onSubmit={send}>
-      {heading && <h3 className="font-medium text-white">{heading}</h3>}
-      <span className="text-white/70">{intro}</span>
+      {heading && <h3 className="m-0 font-display text-base font-semibold text-ink">{heading}</h3>}
+      <span className="text-muted">{intro}</span>
       {withUsername && (
         <Field label="Username">
           <input
@@ -387,7 +527,7 @@ function PasswordForm({
         />
       </Field>
       {(short || mismatch) && (
-        <p className="text-amber-200">
+        <p className="m-0 text-gold">
           {short
             ? `A password needs at least ${MIN_PASSWORD_LENGTH} characters.`
             : "The two passwords are not the same."}
@@ -413,9 +553,9 @@ function TransferCode({
 }): React.ReactElement {
   const [pasted, setPasted] = useState("");
   return (
-    <div className="mt-2 flex flex-col gap-3">
-      <label className="flex flex-col gap-1">
-        <span className="text-white/70">
+    <div className="flex flex-col gap-4">
+      <label className="flex flex-col gap-1.5">
+        <span className="text-muted">
           This device&rsquo;s code. Paste it on the other device to be the same player there. Keep
           it to yourself: it is your profile.
         </span>
@@ -424,11 +564,11 @@ function TransferCode({
           value={identity ? transferCode(identity) : "…"}
           onFocus={(e) => e.target.select()}
           aria-label="Your transfer code"
-          className="rounded border border-white/20 bg-black/30 px-2 py-1 font-mono text-xs"
+          className={`${INPUT} font-mono text-xs`}
         />
       </label>
       <form
-        className="flex flex-col gap-1"
+        className="flex flex-col gap-1.5"
         onSubmit={(event) => {
           event.preventDefault();
           void adoptTransferCode(post, pasted).then((result: Ack<UserCredentials>) => {
@@ -439,19 +579,19 @@ function TransferCode({
           });
         }}
       >
-        <span className="text-white/70">Or use a code from another device</span>
+        <span className="text-muted">Or use a code from another device</span>
         <div className="flex gap-2">
           <input
             value={pasted}
             onChange={(e) => setPasted(e.target.value)}
             aria-label="Code from another device"
             placeholder="hf1.…"
-            className="min-w-0 flex-1 rounded border border-white/20 bg-black/30 px-2 py-1 font-mono text-xs"
+            className={`${INPUT} min-w-0 flex-1 font-mono text-xs`}
           />
           <button
             type="submit"
             disabled={pasted.trim() === ""}
-            className="rounded border border-white/30 px-3 py-1 disabled:opacity-40"
+            className={buttonClass("secondary")}
           >
             Use it
           </button>
@@ -469,15 +609,16 @@ function Field({
   readonly children: ReactNode;
 }): React.ReactElement {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-white/70">{label}</span>
+    <label className="flex flex-col gap-1.5">
+      <span className="text-muted">{label}</span>
       {children}
     </label>
   );
 }
 
-const INPUT = "rounded border border-white/20 bg-black/30 px-2 py-1 text-white";
-const BUTTON = "self-start rounded border border-white/30 px-3 py-1 disabled:opacity-40";
+const INPUT =
+  "min-h-11 rounded-xl border border-white/16 bg-black/25 px-3 text-ink placeholder:text-faint";
+const BUTTON = buttonClass("primary", "md", "self-start");
 
 function capitalize(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);

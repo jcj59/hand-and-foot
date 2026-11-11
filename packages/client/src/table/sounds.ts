@@ -55,7 +55,8 @@ export function soundsFor(before: Moment, now: Moment): Sound[] {
 
 const MUTE_KEY = "hf.muted";
 
-function readMuted(): boolean {
+/** Whether this device has the table's sounds off (the Sound toggle, and Profile's Sounds). */
+export function readMuted(): boolean {
   try {
     return window.localStorage.getItem(MUTE_KEY) === "1";
   } catch {
@@ -63,7 +64,7 @@ function readMuted(): boolean {
   }
 }
 
-function writeMuted(muted: boolean): void {
+export function writeMuted(muted: boolean): void {
   try {
     window.localStorage.setItem(MUTE_KEY, muted ? "1" : "0");
   } catch {
