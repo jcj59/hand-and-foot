@@ -486,15 +486,15 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   a notice. Reloading the home screen no longer auto-rejoins a stored seat — only the table's own
   URL does; Home's Rejoin reads the saved credentials.
 - **Phone layout (post-M5).** `usePhone` (`matchMedia("(max-width: 767px)")`) switches the table to
-  a stacked layout: `OpponentStrip` chips with a modal melds sheet, the player's own melds as cards
-  (collapsible to chips, remembered per device), and the hand in even, non-overlapping rows of
+  a stacked layout: `OpponentStrip` chips with a modal melds sheet, the player's own melds in
+  `MeldsPanel` (collapsible, `hf.compactMelds`), and the hand in even, non-overlapping rows of
   46px `medium` cards sized to the measured width (`evenRows`/`perRow` in `Hand.tsx`). The footer
-  holding the hand is capped at `48dvh` and scrolls, so a small phone keeps the piles in view; for
+  holding the hand is capped at `46dvh` and scrolls, so a small phone keeps the piles in view; for
   that reason a card's menu opens as a bottom sheet portalled to `document.body`, not above the
-  card, where the scrolling footer would clip it. On a computer the other players are shown in
-  full, but a "Collapse players" toggle swaps in the same `OpponentStrip` (remembered per device,
-  `hf.compactSeats`). jsdom has no `matchMedia`, so tests get the desktop layout by default; phone
-  tests define `window.matchMedia` matching `PHONE_QUERY` and delete it afterwards.
+  card, where the scrolling footer would clip it. On a computer the other players are `Seats`
+  boxes (melds as chips, Expand for cards; see redesign 5). jsdom has no `matchMedia`, so tests get
+  the desktop layout by default; phone tests define `window.matchMedia` matching `PHONE_QUERY` and
+  delete it afterwards.
 - **Take-back and the latest move (post-M5).** `takeBack` (engine `takeBack.ts`) restores
   `GameState.turnBase`, the seat before the turn's first play; `withTurnBase` keeps the *first*
   base, and `withoutTurnBase` (in `core.ts`) clears it at turn end, at go-out, and when a play
@@ -503,7 +503,7 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   `playedThisTurn`'s `state.currentSeat !== seat` guard, since a base only ever exists for the seat
   on turn. The server's `Room.noteMove` sets `ViewUpdate.lastMove`; the drawn card is stripped for
   every other seat (pinned in `room.lastmove.test.ts` and over the wire). The client's
-  `useMoveNews` announces others' discards/pickups once per `seq` and marks the player's own draw.
+  `useMoveNews` marks the player's own draw; others' moves show in the latest-move pill (`moveLine`).
 - **Card animations.** FLIP, no library: `table/motion.ts` plans (pure, unit-tested) and
   `table/cardMotion.ts` plays them with the Web Animations API. Cards carry `data-motion` (their
   ids; a collapsed book or chip lists all of its cards), places carry `data-anchor` (`stock`,

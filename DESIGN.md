@@ -142,7 +142,7 @@ Two things are never undone: the draw or pickup, and a foot picked up mid-turn b
 away — picking it up clears the base, because undoing past it would let a player replan with cards
 they have now seen. Because it is an ordinary action, it is logged and replays like any other.
 
-What a player just did is sent with every view (`ViewUpdate.lastMove`), so the table can announce
+What a player just did is sent with every view (`ViewUpdate.lastMove`), so the table can show
 another player's discard or pickup instead of leaving players to notice a changed card. A drawn
 card is included only in the drawer's own update; everyone else learns that a card was drawn, not
 which, and that is pinned over the wire as well as in the projection.
