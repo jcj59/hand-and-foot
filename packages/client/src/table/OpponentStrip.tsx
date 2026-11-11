@@ -211,7 +211,7 @@ export function OpponentStrip({
 }
 
 /** The felt, lit from the top: a sheet that comes up out of the table. */
-export const FELT_TOP = "radial-gradient(ellipse at 50% 0%, #2C6B53, #1A4535 70%, #143629)";
+const FELT_TOP = "radial-gradient(ellipse at 50% 0%, #2C6B53, #1A4535 70%, #143629)";
 
 function chipLabel(
   name: string,

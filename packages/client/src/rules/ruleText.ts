@@ -23,7 +23,7 @@ export const PRESET_NAMES: Readonly<Record<RulesPreset, string>> = {
   "west-coast": "West Coast",
 };
 
-export const MODE_NAMES: Readonly<Record<GameMode, string>> = {
+const MODE_NAMES: Readonly<Record<GameMode, string>> = {
   family: "Family",
   competitive: "Competitive",
 };

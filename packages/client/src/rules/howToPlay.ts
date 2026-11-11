@@ -26,7 +26,7 @@ export interface RulesSection {
 }
 
 /** The wild ratio, as a player reads it. */
-export const WILD_RATIO_TEXT: Readonly<Record<WildRatioRule, string>> = {
+const WILD_RATIO_TEXT: Readonly<Record<WildRatioRule, string>> = {
   "naturals-exceed-wilds":
     "A meld must have more naturals than wilds. Three naturals carry at most two wilds.",
   "naturals-equal-wilds": "A meld may have as many wilds as naturals, but never more.",

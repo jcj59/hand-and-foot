@@ -7,12 +7,10 @@
  *
  * The look is the redesign's: charcoal surfaces stepping up in lightness, one green
  * accent for the thing to press, gold for a highlight (wilds, awards), and a small
- * set of player colors that faces and chips share. The felt greens are the table's
+ * set of player colors that faces and chips share. The felt green is the table's
  * cloth. Cards are drawn as SVG and take their few colors from here too.
  */
 @theme {
-  --color-felt-700: oklch(0.42 0.07 158);
-  --color-felt-800: oklch(0.35 0.06 158);
   --color-felt-900: oklch(0.27 0.05 158);
 
   /* Surfaces, darkest first: the page, the navigation, a card, a sheet, a raised control. */

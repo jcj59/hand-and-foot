@@ -17,7 +17,7 @@ export type MeldOrder = "rank" | "newest";
 const RANK_ORDER: readonly Rank[] = ["3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"];
 
 /** A meld's size at which it becomes a book. */
-export const BOOK_SIZE = 7;
+const BOOK_SIZE = 7;
 
 /**
  * Melds in the chosen order. A player's melds are kept in the order they were

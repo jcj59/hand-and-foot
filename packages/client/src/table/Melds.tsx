@@ -39,7 +39,7 @@ export interface MeldsProps {
 
 const NONE: ReadonlySet<string> = new Set();
 
-export const NOTE_COLOR: Record<MeldTone, string> = {
+const NOTE_COLOR: Record<MeldTone, string> = {
   clean: "text-gold-soft",
   dirty: "text-ink-soft",
   open: "text-ink/65",
@@ -143,7 +143,7 @@ export function Melds({
 }
 
 /** One meld's cards, overlapped so only each corner shows, wilds last. */
-export function MeldFan({
+function MeldFan({
   cards,
   compact = false,
 }: {
@@ -170,7 +170,7 @@ export function MeldFan({
  * pair is the whole meaning of a meld and hearing seven card names is not a
  * substitute for it.
  */
-export function meldLabel(meld: Meld): string {
+function meldLabel(meld: Meld): string {
   const kind = classifyBook(meld);
   const size = `${meld.cards.length} card${meld.cards.length === 1 ? "" : "s"}`;
   return kind === "incomplete"

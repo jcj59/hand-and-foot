@@ -25,7 +25,7 @@ interface Destination {
   readonly tab: boolean;
 }
 
-export const DESTINATIONS: readonly Destination[] = [
+const DESTINATIONS: readonly Destination[] = [
   { to: "/", label: "Play", tab: true },
   { to: "/history", label: "History", tab: true },
   { to: "/learn", label: "Learn", tab: false },

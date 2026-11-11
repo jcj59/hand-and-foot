@@ -29,7 +29,7 @@ export function withGrabbyName(room: RoomInfo): RoomInfo {
 }
 
 /** What to announce when the title changes hands, in the players' real names. */
-export function grabbyHeadline(room: RoomInfo): string | null {
+function grabbyHeadline(room: RoomInfo): string | null {
   const title = room.grabbyPants;
   if (!title) return null;
   const name = (seat: number): string =>
@@ -40,18 +40,16 @@ export function grabbyHeadline(room: RoomInfo): string | null {
 }
 
 /** How long the announcement stays up. */
-export const GRABBY_MS = 4_000;
+const GRABBY_MS = 4_000;
 
 /** How long to wait for the device's voices to load before using its default. */
-export const VOICES_WAIT_MS = 1_000;
+const VOICES_WAIT_MS = 1_000;
 
 /**
  * A lower voice where the device offers one by name. "Female" contains "male", so
  * it is ruled out first and "male" only counts as a word of its own.
  */
-export function pickDeepVoice(
-  voices: readonly SpeechSynthesisVoice[],
-): SpeechSynthesisVoice | undefined {
+function pickDeepVoice(voices: readonly SpeechSynthesisVoice[]): SpeechSynthesisVoice | undefined {
   return voices.find(
     (v) =>
       !/female/i.test(v.name) &&
@@ -109,7 +107,7 @@ export function sayDeep(text: string, after?: () => void): void {
 /** How long a spoken line may take before whatever follows it goes ahead anyway. */
 export const SPEECH_GIVE_UP_MS = 3_000;
 
-export function sayGrabbyPants(): void {
+function sayGrabbyPants(): void {
   sayDeep("Grabby Pants");
 }
 

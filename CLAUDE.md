@@ -17,7 +17,7 @@ pnpm + Turborepo monorepo, TypeScript everywhere, seven workspace packages:
 | `packages/shared` | `@hf/shared` | Domain types, rules config, presets, client/server contract. Done for M1. |
 | `packages/engine` | `@hf/engine` | Pure rules engine `(state, action) => newState`. **Complete (M1).** |
 | `packages/server` | `@hf/server` | Authoritative table logic (`Room`, `TableChannel`, `RoomStore`) exported host-agnostically from `@hf/server/core`, plus a Node host for it (`ws` sockets, Postgres persistence, restore-on-boot). **Complete (M2, M4, M5).** |
-| `packages/client` | `@hf/client` | React + Vite + Tailwind + Zustand app: lobby, table, SVG cards, meld staging. **Complete (M3).** |
+| `packages/client` | `@hf/client` | React + Vite + Tailwind + Zustand app: the app shell (Play, History, Learn, Rules, Profile), join and new-table sheets, lobby, table, lessons, replay player, SVG cards, meld staging. **Complete (M3); redesigned November 2026.** |
 | `packages/transport` | `@hf/transport` | The client's connection: HTTP to sit down, one WebSocket per table, reconnect with back-off, 25s keep-alive. Keeps Socket.io's `emit`/`on` surface. **M5.** |
 | `packages/scenarios` | `@hf/scenarios` | The scenario library: hand-arranged tables, scripts resolved to actions, an autopilot for filler play. Pure; consumed by the client's dev-only viewer. **Roadmap item 1.** |
 | `packages/worker` | `@hf/worker` | The production host: a Cloudflare Worker serving the client and a `TableObject` Durable Object per table code, hibernatable sockets, storage in the object's own SQLite KV. **M5.** |
@@ -842,7 +842,13 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   saved-game list leave bots out. `room.idle.test.ts`'s round-end fixture now times both players
   out rather than disconnecting one, because the heuristic may take the pile instead of drawing the
   last card. Item 5's records should mark bot seats and keep them out of people's stats (the user's
-  decision, 2026-10-02). Mutation-tested: 24/24 server mutants killed; one only after the idle
+  decision, 2026-10-02). **Levels (redesign 1a):** `@hf/shared/bots.ts` has `BotLevel` (`easy` /
+  `standard` / `hard`, `BOT_LEVELS` in picker order, only ever appended), `DEFAULT_BOT_LEVEL`
+  Standard for a new computer, `LEGACY_BOT_LEVEL` Hard for one stored without a level, and
+  `MAX_BOT_NAME_LENGTH` 16. The level is a sibling field `botLevel` beside `bot: true`, never
+  `bot: {level}`, so older records and clients keep working; `addBot {level?, name?}` and
+  `updateBot` set it, a rematch keeps it, and absent people are played at Hard. The levels differ
+  only in taking the pile (`STANDARD_PILE_SHARE`); `pnpm bot:measure --levels` measures them. Mutation-tested: 24/24 server mutants killed; one only after the idle
   test was sharpened to pause after exactly one lap (a bot turn not counting still paused, a lap
   later).
 
@@ -892,12 +898,18 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
 
 - **Redesign shell (redesign PR 0).** Theme tokens live in `client/src/index.css` (charcoal
   surfaces, green accent, gold); Inter, Space Grotesk and JetBrains Mono are self-hosted variable
-  fonts in `client/public/fonts` (licence in `OFL.txt`, no npm dependency). Shared components are in
+  fonts in `client/public/fonts` (license in `OFL.txt`, no npm dependency). Shared components are in
   `client/src/ui/` (`Button`, `Segmented`, `Sheet` = bottom sheet on phone / dialog on desktop,
   `Chip`, `IconBox`, `PageHeader`, `icons`), and `ui/AppShell.tsx` is a sidebar on desktop and a
-  tab bar on phone. The table, lesson, replay and watch screens hide the shell and keep the felt
-  look until Phase 5. `/history` and `/profile` (`pages/`) host `HistoryPage` and
-  `AccountPanel`. **Home (redesign 3a)** is the greeting with stats (from the match-history request,
+  tab bar on phone. DESIGN.md "Visual design" describes the look as a whole. **Routes** (`App.tsx`):
+  inside `AppShell` are `/` (Home), `/practice` (Home with the Practice sheet open), `/history`,
+  `/learn` (lesson list), `/rules` and `/profile`; inside `BareFrame` (full screen, no navigation,
+  the one remaining felt token `felt-900` behind it) are `/room/:roomId` (join card, lobby or
+  table), `/watch/:roomId`, `/learn/:lessonId` (a lesson, or `demo`) and `/replay/:matchId`;
+  `/join/:roomId` redirects to `/room/:roomId`, and anything else to `/`. `/scenarios` is the
+  dev-only viewer that `main.tsx` mounts instead of the app. Below `md` (`PHONE_QUERY`, 767px)
+  `usePhone()` switches markup, not just spacing: tab bar instead of sidebar, sheets from the
+  bottom instead of dialogs, the table's opponent chips and even-row hand. **Home (redesign 3a)** is the greeting with stats (from the match-history request,
   `PlayerStats.awards` for the awards total), the Play banner, "Your games" (the held seat as "In
   progress" and saved games as "Saved"), and the Practice / Learn / Demo tiles; the account panel
   lives only on Profile. "New table" and "Join with code" open the `Sheet`s in `home/sheets.tsx`,
@@ -1014,12 +1026,18 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   Not built: the mockup's per-device list with "Sign out" per device, which needs the server to
   list and name a profile's devices; the sign-in redesign is a later PR.
 
-- **Rules page (roadmap item 8).** `rules/howToPlay.ts` (`howToPlay(config)` → sections of
-  paragraphs, every number from the config: deal, decks, minimums per round, wild ratio, Marva,
-  going-out books, scoring; pinned in `howToPlay.test.tsx`), `rules/HowToPlay.tsx` (`RulesText`,
-  `HowToPlayPage` at `/rules` with a preset picker, linked from Home; `RulesDialog` from the table
-  header's "Rules" / "?" button, aria-label "How to play", for the table's own config). Harness
-  action `rules`.
+- **Rules page (roadmap item 8, redesign 9).** `rules/howToPlay.ts`: `howToPlay(config)` gives a
+  table's sections (`RulesSection`: id, title, paragraphs), every number from the config: deal,
+  decks, minimums per round, wild ratio, Marva, going-out books, scoring; `generalRules()` gives the
+  same sections for no table in particular, stating what every preset shares, with the one rule the
+  presets differ on, the wild ratio, as a `coasts` call-out (`CoastRule`, East Coast and West Coast
+  side by side on a computer and stacked on a phone, gold-tinted, `gold-ink` text). Pinned in `howToPlay.test.tsx`.
+  `rules/HowToPlay.tsx`: `HowToPlayPage` at `/rules` is one set of rules (no preset picker, no Main
+  menu button: the shell is the way out), a card per section with its icon and color (`LOOKS`) and a
+  link to the lesson that teaches it, plus a contents list (a column beside the cards on a computer
+  that follows the section in view, a grid of tiles on a phone). `RulesDialog` is a `Sheet` from the
+  table header's "How to play" (in the menu on a phone, a button in the bar on a computer), for the
+  table's own config, house rules and all, without lesson links. Harness action `rules`.
 
 - **Round recap and match awards (roadmap item 11).** `ScoreBreakdown.redThreesHeld` (from
   `scoreRound`). Engine `seatTallies(timeline, rounds?)` (moments + round breakdowns; now what
