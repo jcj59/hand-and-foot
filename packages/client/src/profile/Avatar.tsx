@@ -6,7 +6,8 @@
 import { useId } from "react";
 import type { Avatar } from "@hf/shared";
 
-const BACKGROUND: Record<Avatar["background"], string> = {
+/** Each background's color: also the player card's swatches. */
+export const BACKGROUND_COLORS: Record<Avatar["background"], string> = {
   teal: "#14b8a6",
   sky: "#38bdf8",
   violet: "#8b5cf6",
@@ -278,7 +279,7 @@ export function AvatarFace({
         <circle cx={20} cy={20} r={20} />
       </clipPath>
       <g clipPath={`url(#${disc})`}>
-        <circle cx={20} cy={20} r={20} fill={BACKGROUND[avatar.background]} />
+        <circle cx={20} cy={20} r={20} fill={BACKGROUND_COLORS[avatar.background]} />
         <TopBehind top={avatar.top} />
         <circle cx={20} cy={22.4} r={12.2} fill={SKIN[avatar.skin]} />
         <Top top={avatar.top} />
