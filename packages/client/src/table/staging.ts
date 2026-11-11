@@ -28,7 +28,7 @@ import {
   type Rank,
   type RulesConfig,
 } from "@hf/shared";
-import { cardValue, classifyBook, naturalRank, validateMeld } from "@hf/engine";
+import { cardValue, classifyBook, isFinishedBook, naturalRank, validateMeld } from "@hf/engine";
 
 export interface StagedGroup {
   readonly rank: Rank;
@@ -195,7 +195,7 @@ export function previewLayDown(params: PreviewParams): LayDownPreview {
     const staged = group.cardIds.map((id) => byId.get(id)).filter((card): card is Card => !!card);
     const before = existing.get(group.rank) ?? [];
     const combined = [...before, ...staged];
-    const problem = groupProblem(combined, staged, group.rank, config, inFoot);
+    const problem = groupProblem(combined, staged, group.rank, config, inFoot, before);
     if (problem) problems.push(problem);
     return {
       rank: group.rank,
@@ -252,9 +252,13 @@ function groupProblem(
   rank: Rank,
   config: RulesConfig,
   inFoot: boolean,
+  before: readonly Card[],
 ): string | null {
   if (staged.length === 0) return null;
   if (staged.some(isRedThree)) return "red threes can never be melded";
+  if (isFinishedBook(before) && staged.some((card) => isWild(card.rank))) {
+    return "a finished book cannot take a wild card";
+  }
   if (combined.some(isBlackThree)) {
     if (!inFoot) return "black threes can only be melded from the foot";
     if (combined.length < 7) return "black threes can only be melded as a book of seven or more";
