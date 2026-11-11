@@ -73,7 +73,7 @@ describe("screens using the default server post", () => {
   it("the history page asks for the history once", async () => {
     render(
       <MemoryRouter>
-        <HistoryPage />
+        <HistoryPage socket={{ emit: () => undefined } as unknown as HfClientSocket} />
       </MemoryRouter>,
     );
     await settle();
