@@ -31,6 +31,8 @@ export interface OpponentStripProps {
   readonly order: MeldOrder;
   /** A quick reaction to show by each seat that has one up. */
   readonly reactions?: ReadonlyMap<number, Reaction>;
+  /** On the felt itself, which has its own padding, rather than above it. */
+  readonly onFelt?: boolean;
 }
 
 /** What a seat is doing, in the few words under its name. */
@@ -77,6 +79,7 @@ export function OpponentStrip({
   clock,
   order,
   reactions,
+  onFelt = false,
 }: OpponentStripProps): React.ReactElement {
   const [open, setOpen] = useState<number | null>(null);
   const remaining = useRemaining(clock);
@@ -101,7 +104,9 @@ export function OpponentStrip({
     <>
       <ul
         aria-label="Other players"
-        className="m-0 flex list-none gap-1.5 overflow-x-auto px-3 pt-3.5 pb-0.5"
+        className={`m-0 flex shrink-0 list-none gap-1.5 overflow-x-auto ${
+          onFelt ? "p-0" : "px-3 pt-3.5 pb-0.5"
+        }`}
       >
         {opponents.map((opponent) => {
           const info = infoOf(opponent.seat);

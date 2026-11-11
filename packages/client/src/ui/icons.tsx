@@ -46,6 +46,15 @@ export const ICONS = {
   rules: "M4 19.5V5a2 2 0 0 1 2-2h14v16H6a2 2 0 0 0-2 2zM20 19v3H6",
   cards:
     "M8 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM6 6 3.6 7a2 2 0 0 0-1 2.6l4 9.4",
+  // The lessons, one each, as the Learn page draws them.
+  lessonTurn: "M4 12a8 8 0 0 1 14-5.3M20 4v4h-4M20 12a8 8 0 0 1-14 5.3M4 20v-4h4",
+  lessonDown: "M3 8h8v12H3zM13 4h8v12h-8zM6 13h2M16 9h2",
+  lessonAdd: "M4 4h10v16H4zM19 9v6M16 12h6",
+  lessonPile: "M4 15l8 4 8-4M4 11l8 4 8-4M12 2v7M9 5l3-3 3 3",
+  lessonWild: "M12 3l2.6 5.6 6.1.6-4.6 4.1 1.3 6L12 16.3l-5.4 3 1.3-6-4.6-4.1 6.1-.6z",
+  lessonThree: "M8 5h5a3.5 3.5 0 0 1 0 7h-3h3a3.5 3.5 0 0 1 0 7H8",
+  lessonFoot: "M6 4h12v16H6zM6 9h12M10 14h4",
+  lessonOut: "M14 4h5v16h-5M10 8l-4 4 4 4M6 12h10",
 } as const;
 
 export type IconName = keyof typeof ICONS;

@@ -131,6 +131,18 @@ export interface TableViewProps {
   readonly heading?: string;
   /** Quick reactions heard at the table, most recent last. */
   readonly reactions?: readonly Reaction[];
+  /** Replaces the table's own header: the replay player brings its own title and way back. */
+  readonly header?: React.ReactNode;
+  /** Shown under the header, above everything else: a lesson's coach on a phone. */
+  readonly belowHeader?: React.ReactNode;
+  /** What the computer's side panel holds, given the scores it holds by default. */
+  readonly aside?: (scores: React.ReactElement) => React.ReactNode;
+  /**
+   * A recorded game being watched: the other players and the watched seat's hand
+   * are on the felt with everything else, and there is no turn bar under it, since
+   * nobody here takes a turn.
+   */
+  readonly onFelt?: boolean;
 }
 
 /**
@@ -148,6 +160,10 @@ export function TableView({
   quiet = false,
   heading,
   reactions = NO_REACTIONS,
+  header: ownHeader,
+  belowHeader,
+  aside,
+  onFelt = false,
 }: TableViewProps): React.ReactElement {
   const [staging, setStaging] = useState<Staging>(EMPTY_STAGING);
   // Meld mode: clicks in the hand add to the lay-down instead of opening a menu.
@@ -477,7 +493,7 @@ export function TableView({
     />
   );
 
-  const header = (
+  const header = ownHeader ?? (
     <TableHeader
       title={title}
       sub={sub}
@@ -523,6 +539,8 @@ export function TableView({
     </p>
   );
 
+  // A watched game's felt also holds the hand, so its piles are a size smaller.
+  const pileSize = phone || onFelt ? "normal" : "large";
   const piles = (
     <section
       aria-label="Piles"
@@ -533,7 +551,7 @@ export function TableView({
           count={view.stockCount}
           label="Stock"
           pill="Stock"
-          size={phone ? "normal" : "large"}
+          size={pileSize}
           onClick={canDraw ? () => void send({ type: "draw" }) : undefined}
           actionLabel="Draw a card"
         />
@@ -547,11 +565,11 @@ export function TableView({
             style={pilePulse}
             className="pile-prompt rounded-xl p-1 transition hover:bg-white/5"
           >
-            <DiscardPile cards={view.discard} size={phone ? "normal" : "large"} />
+            <DiscardPile cards={view.discard} size={pileSize} />
           </button>
         ) : (
           <div className="p-1">
-            <DiscardPile cards={view.discard} size={phone ? "normal" : "large"} />
+            <DiscardPile cards={view.discard} size={pileSize} />
           </div>
         )}
         <CountPill label="Pile" count={view.discard.length} />
@@ -686,6 +704,24 @@ export function TableView({
     </section>
   );
 
+  // Watched on the felt: the cards alone, fanned, with no foot beside them.
+  const feltHand = onFelt && !spectating && (
+    <Hand
+      cards={zone}
+      interactive={false}
+      stagedIds={staged}
+      owedIds={owed}
+      meldRanks={meldRanks}
+      playContext={playContext}
+      onSelect={onCardSelect}
+      chosenId={null}
+      menu={null}
+      title={`${whose} ${view.inFoot ? "foot" : "hand"}${grabby ? ` (${GRABBY_NAME})` : ""}`}
+      newId={drawnId}
+      fan="medium"
+    />
+  );
+
   const hand = spectating ? (
     <p className="m-0 text-sm text-muted">
       Watching. Every player&rsquo;s cards stay hidden; only what is on the table is shown.
@@ -733,6 +769,19 @@ export function TableView({
     </div>
   );
 
+  const strip = (
+    <OpponentStrip
+      opponents={view.opponents}
+      room={room}
+      // Once the round is over nobody is playing, whatever seat the update names.
+      seatToAct={result ? -1 : hints.seatToAct}
+      clock={clock}
+      order={meldOrder}
+      reactions={bubbles}
+      onFelt={onFelt}
+    />
+  );
+
   const pause = (
     <PauseBar
       room={room}
@@ -761,35 +810,34 @@ export function TableView({
   return (
     <main ref={tableRef} className="flex h-full flex-col overflow-hidden bg-page text-ink">
       {header}
+      {belowHeader}
       {pause}
       {phone ? (
         <>
-          <OpponentStrip
-            opponents={view.opponents}
-            room={room}
-            // Once the round is over nobody is playing, whatever seat the update names.
-            seatToAct={result ? -1 : hints.seatToAct}
-            clock={clock}
-            order={meldOrder}
-            reactions={bubbles}
-          />
+          {!onFelt && strip}
           <section
             aria-label="Table"
-            className="mx-3 mt-2 flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto rounded-[22px] px-2.5 pt-3.5 pb-2.5"
+            className={`mx-3 flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto rounded-[22px] px-2.5 pb-2.5 ${
+              onFelt ? "pt-3" : "mt-2 pt-3.5"
+            }`}
             style={{ background: FELT }}
           >
+            {onFelt && strip}
             {banners}
             {piles}
             {latest}
             {staging_}
             {meldsPanel}
+            {feltHand}
           </section>
         </>
       ) : (
         <div className="flex min-h-0 flex-1 gap-5 px-6 py-4">
           <section
             aria-label="Table"
-            className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto rounded-[26px] p-[26px]"
+            className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto rounded-[26px] p-[26px] ${
+              onFelt ? "gap-3" : "gap-4"
+            }`}
             style={{
               background: FELT_CENTER,
               boxShadow: "inset 0 0 0 10px #3A2A1C, inset 0 0 0 12px #5A4330",
@@ -812,24 +860,27 @@ export function TableView({
             </div>
             {staging_}
             {meldsPanel}
+            {feltHand}
           </section>
           <aside aria-label="Scores and moves" className="w-[260px] shrink-0 overflow-y-auto">
-            {scores(false)}
+            {aside ? aside(scores(false)) : scores(false)}
           </aside>
         </div>
       )}
 
-      <footer
-        className={`mt-2 flex shrink-0 flex-col border-t border-white/7 bg-nav ${
-          phone
-            ? "max-h-[46dvh] gap-2 overflow-y-auto px-3 pt-2.5 pb-[calc(1.1rem+env(safe-area-inset-bottom,0px))]"
-            : "gap-2.5 px-6 pt-3.5 pb-5"
-        }`}
-      >
-        {alert}
-        {actionBar}
-        {hand}
-      </footer>
+      {!onFelt && (
+        <footer
+          className={`mt-2 flex shrink-0 flex-col border-t border-white/7 bg-nav ${
+            phone
+              ? "max-h-[46dvh] gap-2 overflow-y-auto px-3 pt-2.5 pb-[calc(1.1rem+env(safe-area-inset-bottom,0px))]"
+              : "gap-2.5 px-6 pt-3.5 pb-5"
+          }`}
+        >
+          {alert}
+          {actionBar}
+          {hand}
+        </footer>
+      )}
 
       {rulesOpen && <RulesDialog config={room.config} onClose={() => setRulesOpen(false)} />}
       {grabbyHeadline && <GrabbyAnnouncement headline={grabbyHeadline} />}

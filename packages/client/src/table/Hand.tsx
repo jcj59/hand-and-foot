@@ -50,6 +50,12 @@ export interface HandProps {
    * card alone on the last.
    */
   readonly rows?: boolean;
+  /**
+   * One row, centered, the cards overlapping just enough to fit the width: a hand
+   * being watched on the felt, as the replay player shows it, in cards of this
+   * size. Nothing is chosen there, so a card covered but for its corner is enough.
+   */
+  readonly fan?: "medium" | "normal";
 }
 
 export function Hand({
@@ -67,10 +73,12 @@ export function Hand({
   badge,
   newId = null,
   rows = false,
+  fan,
 }: HandProps): React.ReactElement {
   const wildCount = cards.filter((card) => isWild(card.rank)).length;
   const hasOwed = cards.some((card) => owedIds.has(card.id));
   const [rowsRef, rowsWidth] = useWidth<HTMLDivElement>();
+  const [fanRef, fanWidth] = useWidth<HTMLDivElement>();
 
   if (cards.length === 0) {
     return (
@@ -87,6 +95,7 @@ export function Hand({
   }
 
   const sorted = sortForDisplay(cards);
+  const fanOverlap = fan ? fanMargin(fanWidth, sorted.length, FAN_CARD_W[fan]) : 0;
   const chosen = rows && menu ? (sorted.find((card) => card.id === chosenId) ?? null) : null;
 
   function renderCard(card: Card, position: number, rowLength: number): React.ReactElement {
@@ -99,7 +108,8 @@ export function Hand({
       <span
         key={card.id}
         data-motion={card.id}
-        className={`relative flex flex-col items-center gap-0.5 ${!rows && position > 0 ? "-ml-3" : ""}`}
+        className={`relative flex flex-col items-center gap-0.5 ${!rows && !fan && position > 0 ? "-ml-3" : ""}`}
+        style={fan && position > 0 ? { marginLeft: fanOverlap } : undefined}
         title={
           owed
             ? "taken from the pile — owes a play"
@@ -131,7 +141,7 @@ export function Hand({
         >
           <PlayingCard
             card={card}
-            size={rows ? "medium" : "normal"}
+            size={fan ?? (rows ? "medium" : "normal")}
             selected={lifted}
             lift={false}
             dimmed={isUnplayable(card, playContext)}
@@ -163,7 +173,13 @@ export function Hand({
 
   return (
     <section className="flex flex-col gap-2" aria-label={title} data-zone="hand">
-      <h2 className="m-0 flex items-center gap-1 text-xs font-semibold text-nav-ink md:text-[13px]">
+      <h2
+        className={
+          fan
+            ? "sr-only"
+            : "m-0 flex items-center gap-1 text-xs font-semibold text-nav-ink md:text-[13px]"
+        }
+      >
         {badge}
         {title}
         {/* Wilds are a resource to plan a lay-down around rather than a rank to
@@ -181,7 +197,11 @@ export function Hand({
         )}
       </h2>
       {/* Side by side, never overlapping: every card's whole face is readable. */}
-      {rows ? (
+      {fan ? (
+        <div ref={fanRef} className="flex justify-center pt-1">
+          {sorted.map((card, i) => renderCard(card, i, sorted.length))}
+        </div>
+      ) : rows ? (
         <div ref={rowsRef} data-rows className="flex flex-col gap-1.5 pt-1.5">
           {evenRows(sorted, perRow(rowsWidth, PHONE_CARD_W)).map((row) => (
             <div key={row[0]!.id} className="flex gap-1">
@@ -241,6 +261,21 @@ function useWidth<T extends HTMLElement>(): [(element: T | null) => void, number
     return () => observer.disconnect();
   }, [element]);
   return [setElement, width];
+}
+
+/** The widths of the cards a fan is drawn in; see `CardSize`. */
+const FAN_CARD_W = { medium: 46, normal: 56 } as const;
+
+/**
+ * The left margin of every card after the first in a fan of `count` cards
+ * `cardWidth` wide, across `width`: overlapping a little when they all fit, as
+ * a hand held in a fan does, more when they do not, but always leaving a
+ * corner's worth (a third of the card) showing.
+ */
+export function fanMargin(width: number, count: number, cardWidth: number): number {
+  if (count < 2) return 0;
+  const step = Math.min(cardWidth * 0.8, (width - cardWidth) / (count - 1));
+  return Math.round(Math.max(step, cardWidth / 3) - cardWidth);
 }
 
 /** The width of a card in a phone's hand; see `CardSize`. */

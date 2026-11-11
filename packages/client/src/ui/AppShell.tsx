@@ -7,10 +7,12 @@
  * they have their own way out (a menu, Main menu, Back), so they use `BareFrame`.
  *
  * Learn is in the sidebar only: a phone has room for four tabs, and Home's
- * "Learn in 5 minutes" tile is the way in there.
+ * "Learn in 5 minutes" tile is the way in there. So on a phone Learn is a place
+ * gone to rather than a tab: it has a Back button of its own and no tab bar, which
+ * would have nothing to mark as the page being shown.
  */
 import { useSyncExternalStore } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { loadAccount, loadName, onProfileChange } from "../identity";
 import { AvatarFace } from "../profile/Avatar";
 import { faceOf, loadAvatar } from "../profile/avatarStore";
@@ -33,12 +35,14 @@ export const DESTINATIONS: readonly Destination[] = [
 
 export function AppShell(): React.ReactElement {
   const phone = usePhone();
+  const { pathname } = useLocation();
+  const tabbed = !DESTINATIONS.some((d) => !d.tab && d.to === pathname);
   return phone ? (
     <div className="flex h-full min-h-0 flex-col bg-page text-ink">
       <div className="min-h-0 flex-1 overflow-y-auto">
         <Outlet />
       </div>
-      <TabBar />
+      {tabbed && <TabBar />}
     </div>
   ) : (
     <div className="flex h-full min-h-0 bg-page text-ink">
