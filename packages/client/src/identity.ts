@@ -9,6 +9,7 @@
  * an identity the server says belongs to someone else is replaced by a new one, and
  * a server that cannot be reached means sitting down without one this time.
  */
+import { forgetHistory } from "./historyCache";
 import { serverUrl } from "./socket";
 import {
   CLAIM_PATH,
@@ -136,6 +137,9 @@ function saveAccount(username: string | null): void {
 /** Just the part of `fetch` this needs, so tests can answer it. */
 export type Post = (url: string, body: unknown) => Promise<Ack<unknown>>;
 
+/** What a refused read says when the answer to a 429 is not the Worker's own. */
+export const TOO_MANY_REQUESTS = "too many requests; try again in a minute";
+
 export function httpPost(base: string): Post {
   return async (path, body) => {
     const response = await fetch(`${base}${path}`, {
@@ -143,6 +147,18 @@ export function httpPost(base: string): Post {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     });
+    // The Worker refuses a read past its limit with a JSON answer, but anything
+    // in front of it (Cloudflare's own pages) answers a 429 however it likes. It
+    // is a refusal either way: shown, never retried here.
+    if (response.status === 429) {
+      try {
+        const answer = (await response.json()) as Ack<unknown>;
+        if (answer.ok === false && typeof answer.error === "string") return answer;
+      } catch {
+        // Not JSON.
+      }
+      return { ok: false, error: TOO_MANY_REQUESTS };
+    }
     return (await response.json()) as Ack<unknown>;
   };
 }
@@ -278,6 +294,8 @@ export async function signIn(
   });
   if (!answer.ok) return answer;
   saveIdentity({ userId: answer.data.userId, secret: answer.data.secret });
+  // Another profile's games, from now on.
+  forgetHistory();
   saveAccount(answer.data.username);
   if (answer.data.name) rememberName(answer.data.name);
   return answer;
@@ -303,5 +321,6 @@ export async function signOut(post: Post): Promise<void> {
   const identity = loadIdentity();
   if (identity) await ask(post, SIGN_OUT_PATH, { user: identity });
   write(IDENTITY_KEY, null);
+  forgetHistory();
   saveAccount(null);
 }

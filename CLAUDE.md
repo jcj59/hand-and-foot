@@ -485,6 +485,44 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   `RoomDeps.pauseWhenIdle: false`. Closing sends `tableClosed {reason}`; the client goes home with
   a notice. Reloading the home screen no longer auto-rejoins a stored seat — only the table's own
   URL does; Home's Rejoin reads the saved credentials.
+- **Staying inside the free plan's Durable Object quota (2026-11-11).** The Workers free plan
+  allows **100,000 Durable Object requests a day** for everything (and 100,000 Worker requests).
+  On 2026-11-11 a Home render loop (#63) spent it in under two hours and every table went down
+  until the reset, so three guards now stand between one bug and the quota:
+  - **Tables close on time across sleeps.** `SeatRecord.disconnectedAt` is stored (null while at
+    the table; absent from older records, and for bots). Before, `Room.restore` set every seat's
+    `disconnectedAt` to now, so each alarm wake pushed an empty table's close half an hour on and
+    set the next alarm: an abandoned table woke twice an hour forever (48 requests a day each).
+    Now a person who had left keeps their time (unless the table is paused: then grace starts at
+    the restore, as before, since the pause would give it back), `Room.setConnected` saves only
+    when a seat's away-or-not differs from what the store holds (`storedAway`, so a hibernation
+    wake that re-seats every socket writes nothing), and `TableObject`'s constructor calls
+    `saveWhoIsAway()` after `rewire`, so sockets a restart took are recorded as gone from then. A
+    record without the field (stored before this change) sets `leftAtUnknown`: if nobody comes
+    back, `abandonedSince` is `createdAt`, so tables abandoned before the deploy close on their next
+    alarm; the first `setConnected` clears it. Tests: `worker.test.ts` "closes a table everyone has
+    left once its half hour is up, however often it slept" and the three after it;
+    `room.restore.test.ts`.
+  - **The client keeps the history a minute.** `historyCache.ts`: `loadHistory(post, user)` answers
+    Home, History and Profile from a kept answer for `HISTORY_FRESH_MS` (60s, pinned), in memory and
+    in `sessionStorage` (`hf.history:<userId>`, survives a reload), shares an ask in flight, and
+    keeps a failure (a 429 included) for the minute too, so nothing retries in a loop. Even a
+    screen re-rendered with a new `post` every time costs one request a minute (pinned in
+    `serverPost.test.tsx`). `forgetHistory()` runs on sign in and out (`identity.ts`), on joining
+    another table, leaving one, and a match ending (`session.ts`), and in `test-setup.ts`.
+  - **The Worker caps reads per identity.** `limits.ts`: `READ_LIMIT` 30 history and replay reads
+    (together) per user id per `READ_WINDOW_MS` 60s, fixed window, counted in the isolate's memory
+    (at most `MAX_COUNTED` 10,000 ids, ended windows dropped first, then the oldest), checked in
+    `index.ts` **before** the `UserObject` is addressed, so a refused read costs no Durable Object
+    request. Answer: 429, `Retry-After`, `{ok: false, error: "too many requests; try again in a
+    minute"}`. Per isolate, so not exact across Cloudflare's many isolates; a loop in one tab keeps
+    hitting the same one. Cloudflare's rate limiting binding was not used: it is per location and
+    eventually consistent too, and needs a namespace set up by hand. The client's `httpPost` turns
+    any 429 into that refusal (even a non-JSON one); History and Home show nothing, Replay shows
+    the sentence. Only these two routes are capped: the others write (sit down, register, sign in)
+    or are sockets, where the table's own rules apply. The Worker's entry module (`index.ts`) must
+    export only classes and the handler: workerd refuses to start on a plain exported value, which
+    is why `TOO_MANY_READS` lives in `limits.ts` (a test guards the entry's exports).
 - **Phone layout (post-M5).** `usePhone` (`matchMedia("(max-width: 767px)")`) switches the table to
   a stacked layout: `OpponentStrip` chips with a modal melds sheet, the player's own melds in
   `MeldsPanel` (collapsible, `hf.compactMelds`), and the hand in even, non-overlapping rows of
@@ -1003,7 +1041,8 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   tiles, the fun counts as chips, filters (Place, Played with, When, Sort by) and a card per game
   colored by result (won, 2nd, 3rd or lower, unfinished; a game the player left counts as
   unfinished) with a score bar per player and the award chips. The page asks for the history once
-  (`serverPost()`, pinned in `serverPost.test.tsx`) and filters what came back. Pure logic is in
+  (`serverPost()`, pinned in `serverPost.test.tsx`), through `loadHistory` (kept a minute; see
+  "Staying inside the free plan's Durable Object quota"), and filters what came back. Pure logic is in
   `history/describe.ts` (result, title, badge, meta line, rows) and `history/filters.ts`
   (`filterGames`, `companions`: other people by name, most played with first, `since`: calendar
   month or three months back, `summary`); 60 mutants, 59 killed, 1 equivalent (`place <= 2` for

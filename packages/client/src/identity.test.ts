@@ -1,5 +1,6 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { IDENTITY_TAKEN, UNKNOWN_IDENTITY, type Ack } from "@hf/shared";
+import { loadHistory } from "./historyCache";
 import {
   ACCOUNT_KEY,
   IDENTITY_KEY,
@@ -253,6 +254,26 @@ describe("signing in", () => {
     expect(post.sent).toEqual([
       { user: mine, password: "old password", newPassword: "new password" },
     ]);
+  });
+
+  it("asks for the history afresh after signing in or out", async () => {
+    let asks = 0;
+    const history: Post = async () => {
+      asks++;
+      return { ok: true, data: { stats: {}, recent: [] } };
+    };
+    const mine = ensureIdentity();
+    await loadHistory(history, mine);
+    await signIn(
+      answering({ ok: true, data: { ...phone, username: "Ana" } }),
+      "ana",
+      "pw-pw-pw-pw",
+    );
+    await loadHistory(history, mine);
+    expect(asks).toBe(2);
+    await signOut(answering());
+    await loadHistory(history, mine);
+    expect(asks).toBe(3);
   });
 
   it("signs out by forgetting the profile here, even when the server cannot be told", async () => {

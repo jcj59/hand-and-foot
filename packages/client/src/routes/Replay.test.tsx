@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { EAST_COAST, type Ack, type Action, type GameState, type ReplayMatch } from "@hf/shared";
 import { applyAction, deal, heuristicPolicy } from "@hf/engine";
-import { IDENTITY_KEY, saveIdentity, type Post } from "../identity";
+import { httpPost, IDENTITY_KEY, saveIdentity, TOO_MANY_REQUESTS, type Post } from "../identity";
 import { NO_PROFILE, Replay, timelineOf, UNPLAYABLE, UNREACHABLE } from "./Replay";
 
 const user = { userId: "u".repeat(16), secret: "s".repeat(32) };
@@ -114,6 +114,40 @@ describe("watching a past game again", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("That game is not one of yours.");
     screen.getByRole("button", { name: "Back to the main screen" }).click();
     await waitFor(() => expect(screen.getByText("main screen")).toBeInTheDocument());
+  });
+
+  it("says quietly that the server is busy when it refuses for too many reads, and asks once", async () => {
+    saveIdentity(user);
+    let asks = 0;
+    const replies = [
+      new Response(JSON.stringify({ ok: false, error: TOO_MANY_REQUESTS }), { status: 429 }),
+      new Response("<html>slow down</html>", { status: 429 }),
+    ];
+    for (const reply of replies) {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => {
+          asks++;
+          return reply;
+        }),
+      );
+      try {
+        const { unmount } = render(
+          <MemoryRouter initialEntries={["/replay/m1"]}>
+            <Routes>
+              <Route path="/replay/:matchId" element={<Replay post={httpPost("")} />} />
+            </Routes>
+          </MemoryRouter>,
+        );
+        expect(await screen.findByRole("alert")).toHaveTextContent(
+          "Too many requests; try again in a minute.",
+        );
+        unmount();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    }
+    expect(asks).toBe(2);
   });
 
   it("says when the server could not be reached", async () => {

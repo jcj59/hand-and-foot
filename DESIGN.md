@@ -464,9 +464,11 @@ a move out of turn, a move the current engine refuses — is closed and reported
 because dealing players back into a game that differs from the one they left is worse than telling
 them it is gone.
 
-What a restart cannot restore is anything about time or connections. Every seat comes back
-disconnected with its reconnect grace starting afresh, and the turn on the clock restarts, since
-how much of it had been used died with the process. A paused table stays paused. Until a player
+What a restart cannot restore is a connection. Every seat comes back disconnected. A player who
+had already left keeps the time they left, so their reconnect grace and the table's abandonment are
+measured from when it really happened; a player who was still at the table when it was last saved
+gets their grace from the restart. The turn on the clock restarts, since how much of it had been
+used died with the process. A paused table stays paused. Until a player
 returns, a restored room is abandoned and runs no clock, so a restart never has the server playing
 turns for tables nobody has come back to.
 
@@ -543,7 +545,11 @@ paused one morning was still open that evening. So a table's lifetime is now dec
 - Otherwise, as before, a table everyone has left is closed half an hour after the last one went.
 
 When the pause began is saved with the table, so neither a restart nor a Durable Object waking gives
-a paused table a fresh half hour. Players still at a table when it closes are told why and sent
+a paused table a fresh half hour. The same goes for when each person left. That was learned the hard
+way: a restored table once counted everyone as having left at the moment it woke, so the alarm that
+woke an empty table to close it found it empty for no time at all, set itself for half an hour on,
+and an abandoned table woke twice an hour forever, each wake a Durable Object request against the
+free plan's daily allowance. Players still at a table when it closes are told why and sent
 home, rather than finding out on their next click.
 
 ### Finishing a game another day
