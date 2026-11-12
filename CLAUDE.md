@@ -520,7 +520,9 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
     eventually consistent too, and needs a namespace set up by hand. The client's `httpPost` turns
     any 429 into that refusal (even a non-JSON one); History and Home show nothing, Replay shows
     the sentence. Only these two routes are capped: the others write (sit down, register, sign in)
-    or are sockets, where the table's own rules apply.
+    or are sockets, where the table's own rules apply. The Worker's entry module (`index.ts`) must
+    export only classes and the handler: workerd refuses to start on a plain exported value, which
+    is why `TOO_MANY_READS` lives in `limits.ts` (a test guards the entry's exports).
 - **Phone layout (post-M5).** `usePhone` (`matchMedia("(max-width: 767px)")`) switches the table to
   a stacked layout: `OpponentStrip` chips with a modal melds sheet, the player's own melds in
   `MeldsPanel` (collapsible, `hf.compactMelds`), and the hand in even, non-overlapping rows of
