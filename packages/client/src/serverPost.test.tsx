@@ -3,10 +3,10 @@
 // A default that made a new function on every render once refetched the history
 // forever from one open home screen, and used up the Durable Object quota for the day.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { MATCHES_PATH } from "@hf/shared";
-import { IDENTITY_KEY, NAME_KEY } from "./identity";
+import { httpPost, IDENTITY_KEY, NAME_KEY, type Post } from "./identity";
 import type { HfClientSocket } from "./socket";
 import { Home } from "./routes/Home";
 import { HistoryPage } from "./pages/HistoryPage";
@@ -66,6 +66,33 @@ describe("screens using the default server post", () => {
       </MemoryRouter>,
     );
     await waitFor(() => expect(screen.getByText("Games").nextSibling).toHaveTextContent("4"));
+    await settle();
+    expect(historyRequests).toBe(1);
+  });
+
+  it("a screen that re-renders with a new post every time still asks at most once a minute", async () => {
+    // The shape of the bug that spent the quota: an effect keyed on a `post` made
+    // afresh on every render. The kept history holds the line even then.
+    const socket = { emit: () => socket } as unknown as HfClientSocket;
+    const fresh = (): Post => httpPost("");
+    const { rerender } = render(
+      <MemoryRouter>
+        <Home socket={socket} post={fresh()} />
+      </MemoryRouter>,
+    );
+    for (let i = 0; i < 30; i++) {
+      rerender(
+        <MemoryRouter>
+          <Home socket={socket} post={fresh()} />
+        </MemoryRouter>,
+      );
+      await act(async () => {});
+    }
+    rerender(
+      <MemoryRouter>
+        <HistoryPage socket={socket} post={fresh()} />
+      </MemoryRouter>,
+    );
     await settle();
     expect(historyRequests).toBe(1);
   });

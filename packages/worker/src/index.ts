@@ -33,6 +33,7 @@ import {
 } from "@hf/shared";
 import { newCode } from "./codes";
 import type { Env } from "./env";
+import { RateLimiter, READ_LIMIT, READ_WINDOW_MS, TOO_MANY_READS } from "./limits";
 import { TAKEN } from "./table";
 
 export { TableObject } from "./table";
@@ -46,6 +47,23 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "content-type": "application/json" },
+  });
+}
+
+/** Reads of history and replays per identity, counted in this isolate; see `limits.ts`. */
+const reads = new RateLimiter(READ_LIMIT, READ_WINDOW_MS);
+
+/**
+ * Count a read by `userId`: null if it may go ahead, else the refusal to send,
+ * with Retry-After. Asked before the identity's object is, so a refused read
+ * costs no Durable Object request.
+ */
+function throttled(userId: string): Response | null {
+  const wait = reads.take(userId, Date.now());
+  if (wait === null) return null;
+  return new Response(JSON.stringify({ ok: false, error: TOO_MANY_READS }), {
+    status: 429,
+    headers: { "content-type": "application/json", "retry-after": String(wait) },
   });
 }
 
@@ -128,6 +146,8 @@ export default {
       const body = await readJson(request);
       if (!body) return json({ ok: false, error: "that request was not JSON" }, 400);
       if (!isUserCredentials(body.user)) return json({ ok: false, error: NOT_AN_IDENTITY });
+      const refused = throttled(body.user.userId);
+      if (refused) return refused;
       return json(await env.USERS.getByName(body.user.userId).history(body.user));
     }
 
@@ -135,6 +155,8 @@ export default {
       const body = await readJson(request);
       if (!body) return json({ ok: false, error: "that request was not JSON" }, 400);
       if (!isUserCredentials(body.user)) return json({ ok: false, error: NOT_AN_IDENTITY });
+      const refused = throttled(body.user.userId);
+      if (refused) return refused;
       return json(await env.USERS.getByName(body.user.userId).replay(body.user, body.id));
     }
 

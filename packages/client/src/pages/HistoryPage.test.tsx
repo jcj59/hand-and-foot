@@ -10,6 +10,7 @@ import {
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import type { Ack, MatchHistory as History, MatchListing } from "@hf/shared";
 import { IDENTITY_KEY, saveIdentity, type Post } from "../identity";
+import { forgetHistory } from "../historyCache";
 import { SAVED_GAMES_KEY } from "../savedGames";
 import { useSession } from "../session";
 import type { HfClientSocket } from "../socket";
@@ -360,6 +361,8 @@ describe("the history page", () => {
       { ok: false as const, error: "that is not an identity" },
       new Error("offline"),
     ]) {
+      // A failed answer is kept for a minute too; each case asks afresh.
+      forgetHistory();
       const { post, asked } = server(answer);
       const { unmount } = render(post);
       await waitFor(() => expect(asked).toHaveLength(1));

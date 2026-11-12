@@ -6,6 +6,7 @@ import { cleanup } from "@testing-library/react";
 // these say which attribute or value was wrong.
 import "@testing-library/jest-dom/vitest";
 import { resetAudioForTests } from "./table/audio";
+import { forgetHistory } from "./historyCache";
 
 // Testing Library only unmounts automatically when vitest's globals are enabled,
 // and this package keeps them off to match the rest of the repo. Without this a
@@ -24,4 +25,6 @@ beforeEach(() => {
   if (typeof window === "undefined") return;
   window.sessionStorage.clear();
   window.localStorage.clear();
+  // The history is kept for a minute in memory too, which would outlive a test.
+  forgetHistory();
 });

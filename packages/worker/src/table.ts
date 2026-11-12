@@ -127,6 +127,9 @@ export class TableObject extends DurableObject<Env> {
     }
     this.install(restored.value);
     this.rewire();
+    // Seats whose sockets a restart took are away from now on, and saying so in
+    // storage is what lets an empty table close on time; see `Room.restore`.
+    restored.value.saveWhoIsAway();
   }
 
   // --------------------------------------------------------------------- RPC ---
