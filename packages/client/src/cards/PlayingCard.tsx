@@ -270,6 +270,78 @@ export function PlayingCard({
   );
 }
 
+/**
+ * A finished book, squared up into one stack with a card face up on top.
+ *
+ * A book is one scoring unit, and seven fanned cards say that far less clearly
+ * than one card that is visibly a pile. The top card is red on a clean book and
+ * black on a dirty one, as it is laid at a real table: the caller picks a natural
+ * of that color, and its ink and outline are drawn in the book's color too, so it
+ * reads right even when the book holds no natural of that color. The cards below
+ * show as edges, one more for a bigger book, up to `BOOK_EDGES_MAX`.
+ */
+export function BookCard({
+  top,
+  kind,
+  count,
+  size = "normal",
+}: {
+  /** The card shown on top: a natural, so the book's rank is what shows. */
+  readonly top: Card;
+  readonly kind: "clean" | "dirty";
+  readonly count: number;
+  readonly size?: CardSize;
+}): React.ReactElement {
+  const { w } = DIMENSIONS[size];
+  const edges = bookEdges(count);
+  const reach = edges * BOOK_EDGE_STEP;
+  const ink = kind === "clean" ? INK.red : INK.black;
+  return (
+    <span
+      role="img"
+      // The meld around it names the book; this says only what lies face up.
+      aria-label={`${cardLabel(top)} on top`}
+      className="block"
+    >
+      <svg
+        width={(w * (56 + reach)) / 56}
+        height={(w * (80 + reach)) / 56}
+        viewBox={`0 0 ${56 + reach} ${80 + reach}`}
+        aria-hidden="true"
+        className="block"
+      >
+        <FaceDefs />
+        {Array.from({ length: edges }, (_, i) => {
+          const d = (edges - i) * BOOK_EDGE_STEP;
+          return (
+            <rect
+              key={d}
+              data-book-edge=""
+              x={0.5 + d}
+              y={0.5 + d}
+              width="55"
+              height="79"
+              rx="6"
+              fill="url(#hf-card-face)"
+              stroke="rgba(0,0,0,0.3)"
+              strokeWidth="1"
+            />
+          );
+        })}
+        <CardFace card={top} stroke={ink} strokeWidth={3} tint={ink} full={fullFace(size)} />
+      </svg>
+    </span>
+  );
+}
+
+/** The edges under a book: two for a book of seven, one more for every three cards past it. */
+export function bookEdges(count: number): number {
+  return Math.min(BOOK_EDGES_MAX, 2 + Math.max(0, Math.floor((count - 7) / 3)));
+}
+const BOOK_EDGES_MAX = 4;
+/** How far each edge under a book sits out from the one above it, in card units. */
+const BOOK_EDGE_STEP = 3;
+
 /** A card back, for stacks and fans of cards nobody may see. */
 function Back({
   x,

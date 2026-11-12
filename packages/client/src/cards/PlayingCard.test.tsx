@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { Card, Rank, Suit } from "@hf/shared";
 import {
+  bookEdges,
   cardCorners,
   DiscardPile,
   discardLayout,
@@ -192,5 +193,11 @@ describe("a discard pile's drawing", () => {
     const face = drawing.querySelector<SVGElement>("[data-motion]")!;
     expect(parseFloat(face.style.left) / unit).toBeCloseTo(top.x, 6);
     expect(parseFloat(face.style.top) / unit).toBeCloseTo(top.y, 6);
+  });
+});
+
+describe("a finished book's stack", () => {
+  it("shows two edges under a book of seven, one more every three cards, up to four", () => {
+    expect([7, 8, 9, 10, 12, 13, 15, 16, 30].map(bookEdges)).toEqual([2, 2, 2, 3, 3, 4, 4, 4, 4]);
   });
 });

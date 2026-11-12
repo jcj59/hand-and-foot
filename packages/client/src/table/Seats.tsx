@@ -114,7 +114,13 @@ export function Seats({
               {opponent.melds.length === 0 ? (
                 <p className="m-0 text-xs text-ink/60">Not down yet</p>
               ) : (
-                <Melds melds={opponent.melds} order={order} chips={!expanded} compact />
+                <Melds
+                  melds={opponent.melds}
+                  config={room.config}
+                  order={order}
+                  chips={!expanded}
+                  compact
+                />
               )}
             </div>
           </li>

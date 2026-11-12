@@ -364,7 +364,8 @@ describe("collapsing the other seats on a computer", () => {
     expect(within(seat).queryByRole("img", { name: "King of clubs" })).toBeNull();
     fireEvent.click(within(seat).getByRole("button", { name: "Expand ben's melds" }));
     expect(within(seat).getByRole("img", { name: "King of clubs" })).toBeInTheDocument();
-    expect(seat).toHaveTextContent("3 more for a book");
+    // Its size and the points its cards are worth: 10 + 10 + 10 + 20.
+    expect(seat).toHaveTextContent("4 cards · 50");
   });
 });
 
@@ -474,9 +475,60 @@ describe("your melds", () => {
       update({ view: { isDown: true, melds: [{ rank: "A", cards: sevenAces }] } }),
     );
     const mine = screen.getByLabelText(/your melds/i);
+    // Seven aces at 15 each, the cards' own value: the book's bonus is the round's to score.
     expect(within(mine).getByLabelText(/clean book of As, 7 cards/i)).toHaveTextContent(
-      "Clean book",
+      "7 cards · clean · 105",
     );
+  });
+
+  it("squares a finished book into one stack: a red card on top when clean, a black one when dirty", () => {
+    const clubs = (rank: Rank, i: number): Card => ({ id: `${rank}c${i}`, rank, suit: "clubs" });
+    const spades = (rank: Rank, i: number): Card => ({ id: `${rank}s${i}`, rank, suit: "spades" });
+    const clean = [...Array.from({ length: 6 }, (_, i) => clubs("9", i)), card("9", "hearts")];
+    const dirty = [
+      card("K", "hearts"),
+      ...Array.from({ length: 5 }, (_, i) => clubs("K", i)),
+      card("JOKER", null),
+    ];
+    // Clean, but with no red card in it: the top card is still drawn red.
+    const blackClean = Array.from({ length: 9 }, (_, i) => spades("A", i));
+    mount(
+      fakeSocket().socket,
+      update({
+        view: {
+          isDown: true,
+          melds: [
+            { rank: "9", cards: clean },
+            { rank: "K", cards: dirty },
+            { rank: "A", cards: blackClean },
+          ],
+        },
+      }),
+    );
+    const book = (name: RegExp) => {
+      const meld = screen.getByLabelText(name);
+      const images = within(meld).getAllByRole("img");
+      // One card face up, not seven fanned.
+      expect(images).toHaveLength(1);
+      const ink = new Set(
+        [...images[0]!.querySelectorAll("text")].map((t) => t.getAttribute("fill")),
+      );
+      return { name: images[0]!.getAttribute("aria-label"), ink: [...ink], meld };
+    };
+    const red = "#C2353A";
+    const black = "#15181B";
+    expect(book(/clean book of 9s/)).toMatchObject({ name: "Nine of hearts on top", ink: [red] });
+    expect(book(/dirty book of Ks/)).toMatchObject({ name: "King of clubs on top", ink: [black] });
+    expect(book(/clean book of As/)).toMatchObject({ name: "Ace of spades on top", ink: [red] });
+    // The cards beneath show as edges, more of them under a bigger book.
+    expect(book(/clean book of 9s/).meld.querySelectorAll("[data-book-edge]")).toHaveLength(2);
+    expect(book(/clean book of As/).meld.querySelectorAll("[data-book-edge]")).toHaveLength(2);
+    // The whole book answers for every card in it, so a card laid on it flies to it.
+    expect(
+      book(/dirty book of Ks/)
+        .meld.querySelector("[data-motion]")!
+        .getAttribute("data-motion"),
+    ).toBe(dirty.map((c) => c.id).join(" "));
   });
 
   it("keeps a meld still being built fanned out, card by card", () => {
@@ -1508,10 +1560,10 @@ describe("the controls added from play-testing", () => {
       }),
     );
     const note = (name: RegExp): HTMLElement =>
-      within(screen.getByLabelText(name)).getByText(/book$/);
-    expect(note(/clean book of 9s/)).toHaveTextContent("Clean book");
+      within(screen.getByLabelText(name)).getByText(/^7 cards/);
+    expect(note(/clean book of 9s/)).toHaveTextContent("7 cards · clean · 35");
     expect(note(/clean book of 9s/).className).toMatch(/text-gold-soft/);
-    expect(note(/dirty book of Ks/)).toHaveTextContent("Dirty book");
+    expect(note(/dirty book of Ks/)).toHaveTextContent("7 cards · dirty · 110");
     expect(note(/dirty book of Ks/).className).toMatch(/text-ink-soft/);
   });
 
@@ -1760,7 +1812,7 @@ describe("the controls added from play-testing", () => {
     const book = within(screen.getByLabelText(/your melds/i)).getByLabelText(
       "clean book of As, 7 cards",
     );
-    expect(book).toHaveTextContent("Clean book");
+    expect(book).toHaveTextContent("7 cards · clean");
   });
 });
 
@@ -1976,7 +2028,7 @@ describe("on a phone", () => {
     // Cards by default, as on the desktop; chips once the player collapses them.
     expect(
       screen.getByRole("button", { name: "Select clean book of Ks, 7 cards" }).textContent,
-    ).toMatch(/Clean book/);
+    ).toMatch(/7 cards · clean/);
     fireEvent.click(screen.getByRole("button", { name: "Collapse" }));
     const chip = screen.getByRole("button", { name: "Select clean book of Ks, 7 cards" });
     expect(chip.textContent).toBe("K ×7");
