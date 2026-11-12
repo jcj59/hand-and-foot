@@ -336,9 +336,76 @@ const PILE_EDGES_MAX = 4;
 const PILE_EDGE_STEP = 3;
 /** Each edge's tilt, front to back, so the pile looks thrown together rather than squared up. */
 const PILE_EDGE_TILT = [3.5, -2.5, 4.5, -1.5] as const;
-/** Room to the left for the card beneath, which is tilted and peeks out. */
-const PILE_PEEK_X = 22;
-const PILE_PEEK_Y = 8;
+/** Where the card beneath sits against the top card, in card units: left and a little down. */
+const PILE_UNDER_DX = -22;
+const PILE_UNDER_DY = 5;
+/** The card beneath's tilt, so it fans out from under the top card. */
+const PILE_UNDER_TILT = -9;
+
+/** A drawn card's place in a discard pile's drawing: its unrotated top-left corner and its tilt. */
+export interface PileCard {
+  readonly x: number;
+  readonly y: number;
+  readonly tilt: number;
+}
+
+/**
+ * Where everything in a discard pile of `count` cards is drawn, in card units, and
+ * the box that holds it all. The card beneath and the edges are tilted, so their
+ * corners reach past the square they were placed in; the box is measured from the
+ * rotated corners (and half a stroke beyond), and everything is shifted so it
+ * starts at the box's top-left. A box cut to the unrotated cards instead clips the
+ * tilted ones, which is how the card beneath once lost its left edge.
+ */
+export function discardLayout(count: number): {
+  readonly width: number;
+  readonly height: number;
+  readonly top: PileCard;
+  readonly under: PileCard | null;
+  readonly edges: readonly PileCard[];
+} {
+  const top: PileCard = { x: 0, y: 0, tilt: 0 };
+  const under: PileCard | null =
+    count >= 2 ? { x: PILE_UNDER_DX, y: PILE_UNDER_DY, tilt: PILE_UNDER_TILT } : null;
+  const n = pileEdges(count);
+  const edges = Array.from({ length: n }, (_, i): PileCard => {
+    const d = (n - i) * PILE_EDGE_STEP;
+    return { x: d, y: d, tilt: PILE_EDGE_TILT[i] ?? 0 };
+  });
+  const all = [top, ...(under ? [under] : []), ...edges];
+  const corners = all.flatMap((c) => cardCorners(c));
+  const minX = Math.min(...corners.map(([x]) => x));
+  const minY = Math.min(...corners.map(([, y]) => y));
+  const maxX = Math.max(...corners.map(([x]) => x));
+  const maxY = Math.max(...corners.map(([, y]) => y));
+  const shift = (c: PileCard): PileCard => ({ ...c, x: c.x - minX, y: c.y - minY });
+  return {
+    width: maxX - minX,
+    height: maxY - minY,
+    top: shift(top),
+    under: under && shift(under),
+    edges: edges.map(shift),
+  };
+}
+
+/** Half the widest stroke drawn on a pile's card, which reaches past its corners. */
+const PILE_STROKE_REACH = 0.5;
+
+/** A 56 by 80 card's four corners after its tilt about its center, padded by the stroke. */
+export function cardCorners(c: PileCard): [number, number][] {
+  const rad = (c.tilt * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const cx = c.x + 28;
+  const cy = c.y + 40;
+  const pad = PILE_STROKE_REACH;
+  return [
+    [-28 - pad, -40 - pad],
+    [28 + pad, -40 - pad],
+    [28 + pad, 40 + pad],
+    [-28 - pad, 40 + pad],
+  ].map(([dx, dy]) => [cx + dx! * cos - dy! * sin, cy + dx! * sin + dy! * cos]);
+}
 
 /**
  * The discard pile, face up, drawn as what it is. The top card, and from two cards
@@ -385,13 +452,7 @@ export function DiscardPile({
     );
   }
   const under = cards[cards.length - 2];
-  const edges = pileEdges(cards.length);
-  const [padX, padY] = under ? [PILE_PEEK_X, PILE_PEEK_Y] : [0, 0];
-  const topX = padX;
-  const topY = under ? 2 : 0;
-  const reach = edges * PILE_EDGE_STEP;
-  const width = 56 + padX + reach;
-  const height = 80 + padY + reach;
+  const { width, height, top: at, under: below, edges } = discardLayout(cards.length);
   return (
     <div
       role="img"
@@ -399,7 +460,7 @@ export function DiscardPile({
       className="relative block"
       style={{ width: width * unit, height: height * unit }}
     >
-      {(under || edges > 0) && (
+      {(under || edges.length > 0) && (
         <svg
           width={width * unit}
           height={height * unit}
@@ -414,28 +475,23 @@ export function DiscardPile({
               <stop offset="1" stopColor="#E6E0D0" />
             </linearGradient>
           </defs>
-          {Array.from({ length: edges }, (_, i) => {
-            const d = (edges - i) * PILE_EDGE_STEP;
-            const cx = topX + d + 28;
-            const cy = topY + d + 40;
-            return (
-              <rect
-                key={d}
-                data-pile-edge=""
-                x={topX + 0.5 + d}
-                y={topY + 0.5 + d}
-                width="55"
-                height="79"
-                rx="6"
-                fill="url(#hf-pile-edge)"
-                stroke="rgba(0,0,0,0.2)"
-                strokeWidth="1"
-                transform={`rotate(${PILE_EDGE_TILT[i] ?? 0} ${cx} ${cy})`}
-              />
-            );
-          })}
-          {under && (
-            <g transform={`translate(0 ${topY + 5}) rotate(-9 28 40)`}>
+          {edges.map((edge) => (
+            <rect
+              key={edge.x}
+              data-pile-edge=""
+              x={edge.x + 0.5}
+              y={edge.y + 0.5}
+              width="55"
+              height="79"
+              rx="6"
+              fill="url(#hf-pile-edge)"
+              stroke="rgba(0,0,0,0.2)"
+              strokeWidth="1"
+              transform={`rotate(${edge.tilt} ${edge.x + 28} ${edge.y + 40})`}
+            />
+          ))}
+          {under && below && (
+            <g transform={`translate(${below.x} ${below.y}) rotate(${PILE_UNDER_TILT} 28 40)`}>
               <CardFace card={under} />
             </g>
           )}
@@ -448,7 +504,7 @@ export function DiscardPile({
         aria-hidden="true"
         data-motion={top.id}
         className="absolute block"
-        style={{ left: topX * unit, top: topY * unit }}
+        style={{ left: at.x * unit, top: at.y * unit }}
       >
         <FaceDefs />
         <CardFace card={top} full={fullFace(size)} />

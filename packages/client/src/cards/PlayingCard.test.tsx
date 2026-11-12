@@ -1,7 +1,15 @@
 import { describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { Card, Rank, Suit } from "@hf/shared";
-import { FaceDownPile, PlayingCard, STOCK_LAYERS_MAX, stockLayers } from "./PlayingCard";
+import {
+  cardCorners,
+  DiscardPile,
+  discardLayout,
+  FaceDownPile,
+  PlayingCard,
+  STOCK_LAYERS_MAX,
+  stockLayers,
+} from "./PlayingCard";
 
 const card = (rank: Rank, suit: Suit | null): Card => ({ id: `${rank}-${suit}`, rank, suit });
 
@@ -122,5 +130,67 @@ describe("a face-down pile", () => {
     render(<FaceDownPile count={58} label="Stock" pill="Stock" />);
     const pile = screen.getByRole("img", { name: "Stock: 58" });
     expect(pile).toHaveTextContent("Stock58");
+  });
+});
+
+describe("a discard pile's drawing", () => {
+  const sizes = [1, 2, 3, 8, 9, 15, 21, 40, 108];
+
+  it("holds every card it draws, tilted corners included, so none is clipped", () => {
+    // The card beneath is tilted, and its corners once reached past the box the
+    // drawing was cut to, clipping its left edge on every screen.
+    for (const count of sizes) {
+      const { width, height, top, under, edges } = discardLayout(count);
+      const corners = [top, ...(under ? [under] : []), ...edges].flatMap(cardCorners);
+      const xs = corners.map(([x]) => x);
+      const ys = corners.map(([, y]) => y);
+      expect(Math.min(...xs)).toBeCloseTo(0, 9);
+      expect(Math.min(...ys)).toBeCloseTo(0, 9);
+      expect(Math.max(...xs)).toBeCloseTo(width, 9);
+      expect(Math.max(...ys)).toBeCloseTo(height, 9);
+    }
+  });
+
+  it("draws one card alone, and from two the one beneath to the left, lower and tilted", () => {
+    const one = discardLayout(1);
+    expect(one.under).toBeNull();
+    expect(one.edges).toHaveLength(0);
+    expect(one.top).toEqual({ x: 0.5, y: 0.5, tilt: 0 });
+    expect([one.width, one.height]).toEqual([57, 81]);
+
+    const two = discardLayout(2);
+    expect(two.under).not.toBeNull();
+    expect(two.top.x - two.under!.x).toBe(22);
+    expect(two.under!.y - two.top.y).toBe(5);
+    expect(two.under!.tilt).toBe(-9);
+    expect(two.edges).toHaveLength(0);
+    // Wider and taller than one card by the peek and the tilt.
+    expect(two.width).toBeGreaterThan(one.width + 22);
+    expect(two.height).toBeGreaterThan(one.height + 5);
+  });
+
+  it("puts the edges down and to the right, back to front, each tilted its own way", () => {
+    const { top, edges } = discardLayout(30);
+    expect(edges.map((e) => [e.x - top.x, e.y - top.y])).toEqual([
+      [12, 12],
+      [9, 9],
+      [6, 6],
+      [3, 3],
+    ]);
+    expect(edges.map((e) => e.tilt)).toEqual([3.5, -2.5, 4.5, -1.5]);
+  });
+
+  it("sizes the drawing to that box, with the top card where the box puts it", () => {
+    const pile = [card("5", "spades"), card("7", "hearts"), card("9", "clubs")];
+    render(<DiscardPile cards={pile} />);
+    const drawing = screen.getByRole("img", { name: /^Discard pile, 3 cards/ });
+    const { width, height, top } = discardLayout(3);
+    const unit = parseFloat(drawing.style.width) / width;
+    expect(parseFloat(drawing.style.height) / unit).toBeCloseTo(height, 6);
+    const back = drawing.querySelector("svg[viewBox]")!;
+    expect(back.getAttribute("viewBox")).toBe(`0 0 ${width} ${height}`);
+    const face = drawing.querySelector<SVGElement>("[data-motion]")!;
+    expect(parseFloat(face.style.left) / unit).toBeCloseTo(top.x, 6);
+    expect(parseFloat(face.style.top) / unit).toBeCloseTo(top.y, 6);
   });
 });
