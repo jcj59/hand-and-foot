@@ -547,7 +547,10 @@ const run = async () => {
   }
   if (action === "chip") await page.getByRole("button", { name: /^Cyrus/ }).click();
   if (action === "card")
-    await page.getByRole("button", { name: /Ten of hearts/i }).click({ position: { x: 8, y: 30 } });
+    await page
+      .getByRole("button", { name: new RegExp(process.env.CARD ?? "Ten of hearts", "i") })
+      .first()
+      .click({ position: { x: 8, y: 30 } });
   if (action === "meld") {
     await page.getByRole("button", { name: /^Meld$/ }).click();
     await page.getByRole("button", { name: /Ten of hearts/i }).click({ position: { x: 8, y: 30 } });

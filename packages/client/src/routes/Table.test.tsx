@@ -492,6 +492,12 @@ describe("your melds", () => {
     ];
     // Clean, but with no red card in it: the top card is still drawn red.
     const blackClean = Array.from({ length: 9 }, (_, i) => spades("A", i));
+    // Dirty, with black cards only among the wilds: a natural still goes on top, drawn black.
+    const redDirty = [
+      ...Array.from({ length: 5 }, (_, i): Card => ({ id: `Qh${i}`, rank: "Q", suit: "hearts" })),
+      spades("2", 0),
+      clubs("2", 0),
+    ];
     mount(
       fakeSocket().socket,
       update({
@@ -501,6 +507,7 @@ describe("your melds", () => {
             { rank: "9", cards: clean },
             { rank: "K", cards: dirty },
             { rank: "A", cards: blackClean },
+            { rank: "Q", cards: redDirty },
           ],
         },
       }),
@@ -520,6 +527,10 @@ describe("your melds", () => {
     expect(book(/clean book of 9s/)).toMatchObject({ name: "Nine of hearts on top", ink: [red] });
     expect(book(/dirty book of Ks/)).toMatchObject({ name: "King of clubs on top", ink: [black] });
     expect(book(/clean book of As/)).toMatchObject({ name: "Ace of spades on top", ink: [red] });
+    expect(book(/dirty book of Qs/)).toMatchObject({
+      name: "Queen of hearts on top",
+      ink: [black],
+    });
     // The cards beneath show as edges, more of them under a bigger book.
     expect(book(/clean book of 9s/).meld.querySelectorAll("[data-book-edge]")).toHaveLength(2);
     expect(book(/clean book of As/).meld.querySelectorAll("[data-book-edge]")).toHaveLength(2);
@@ -788,6 +799,35 @@ describe("staging a lay-down", () => {
     );
     // The ringed box is where wilds will go, and says so.
     expect(panel.textContent).toMatch(/Ks· wilds go here/i);
+  });
+
+  it("keeps a card's menu inside the window, outside any box that could clip it", () => {
+    // A card at the far right of the window (jsdom's is 1024 by 768), and a menu
+    // 280 by 250: opening from the card's left edge would run off the right.
+    const box = { left: 1000, top: 600, right: 1056, bottom: 686, width: 56, height: 86 };
+    const rect = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockReturnValue({ ...box, x: box.left, y: box.top, toJSON: () => box } as DOMRect);
+    const width = vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(280);
+    const height = vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(250);
+    try {
+      mount(fakeSocket().socket, inPlay(meldable()));
+      fireEvent.click(handCard("King of clubs"));
+      const popover = screen.getByRole("dialog", { name: "Actions for King of clubs" });
+      // Fixed to the window, in the page's body rather than the hand.
+      expect(popover).toHaveClass("fixed");
+      expect(popover.parentElement).toBe(document.body);
+      expect(popover.closest("[data-zone='hand']")).toBeNull();
+      // Its right edge on the card's, pulled inside the window's margin; above the card.
+      expect(popover.style.left).toBe(`${1024 - 8 - 280}px`);
+      expect(popover.style.top).toBe(`${600 - 8 - 250}px`);
+      expect(popover).toHaveAttribute("data-side", "above");
+      expect(within(popover).getByRole("menu", { name: "Card actions" })).toBeInTheDocument();
+    } finally {
+      rect.mockRestore();
+      width.mockRestore();
+      height.mockRestore();
+    }
   });
 
   it("offers a card's choices in a menu rather than acting on the first click", () => {
