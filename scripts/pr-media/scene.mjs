@@ -506,6 +506,9 @@ const run = async () => {
   await page.evaluate(() =>
     localStorage.setItem("hf.seat", JSON.stringify({ roomId: "HFDEMO", seat: 0, token: "t" })),
   );
+  // The computer's side panel put away, as a player who hid it left it.
+  if (process.env.HIDE_SCORES)
+    await page.evaluate(() => localStorage.setItem("hf.hideScores", "1"));
   if (process.env.SAVED_LIST) {
     // Two games this device saved for later, for the home screen.
     const day = 24 * 60 * 60_000;
@@ -551,6 +554,8 @@ const run = async () => {
       .getByRole("button", { name: new RegExp(process.env.CARD ?? "Ten of hearts", "i") })
       .first()
       .click({ position: { x: 8, y: 30 } });
+  if (action === "hidescores")
+    await page.getByRole("button", { name: /(Hide|Show) scores and moves/ }).click();
   if (action === "meld") {
     await page.getByRole("button", { name: /^Meld$/ }).click();
     await page.getByRole("button", { name: /Ten of hearts/i }).click({ position: { x: 8, y: 30 } });

@@ -513,7 +513,9 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   or its copy is drawn over the hand. The discard pile (`DiscardPile`, P2) always shows its top
   card with the real second card peeking out beneath and up to `PILE_EDGES_MAX` (4) edges behind,
   one per `PILE_EDGE_EVERY` (6) cards (`pileEdges`; its `count <= 2` guard is an equivalent mutant,
-  the arithmetic gives 0 anyway). Only the **top card's own element** carries `data-motion`, so a
+  the arithmetic gives 0 anyway). Its box is `discardLayout`, measured from the **rotated** corners
+  of every card drawn (`cardCorners`): a box cut to the unrotated cards clipped the tilted card
+  beneath on its left edge. Only the **top card's own element** carries `data-motion`, so a
   discard flies to that card, not to a copy of the whole drawing. Movement runs only when a new
   `lastMove.seq` arrives; jsdom has no `animate` and reduced-motion users get none, so tests see a
   static table. Verify visually with Playwright frames captured right after a change (headless
@@ -955,14 +957,24 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   computer (chips, Expand for cards); both use `seatLine` ("Playing · 0:41", "Foot · 9",
   "Reconnecting") and `BookMarkers`, and show nobody playing once a result is up. The felt holds
   the piles, the latest move as a pill (`moveLine`; the side panel keeps the last
-  `MOVES_KEPT` 3 via `withMove`), banners (last lap, pile debt, books to go out), the
+  `MOVES_KEPT` 3 via `withMove`, and on a live or watched table can be put away to a rail,
+  "Hide scores and moves", per device `hf.hideScores`, `SidePanel` in `TableView.tsx`; a
+  lesson or player's `aside` keeps it fixed), banners (last lap, pile debt, books to go out), the
   `StagingPanel` (points bar, gold ring where wilds go, scrolls itself into view) and
   `MeldsPanel` (sort Rank/Newest, per device `hf.meldOrder`; Collapse `hf.compactMelds`; the
   go-out tracker `goOutProgress` in the foot). `Melds` fans small cards with a note
-  (`meldView`: `sortMelds`, `meldNote`, `meldChip`, `booksOf`); books are no longer collapsed
-  to one card. "Newest first" is `PlayerState.melds` reversed, which the engine keeps in laid
+  (`meldView`: `sortMelds`, `meldNote`, `meldChip`, `booksOf`); the note is the pre-redesign
+  caption, size, kind and the cards' `meldPoints` ("5 cards · 70", "7 cards · clean · 120",
+  the user's choice over the mockups' "3 more for a book"). A finished book is one squared-up
+  `BookCard` (edges by `bookEdges`), topped by `bookTop`: a red natural on a clean book, a black
+  one on a dirty book, and inked in that color whatever its suit; its image is named
+  "<card> on top", the meld's `li` keeps the book's name. "Newest first" is `PlayerState.melds` reversed, which the engine keeps in laid
   order (pinned in `reducer.meldorder.test.ts`). The card's choices (`CardMenu`) are a sheet on
-  a phone and a popover on a computer; a risky discard (`discardWarning`: a wild, a rank another
+  a phone and a popover on a computer (`CardPopover` in `Hand.tsx`, portalled to `body`,
+  `position: fixed`, placed by the pure `placeMenu` in `menuPlacement.ts`: above the card, from
+  its left edge or else its right, below when there is no room above, clamped inside the
+  window; it used to open by the card's index in the hand, which ran off the left for the
+  first card of a wrapped row); a risky discard (`discardWarning`: a wild, a rank another
   player has down, or one that fits the player's own meld) is said up front and the button reads
   "Discard anyway" (no second confirmation). `RoundResult` is a bottom sheet between rounds
   (ranked rows with counts per column on a computer, the recap, `readiness` sentence, "I'm ready

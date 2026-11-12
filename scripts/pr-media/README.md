@@ -18,7 +18,8 @@ an animation) in its description, under `## Screenshots`.
    the reaction picker, `rules`, which opens the
    table's How to play dialog, `menu` (the table's menu), `scores` (the phone's scores sheet),
    `expand` (a seat's melds on a computer), `chip` (a phone chip's melds sheet), `card` (a
-   card's choices; `CARD=<name>` picks the card, the Ten of hearts by default) and `meld` (a lay-down being built); `PILE_WHY=1` puts the viewer in their draw
+   card's choices; `CARD=<name>` picks the card, the Ten of hearts by default) and `meld` (a lay-down being built), `hidescores` (the computer's side panel put away, or brought
+   back with `HIDE_SCORES=1`, which starts with it put away); `PILE_WHY=1` puts the viewer in their draw
    phase with the pile not takeable. Modes stage a state
    (`mine`, `theirs`) or a change to capture mid-animation (`draw`, `discard`,
    `oppdraw`, `grabby`, `react` — quick reactions arriving from two opponents and

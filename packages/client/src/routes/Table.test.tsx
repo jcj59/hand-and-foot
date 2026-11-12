@@ -3517,3 +3517,82 @@ describe("a rematch", () => {
     expect(screen.queryByRole("button", { name: "Rematch" })).toBeNull();
   });
 });
+
+describe("putting away the scores beside the table on a computer", () => {
+  afterEach(() => window.localStorage.removeItem("hf.hideScores"));
+
+  const panel = () => screen.getByRole("complementary", { name: "Scores and moves" });
+
+  it("hides the scores and moves to a rail, and brings them back", () => {
+    mount(fakeSocket().socket, update({ view: { scoresSoFar: [120, 450] } }));
+    const hide = screen.getByRole("button", { name: "Hide scores and moves" });
+    expect(hide).toHaveAttribute("aria-expanded", "true");
+    const contents = document.getElementById(hide.getAttribute("aria-controls")!)!;
+    expect(panel()).toContainElement(contents);
+    expect(contents).toHaveTextContent("Scores so far");
+    expect(contents).not.toHaveAttribute("inert");
+
+    fireEvent.click(hide);
+    const show = screen.getByRole("button", { name: "Show scores and moves" });
+    expect(show).toHaveAttribute("aria-expanded", "false");
+    // Out of reach for the tab key and a screen reader, and the panel a narrow rail.
+    expect(contents).toHaveAttribute("inert");
+    expect(panel().className).toMatch(/\bw-9\b/);
+    expect(window.localStorage.getItem("hf.hideScores")).toBe("1");
+
+    fireEvent.click(show);
+    expect(screen.getByRole("button", { name: "Hide scores and moves" })).toBeInTheDocument();
+    expect(contents).not.toHaveAttribute("inert");
+    expect(panel().className).toMatch(/w-\[260px\]/);
+    expect(window.localStorage.getItem("hf.hideScores")).toBe("0");
+  });
+
+  it("remembers the choice on this device", () => {
+    window.localStorage.setItem("hf.hideScores", "1");
+    mount(fakeSocket().socket, update());
+    expect(screen.getByRole("button", { name: "Show scores and moves" })).toBeInTheDocument();
+  });
+
+  it("works when the browser blocks storage, for as long as the page is open", () => {
+    const get = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    const set = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    try {
+      mount(fakeSocket().socket, update());
+      fireEvent.click(screen.getByRole("button", { name: "Hide scores and moves" }));
+      expect(screen.getByRole("button", { name: "Show scores and moves" })).toBeInTheDocument();
+    } finally {
+      get.mockRestore();
+      set.mockRestore();
+    }
+  });
+
+  it("leaves the game alone: the same table, only the panel put away", () => {
+    const { socket, sent } = fakeSocket();
+    mount(socket, update());
+    fireEvent.click(screen.getByRole("button", { name: "Hide scores and moves" }));
+    expect(sent).toEqual([]);
+    expect(screen.getByLabelText("Table")).toContainElement(screen.getByLabelText("Piles"));
+  });
+
+  it("is not offered on a phone, where the scores already wait behind the trophy", () => {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: (query: string) => ({
+        matches: query === PHONE_QUERY,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }),
+    });
+    try {
+      mount(fakeSocket().socket, update());
+      expect(screen.queryByRole("button", { name: /scores and moves/ })).toBeNull();
+      expect(screen.getByRole("button", { name: "Scores so far" })).toBeInTheDocument();
+    } finally {
+      delete (window as { matchMedia?: unknown }).matchMedia;
+    }
+  });
+});
