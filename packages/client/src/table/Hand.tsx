@@ -14,11 +14,12 @@
  * are underlined, because those can always be laid off and are the ones most
  * worth thinking twice about throwing away.
  */
-import { useLayoutEffect, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { isWild, type Card, type Rank } from "@hf/shared";
 import { PlayingCard } from "../cards/PlayingCard";
 import { menuTitle } from "./CardMenu";
+import { placeMenu, type MenuPlace } from "./menuPlacement";
 import { canLayOff, isUnplayable, sortForDisplay, type PlayContext } from "../cards/handOrder";
 
 export interface HandProps {
@@ -98,7 +99,7 @@ export function Hand({
   const fanOverlap = fan ? fanMargin(fanWidth, sorted.length, FAN_CARD_W[fan]) : 0;
   const chosen = rows && menu ? (sorted.find((card) => card.id === chosenId) ?? null) : null;
 
-  function renderCard(card: Card, position: number, rowLength: number): React.ReactElement {
+  function renderCard(card: Card, position: number): React.ReactElement {
     const owed = owedIds.has(card.id);
     const melded = canLayOff(card, meldRanks, playContext);
     const staged = stagedIds.has(card.id);
@@ -153,19 +154,7 @@ export function Hand({
           className={`h-1 w-8 rounded ${melded ? "bg-emerald-400" : "bg-transparent"}`}
         />
         {!rows && chosenId === card.id && menu && (
-          // Upward: the hand sits at the bottom of the window.
-          <div
-            // Opens away from the nearer edge, so a card at either end of its
-            // row never has its menu pushed off the screen.
-            role="dialog"
-            aria-label={`Actions for ${menuTitle(card)}`}
-            className={`absolute bottom-full z-20 mb-2 flex w-[280px] flex-col gap-2.5 rounded-2xl border border-white/12 bg-raised p-3 shadow-[0_20px_50px_rgba(0,0,0,0.6)] ${
-              position < rowLength / 2 ? "left-0" : "right-0"
-            }`}
-          >
-            <p className="m-0 font-display text-sm font-semibold">{menuTitle(card)}</p>
-            {menu}
-          </div>
+          <CardPopover title={menuTitle(card)}>{menu}</CardPopover>
         )}
       </span>
     );
@@ -199,13 +188,13 @@ export function Hand({
       {/* Side by side, never overlapping: every card's whole face is readable. */}
       {fan ? (
         <div ref={fanRef} className="flex justify-center pt-1">
-          {sorted.map((card, i) => renderCard(card, i, sorted.length))}
+          {sorted.map((card, i) => renderCard(card, i))}
         </div>
       ) : rows ? (
         <div ref={rowsRef} data-rows className="flex flex-col gap-1.5 pt-1.5">
           {evenRows(sorted, perRow(rowsWidth, PHONE_CARD_W)).map((row) => (
             <div key={row[0]!.id} className="flex gap-1">
-              {row.map((card, i) => renderCard(card, i, row.length))}
+              {row.map((card, i) => renderCard(card, i))}
             </div>
           ))}
           {/* A sheet over the bottom of the screen rather than a menu above the card:
@@ -236,11 +225,78 @@ export function Hand({
             )}
         </div>
       ) : (
-        <div className="flex flex-wrap pt-4">
-          {sorted.map((card, i) => renderCard(card, i, sorted.length))}
-        </div>
+        <div className="flex flex-wrap pt-4">{sorted.map((card, i) => renderCard(card, i))}</div>
       )}
     </section>
+  );
+}
+
+/**
+ * A card's menu on a computer: above the card it was opened from, placed by
+ * `placeMenu` so it never runs off the window, whichever card in whichever row.
+ * Portalled to `document.body` and fixed to the window, so no box around the hand
+ * can clip it, and placed again when the window scrolls or changes size. Until it
+ * has been measured once it is drawn invisibly, so it never flashes in a wrong spot.
+ */
+function CardPopover({
+  title,
+  children,
+}: {
+  readonly title: string;
+  readonly children: React.ReactNode;
+}): React.ReactElement {
+  const anchorRef = useRef<HTMLSpanElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [place, setPlace] = useState<MenuPlace | null>(null);
+  useLayoutEffect(() => {
+    // The card is the element around the anchor: the one that holds the card and its mark.
+    const card = anchorRef.current?.parentElement;
+    const menu = menuRef.current;
+    if (!card || !menu) return;
+    const update = () =>
+      setPlace(
+        placeMenu(
+          card.getBoundingClientRect(),
+          { width: menu.offsetWidth, height: menu.offsetHeight },
+          // The page's own width leaves out a scroll bar; jsdom has none and says 0.
+          {
+            width: document.documentElement.clientWidth || window.innerWidth,
+            height: window.innerHeight,
+          },
+        ),
+      );
+    update();
+    // The menu's own size changes too: a warning appears, a button's words change.
+    const observer =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => update());
+    observer?.observe(menu);
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, []);
+  return (
+    <span ref={anchorRef} hidden>
+      {createPortal(
+        <div
+          ref={menuRef}
+          role="dialog"
+          aria-label={`Actions for ${title}`}
+          data-side={place?.side}
+          className="fixed z-30 flex w-[280px] max-w-[calc(100vw-16px)] flex-col gap-2.5 rounded-2xl border border-white/12 bg-raised p-3 text-ink shadow-[0_20px_50px_rgba(0,0,0,0.6)]"
+          style={
+            place ? { left: place.left, top: place.top } : { left: 0, top: 0, visibility: "hidden" }
+          }
+        >
+          <p className="m-0 font-display text-sm font-semibold">{title}</p>
+          {children}
+        </div>,
+        document.body,
+      )}
+    </span>
   );
 }
 

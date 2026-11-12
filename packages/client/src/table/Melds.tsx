@@ -1,24 +1,28 @@
 /**
- * A player's melds: each one fanned as small cards, overlapping so only the
- * corners show, with what it still needs written under it ("3 more for a book",
- * "Clean book"). Folded, each meld is a chip instead ("K ×4 +★"), in the book's
- * color once it is one: gold for clean, silver for dirty.
+ * A player's melds: each one still being built fanned as small cards, overlapping
+ * so only the corners show, and each finished book squared up into one stack with
+ * a red card on top when it is clean and a black one when it is dirty. Under each,
+ * its size, its kind once it is a book, and its points ("5 cards · 70",
+ * "7 cards · clean · 120"). Folded, each meld is a chip instead ("K ×4 +★"), in
+ * the book's color once it is one: gold for clean, silver for dirty.
  *
- * Wilds sit at the end of the fan, gold-faced, so how dirty a meld is reads at a
+ * Wilds sit at the end of a fan, gold-faced, so how dirty a meld is reads at a
  * glance. Whether a meld is a book, and of which kind, is the engine's
  * `classifyBook`, through `meldView`, so the display cannot disagree with scoring.
  *
  * With `onSelect`, a meld can be clicked to aim the player's next cards at it,
  * which is the only way to add a wild to a meld already on the table.
  */
-import type { Card, Meld, Rank } from "@hf/shared";
+import { isWild, type Card, type Meld, type Rank, type RulesConfig } from "@hf/shared";
 import { classifyBook } from "@hf/engine";
-import { PlayingCard } from "../cards/PlayingCard";
-import { sortForDisplay } from "../cards/handOrder";
+import { BookCard, PlayingCard } from "../cards/PlayingCard";
+import { isRedCard, sortForDisplay } from "../cards/handOrder";
 import { meldChip, meldNote, sortMelds, type MeldOrder, type MeldTone } from "./meldView";
 
 export interface MeldsProps {
   readonly melds: readonly Meld[];
+  /** The table's rules, which say what each card is worth. */
+  readonly config: RulesConfig;
   readonly order?: MeldOrder;
   /** Smaller cards, for another player's box. */
   readonly compact?: boolean;
@@ -47,6 +51,7 @@ const NOTE_COLOR: Record<MeldTone, string> = {
 
 export function Melds({
   melds,
+  config,
   order = "rank",
   compact = false,
   onSelect,
@@ -103,10 +108,23 @@ export function Melds({
       {sorted.map((meld) => {
         const selected = selectedRank === meld.rank;
         const pencilled = meld.cards.some((card) => provisionalIds.has(card.id));
-        const note = meldNote(meld);
+        const note = meldNote(meld, config);
+        const kind = classifyBook(meld);
         const body = (
           <>
-            <MeldFan cards={meld.cards} compact={compact} />
+            {kind === "incomplete" ? (
+              <MeldFan cards={meld.cards} compact={compact} />
+            ) : (
+              // One element shows the whole book, so it answers for every card in it.
+              <span data-motion={meld.cards.map((card) => card.id).join(" ")}>
+                <BookCard
+                  top={bookTop(meld.cards, kind)}
+                  kind={kind}
+                  count={meld.cards.length}
+                  size="small"
+                />
+              </span>
+            )}
             <span
               className={`text-[11px] font-semibold whitespace-nowrap md:text-xs ${NOTE_COLOR[note.tone]}`}
             >
@@ -116,7 +134,7 @@ export function Melds({
           </>
         );
         const shape = `flex gap-1.5 rounded-lg p-1 text-left ${
-          rows ? "items-center gap-4" : "flex-col items-start"
+          rows ? "items-center gap-4" : "h-full flex-col items-start justify-between"
         } ${selected ? "ring-2 ring-gold" : ""} ${
           pencilled ? "outline-2 outline-offset-2 outline-sky outline-dashed" : ""
         }`;
@@ -176,4 +194,17 @@ function meldLabel(meld: Meld): string {
   return kind === "incomplete"
     ? `Meld of ${meld.rank}s, ${size}`
     : `${kind} book of ${meld.rank}s, ${size}`;
+}
+
+/**
+ * The card on top of a finished book, as the game is played at a real table: a
+ * red natural on a clean book and a black one on a dirty book, so which bonus it
+ * earned shows from across the table. A book that has no natural of its color
+ * (seven black kings, clean) still shows a natural, and `BookCard` inks it in the
+ * book's color, so the top card always reads red or black as it should.
+ */
+export function bookTop(cards: readonly Card[], kind: "clean" | "dirty"): Card {
+  const naturals = sortForDisplay(cards).filter((card) => !isWild(card.rank));
+  const wantRed = kind === "clean";
+  return naturals.find((card) => isRedCard(card) === wantRed) ?? naturals[0] ?? cards[0]!;
 }
