@@ -158,4 +158,20 @@ describe("the kept history", () => {
     await loadHistory(post, ana, T + 2);
     expect(asks).toHaveLength(2);
   });
+
+  it("does not keep an answer that arrives after it was forgotten", async () => {
+    let answer: (reply: Ack<unknown>) => void = () => {};
+    let asks = 0;
+    const post: Post = (): Promise<Ack<unknown>> => {
+      asks++;
+      return new Promise((resolve) => (answer = resolve));
+    };
+    const first = loadHistory(post, ana, T);
+    // Signed out, or a match ended, while the ask was on its way.
+    forgetHistory();
+    answer({ ok: true, data: historyOf(1) });
+    expect(await first).toEqual({ ok: true, data: historyOf(1) });
+    void loadHistory(post, ana, T + 1);
+    expect(asks).toBe(2);
+  });
 });

@@ -31,6 +31,11 @@ interface Kept {
 
 /** Answers by user id, failures and asks still on their way included. */
 const kept = new Map<string, Kept>();
+/**
+ * Moves on each `forgetHistory`, so an answer still on its way when the history
+ * was forgotten is not stored for the next screen to read as fresh.
+ */
+let generation = 0;
 
 function fresh(at: number, now: number): boolean {
   return now - at >= 0 && now - at < HISTORY_FRESH_MS;
@@ -66,11 +71,12 @@ export function loadHistory(
   if (inMemory && fresh(inMemory.at, now)) return inMemory.answer;
   const stored = readStored(user.userId, now);
   if (stored) return Promise.resolve({ ok: true, data: stored });
+  const askedIn = generation;
   const answer = post(MATCHES_PATH, { user }).then(
     (reply): Ack<MatchHistory> => {
       if (!reply.ok) return reply;
       const history = reply.data as MatchHistory;
-      writeStored(user.userId, now, history);
+      if (askedIn === generation) writeStored(user.userId, now, history);
       return { ok: true, data: history };
     },
     (): Ack<MatchHistory> => ({ ok: false, error: UNREACHABLE }),
@@ -81,6 +87,7 @@ export function loadHistory(
 
 /** Forget every kept answer, so the next screen asks the server afresh. */
 export function forgetHistory(): void {
+  generation++;
   kept.clear();
   try {
     const storage = window.sessionStorage;
