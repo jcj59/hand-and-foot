@@ -364,7 +364,8 @@ describe("collapsing the other seats on a computer", () => {
     expect(within(seat).queryByRole("img", { name: "King of clubs" })).toBeNull();
     fireEvent.click(within(seat).getByRole("button", { name: "Expand ben's melds" }));
     expect(within(seat).getByRole("img", { name: "King of clubs" })).toBeInTheDocument();
-    expect(seat).toHaveTextContent("3 more for a book");
+    // Its size and the points its cards are worth: 10 + 10 + 10 + 20.
+    expect(seat).toHaveTextContent("4 cards · 50");
   });
 });
 
@@ -474,9 +475,71 @@ describe("your melds", () => {
       update({ view: { isDown: true, melds: [{ rank: "A", cards: sevenAces }] } }),
     );
     const mine = screen.getByLabelText(/your melds/i);
+    // Seven aces at 15 each, the cards' own value: the book's bonus is the round's to score.
     expect(within(mine).getByLabelText(/clean book of As, 7 cards/i)).toHaveTextContent(
-      "Clean book",
+      "7 cards · clean · 105",
     );
+  });
+
+  it("squares a finished book into one stack: a red card on top when clean, a black one when dirty", () => {
+    const clubs = (rank: Rank, i: number): Card => ({ id: `${rank}c${i}`, rank, suit: "clubs" });
+    const spades = (rank: Rank, i: number): Card => ({ id: `${rank}s${i}`, rank, suit: "spades" });
+    const clean = [...Array.from({ length: 6 }, (_, i) => clubs("9", i)), card("9", "hearts")];
+    const dirty = [
+      card("K", "hearts"),
+      ...Array.from({ length: 5 }, (_, i) => clubs("K", i)),
+      card("JOKER", null),
+    ];
+    // Clean, but with no red card in it: the top card is still drawn red.
+    const blackClean = Array.from({ length: 9 }, (_, i) => spades("A", i));
+    // Dirty, with black cards only among the wilds: a natural still goes on top, drawn black.
+    const redDirty = [
+      ...Array.from({ length: 5 }, (_, i): Card => ({ id: `Qh${i}`, rank: "Q", suit: "hearts" })),
+      spades("2", 0),
+      clubs("2", 0),
+    ];
+    mount(
+      fakeSocket().socket,
+      update({
+        view: {
+          isDown: true,
+          melds: [
+            { rank: "9", cards: clean },
+            { rank: "K", cards: dirty },
+            { rank: "A", cards: blackClean },
+            { rank: "Q", cards: redDirty },
+          ],
+        },
+      }),
+    );
+    const book = (name: RegExp) => {
+      const meld = screen.getByLabelText(name);
+      const images = within(meld).getAllByRole("img");
+      // One card face up, not seven fanned.
+      expect(images).toHaveLength(1);
+      const ink = new Set(
+        [...images[0]!.querySelectorAll("text")].map((t) => t.getAttribute("fill")),
+      );
+      return { name: images[0]!.getAttribute("aria-label"), ink: [...ink], meld };
+    };
+    const red = "#C2353A";
+    const black = "#15181B";
+    expect(book(/clean book of 9s/)).toMatchObject({ name: "Nine of hearts on top", ink: [red] });
+    expect(book(/dirty book of Ks/)).toMatchObject({ name: "King of clubs on top", ink: [black] });
+    expect(book(/clean book of As/)).toMatchObject({ name: "Ace of spades on top", ink: [red] });
+    expect(book(/dirty book of Qs/)).toMatchObject({
+      name: "Queen of hearts on top",
+      ink: [black],
+    });
+    // The cards beneath show as edges, more of them under a bigger book.
+    expect(book(/clean book of 9s/).meld.querySelectorAll("[data-book-edge]")).toHaveLength(2);
+    expect(book(/clean book of As/).meld.querySelectorAll("[data-book-edge]")).toHaveLength(2);
+    // The whole book answers for every card in it, so a card laid on it flies to it.
+    expect(
+      book(/dirty book of Ks/)
+        .meld.querySelector("[data-motion]")!
+        .getAttribute("data-motion"),
+    ).toBe(dirty.map((c) => c.id).join(" "));
   });
 
   it("keeps a meld still being built fanned out, card by card", () => {
@@ -736,6 +799,35 @@ describe("staging a lay-down", () => {
     );
     // The ringed box is where wilds will go, and says so.
     expect(panel.textContent).toMatch(/Ks· wilds go here/i);
+  });
+
+  it("keeps a card's menu inside the window, outside any box that could clip it", () => {
+    // A card at the far right of the window (jsdom's is 1024 by 768), and a menu
+    // 280 by 250: opening from the card's left edge would run off the right.
+    const box = { left: 1000, top: 600, right: 1056, bottom: 686, width: 56, height: 86 };
+    const rect = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockReturnValue({ ...box, x: box.left, y: box.top, toJSON: () => box } as DOMRect);
+    const width = vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(280);
+    const height = vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(250);
+    try {
+      mount(fakeSocket().socket, inPlay(meldable()));
+      fireEvent.click(handCard("King of clubs"));
+      const popover = screen.getByRole("dialog", { name: "Actions for King of clubs" });
+      // Fixed to the window, in the page's body rather than the hand.
+      expect(popover).toHaveClass("fixed");
+      expect(popover.parentElement).toBe(document.body);
+      expect(popover.closest("[data-zone='hand']")).toBeNull();
+      // Its right edge on the card's, pulled inside the window's margin; above the card.
+      expect(popover.style.left).toBe(`${1024 - 8 - 280}px`);
+      expect(popover.style.top).toBe(`${600 - 8 - 250}px`);
+      expect(popover).toHaveAttribute("data-side", "above");
+      expect(within(popover).getByRole("menu", { name: "Card actions" })).toBeInTheDocument();
+    } finally {
+      rect.mockRestore();
+      width.mockRestore();
+      height.mockRestore();
+    }
   });
 
   it("offers a card's choices in a menu rather than acting on the first click", () => {
@@ -1508,10 +1600,10 @@ describe("the controls added from play-testing", () => {
       }),
     );
     const note = (name: RegExp): HTMLElement =>
-      within(screen.getByLabelText(name)).getByText(/book$/);
-    expect(note(/clean book of 9s/)).toHaveTextContent("Clean book");
+      within(screen.getByLabelText(name)).getByText(/^7 cards/);
+    expect(note(/clean book of 9s/)).toHaveTextContent("7 cards · clean · 35");
     expect(note(/clean book of 9s/).className).toMatch(/text-gold-soft/);
-    expect(note(/dirty book of Ks/)).toHaveTextContent("Dirty book");
+    expect(note(/dirty book of Ks/)).toHaveTextContent("7 cards · dirty · 110");
     expect(note(/dirty book of Ks/).className).toMatch(/text-ink-soft/);
   });
 
@@ -1760,7 +1852,7 @@ describe("the controls added from play-testing", () => {
     const book = within(screen.getByLabelText(/your melds/i)).getByLabelText(
       "clean book of As, 7 cards",
     );
-    expect(book).toHaveTextContent("Clean book");
+    expect(book).toHaveTextContent("7 cards · clean");
   });
 });
 
@@ -1976,7 +2068,7 @@ describe("on a phone", () => {
     // Cards by default, as on the desktop; chips once the player collapses them.
     expect(
       screen.getByRole("button", { name: "Select clean book of Ks, 7 cards" }).textContent,
-    ).toMatch(/Clean book/);
+    ).toMatch(/7 cards · clean/);
     fireEvent.click(screen.getByRole("button", { name: "Collapse" }));
     const chip = screen.getByRole("button", { name: "Select clean book of Ks, 7 cards" });
     expect(chip.textContent).toBe("K ×7");
@@ -3423,5 +3515,84 @@ describe("a rematch", () => {
     act(() => useSession.setState({ result: final() }));
     act(() => useSession.getState().applyRoom(roomInfo({ playAgain: [1] })));
     expect(screen.queryByRole("button", { name: "Rematch" })).toBeNull();
+  });
+});
+
+describe("putting away the scores beside the table on a computer", () => {
+  afterEach(() => window.localStorage.removeItem("hf.hideScores"));
+
+  const panel = () => screen.getByRole("complementary", { name: "Scores and moves" });
+
+  it("hides the scores and moves to a rail, and brings them back", () => {
+    mount(fakeSocket().socket, update({ view: { scoresSoFar: [120, 450] } }));
+    const hide = screen.getByRole("button", { name: "Hide scores and moves" });
+    expect(hide).toHaveAttribute("aria-expanded", "true");
+    const contents = document.getElementById(hide.getAttribute("aria-controls")!)!;
+    expect(panel()).toContainElement(contents);
+    expect(contents).toHaveTextContent("Scores so far");
+    expect(contents).not.toHaveAttribute("inert");
+
+    fireEvent.click(hide);
+    const show = screen.getByRole("button", { name: "Show scores and moves" });
+    expect(show).toHaveAttribute("aria-expanded", "false");
+    // Out of reach for the tab key and a screen reader, and the panel a narrow rail.
+    expect(contents).toHaveAttribute("inert");
+    expect(panel().className).toMatch(/\bw-9\b/);
+    expect(window.localStorage.getItem("hf.hideScores")).toBe("1");
+
+    fireEvent.click(show);
+    expect(screen.getByRole("button", { name: "Hide scores and moves" })).toBeInTheDocument();
+    expect(contents).not.toHaveAttribute("inert");
+    expect(panel().className).toMatch(/w-\[260px\]/);
+    expect(window.localStorage.getItem("hf.hideScores")).toBe("0");
+  });
+
+  it("remembers the choice on this device", () => {
+    window.localStorage.setItem("hf.hideScores", "1");
+    mount(fakeSocket().socket, update());
+    expect(screen.getByRole("button", { name: "Show scores and moves" })).toBeInTheDocument();
+  });
+
+  it("works when the browser blocks storage, for as long as the page is open", () => {
+    const get = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    const set = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    try {
+      mount(fakeSocket().socket, update());
+      fireEvent.click(screen.getByRole("button", { name: "Hide scores and moves" }));
+      expect(screen.getByRole("button", { name: "Show scores and moves" })).toBeInTheDocument();
+    } finally {
+      get.mockRestore();
+      set.mockRestore();
+    }
+  });
+
+  it("leaves the game alone: the same table, only the panel put away", () => {
+    const { socket, sent } = fakeSocket();
+    mount(socket, update());
+    fireEvent.click(screen.getByRole("button", { name: "Hide scores and moves" }));
+    expect(sent).toEqual([]);
+    expect(screen.getByLabelText("Table")).toContainElement(screen.getByLabelText("Piles"));
+  });
+
+  it("is not offered on a phone, where the scores already wait behind the trophy", () => {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: (query: string) => ({
+        matches: query === PHONE_QUERY,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }),
+    });
+    try {
+      mount(fakeSocket().socket, update());
+      expect(screen.queryByRole("button", { name: /scores and moves/ })).toBeNull();
+      expect(screen.getByRole("button", { name: "Scores so far" })).toBeInTheDocument();
+    } finally {
+      delete (window as { matchMedia?: unknown }).matchMedia;
+    }
   });
 });

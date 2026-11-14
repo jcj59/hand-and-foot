@@ -42,6 +42,7 @@ import { usePhone } from "../usePhone";
 import { Hand } from "./Hand";
 import { pulseStyle } from "./pulse";
 import { CardMenu } from "./CardMenu";
+import { Icon } from "../ui/icons";
 import { discardWarning } from "./discardWarning";
 import { MeldsPanel } from "./MeldsPanel";
 import type { MeldOrder } from "./meldView";
@@ -211,6 +212,9 @@ export function TableView({
   // On a phone the player's own melds are cards, as on the desktop, unless they
   // choose chips to save room; the choice is remembered on this device.
   const [compactMelds, setCompactMelds] = useState(() => readFlag(COMPACT_MELDS_KEY));
+  // On a computer the scores and latest moves can be put away to give the table
+  // the room; the choice is remembered on this device.
+  const [scoresHidden, setScoresHidden] = useState(() => readFlag(HIDE_SCORES_KEY));
   // The last few moves, for the side panel and the phone's scores sheet: kept
   // from the moves this page has seen, each once.
   const [moves, setMoves] = useState<readonly { readonly seq: number; readonly text: string }[]>(
@@ -862,9 +866,21 @@ export function TableView({
             {meldsPanel}
             {feltHand}
           </section>
-          <aside aria-label="Scores and moves" className="w-[260px] shrink-0 overflow-y-auto">
-            {aside ? aside(scores(false)) : scores(false)}
-          </aside>
+          {aside ? (
+            <aside aria-label="Scores and moves" className="w-[260px] shrink-0 overflow-y-auto">
+              {aside(scores(false))}
+            </aside>
+          ) : (
+            <SidePanel
+              hidden={scoresHidden}
+              onHidden={(hidden) => {
+                setScoresHidden(hidden);
+                writeFlag(HIDE_SCORES_KEY, hidden);
+              }}
+            >
+              {scores(false)}
+            </SidePanel>
+          )}
         </div>
       )}
 
@@ -932,6 +948,55 @@ export function TableView({
 }
 
 const COMPACT_MELDS_KEY = "hf.compactMelds";
+const HIDE_SCORES_KEY = "hf.hideScores";
+
+/**
+ * The panel beside the table on a computer, with the scores and latest moves,
+ * which the player can put away to a narrow rail and bring back. It slides
+ * rather than jumps (unless the device asks for less motion), and the table,
+ * which takes whatever width is left, grows into the room. Put away, its
+ * contents are inert, so neither a screen reader nor the tab key finds them.
+ */
+function SidePanel({
+  hidden,
+  onHidden,
+  children,
+}: {
+  readonly hidden: boolean;
+  readonly onHidden: (hidden: boolean) => void;
+  readonly children: React.ReactNode;
+}): React.ReactElement {
+  return (
+    <aside
+      aria-label="Scores and moves"
+      data-hidden={hidden ? "" : undefined}
+      className={`relative shrink-0 overflow-hidden transition-[width] duration-200 ease-out motion-reduce:transition-none ${
+        hidden ? "w-9" : "w-[260px]"
+      }`}
+    >
+      <button
+        type="button"
+        aria-label={hidden ? "Show scores and moves" : "Hide scores and moves"}
+        title={hidden ? "Show scores and moves" : "Hide scores and moves"}
+        aria-expanded={!hidden}
+        aria-controls="table-side-panel"
+        onClick={() => onHidden(!hidden)}
+        className="absolute top-0 right-0 z-10 grid size-8 -translate-y-1.5 place-items-center rounded-lg text-muted hover:bg-white/8 hover:text-ink"
+      >
+        <Icon name={hidden ? "panelClose" : "panelOpen"} size={18} />
+      </button>
+      <div
+        id="table-side-panel"
+        inert={hidden}
+        className={`h-full w-[260px] overflow-y-auto transition-opacity duration-200 motion-reduce:transition-none ${
+          hidden ? "opacity-0" : "opacity-100"
+        }`}
+      >
+        {children}
+      </div>
+    </aside>
+  );
+}
 const MELD_ORDER_KEY = "hf.meldOrder";
 
 function readFlag(key: string): boolean {

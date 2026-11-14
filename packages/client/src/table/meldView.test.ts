@@ -37,11 +37,32 @@ describe("sorting melds", () => {
 });
 
 describe("what a meld says", () => {
-  it("counts down to a book, then names the book", () => {
-    expect(meldNote(meld("8", 4))).toEqual({ text: "3 more for a book", tone: "open" });
-    expect(meldNote(meld("8", 6))).toEqual({ text: "1 more for a book", tone: "open" });
-    expect(meldNote(meld("9", 7))).toEqual({ text: "Clean book", tone: "clean" });
-    expect(meldNote(meld("Q", 5, 2))).toEqual({ text: "Dirty book", tone: "dirty" });
+  it("states its size and points, and once it is a book which kind", () => {
+    // As the table wrote it before the redesign: the cards' own values, no bonus.
+    expect(meldNote(meld("8", 4), EAST_COAST)).toEqual({ text: "4 cards · 20", tone: "open" });
+    expect(meldNote(meld("K", 3, 1), EAST_COAST)).toEqual({ text: "4 cards · 50", tone: "open" });
+    expect(meldNote(meld("9", 7), EAST_COAST)).toEqual({
+      text: "7 cards · clean · 35",
+      tone: "clean",
+    });
+    expect(meldNote(meld("Q", 5, 2), EAST_COAST)).toEqual({
+      text: "7 cards · dirty · 90",
+      tone: "dirty",
+    });
+    // A wild meld (twos alone) is scored at the wilds' value.
+    expect(meldNote(meld("2", 0, 7), EAST_COAST)).toEqual({
+      text: "7 cards · dirty · 140",
+      tone: "dirty",
+    });
+  });
+
+  it("says one card, not one cards", () => {
+    expect(meldNote(meld("A", 1), EAST_COAST).text).toBe("1 card · 15");
+  });
+
+  it("scores by the table's own values", () => {
+    const rich = { ...EAST_COAST, scoring: { ...EAST_COAST.scoring, fourToNine: 7 } };
+    expect(meldNote(meld("8", 3), rich).text).toBe("3 cards · 21");
   });
 
   it("folds to a chip with its naturals counted and its wilds starred", () => {

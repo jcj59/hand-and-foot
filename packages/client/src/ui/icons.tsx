@@ -19,6 +19,8 @@ export const ICONS = {
   clock: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2",
   back: "M15 6l-6 6 6 6",
   forward: "M9 6l6 6-6 6",
+  panelOpen: "M4 4h16v16H4zM15 4v16M9 9l3 3-3 3",
+  panelClose: "M4 4h16v16H4zM15 4v16M11 9l-3 3 3 3",
   trophy: "M8 4h8v5a4 4 0 0 1-8 0zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8 21h8M10 17h4",
   play: "M7 4v16l13-8z",
   help: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17.5h.01",

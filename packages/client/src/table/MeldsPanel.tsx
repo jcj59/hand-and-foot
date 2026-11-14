@@ -107,6 +107,7 @@ export function MeldsPanel({
       {melds.length > 0 && (
         <Melds
           melds={melds}
+          config={config}
           order={order}
           chips={collapsed}
           onSelect={onSelect}

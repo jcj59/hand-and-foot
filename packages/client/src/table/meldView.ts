@@ -1,6 +1,6 @@
 /**
- * How melds are read at the table, as words and in an order: what each one still
- * needs, its short form for a chip, the two ways of sorting them, and how far a
+ * How melds are read at the table, as words and in an order: what each one is
+ * worth, its short form for a chip, the two ways of sorting them, and how far a
  * player in their foot is from the books that let them go out.
  *
  * Pure, so the table, the other players' boxes and their sheet all say the same
@@ -8,7 +8,7 @@
  * engine's `classifyBook`, so nothing here can disagree with scoring.
  */
 import { isWild, type Meld, type Rank, type RulesConfig } from "@hf/shared";
-import { classifyBook } from "@hf/engine";
+import { classifyBook, meldPoints } from "@hf/engine";
 
 /** The two orders the design offers: by rank, or the latest meld laid first. */
 export type MeldOrder = "rank" | "newest";
@@ -31,12 +31,23 @@ export function sortMelds(melds: readonly Meld[], order: MeldOrder): Meld[] {
 
 export type MeldTone = "clean" | "dirty" | "open";
 
-/** What is said under a meld: how many more make it a book, or which book it is. */
-export function meldNote(meld: Meld): { readonly text: string; readonly tone: MeldTone } {
+/**
+ * What is said under a meld: its size, which book it is once it is one, and the
+ * points its cards are worth, as the table wrote it before the redesign
+ * ("5 cards · 70", "7 cards · clean · 120"). The points are the engine's
+ * `meldPoints`, the cards' values alone: a book's bonus is scored by the round.
+ */
+export function meldNote(
+  meld: Meld,
+  config: RulesConfig,
+): { readonly text: string; readonly tone: MeldTone } {
   const kind = classifyBook(meld);
-  if (kind === "clean") return { text: "Clean book", tone: "clean" };
-  if (kind === "dirty") return { text: "Dirty book", tone: "dirty" };
-  return { text: `${BOOK_SIZE - meld.cards.length} more for a book`, tone: "open" };
+  const size = `${meld.cards.length} card${meld.cards.length === 1 ? "" : "s"}`;
+  const book = kind === "incomplete" ? "" : ` · ${kind}`;
+  return {
+    text: `${size}${book} · ${meldPoints(meld, config)}`,
+    tone: kind === "incomplete" ? "open" : kind,
+  };
 }
 
 /** A meld folded to a chip: "K ×4 +★", the naturals counted and the wilds starred. */

@@ -961,7 +961,8 @@ rises from the bottom edge instead of opening as a centered dialog, page content
 column, and the table stacks vertically: opponents as a strip of chips, the scores behind a trophy
 button, the hand in even rows sized to the screen. On a computer pages widen into grids of cards
 (Home's tiles and games, the lessons, History's games), the rules page gains a contents column that
-follows the reader, and the table gains a side panel with the scores and the latest moves. Each
+follows the reader, and the table gains a side panel with the scores and the latest moves, which a
+player can put away to a narrow rail to give the table the room (remembered per device). Each
 screen was checked against its mockup at both sizes as it was built.
 
 ## Testing

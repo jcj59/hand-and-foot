@@ -199,7 +199,7 @@ export function OpponentStrip({
               {shown.melds.length === 0 ? (
                 <p className="m-0 text-sm text-ink/75">Not down yet.</p>
               ) : (
-                <Melds melds={shown.melds} order={order} rows />
+                <Melds melds={shown.melds} config={room.config} order={order} rows />
               )}
               <p className="m-0 text-xs text-ink/70">Sorted the same way as your own melds.</p>
             </section>
