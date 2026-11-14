@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { EAST_COAST, type RoomInfo, type RoundEnded, type ViewUpdate } from "@hf/shared";
 import { clearCredentials, loadCredentials } from "./credentials";
+import { loadHistory } from "./historyCache";
+import type { Post } from "./identity";
 import { createServerClock } from "./serverTime";
 import {
   KEPT_REACTIONS,
@@ -184,6 +186,35 @@ describe("applying updates", () => {
     useSession.getState().applyResult(result);
     useSession.getState().applyUpdate(viewUpdate({ roundNumber: 1, serverNow: 101_000 }));
     expect(useSession.getState().result).toEqual(result);
+  });
+
+  it("forgets the kept history when a match ends, a table is left, or another is joined", async () => {
+    let asks = 0;
+    const post: Post = async () => {
+      asks++;
+      return { ok: true, data: { stats: {}, recent: [] } };
+    };
+    const user = { userId: "u".repeat(16), secret: "s".repeat(32) };
+    const ask = (): Promise<unknown> => loadHistory(post, user);
+    const round = { scores: [], roundNumber: 1, totals: [] };
+    await ask();
+    // A round ending that is not the match's last changes no history.
+    useSession.getState().applyResult({ ...round, matchOver: false });
+    await ask();
+    expect(asks).toBe(1);
+    useSession.getState().applyResult({ ...round, matchOver: true });
+    await ask();
+    expect(asks).toBe(2);
+    useSession.getState().seat({ roomId: "ABC123", seat: 0, token: "t" });
+    await ask();
+    expect(asks).toBe(3);
+    // The same table again (a seat that moved up): still the same history.
+    useSession.getState().seat({ roomId: "ABC123", seat: 1, token: "t" });
+    await ask();
+    expect(asks).toBe(3);
+    useSession.getState().leave();
+    await ask();
+    expect(asks).toBe(4);
   });
 
   it("clears the scoreboard when a new round is dealt", () => {

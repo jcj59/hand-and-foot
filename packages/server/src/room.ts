@@ -48,7 +48,7 @@ import {
 import type { Clock } from "./clock";
 import { ReactionLimiter } from "./reactions";
 import { type ActionLog, InMemoryActionLog, StoredActionLog } from "./log";
-import type { RoomRecord, RoomStore, StoredRoom } from "./store";
+import type { RoomRecord, RoomStore, SeatRecord, StoredRoom } from "./store";
 
 /** The engine will deal any number of seats; a game of Hand and Foot will not. */
 // Defined in `@hf/shared` so the client can say "a table seats at most eight"
@@ -191,6 +191,12 @@ export interface SeatProfile {
 }
 
 export type RoomResult<T> = { ok: true; value: T } | { ok: false; error: string };
+
+/** Whether a stored seat says its person was away; undefined if it predates saying. */
+function storedAway(seat: SeatRecord): boolean | undefined {
+  if (seat.bot) return false;
+  return seat.disconnectedAt === undefined ? undefined : seat.disconnectedAt !== null;
+}
 
 function fail<T>(error: string): RoomResult<T> {
   return { ok: false, error };
@@ -340,6 +346,18 @@ export class Room {
   private pausedSince: number | null = null;
   /** Set while a paused table is saved for later: when it stops being kept. */
   private savedUntil: number | null = null;
+  /**
+   * For each seat, whether the store last heard it was away from the table:
+   * undefined for a record kept before seats said so. A seat's coming and going
+   * is saved only when it differs, so a Durable Object waking and seating its
+   * sockets again writes nothing.
+   */
+  private storedAway: (boolean | undefined)[] = [];
+  /**
+   * Restored from a record kept before seats said when they left, and nobody has
+   * come or gone since: how long the table has been empty is not known.
+   */
+  private leftAtUnknown = false;
   /** Turns played for their seats in a row, with nobody at the table moving. */
   private idleTurns = 0;
   /** Each seat's budget of quick reactions; see `react`. */
@@ -370,12 +388,19 @@ export class Room {
    * game from the one its players were in, and dealing them into it would be worse
    * than telling them it is gone.
    *
-   * What cannot come back is anything about time or connections. Every seat
-   * returns disconnected, because no socket survived, with its reconnect grace
-   * starting now; and the turn on the clock starts afresh, since how much of it
-   * was used before the restart died with the process. A paused table stays
+   * What cannot come back is anything about connections. Every seat returns
+   * disconnected, because no socket survived. A person who had already left keeps
+   * the time they left, so an empty table closes on time however often it is
+   * restored; anyone still at the table when it was saved starts their reconnect
+   * grace now. At a paused table everyone's grace starts now, as the pause would
+   * have given it back anyway. The turn on the clock starts afresh, since how much
+   * of it was used before the restart died with the process. A paused table stays
    * paused. Until someone resumes a seat the room is abandoned, so it runs no
    * clock, and the reaper takes it if nobody comes back.
+   *
+   * A record kept before seats said when they left (`disconnectedAt` absent) has
+   * no such time: such a table, if nobody comes back, is counted empty since it
+   * was opened, so one abandoned long ago closes the next time it is looked at.
    */
   static restore(
     stored: StoredRoom,
@@ -421,14 +446,18 @@ export class Room {
       log: new InMemoryActionLog(actions),
     });
     const now = deps.clock.now();
+    const paused = record.pausedSeat !== null || record.idlePaused === true;
     for (const seat of record.players) {
       // A computer player is back the moment its table is: it never had a socket.
-      room.players.push(
-        seat.bot
-          ? { ...seat, connected: true, disconnectedAt: null }
-          : { ...seat, connected: false, disconnectedAt: now },
-      );
+      if (seat.bot) {
+        room.players.push({ ...seat, connected: true, disconnectedAt: null });
+        continue;
+      }
+      const leftAt = typeof seat.disconnectedAt === "number" && !paused ? seat.disconnectedAt : now;
+      room.players.push({ ...seat, connected: false, disconnectedAt: leftAt });
     }
+    room.storedAway = record.players.map(storedAway);
+    room.leftAtUnknown = record.players.some((p) => !p.bot && p.disconnectedAt === undefined);
     // Rooms saved before hosting could be handed on have no host recorded; the
     // first seat hosted them.
     room.hostToken = record.hostToken ?? record.players[0]?.token ?? null;
@@ -462,7 +491,9 @@ export class Room {
         left: p.left,
         ...(p.userId ? { userId: p.userId } : {}),
         ...(p.avatar ? { avatar: p.avatar } : {}),
-        ...(p.bot ? { bot: true as const, botLevel: p.botLevel ?? LEGACY_BOT_LEVEL } : {}),
+        ...(p.bot
+          ? { bot: true as const, botLevel: p.botLevel ?? LEGACY_BOT_LEVEL }
+          : { disconnectedAt: p.disconnectedAt }),
       })),
       started: this.started,
       ...(this.state ? { firstSeat: this.state.firstSeat ?? 0 } : {}),
@@ -481,7 +512,24 @@ export class Room {
 
   /** Write the record behind the game; see `RoomStore`. */
   private save(): void {
-    this.deps.store?.saveRoom(this.record());
+    const record = this.record();
+    this.storedAway = record.players.map(storedAway);
+    this.deps.store?.saveRoom(record);
+  }
+
+  /** Whether a person's being away differs from what the store last heard. */
+  private awayUnsaved(player: RoomPlayer): boolean {
+    return this.storedAway[player.seat] !== (player.disconnectedAt !== null);
+  }
+
+  /**
+   * Save who is away, if the store does not know it yet. A host calls this once
+   * it has seated the sockets that outlived a restore, so a table whose sockets a
+   * restart took remembers from when everyone was gone, and is not given a fresh
+   * half hour each time it is restored.
+   */
+  saveWhoIsAway(): void {
+    if (this.players.some((p) => this.awayUnsaved(p))) this.save();
   }
 
   get started(): boolean {
@@ -569,6 +617,8 @@ export class Room {
     // A table of nobody, or of computer players alone, is as good as never used.
     if (this.people().length === 0) return this.createdAt;
     if (!this.abandoned) return null;
+    // Nobody has been back since a restore that could not say when they left.
+    if (this.leftAtUnknown) return this.createdAt;
     // The last person to leave is when the room actually went quiet. Every person
     // is disconnected here, so every one of them carries a timestamp.
     /* v8 ignore next */
@@ -877,7 +927,7 @@ export class Room {
     const cameBack = player.left;
     player.left = false;
     this.setConnected(player.seat, true);
-    // Only `left` is recorded; a plain reconnect changes nothing a restart keeps.
+    // `setConnected` saves the seat being back only if the store thought it away.
     if (cameBack) this.save();
     return succeed(player);
   }
@@ -888,6 +938,9 @@ export class Room {
     if (!player) return;
     player.connected = connected;
     player.disconnectedAt = connected ? null : this.deps.clock.now();
+    this.leftAtUnknown = false;
+    // When a person left is kept, so an empty table closes on time after a restart.
+    if (this.awayUnsaved(player)) this.save();
     // Coming back mid-turn restores a normal clock; dropping may make the seat
     // eligible for immediate defaults, which `rearm` decides.
     this.rearm();

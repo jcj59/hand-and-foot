@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   changedRules,
   EAST_COAST,
@@ -14,7 +14,7 @@ import {
 import { applyAction, canTakePile, deal, defaultAction, firstSeatFor, prng } from "@hf/engine";
 import { FakeClock } from "./clock";
 import { DEFAULT_RECONNECT_GRACE_MS, Room } from "./room";
-import { InMemoryRoomStore, type StoredRoom } from "./store";
+import { InMemoryRoomStore, type SeatRecord, type StoredRoom } from "./store";
 
 const FAMILY: RulesConfig = { ...EAST_COAST, mode: "family", pauseEnabled: true };
 
@@ -94,6 +94,13 @@ function playToTheEnd(room: Room): void {
   }
 }
 
+/** A seat as records kept it before they said when its player left. */
+function withoutLeftAt(seat: SeatRecord): SeatRecord {
+  return Object.fromEntries(
+    Object.entries(seat).filter(([key]) => key !== "disconnectedAt"),
+  ) as unknown as SeatRecord;
+}
+
 async function onlyRoom(store: InMemoryRoomStore): Promise<StoredRoom> {
   const open = await store.loadOpen();
   expect(open).toHaveLength(1);
@@ -129,8 +136,8 @@ describe("the room's record", () => {
     seat(room, ["ana", "ben", "cy"]);
     expect(room.leave("token-0").ok).toBe(true);
     expect((await onlyRoom(store)).room.players).toEqual([
-      { seat: 0, name: "ben", token: "token-1", left: false },
-      { seat: 1, name: "cy", token: "token-2", left: false },
+      { seat: 0, name: "ben", token: "token-1", left: false, disconnectedAt: null },
+      { seat: 1, name: "cy", token: "token-2", left: false, disconnectedAt: null },
     ]);
   });
 
@@ -158,14 +165,36 @@ describe("the room's record", () => {
     expect(actions.length).toBe(40);
   });
 
-  it("carries no connection state: a plain reconnect writes nothing", async () => {
+  it("keeps when a person left, and forgets it once they are back", async () => {
     const store = new InMemoryRoomStore();
-    const room = openRoom(store);
+    const clock = new FakeClock(1_700_000_000_000);
+    const room = openRoom(store, clock);
     seat(room, ["ana", "ben"]);
     const before = JSON.stringify(await store.loadOpen());
+    clock.advance(5_000);
     room.setConnected(1, false);
+    expect((await onlyRoom(store)).room.players[1]?.disconnectedAt).toBe(1_700_000_005_000);
     room.resume("token-1");
     expect(JSON.stringify(await store.loadOpen())).toBe(before);
+  });
+
+  it("writes nothing for a coming or going the store already knows of", async () => {
+    const store = new InMemoryRoomStore();
+    const clock = new FakeClock(1_700_000_000_000);
+    const room = openRoom(store, clock);
+    seat(room, ["ana", "ben"]);
+    const saves = vi.spyOn(store, "saveRoom");
+    room.setConnected(1, true);
+    room.resume("token-0");
+    room.saveWhoIsAway();
+    expect(saves).not.toHaveBeenCalled();
+    room.setConnected(1, false);
+    clock.advance(5_000);
+    // Dropping again while still away: the first time is when they left.
+    room.setConnected(1, false);
+    room.saveWhoIsAway();
+    expect(saves).toHaveBeenCalledTimes(1);
+    expect((await onlyRoom(store)).room.players[1]?.disconnectedAt).toBe(1_700_000_000_000);
   });
 });
 
@@ -180,7 +209,8 @@ describe("restoring a room after a restart", () => {
     expect(log.some((row) => row.action.type === "playMelds")).toBe(true);
     expect(log.some((row) => row.action.type === "takePile")).toBe(true);
 
-    const restored = restore(await onlyRoom(store), new FakeClock(), store);
+    const clock = new FakeClock();
+    const restored = restore(await onlyRoom(store), clock, store);
     expect(restored.gameState).toEqual(room.gameState);
     expect(restored.log.entries()).toEqual(log);
     for (let s = 0; s < 4; s++) {
@@ -191,7 +221,12 @@ describe("restoring a room after a restart", () => {
     }
     expect(restored.id).toBe("ABC234");
     expect(restored.uid).toBe("uid-1");
-    expect(restored.record()).toEqual(room.record());
+    // Everyone was at the table when it was saved; no socket survived the restart.
+    const record = room.record();
+    expect(restored.record()).toEqual({
+      ...record,
+      players: record.players.map((p) => ({ ...p, disconnectedAt: clock.now() })),
+    });
   });
 
   it("carries on numbering the log where it left off, into the same stored room", async () => {
@@ -255,6 +290,124 @@ describe("restoring a room after a restart", () => {
     clock.advance(1);
     expect(restored.log.length).toBeGreaterThan(0);
     expect(restored.log.entries().every((row) => row.source === "disconnect")).toBe(true);
+  });
+
+  it("keeps when everyone left, so an empty table closes on time however often it is restored", async () => {
+    const store = new InMemoryRoomStore();
+    const clock = new FakeClock(1_700_000_000_000);
+    const room = openRoom(store, clock);
+    seat(room, ["ana", "ben"]);
+    room.start(0);
+    room.setConnected(0, false);
+    clock.advance(60_000);
+    room.setConnected(1, false);
+    room.dispose();
+    for (let wake = 1; wake <= 3; wake++) {
+      const later = new FakeClock(1_700_000_060_000 + wake * 10 * 60_000);
+      const restored = restore(await onlyRoom(store), later, store);
+      restored.saveWhoIsAway();
+      expect(restored.abandonedSince).toBe(1_700_000_060_000);
+      expect(restored.closing(30 * 60_000)).toEqual({
+        at: 1_700_000_060_000 + 30 * 60_000,
+        reason: "abandoned",
+      });
+      restored.dispose();
+    }
+  });
+
+  it("keeps from when sockets a restart took were gone, once it has seated those still open", async () => {
+    const store = new InMemoryRoomStore();
+    const room = openRoom(store);
+    seat(room, ["ana", "ben", "cy"]);
+    room.start(0);
+    room.dispose();
+    const restart = new FakeClock(1_800_000_000_000);
+    const first = restore(await onlyRoom(store), restart, store);
+    // Only cy's socket outlived it.
+    first.resume("token-2");
+    first.saveWhoIsAway();
+    first.dispose();
+    const later = new FakeClock(1_800_000_600_000);
+    const second = restore(await onlyRoom(store), later, store);
+    expect(second.seats().map((p) => p.disconnectedAt)).toEqual([
+      1_800_000_000_000, 1_800_000_000_000, 1_800_000_600_000,
+    ]);
+  });
+
+  it("plays at once, after a restart, for a seat on turn that was already gone past its grace", async () => {
+    const store = new InMemoryRoomStore();
+    const clock = new FakeClock(1_700_000_000_000);
+    const room = openRoom(store, clock);
+    seat(room, ["ana", "ben"]);
+    room.start(0);
+    const onTurn = room.gameState!.currentSeat;
+    room.setConnected(onTurn, false);
+    room.dispose();
+    const later = new FakeClock(1_700_000_000_000 + 10 * DEFAULT_RECONNECT_GRACE_MS);
+    const restored = restore(await onlyRoom(store), later, store);
+    restored.resume(`token-${1 - onTurn}`);
+    later.advance(0);
+    expect(restored.log.entries()[0]).toMatchObject({ seat: onTurn, source: "disconnect" });
+  });
+
+  it("gives a seat that left a paused table its reconnect grace from the restart", async () => {
+    const store = new InMemoryRoomStore();
+    const clock = new FakeClock(1_700_000_000_000);
+    const room = openRoom(store, clock);
+    seat(room, ["ana", "ben"]);
+    room.start(0);
+    room.setPaused(0, true);
+    const onTurn = room.gameState!.currentSeat;
+    room.setConnected(onTurn, false);
+    room.dispose();
+    const later = new FakeClock(1_700_000_000_000 + 10 * DEFAULT_RECONNECT_GRACE_MS);
+    const stored = await onlyRoom(store);
+    expect(restore(stored, later, store).seats()[onTurn]?.disconnectedAt).toBe(later.now());
+    // And one the table paused itself, for want of anyone playing.
+    const idle = { ...stored, room: { ...stored.room, pausedSeat: null, idlePaused: true } };
+    expect(restore(idle, later, store).seats()[onTurn]?.disconnectedAt).toBe(later.now());
+  });
+
+  it("counts a table stored before seats said when they left as empty since it opened", async () => {
+    const store = new InMemoryRoomStore();
+    const clock = new FakeClock(1_700_000_000_000);
+    const room = openRoom(store, clock);
+    seat(room, ["ana"]);
+    expect(room.addBot(0).ok).toBe(true);
+    room.setConnected(0, false);
+    const { room: record, actions } = await onlyRoom(store);
+    const legacy = {
+      room: { ...record, players: record.players.map(withoutLeftAt) },
+      actions,
+    };
+    const later = new FakeClock(1_800_000_000_000);
+    const restored = restore(legacy, later, store);
+    expect(restored.abandonedSince).toBe(1_700_000_000_000);
+    // Writing the record down does not make up a time anyone left.
+    restored.saveWhoIsAway();
+    expect(restored.abandonedSince).toBe(1_700_000_000_000);
+    // Once someone comes and goes, the table goes by them again.
+    restored.resume("token-0");
+    expect(restored.abandonedSince).toBeNull();
+    later.advance(1_000);
+    restored.setConnected(0, false);
+    expect(restored.abandonedSince).toBe(1_800_000_001_000);
+  });
+
+  it("goes by when a person left, not a computer player, for a table with both", async () => {
+    const store = new InMemoryRoomStore();
+    const clock = new FakeClock(1_700_000_000_000);
+    const room = openRoom(store, clock);
+    seat(room, ["ana"]);
+    expect(room.addBot(0).ok).toBe(true);
+    clock.advance(1_000);
+    room.setConnected(0, false);
+    expect((await onlyRoom(store)).room.players[1]).not.toHaveProperty("disconnectedAt");
+    const restored = restore(await onlyRoom(store), new FakeClock(1_800_000_000_000), store);
+    expect(restored.abandonedSince).toBe(1_700_000_001_000);
+    const saves = vi.spyOn(store, "saveRoom");
+    restored.saveWhoIsAway();
+    expect(saves).not.toHaveBeenCalled();
   });
 
   it("keeps a paused table paused", async () => {

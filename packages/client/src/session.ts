@@ -14,6 +14,7 @@
 import { create } from "zustand";
 import type { Reaction, RoomInfo, RoundEnded, SeatCredentials, ViewUpdate } from "@hf/shared";
 import { clearCredentials, saveCredentials } from "./credentials";
+import { forgetHistory } from "./historyCache";
 import { noteRoom } from "./savedGames";
 import { createServerClock, type ServerClock } from "./serverTime";
 
@@ -76,6 +77,8 @@ export const useSession = create<SessionState>((set, get) => ({
     // A different table: nothing held about the old one — its room, its last view,
     // above all its scoreboard — belongs at this one.
     if (get().credentials?.roomId !== credentials.roomId) {
+      // The last table's match may have ended, or been left: the history is stale.
+      forgetHistory();
       set({ credentials, room: null, update: null, result: null, reactions: [] });
       return;
     }
@@ -90,6 +93,8 @@ export const useSession = create<SessionState>((set, get) => ({
 
   leave: () => {
     clearCredentials();
+    // A game left, or one closed under the player, is in the history now.
+    forgetHistory();
     set({
       credentials: null,
       room: null,
@@ -125,7 +130,11 @@ export const useSession = create<SessionState>((set, get) => ({
     });
   },
 
-  applyResult: (result) => set({ result }),
+  applyResult: (result) => {
+    // A finished match is in the history now; ask afresh next time it is shown.
+    if (result.matchOver) forgetHistory();
+    set({ result });
+  },
 
   applyReaction: (reaction) =>
     set({ reactions: [...get().reactions, reaction].slice(-KEPT_REACTIONS) }),

@@ -9,7 +9,6 @@
  * browser's identity (and again if signing in or out changes it); until (and unless) it answers, every award reads "Not yet".
  */
 import { useEffect, useState } from "react";
-import { MATCHES_PATH, type MatchHistory } from "@hf/shared";
 import { AccountPanel, SettingsRow } from "../profile/AccountPanel";
 import { AwardGrid, SectionHeading } from "../profile/AwardGrid";
 import { ProfileCard } from "../profile/ProfileCard";
@@ -22,6 +21,7 @@ import {
   serverPost,
   type Post,
 } from "../identity";
+import { loadHistory } from "../historyCache";
 import { readMuted, writeMuted } from "../table/sounds";
 import { PageHeader } from "../ui/PageHeader";
 import { usePhone } from "../usePhone";
@@ -127,9 +127,9 @@ function useAwardCounts(post: Post): Readonly<Record<string, number>> | null {
     const user = loadIdentity();
     if (!user || user.userId !== userId) return;
     let live = true;
-    post(MATCHES_PATH, { user })
+    loadHistory(post, user)
       .then((answer) => {
-        if (live && answer.ok) setCounts((answer.data as MatchHistory).stats.awards ?? {});
+        if (live && answer.ok) setCounts(answer.data.stats.awards ?? {});
       })
       .catch(() => {});
     return () => {

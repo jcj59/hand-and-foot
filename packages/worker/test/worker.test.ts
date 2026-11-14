@@ -13,9 +13,17 @@ import {
 } from "cloudflare:test";
 import { afterEach, describe, expect, it } from "vitest";
 import { defaultAction } from "@hf/engine";
-import { PAUSED_TABLE_MS, type Room, type TableChannel } from "@hf/server/core";
+import {
+  PAUSED_TABLE_MS,
+  type Room,
+  type RoomRecord,
+  type SeatRecord,
+  type TableChannel,
+} from "@hf/server/core";
 import {
   EAST_COAST,
+  MATCH_PATH,
+  MATCHES_PATH,
   WEST_COAST,
   PING,
   PONG,
@@ -153,6 +161,47 @@ function insideTable<T>(code: string, fn: (room: Room, channel: TableChannel) =>
   });
 }
 
+/** A seat as records kept it before they said when its player left. */
+function withoutLeftAt(seat: SeatRecord): SeatRecord {
+  return Object.fromEntries(
+    Object.entries(seat).filter(([key]) => key !== "disconnectedAt"),
+  ) as unknown as SeatRecord;
+}
+
+/**
+ * Change a table's stored record, then put the object to sleep, so that what it
+ * comes back as is what storage says. Its sockets stay open, as through a sleep,
+ * unless `eviction` closes them, as a deploy does.
+ */
+async function editStoredTable(
+  code: string,
+  edit: (record: RoomRecord) => RoomRecord,
+  eviction?: Parameters<typeof evictDurableObject>[1],
+): Promise<void> {
+  await runInDurableObject(tableOf(code), (_instance, state) => {
+    const kv = state.storage.kv;
+    const key = `room:${kv.get<string>("current")}`;
+    kv.put(key, edit(kv.get<RoomRecord>(key)!));
+  });
+  await evictDurableObject(tableOf(code), eviction);
+}
+
+/** Let `ms` go by for a sleeping table: every time its storage holds moves back. */
+function ageStoredTable(code: string, ms: number): Promise<void> {
+  const back = (at: number | null | undefined): number | null | undefined =>
+    typeof at === "number" ? at - ms : at;
+  return editStoredTable(code, (record) => ({
+    ...record,
+    createdAt: record.createdAt - ms,
+    pausedSince: back(record.pausedSince),
+    players: record.players.map((seat) =>
+      seat.disconnectedAt === undefined
+        ? seat
+        : { ...seat, disconnectedAt: back(seat.disconnectedAt) },
+    ),
+  }));
+}
+
 /** Cancel the turn clock's pending timer, which holds the object awake. */
 function stopClock(room: Room): void {
   const internal = room as unknown as { cancelTimer: (() => void) | null };
@@ -161,6 +210,15 @@ function stopClock(room: Room): void {
 }
 
 describe("the Worker", () => {
+  it("exports only its handler and Durable Object classes, as workerd requires to start", async () => {
+    // Tests reach the Worker through SELF, which starts even when the entry also
+    // exports a plain value; `wrangler dev` and Cloudflare do not.
+    const entry: Record<string, unknown> = await import("../src/index");
+    for (const [name, value] of Object.entries(entry)) {
+      expect([name, typeof value]).toEqual([name, name === "default" ? "object" : "function"]);
+    }
+  });
+
   it("answers a health check", async () => {
     const response = await SELF.fetch(`${BASE}/api/healthz`);
     expect(await response.json()).toEqual({ ok: true });
@@ -559,6 +617,107 @@ describe("a table", () => {
     });
     // And a new table can be opened under it.
     expect(await tableOf(code).open(code, EAST_COAST, "eve")).toMatchObject({ ok: true });
+  });
+
+  it("closes a table everyone has left once its half hour is up, however often it slept", async () => {
+    const lone = client();
+    const opened = await ask<SeatCredentials>(lone, "createRoom", { name: "ana" });
+    if (!opened.ok) throw new Error(opened.error);
+    lone.close();
+    const code = opened.data.roomId;
+    await until(() => insideTable(code, (room) => room.abandonedSince !== null));
+
+    // Asleep and woken by its alarm, again and again, with only a little time
+    // passing each time: never closed yet, and each wake sets the next alarm.
+    for (let wake = 0; wake < 3; wake++) {
+      await ageStoredTable(code, 5 * 60_000);
+      expect(await runDurableObjectAlarm(tableOf(code))).toBe(true);
+      expect(await insideTable(code, (room) => room.id)).toBe(code);
+    }
+
+    // Half an hour after the last one left, counted across those sleeps, it goes,
+    // and no alarm is left to wake it again.
+    await ageStoredTable(code, ABANDONED_TABLE_MS - 15 * 60_000 + 1);
+    expect(await runDurableObjectAlarm(tableOf(code))).toBe(true);
+    expect(await ask(client(), "resumeSeat", opened.data)).toEqual({
+      ok: false,
+      error: "no room with that code",
+    });
+    expect(await runDurableObjectAlarm(tableOf(code))).toBe(false);
+  });
+
+  it("closes a table that lost its sockets to a restart and that nobody came back to", async () => {
+    const { ana, ben, anaSeat } = await dealtTable();
+    const code = anaSeat.roomId;
+    await insideTable(code, stopClock);
+    ana.close();
+    ben.close();
+    await until(() => insideTable(code, (room) => room.abandonedSince !== null));
+    // As it is stored when a restart takes every socket at once: everyone was
+    // still at the table, and nobody comes back.
+    await editStoredTable(code, (record) => ({
+      ...record,
+      players: record.players.map((seat) => ({ ...seat, disconnectedAt: null })),
+    }));
+    // The first wake learns that everyone is gone, and from when.
+    expect(await runDurableObjectAlarm(tableOf(code))).toBe(true);
+    expect(await insideTable(code, (room) => room.id)).toBe(code);
+    await ageStoredTable(code, ABANDONED_TABLE_MS + 1);
+    expect(await runDurableObjectAlarm(tableOf(code))).toBe(true);
+    expect(await ask(client(), "resumeSeat", anaSeat)).toEqual({
+      ok: false,
+      error: "no room with that code",
+    });
+    expect(await runDurableObjectAlarm(tableOf(code))).toBe(false);
+  });
+
+  it("closes, on its next wake, an empty table stored before seats kept when they left", async () => {
+    const lone = client();
+    const opened = await ask<SeatCredentials>(lone, "createRoom", { name: "ana" });
+    if (!opened.ok) throw new Error(opened.error);
+    lone.close();
+    const code = opened.data.roomId;
+    await until(() => insideTable(code, (room) => room.abandonedSince !== null));
+    // What a table abandoned before this change has in storage: no time anyone
+    // left, and a record older than the half hour.
+    await editStoredTable(code, (record) => ({
+      ...record,
+      createdAt: record.createdAt - 2 * ABANDONED_TABLE_MS,
+      players: record.players.map(withoutLeftAt),
+    }));
+    expect(await runDurableObjectAlarm(tableOf(code))).toBe(true);
+    expect(await ask(client(), "resumeSeat", opened.data)).toEqual({
+      ok: false,
+      error: "no room with that code",
+    });
+    expect(await runDurableObjectAlarm(tableOf(code))).toBe(false);
+  });
+
+  it("keeps a table stored before seats kept when they left, once someone is back", async () => {
+    const { ana, anaSeat, benSeat } = await dealtTable();
+    const code = anaSeat.roomId;
+    await insideTable(code, stopClock);
+    let dropped = 0;
+    ana.on("disconnect", () => dropped++);
+    // A deploy: every socket closes, and the clients come back on their own.
+    await editStoredTable(
+      code,
+      (record) => ({
+        ...record,
+        createdAt: record.createdAt - 2 * ABANDONED_TABLE_MS,
+        players: record.players.map(withoutLeftAt),
+      }),
+      { webSockets: "close" },
+    );
+    await until(() => dropped > 0 && ana.connected);
+    expect((await ask(ana, "resumeSeat", anaSeat)).ok).toBe(true);
+    await runInDurableObject(tableOf(code), (instance: TableObject) => instance.alarm());
+    expect(await insideTable(code, (room) => room.id)).toBe(code);
+    // The other player, still away, gets the reconnect grace from the restart
+    // rather than being counted gone since the table opened.
+    expect(
+      await insideTable(code, (room) => room.seats()[benSeat.seat]!.disconnectedAt),
+    ).toBeGreaterThan(Date.now() - 60_000);
   });
 });
 
@@ -977,6 +1136,48 @@ describe("match history", () => {
     expect(await history({ ...ana, secret: "z".repeat(40) })).toEqual(refused);
     expect(await history({ userId: "../x", secret: "z" })).toEqual(refused);
     expect(await history(undefined)).toEqual(refused);
+  });
+
+  it("is refused past 30 reads a minute, history and replays together, without asking the identity's object", async () => {
+    const cy = { userId: "cy-reads-limit-01", secret: "c".repeat(40) };
+    const dee = { userId: "dee-reads-limit-2", secret: "d".repeat(40) };
+    await post("/api/users", { ...cy, name: "Cy" });
+    await post("/api/users", { ...dee, name: "Dee" });
+    const read = (path: string, body: unknown): Promise<Response> =>
+      SELF.fetch(`${BASE}${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    for (let i = 0; i < 20; i++) {
+      expect((await read(MATCHES_PATH, { user: cy })).status).toBe(200);
+    }
+    for (let i = 0; i < 10; i++) {
+      expect((await read(MATCH_PATH, { user: cy, id: "none" })).status).toBe(200);
+    }
+    for (const refusedRead of [
+      read(MATCHES_PATH, { user: cy }),
+      read(MATCH_PATH, { user: cy, id: "none" }),
+    ]) {
+      const refused = await refusedRead;
+      expect(refused.status).toBe(429);
+      const wait = Number(refused.headers.get("retry-after"));
+      expect(wait).toBeGreaterThanOrEqual(1);
+      expect(wait).toBeLessThanOrEqual(60);
+      expect(await refused.json()).toEqual({
+        ok: false,
+        error: "too many requests; try again in a minute",
+      });
+    }
+    // Refused before the object is asked: wrong credentials for the same id, which
+    // the object would refuse as not an identity, are refused for the count instead.
+    expect((await read(MATCHES_PATH, { user: { ...cy, secret: "z".repeat(40) } })).status).toBe(
+      429,
+    );
+    // Someone else reads on as usual.
+    const theirs = await read(MATCHES_PATH, { user: dee });
+    expect(theirs.status).toBe(200);
+    expect(((await theirs.json()) as Ack<MatchHistory>).ok).toBe(true);
   });
 });
 

@@ -18,7 +18,11 @@ import type { UserStore } from "./users";
 import type { LoginStore } from "./accounts";
 import { InMemoryMatchStore, type MatchStore } from "./matches";
 
-/** One seat, as much of it as outlives a process. Connection state does not. */
+/**
+ * One seat, as much of it as outlives a process. Whether a socket is open does
+ * not, but when a person left does, so a table everyone has gone from closes on
+ * time however often its host restarts or its Durable Object sleeps.
+ */
 export interface SeatRecord {
   readonly seat: number;
   readonly name: string;
@@ -32,6 +36,11 @@ export interface SeatRecord {
   readonly bot?: true;
   /** How hard it plays. Absent from records kept before levels, which read as Hard. */
   readonly botLevel?: BotLevel;
+  /**
+   * When the person here left, or null if they were at the table when it was
+   * saved. Absent from older records, and for computer players.
+   */
+  readonly disconnectedAt?: number | null;
 }
 
 /** A room, minus its game — which the log reconstructs. */

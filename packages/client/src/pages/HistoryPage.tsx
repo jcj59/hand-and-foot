@@ -9,7 +9,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { MATCHES_PATH, type MatchHistory as History, type MatchListing } from "@hf/shared";
+import type { MatchHistory as History, MatchListing } from "@hf/shared";
 import { resumeSavedGame } from "../actions";
 import { LEVEL_COLOR } from "../home/sheets";
 import {
@@ -38,6 +38,7 @@ import {
   type WhenFilter,
 } from "../history/filters";
 import { loadIdentity, serverPost, type Post } from "../identity";
+import { loadHistory } from "../historyCache";
 import { AvatarFace, BACKGROUND_COLORS } from "../profile/Avatar";
 import { faceOf } from "../profile/avatarStore";
 import { loadSavedGames, type SavedGame } from "../savedGames";
@@ -111,9 +112,9 @@ function useHistory(post: Post): History | "none" | null {
   useEffect(() => {
     if (!user) return;
     let live = true;
-    post(MATCHES_PATH, { user })
+    loadHistory(post, user)
       .then((answer) => {
-        if (live && answer.ok) setHistory(answer.data as History);
+        if (live && answer.ok) setHistory(answer.data);
       })
       .catch(() => {});
     return () => {

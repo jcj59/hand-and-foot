@@ -14,7 +14,7 @@
  */
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { MATCHES_PATH, type MatchHistory as History } from "@hf/shared";
+import type { MatchHistory as History } from "@hf/shared";
 import { LESSONS } from "@hf/scenarios";
 import { addComputerPlayer, createTable, joinTable, resumeSavedGame, startTable } from "../actions";
 import { loadAvatar, saveAvatar, faceOf } from "../profile/avatarStore";
@@ -34,6 +34,7 @@ import {
   rememberName,
   type Post,
 } from "../identity";
+import { loadHistory } from "../historyCache";
 import { usePhone } from "../usePhone";
 import { Button } from "../ui/Button";
 import { Chip } from "../ui/Chip";
@@ -282,9 +283,9 @@ function useHistory(post: Post): History | null {
     const user = loadIdentity();
     if (!user) return;
     let live = true;
-    post(MATCHES_PATH, { user })
+    loadHistory(post, user)
       .then((answer) => {
-        if (live && answer.ok) setHistory(answer.data as History);
+        if (live && answer.ok) setHistory(answer.data);
       })
       .catch(() => {});
     return () => {
