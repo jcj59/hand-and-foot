@@ -156,6 +156,12 @@ describe("roundResult", () => {
       roundNumber: 1,
       totals: scoreRound(ended).map((s) => s.score),
       matchOver: false,
+      held: ended.players.map((p, seat) => ({
+        seat,
+        hand: p.hand,
+        foot: p.foot,
+        footUntouched: true,
+      })),
     });
     const last = stateWith({ roundEnded: true, roundNumber: 4 });
     const result = roundResult(last)!;
@@ -168,5 +174,57 @@ describe("roundResult", () => {
     const departed = [{ seat: 1, afterRound: 1 }];
     const ended = stateWith({ roundEnded: true, roundNumber: 2, departed });
     expect(roundResult(ended)!.departed).toEqual(departed);
+  });
+});
+
+describe("the cards left in hand when a round ends", () => {
+  it("are turned face up for every seat, hand and foot apart, and say whose foot was never reached", () => {
+    const sevens = cards("7", 2);
+    const reached = [card("3", "hearts"), card("K")];
+    const ended = stateWith({
+      roundEnded: true,
+      players: [
+        player({ hand: sevens, foot: [card("5"), card("JOKER")] }),
+        player({ hand: [], foot: reached, inFoot: true, isDown: true }),
+        player({ hand: [], foot: [card("6")], footPending: true, isDown: true }),
+      ],
+    });
+    const held = roundResult(ended)!.held!;
+    expect(held).toEqual([
+      { seat: 0, hand: sevens, foot: ended.players[0]!.foot, footUntouched: true },
+      { seat: 1, hand: [], foot: reached, footUntouched: false },
+      // Emptied the hand, and the foot waits for the next turn: still never played from.
+      { seat: 2, hand: [], foot: ended.players[2]!.foot, footUntouched: true },
+    ]);
+    // Exactly the cards the held penalty was worked out from.
+    const scores = roundResult(ended)!.scores;
+    held.forEach((h, i) => {
+      expect(h.hand.length + h.foot.length).toBe(scores[i]!.breakdown.heldCount);
+    });
+  });
+
+  it("are not there at all while the round is played", () => {
+    // The whole result is null, so no seat's cards can ride it before the end.
+    expect(roundResult(stateWith({ roundEnded: false }))).toBeNull();
+  });
+
+  it("leave out a seat that sat the round out, but keep one that left after playing it", () => {
+    // Seat 1 left after round 1 and was dealt nothing in round 2.
+    const satOut = stateWith({
+      roundEnded: true,
+      roundNumber: 2,
+      departed: [{ seat: 1, afterRound: 1 }],
+      players: [player({ hand: [card("9")] }), player({ hand: [], foot: [] }), player({})],
+    });
+    expect(roundResult(satOut)!.held!.map((h) => h.seat)).toEqual([0, 2]);
+    // Seat 1 played round 2 and left once it ended: its cards stay on that board.
+    const leftAfter = stateWith({
+      roundEnded: true,
+      roundNumber: 2,
+      departed: [{ seat: 1, afterRound: 2 }],
+    });
+    const held = roundResult(leftAfter)!.held!;
+    expect(held.map((h) => h.seat)).toEqual([0, 1]);
+    expect(held[1]!.hand).toEqual(leftAfter.players[1]!.hand);
   });
 });

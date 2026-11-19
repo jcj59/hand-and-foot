@@ -51,6 +51,59 @@ describe("the end of a round", () => {
   });
 });
 
+describe("the cards left in hand at the end of a round", () => {
+  it("are face up in the result once the round ends, and in no view or result before", () => {
+    const { room } = table(["ana", "ben", "cy"]);
+    for (let guard = 0; !room.gameState!.roundEnded; guard++) {
+      expect(guard).toBeLessThan(2_000);
+      expect(room.result()).toBeNull();
+      const state = room.gameState!;
+      for (const seat of [0, 1, 2]) {
+        const sent = JSON.stringify(room.viewFor(seat));
+        expect(sent).not.toContain('"held"');
+        // No other seat's hand or foot card is in it.
+        state.players.forEach((p, other) => {
+          if (other === seat) return;
+          for (const c of [...p.hand, ...p.foot]) expect(sent).not.toContain(`"${c.id}"`);
+        });
+      }
+      expect(JSON.stringify(room.spectatorView())).not.toContain('"held"');
+      expect(room.submitAction(state.currentSeat, defaultAction(state)!).ok).toBe(true);
+    }
+    const state = room.gameState!;
+    expect(room.result()!.held).toEqual(
+      state.players.map((p, seat) => ({
+        seat,
+        hand: p.hand,
+        foot: p.foot,
+        footUntouched: !p.inFoot,
+      })),
+    );
+    // The views stay as they were: the face-up cards travel in the result alone.
+    expect(JSON.stringify(room.viewFor(0))).not.toContain('"held"');
+  });
+
+  it("go with the next round: once it is dealt there is no result to carry them", () => {
+    const { room } = table(["ana", "ben"]);
+    finishRound(room);
+    everyoneReady(room);
+    expect(room.result()).toBeNull();
+  });
+
+  it("ride the last round's result with the awards", () => {
+    const { room } = table(["ana", "ben"]);
+    for (let round = 1; round < 4; round++) {
+      finishRound(room);
+      everyoneReady(room);
+    }
+    finishRound(room);
+    const result = room.result()!;
+    expect(result.matchOver).toBe(true);
+    expect(result.tallies).toBeDefined();
+    expect(result.held!.map((h) => h.seat)).toEqual([0, 1]);
+  });
+});
+
 describe("getting ready for the next round", () => {
   it("shows who is ready, and deals once everyone is", () => {
     const { room } = table(["ana", "ben", "cy"]);

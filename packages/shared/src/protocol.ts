@@ -195,6 +195,23 @@ export interface RoundEnded {
    * round's result only. Worked out from the log, as a player's stats are.
    */
   readonly tallies?: readonly SeatTally[];
+  /**
+   * The cards each seat was left holding when the round ended, face up, in seat
+   * order, so a scoreboard can show what a held penalty was made of. Only seats
+   * dealt into the round are listed: one that had already left the match held
+   * nothing. Sent only once the round is over, never in a `PlayerView`. Optional
+   * because a server from before it, mid-deploy, sends results without it.
+   */
+  readonly held?: readonly HeldCards[];
+}
+
+/** One seat's cards left in hand and foot at the end of a round. */
+export interface HeldCards {
+  readonly seat: number;
+  readonly hand: readonly Card[];
+  readonly foot: readonly Card[];
+  /** The player never picked their foot up, so every foot card was dealt and never played. */
+  readonly footUntouched: boolean;
 }
 
 /**

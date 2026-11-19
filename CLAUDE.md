@@ -1104,6 +1104,18 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   the final scoreboard. Harness: `MATCH_OVER=1` with `ROUND_OVER=1`. Mutation-tested: 8/8 killed, one only after the
   recap test put a departed player's nought among losing scores.
 
+- **Every hand face up at the end of a round (change list item 26, data half).**
+  `RoundEnded.held?: HeldCards[]` (`{seat, hand, foot, footUntouched}`, `footUntouched` =
+  `!inFoot`), made by engine `roundResult` (`lastMove.ts`), so `Room.result()` and replay frames
+  both carry it. Seats that sat the round out (`sitsOut`) are left out; a seat that leaves after
+  playing it keeps its cards on that board. The one place another seat's cards leave the server:
+  safe only because the result is null while a round is played and `PlayerView` never carries it
+  (see DESIGN.md, "Authoritative server"). Pinned in `lastMove.test.ts`, `view.test.ts`,
+  `room.rounds.test.ts` (every view at every move), `room.remove.test.ts`,
+  `socket.integration.test.ts` (every view and result a seat and a watcher receive) and
+  `frame.test.ts` (every step of the `match` scenario). Not in `ScoreBreakdown`, so
+  `pastRounds` and golden replays are untouched. The client does not show it yet.
+
 - **Rematch (roadmap item 12a).** `Room.rematchPlayers(bySeat)` (host, match over, nobody gone on
   yet — `nextRoomId` null; brings every seated player not gone on and not walked away, bots
   included, in seat order; at least `MIN_PLAYERS`). `TableHooks.rematch(room, players)` →
