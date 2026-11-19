@@ -3,6 +3,8 @@ import { EAST_COAST, type RoomInfo } from "@hf/shared";
 import type { CredentialStore } from "./credentials";
 import {
   forgetSavedGame,
+  heldSeat,
+  liveSavedGames,
   loadSavedGames,
   noteRoom,
   rememberSavedGame,
@@ -182,5 +184,25 @@ describe("keeping the list in step with the server", () => {
     noteRoom(room({ started: false, savedUntil: null }), seat, 1, store);
     noteRoom(room({ savedUntil: null }), null, 1, store);
     expect(loadSavedGames(store)).toEqual([game("ABC234", 1_000)]);
+  });
+});
+
+describe("what Home and History offer back", () => {
+  it("offers only the saved games still kept, soonest to close first", () => {
+    const store = memoryStore();
+    rememberSavedGame(game("LATE23", 300), store);
+    rememberSavedGame(game("GONE23", 100), store);
+    rememberSavedGame(game("SOON23", 200), store);
+    // Kept until 100 means gone at 100.
+    expect(liveSavedGames(100, store).map((g) => g.roomId)).toEqual(["SOON23", "LATE23"]);
+    expect(liveSavedGames(99, store).map((g) => g.roomId)).toEqual(["GONE23", "SOON23", "LATE23"]);
+  });
+
+  it("offers a held seat back unless it is at a saved game", () => {
+    const seat = { roomId: "ABC234", seat: 1, token: "t" };
+    expect(heldSeat(null, [])).toBeNull();
+    expect(heldSeat(seat, [])).toBe(seat);
+    expect(heldSeat(seat, [game("OTH234", 1)])).toBe(seat);
+    expect(heldSeat(seat, [game("OTH234", 1), game("ABC234", 1)])).toBeNull();
   });
 });

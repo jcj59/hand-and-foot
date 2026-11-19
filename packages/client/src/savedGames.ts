@@ -134,3 +134,26 @@ export function noteRoom(
     store,
   );
 }
+
+/**
+ * The saved games still worth offering: those whose tables are kept past `now`.
+ * One past that is only clutter, since its table has closed.
+ */
+export function liveSavedGames(
+  now: number = Date.now(),
+  store: CredentialStore | null = savedGamesStore(),
+): readonly SavedGame[] {
+  return loadSavedGames(store).filter((g) => g.savedUntil > now);
+}
+
+/**
+ * The seat to offer back as a game in progress: the one this tab holds (or an
+ * earlier visit kept), unless it is at a saved game, which is offered as that
+ * instead. Home and History both ask this, so they cannot disagree.
+ */
+export function heldSeat(
+  stored: SeatCredentials | null,
+  saved: readonly SavedGame[],
+): SeatCredentials | null {
+  return stored && !saved.some((g) => g.roomId === stored.roomId) ? stored : null;
+}

@@ -729,6 +729,17 @@ What a player is sent about a match is a listing built for them: the names, pict
 the table, where they came, and whether they won — never another player's identity, which a listing
 has no use for.
 
+A game is recorded only once its table closes, so the games a player is still in the middle of are
+not in that list. History shows them anyway, above the recorded games, as an "In progress" group:
+the seat the browser still holds at a table, and each game it saved for later. They come from what
+the browser already keeps (the seat, and the saved games' own seats with who was playing and which
+round), not from a new request, because the server has nothing more to say about them until they
+end and every request counts against the free plan's daily quota. Rejoin and Resume do exactly what
+they do on Home. Having no place yet, these games count as unfinished for the Place filter, and
+"Played with" keeps one only when the browser knows the chosen people are at that table. A saved
+game whose match is already on record as unfinished is left to that card, which offers the same
+Resume beside its scores.
+
 ### Recaps and awards
 
 At the end of each round the scoreboard adds a few lines — the books made, the best and worst round,

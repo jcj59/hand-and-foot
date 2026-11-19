@@ -21,7 +21,7 @@ import { loadAvatar, saveAvatar, faceOf } from "../profile/avatarStore";
 import { AvatarFace } from "../profile/Avatar";
 import { loadCredentials } from "../credentials";
 import { normalizeRoomCode } from "../roomCode";
-import { loadSavedGames, type SavedGame } from "../savedGames";
+import { heldSeat, liveSavedGames, type SavedGame } from "../savedGames";
 import { loadRulesChoice, rememberRulesChoice, type RulesChoice } from "../rules/customRules";
 import { useSession } from "../session";
 import { type HfClientSocket } from "../socket";
@@ -73,11 +73,9 @@ export function Home({ socket, post = serverPost() }: HomeProps): React.ReactEle
   // reclaimed: reloading the home screen leaves it unclaimed until Rejoin.
   const stored = useSession((s) => s.credentials) ?? loadCredentials();
   // Kept until their tables close; one past that is only clutter.
-  const [savedGames, setSavedGames] = useState(() =>
-    loadSavedGames().filter((g) => g.savedUntil > Date.now()),
-  );
+  const [savedGames, setSavedGames] = useState(() => liveSavedGames());
   // A seat at a saved game is offered as that, below, not as a table to rejoin.
-  const held = stored && !savedGames.some((g) => g.roomId === stored.roomId) ? stored : null;
+  const held = heldSeat(stored, savedGames);
 
   // From a shared link the code is known: straight to joining.
   const [chosen, setOpen] = useState<Open>(fromLink ? "join" : null);
@@ -127,7 +125,7 @@ export function Home({ socket, post = serverPost() }: HomeProps): React.ReactEle
     try {
       if (await resumeSavedGame(socket, game, sink)) navigate(`/room/${game.roomId}`);
       // A game that turned out to be gone has been forgotten; stop offering it.
-      else setSavedGames(loadSavedGames().filter((g) => g.savedUntil > Date.now()));
+      else setSavedGames(liveSavedGames());
     } finally {
       setBusy(false);
     }

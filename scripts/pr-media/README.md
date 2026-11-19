@@ -37,7 +37,9 @@ an animation) in its description, under `## Screenshots`.
    seat 4, is not at the table, so the host is offered to carry on without her). `BOTS=1` makes Ben and Dee
    computer players ("Robo Rita", "Robo Ray"); `LOBBY=1` renders the waiting room instead of the
    table (`LOBBY_GUEST=1`: as a guest, Ana hosting). `WATCHING=1` renders the table as a spectator sees it, at `/watch/HFDEMO`. Action `home` renders the home screen
-   instead of the table, with `SAVED_LIST=1` seeding two saved games.
+   instead of the table, with `SAVED_LIST=1` seeding two saved games. Action `history` renders
+   History with three recorded games (answered by a mock), the seat at HFDEMO still held and one
+   game saved for later. `FULL_PAGE=1` shoots the whole page rather than the window.
    On this machine Chromium needs nss/nspr/alsa from the `pwlibs` conda env. Emoji (the quick
    reactions) draw as boxes without a colour emoji font: set `EMOJI_FONT=<path to
    NotoColorEmoji.ttf>` and the page loads it for emoji only. Do not install it system-wide —

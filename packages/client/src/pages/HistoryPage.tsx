@@ -37,11 +37,19 @@ import {
   type SortOrder,
   type WhenFilter,
 } from "../history/filters";
+import {
+  inProgressGames,
+  inProgressMeta,
+  inProgressTitle,
+  keepsInProgress,
+  type InProgressGame,
+} from "../history/inProgress";
 import { loadIdentity, serverPost, type Post } from "../identity";
 import { loadHistory } from "../historyCache";
 import { AvatarFace, BACKGROUND_COLORS } from "../profile/Avatar";
 import { faceOf } from "../profile/avatarStore";
-import { loadSavedGames, type SavedGame } from "../savedGames";
+import { loadCredentials } from "../credentials";
+import { liveSavedGames, type SavedGame } from "../savedGames";
 import { useSession } from "../session";
 import type { HfClientSocket } from "../socket";
 import { PlayerFace } from "../table/PlayerFace";
@@ -84,6 +92,17 @@ export function HistoryPage({ socket, post = serverPost() }: HistoryPageProps) {
   const phone = usePhone();
   const history = useHistory(post);
   const notice = useSession((s) => s.notice);
+  // One set of filters for the games in progress and the recent ones below them.
+  const [filters, setFilters] = useState<Filters>(NO_FILTERS);
+  const resume = useResume(socket);
+  // What the server answered, if it has.
+  const answer = typeof history === "object" ? history : null;
+  const recent = answer?.recent ?? [];
+  const playing = useInProgress(resume.games, recent).filter((g) => keepsInProgress(g, filters));
+  // Nothing in progress is shown until the history has answered (or failed to): a
+  // saved game it has on record is shown there instead, and would otherwise jump.
+  const inProgress =
+    history === "asking" ? null : <InProgress games={playing} phone={phone} resume={resume} />;
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-col gap-3.5 px-5 py-5 md:gap-6 md:px-10 md:py-8">
@@ -93,30 +112,61 @@ export function HistoryPage({ socket, post = serverPost() }: HistoryPageProps) {
           {notice}
         </p>
       )}
-      {history === "none" || (history && history.recent.length === 0) ? (
-        <p className="rounded-[18px] bg-surface p-7 text-center text-muted">No games yet.</p>
+      {answer && recent.length > 0 ? (
+        <Games
+          history={answer}
+          phone={phone}
+          filters={filters}
+          onFilters={setFilters}
+          resume={resume}
+          playing={inProgress}
+        />
       ) : (
-        history && <Games history={history} phone={phone} socket={socket} />
+        <>
+          {inProgress}
+          {(history === "none" || answer) && (
+            <p className="rounded-[18px] bg-surface p-7 text-center text-muted">
+              {playing.length > 0 ? "No finished games yet." : "No games yet."}
+            </p>
+          )}
+        </>
       )}
     </main>
   );
 }
 
 /**
- * The player's history: null while it is being asked for (or if it never comes),
- * "none" for a browser with no identity, which has no games to ask about.
+ * The games this device is still in the middle of: its held seat and its saved
+ * games, from what it keeps itself, never a request. The held seat is the one
+ * this tab holds or an earlier visit kept, as on Home.
  */
-function useHistory(post: Post): History | "none" | null {
+function useInProgress(
+  saved: readonly SavedGame[],
+  recorded: readonly MatchListing[],
+): InProgressGame[] {
+  const stored = useSession((s) => s.credentials) ?? loadCredentials();
+  const room = useSession((s) => s.room);
+  return inProgressGames({ stored, room, saved, recorded });
+}
+
+/**
+ * The player's history: "asking" while it is being asked for, null if it never
+ * came (a refusal or no server), "none" for a browser with no identity, which has
+ * no games to ask about.
+ */
+function useHistory(post: Post): History | "none" | "asking" | null {
   const [user] = useState(loadIdentity);
-  const [history, setHistory] = useState<History | null>(null);
+  const [history, setHistory] = useState<History | "asking" | null>("asking");
   useEffect(() => {
     if (!user) return;
     let live = true;
     loadHistory(post, user)
       .then((answer) => {
-        if (live && answer.ok) setHistory(answer.data);
+        if (live) setHistory(answer.ok ? answer.data : null);
       })
-      .catch(() => {});
+      .catch(() => {
+        if (live) setHistory(null);
+      });
     return () => {
       live = false;
     };
@@ -127,17 +177,22 @@ function useHistory(post: Post): History | "none" | null {
 function Games({
   history,
   phone,
-  socket,
+  filters,
+  onFilters,
+  resume,
+  playing,
 }: {
   readonly history: History;
   readonly phone: boolean;
-  readonly socket: HfClientSocket;
+  readonly filters: Filters;
+  readonly onFilters: (filters: Filters) => void;
+  readonly resume: Resume;
+  /** The games in progress, shown between the stats and the recent games. */
+  readonly playing: React.ReactNode;
 }): React.ReactElement {
   const { stats, recent } = history;
-  const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const people = useMemo(() => companions(recent, COMPANIONS_SHOWN), [recent]);
   const shown = filterGames(recent, filters, Date.now());
-  const resume = useResume(socket);
 
   const tiles: [string, string, string][] = [
     ["Games", "Games", points(stats.played)],
@@ -203,12 +258,14 @@ function Games({
         ))}
       </section>
 
+      {playing}
+
       <section className="flex flex-col gap-3.5">
         <h2 className={phone ? "sr-only" : "font-display text-lg font-semibold"}>Recent games</h2>
         <FilterBar
           phone={phone}
           filters={filters}
-          onChange={setFilters}
+          onChange={onFilters}
           people={people}
           count={shown.length}
         />
@@ -217,14 +274,7 @@ function Games({
             No games match these filters.
           </p>
         ) : (
-          <ul
-            aria-label="Recent games"
-            className={
-              phone
-                ? "flex flex-col gap-3.5 pb-5"
-                : "grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] items-start gap-4"
-            }
-          >
+          <ul aria-label="Recent games" className={phone ? `${GRID_PHONE} pb-5` : GRID}>
             {shown.map((match) => (
               <GameCard key={match.id} match={match} phone={phone} resume={resume} />
             ))}
@@ -374,20 +424,26 @@ function FilterBar({
   );
 }
 
+/** What the cards need to pick a saved game back up. */
+interface Resume {
+  /** The saved games still kept, soonest to close first. */
+  readonly games: readonly SavedGame[];
+  readonly saved: (roomId: string) => SavedGame | undefined;
+  readonly start: (game: SavedGame) => void;
+}
+
 /**
  * Picking a saved game back up from its card, as Home's Resume does. Only a game
  * this device still holds a saved seat at can be resumed; anything else is over.
  */
-function useResume(socket: HfClientSocket): {
-  readonly saved: (roomId: string) => SavedGame | undefined;
-  readonly start: (game: SavedGame) => void;
-} {
+function useResume(socket: HfClientSocket): Resume {
   const navigate = useNavigate();
   const seat = useSession((s) => s.seat);
   const setNotice = useSession((s) => s.setNotice);
-  const [saved, setSaved] = useState(liveSavedGames);
+  const [saved, setSaved] = useState(() => liveSavedGames());
   const [busy, setBusy] = useState(false);
   return {
+    games: saved,
     saved: (roomId) => saved.find((g) => g.roomId === roomId),
     start: (game) => {
       if (busy) return;
@@ -403,8 +459,144 @@ function useResume(socket: HfClientSocket): {
   };
 }
 
-function liveSavedGames(): readonly SavedGame[] {
-  return loadSavedGames().filter((g) => g.savedUntil > Date.now());
+/** The games in progress as a group of cards, or nothing when there are none. */
+function InProgress({
+  games,
+  phone,
+  resume,
+}: {
+  readonly games: readonly InProgressGame[];
+  readonly phone: boolean;
+  readonly resume: Resume;
+}): React.ReactElement | null {
+  if (games.length === 0) return null;
+  return (
+    <section className="flex flex-col gap-3.5">
+      <h2 className="font-display text-lg font-semibold">In progress</h2>
+      <ul aria-label="Games in progress" className={phone ? GRID_PHONE : GRID}>
+        {games.map((game) => (
+          <InProgressCard key={game.roomId} game={game} phone={phone} resume={resume} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/**
+ * A game in progress in the same card as a recorded one, in the unfinished color:
+ * who is at the table instead of scores (it has none yet), and Rejoin or Resume
+ * where a recorded game has Watch again.
+ */
+function InProgressCard({
+  game,
+  phone,
+  resume,
+}: {
+  readonly game: InProgressGame;
+  readonly phone: boolean;
+  readonly resume: Resume;
+}): React.ReactElement {
+  const navigate = useNavigate();
+  const theme = THEMES.unfinished;
+  return (
+    <li className={`${CARD} ${phone ? "" : "min-h-[272px]"}`} style={{ background: theme.card }}>
+      <Glow color={theme.glow} />
+      <div className="relative flex items-center gap-3">
+        <span
+          aria-hidden="true"
+          className={`flex size-[46px] shrink-0 items-center justify-center rounded-[14px] ${theme.badge}`}
+        >
+          {game.kind === "held" ? <PlayGlyph size={16} /> : <PauseGlyph />}
+        </span>
+        <span className="min-w-0 flex-1">
+          <h3 className="font-display text-[19px] font-bold tracking-[-0.01em] md:text-xl">
+            {inProgressTitle(game)}
+          </h3>
+          <span className="block text-xs text-white/72">{inProgressMeta(game)}</span>
+        </span>
+        {game.kind === "saved" && (
+          <span className="text-right">
+            <span className="block font-display text-xl font-bold md:text-[22px]">
+              {game.game.round}
+            </span>
+            <span className="block text-[11px] text-white/65">round</span>
+          </span>
+        )}
+      </div>
+
+      {game.players ? (
+        <ul aria-label="At the table" className="relative flex flex-col gap-2 md:gap-[9px]">
+          {game.players.map((player, i) => (
+            <li key={`${i}${player.name}`} className="flex items-center gap-2.5">
+              <span
+                className={`shrink-0 rounded-full ${
+                  player.you ? "shadow-[0_0_0_2px_#FFFFFF]" : "shadow-[0_0_0_2px_rgba(0,0,0,0.25)]"
+                }`}
+              >
+                <PlayerFace player={player} size={30} />
+              </span>
+              <span
+                className={`min-w-0 truncate text-sm ${player.you ? "font-bold" : "font-medium"}`}
+              >
+                {player.you ? "You" : player.name}
+                {player.bot && <span className="sr-only"> (computer)</span>}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="relative text-sm text-white/80">
+          You still have a seat at this table. Rejoin to pick up where you left off.
+        </p>
+      )}
+
+      <div className="relative mt-auto flex items-center justify-end gap-2.5">
+        {game.kind === "held" ? (
+          <button
+            type="button"
+            onClick={() => navigate(`/room/${game.roomId}`)}
+            aria-label={`Rejoin the game at table ${game.roomId}`}
+            className={ACTION}
+          >
+            <PlayGlyph />
+            Rejoin
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => resume.start(game.game)}
+            aria-label={`Resume the game at table ${game.roomId}`}
+            className={ACTION}
+          >
+            <PlayGlyph />
+            Resume
+          </button>
+        )}
+      </div>
+    </li>
+  );
+}
+
+/** Every game card's shape: the rounded, shadowed tile its gradient fills. */
+const CARD =
+  "relative flex flex-col gap-4 overflow-hidden rounded-[22px] p-[18px] shadow-[0_18px_36px_-18px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.12)]";
+
+/** The white button at the foot of a card: Watch again, Resume or Rejoin. */
+const ACTION =
+  "flex min-h-[38px] shrink-0 items-center gap-1.5 rounded-xl bg-white/92 px-3.5 text-[13px] font-semibold text-[#11161A] hover:bg-white";
+
+const GRID = "grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] items-start gap-4";
+const GRID_PHONE = "flex flex-col gap-3.5";
+
+/** The soft light in a card's top right corner. */
+function Glow({ color }: { readonly color: string }): React.ReactElement {
+  return (
+    <div
+      aria-hidden="true"
+      className="absolute -top-[70px] -right-[60px] size-[220px] rounded-full"
+      style={{ background: `radial-gradient(closest-side, ${color}, transparent)` }}
+    />
+  );
 }
 
 function GameCard({
@@ -414,7 +606,7 @@ function GameCard({
 }: {
   readonly match: MatchListing;
   readonly phone: boolean;
-  readonly resume: ReturnType<typeof useResume>;
+  readonly resume: Resume;
 }): React.ReactElement {
   const result = resultOf(match);
   const theme = THEMES[result];
@@ -422,21 +614,10 @@ function GameCard({
   const you = rows.find((r) => r.you)!;
   const awards = awardsOf(match);
   const saved = result === "unfinished" ? resume.saved(match.roomId) : undefined;
-  const action =
-    "flex min-h-[38px] shrink-0 items-center gap-1.5 rounded-xl bg-white/92 px-3.5 text-[13px] font-semibold text-[#11161A] hover:bg-white";
 
   return (
-    <li
-      className={`relative flex flex-col gap-4 overflow-hidden rounded-[22px] p-[18px] shadow-[0_18px_36px_-18px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.12)] ${
-        phone ? "" : "min-h-[272px]"
-      }`}
-      style={{ background: theme.card }}
-    >
-      <div
-        aria-hidden="true"
-        className="absolute -top-[70px] -right-[60px] size-[220px] rounded-full"
-        style={{ background: `radial-gradient(closest-side, ${theme.glow}, transparent)` }}
-      />
+    <li className={`${CARD} ${phone ? "" : "min-h-[272px]"}`} style={{ background: theme.card }}>
+      <Glow color={theme.glow} />
       <div className="relative flex items-center gap-3">
         <span
           aria-hidden="true"
@@ -489,7 +670,7 @@ function GameCard({
             type="button"
             onClick={() => resume.start(saved)}
             aria-label={`Resume the game at table ${match.roomId}`}
-            className={action}
+            className={ACTION}
           >
             <PlayGlyph />
             Resume
@@ -498,7 +679,7 @@ function GameCard({
           <Link
             to={`/replay/${match.id}`}
             aria-label={`Watch the game at table ${match.roomId} again`}
-            className={action}
+            className={ACTION}
           >
             <PlayGlyph />
             Watch again
@@ -509,10 +690,18 @@ function GameCard({
   );
 }
 
-function PlayGlyph(): React.ReactElement {
+function PlayGlyph({ size = 12 }: { readonly size?: number }): React.ReactElement {
   return (
-    <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+    <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
       <path d="M7 4v16l13-8z" />
+    </svg>
+  );
+}
+
+function PauseGlyph(): React.ReactElement {
+  return (
+    <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M6 4h4v16H6zM14 4h4v16h-4z" />
     </svg>
   );
 }
