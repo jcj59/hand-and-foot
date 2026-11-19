@@ -219,6 +219,7 @@ export class TableChannel {
         // afterwards would otherwise see a finished table with no scores on it.
         const result = this.room.result();
         if (result) peer.send({ event: "roundEnded", payload: result });
+        this.sendChatBacklog(connection);
         return;
       }
       case "watchRoom": {
@@ -233,6 +234,7 @@ export class TableChannel {
         if (update) peer.send({ event: "view", payload: update });
         const result = this.room.result();
         if (result) peer.send({ event: "roundEnded", payload: result });
+        this.sendChatBacklog(connection);
         return;
       }
       case "startGame": {
@@ -276,6 +278,15 @@ export class TableChannel {
         reply({ ok: true, data: undefined });
         // Everyone, the sender too, so every screen shows it the same way.
         for (const other of this.audience()) this.send(other, "reaction", reacted.value);
+        return;
+      }
+      case "chat": {
+        // Watchers hear the table but do not speak at it: only a seat sends.
+        if (seated === null) return reply({ ok: false, error: NOT_SEATED });
+        const said = this.room.chat(seated, payload?.text);
+        if (!said.ok) return reply({ ok: false, error: said.error });
+        reply({ ok: true, data: undefined });
+        for (const other of this.audience()) this.send(other, "chat", said.value);
         return;
       }
       case "saveForLater": {
@@ -556,6 +567,15 @@ export class TableChannel {
   }
 
   // --------------------------------------------------------------- broadcasts ---
+
+  /**
+   * What has been said here so far, to one connection that has just sat down, come
+   * back, or started watching. Not to one re-seated after a wake: its screen never
+   * lost what it had.
+   */
+  private sendChatBacklog(connection: number): void {
+    this.send(connection, "chatBacklog", this.room.chatHistory());
+  }
 
   private send(connection: number, event: string, payload: unknown): void {
     this.peers.get(connection)?.send({ event, payload });

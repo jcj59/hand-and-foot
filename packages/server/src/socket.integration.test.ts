@@ -1762,3 +1762,106 @@ describe("watching a table over the wire", () => {
     expect((await gone).watching).toBeUndefined();
   });
 });
+
+describe("chat over the wire", () => {
+  function chat(socket: Client, text: unknown): Promise<Ack<undefined>> {
+    return new Promise((resolve) => socket.emit("chat", { text } as never, resolve));
+  }
+  function watch(socket: Client, roomId: string): Promise<Ack<RoomInfo>> {
+    return new Promise((resolve) => socket.emit("watchRoom", { roomId }, resolve));
+  }
+
+  it("reaches everyone at the table and its watchers, the sender too, tidied and named", async () => {
+    const { port, host, guest, roomId, guestCreds } = await seatTwo();
+    const watcher = await connect(port);
+    expect((await watch(watcher, roomId)).ok).toBe(true);
+    const heard = [host, guest, watcher].map((s) => waitFor(s, "chat", () => true));
+    expect(await chat(guest, "  good\nluck  ")).toEqual({ ok: true, data: undefined });
+    const [toHost, toGuest, toWatcher] = await Promise.all(heard);
+    expect(toHost).toEqual({
+      seq: expect.any(Number),
+      seat: guestCreds.seat,
+      name: "ben",
+      text: "good luck",
+      at: expect.any(Number),
+    });
+    expect(toGuest).toEqual(toHost);
+    expect(toWatcher).toEqual(toHost);
+  });
+
+  it("is refused from a watcher, a socket holding no seat, and with nothing to say", async () => {
+    const { port, host, guest, roomId } = await seatTwo();
+    const watcher = await connect(port);
+    await watch(watcher, roomId);
+    const stray: unknown[] = [];
+    for (const s of [host, guest, watcher]) s.on("chat", (m) => stray.push(m));
+    expect(await chat(watcher, "let me play")).toEqual({
+      ok: false,
+      error: "you are not seated in a room",
+    });
+    const stranger = await connect(port);
+    expect((await chat(stranger, "hello?")).ok).toBe(false);
+    expect(await chat(host, "   ")).toEqual({ ok: false, error: "there is nothing to send" });
+    expect(await chat(host, "x".repeat(201))).toEqual({
+      ok: false,
+      error: "a message can be at most 200 characters",
+    });
+    // A message that did go through is the next any of them hears.
+    const next = waitFor(watcher, "chat", () => true);
+    await chat(host, "ok");
+    expect((await next).text).toBe("ok");
+    expect(stray.map((m) => (m as { text: string }).text)).not.toContain("let me play");
+  });
+
+  it("stays at its own table", async () => {
+    const a = await seatTwo();
+    const elsewhere = await connect(a.port);
+    const other = await createRoom(elsewhere, "cy");
+    expect(other.ok).toBe(true);
+    const leaked: unknown[] = [];
+    elsewhere.on("chat", (m) => leaked.push(m));
+    const heard = waitFor(a.guest, "chat", () => true);
+    await chat(a.host, "only for us");
+    await heard;
+    // Drain the loop: a stray message a tick later must not slip past.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(leaked).toEqual([]);
+  });
+
+  it("is sent as a backlog to a seat taken back, a player sitting down, and a watcher", async () => {
+    const { port, host, guest, roomId, guestCreds } = await seatTwo();
+    const said = waitFor(guest, "chat", (m) => m.text === "second");
+    await chat(host, "first");
+    await chat(guest, "second");
+    await said;
+
+    // The guest's seat taken back on another socket, as after a reload.
+    const reloaded = await connect(port);
+    const backlog = waitFor(reloaded, "chatBacklog", () => true);
+    expect((await resumeSeat(reloaded, guestCreds)).ok).toBe(true);
+    expect((await backlog).map((m) => [m.name, m.text])).toEqual([
+      ["ana", "first"],
+      ["ben", "second"],
+    ]);
+
+    // A new player sitting down hears what was said before them.
+    const cy = await connect(port);
+    const theirs = waitFor(cy, "chatBacklog", (m) => m.length > 0);
+    expect((await joinRoom(cy, roomId, "cy")).ok).toBe(true);
+    expect((await theirs).map((m) => m.text)).toEqual(["first", "second"]);
+
+    // And so does someone who starts watching.
+    const watcher = await connect(port);
+    const watched = waitFor(watcher, "chatBacklog", () => true);
+    await watch(watcher, roomId);
+    expect((await watched).map((m) => m.text)).toEqual(["first", "second"]);
+  });
+
+  it("is a backlog of nothing at a table where nobody has spoken yet", async () => {
+    const { port, roomId } = await seatTwo();
+    const watcher = await connect(port);
+    const backlog = waitFor(watcher, "chatBacklog", () => true);
+    await watch(watcher, roomId);
+    expect(await backlog).toEqual([]);
+  });
+});

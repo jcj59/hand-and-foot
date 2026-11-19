@@ -28,6 +28,7 @@ import {
   PING,
   PONG,
   type Ack,
+  type ChatMessage,
   type MatchHistory,
   type RoomOptions,
   type SeatCredentials,
@@ -1212,5 +1213,87 @@ describe("pictures", () => {
       room.info().players.map((p) => p.avatar),
     );
     expect(next).toEqual([ana, ben]);
+  });
+});
+
+describe("chat at a table", () => {
+  function heard<T>(socket: TableSocket, event: string, ok: (payload: T) => boolean): Promise<T> {
+    return new Promise((resolve) => {
+      const on = (payload: T): void => {
+        if (!ok(payload)) return;
+        socket.off(event as never, on as never);
+        resolve(payload);
+      };
+      socket.on(event as never, on as never);
+    });
+  }
+  const texts = (messages: readonly ChatMessage[]): string[] => messages.map((m) => m.text);
+
+  it("keeps what was said through a sleep and a restart, apart from the record and the log", async () => {
+    const { ana, ben, anaSeat, benSeat } = await dealtTable();
+    const code = anaSeat.roomId;
+    const second = heard<ChatMessage>(ana, "chat", (m) => m.text === "you too");
+    expect(await ask(ana, "chat", { text: "good luck" })).toEqual({ ok: true, data: undefined });
+    expect((await ask(ben, "chat", { text: "you too" })).ok).toBe(true);
+    expect(await second).toMatchObject({ seat: benSeat.seat, name: "ben", text: "you too" });
+
+    // In its own key, never the record or the log.
+    const stored = await runInDurableObject(tableOf(code), (_instance, state) => {
+      const kv = state.storage.kv;
+      const uid = kv.get<string>("current")!;
+      const rest = [...kv.list({ prefix: "" })]
+        .filter(([key]) => key !== `chat:${uid}`)
+        .map(([, value]) => JSON.stringify(value));
+      return { chat: kv.get<ChatMessage[]>(`chat:${uid}`), rest };
+    });
+    expect(texts(stored.chat!)).toEqual(["good luck", "you too"]);
+    for (const value of stored.rest) expect(value).not.toContain("good luck");
+
+    // Asleep with its sockets open: a watcher arriving wakes it and is told.
+    await insideTable(code, stopClock);
+    await evictDurableObject(tableOf(code));
+    const watcher = client();
+    const backlog = heard<readonly ChatMessage[]>(watcher, "chatBacklog", () => true);
+    expect((await ask(watcher, "watchRoom", { roomId: code })).ok).toBe(true);
+    expect(texts(await backlog)).toEqual(["good luck", "you too"]);
+
+    // Restarted outright, sockets and all: a seat taken back is told too.
+    await insideTable(code, stopClock);
+    let dropped = 0;
+    ana.on("disconnect", () => dropped++);
+    await evictDurableObject(tableOf(code), { webSockets: "close" });
+    await until(() => dropped > 0 && ana.connected && ben.connected);
+    const anaBacklog = heard<readonly ChatMessage[]>(ana, "chatBacklog", (m) => m.length > 0);
+    expect((await ask(ana, "resumeSeat", anaSeat)).ok).toBe(true);
+    expect(texts(await anaBacklog)).toEqual(["good luck", "you too"]);
+    // And the room numbers on past what it kept.
+    const third = heard<ChatMessage>(ana, "chat", () => true);
+    expect((await ask(ana, "chat", { text: "again" })).ok).toBe(true);
+    expect((await third).seq).toBeGreaterThan(stored.chat!.at(-1)!.seq);
+  });
+
+  it("is forgotten when the table closes, and a new table under its code starts with none", async () => {
+    const lone = client();
+    const opened = await ask<SeatCredentials>(lone, "createRoom", { name: "ana" });
+    if (!opened.ok) throw new Error(opened.error);
+    const code = opened.data.roomId;
+    expect((await ask(lone, "chat", { text: "anyone here?" })).ok).toBe(true);
+    lone.close();
+    await until(() => insideTable(code, (room) => room.abandonedSince !== null));
+    await insideTable(code, (room) => {
+      for (const player of room.seats())
+        player.disconnectedAt = Date.now() - ABANDONED_TABLE_MS - 1;
+    });
+    await runInDurableObject(tableOf(code), (instance: TableObject) => instance.alarm());
+    const left = await runInDurableObject(tableOf(code), (_instance, state) =>
+      [...state.storage.kv.list({ prefix: "chat:" })].map(([key]) => key),
+    );
+    expect(left).toEqual([]);
+
+    expect(await tableOf(code).open(code, EAST_COAST, "eve")).toMatchObject({ ok: true });
+    const watcher = client();
+    const backlog = heard<readonly ChatMessage[]>(watcher, "chatBacklog", () => true);
+    expect((await ask(watcher, "watchRoom", { roomId: code })).ok).toBe(true);
+    expect(await backlog).toEqual([]);
   });
 });

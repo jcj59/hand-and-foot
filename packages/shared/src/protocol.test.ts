@@ -9,7 +9,7 @@ import type {
   ServerToClientEvents,
   ViewUpdate,
 } from "./protocol";
-import { REACTIONS, isReactionId } from "./protocol";
+import { CHAT_MAX_LENGTH, REACTIONS, chatLength, isReactionId, normalizeChat } from "./protocol";
 import type { PlayerView } from "./index";
 
 // The protocol is types only, so `tsc` is what really checks it. These pin the
@@ -139,6 +139,36 @@ describe("quick reactions", () => {
     for (const r of REACTIONS) expect(isReactionId(r.id)).toBe(true);
     for (const bad of ["", "Nice!", "nice ", 1, null, undefined, {}, ["nice"]]) {
       expect(isReactionId(bad)).toBe(false);
+    }
+  });
+});
+
+describe("a chat message", () => {
+  it("is as long as two hundred characters, counting an emoji as one", () => {
+    // Pinned as a literal: the client's input stops at it and a person chose it.
+    expect(CHAT_MAX_LENGTH).toBe(200);
+    expect(chatLength("hello")).toBe(5);
+    expect(chatLength("👍🎉")).toBe(2);
+  });
+
+  it("is trimmed, with every run of whitespace one space", () => {
+    expect(normalizeChat("  nice   one  ")).toBe("nice one");
+    expect(normalizeChat("well\n\nplayed\tall")).toBe("well played all");
+    expect(normalizeChat("a  b")).toBe("a b");
+    expect(normalizeChat("good luck 🍀")).toBe("good luck 🍀");
+  });
+
+  it("carries nothing invisible: no control characters, no direction overrides", () => {
+    expect(normalizeChat("be\u0000ep \u0007ok")).toBe("beep ok");
+    expect(normalizeChat("a \u0000 b")).toBe("a b");
+    expect(normalizeChat("‮evil‬ ⁦x⁩")).toBe("evil x");
+    // A joined emoji keeps its joiner: only the characters listed are taken out.
+    expect(normalizeChat("👨‍👩‍👧")).toBe("👨‍👩‍👧");
+  });
+
+  it("is nothing when it is not text or nothing is left of it", () => {
+    for (const bad of ["", "   ", "\n\t", "\u0000‮", 5, null, undefined, {}, ["hi"]]) {
+      expect(normalizeChat(bad)).toBeNull();
     }
   });
 });

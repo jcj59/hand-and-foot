@@ -290,8 +290,8 @@ second copy of the profile that a transfer code would have to keep in step.
 ### Quick reactions
 
 Players at a real table talk, and an online one is quiet without a way to say "nice" or "hurry
-up". Reactions are a fixed set of emoji and short phrases, sent by id; free text would need
-moderation and would turn the table into a chat window, and neither was wanted. They are
+up". Reactions are a fixed set of emoji and short phrases, sent by id, so a quick word needs no
+typing and has nothing to moderate; anything longer goes through the table's chat (below). They are
 deliberately outside the game: the table relays one to everyone and forgets it, so nothing is
 logged, stored or replayed, and a table that sleeps and wakes has nothing to restore. The server
 limits each seat to a short burst and then one every couple of seconds, which the client's own
@@ -303,6 +303,39 @@ or renaming one would break a table mid-game, while adding one costs an older cl
 than a reaction it cannot name. It is kept short enough to find one at a glance — a couple of dozen
 — and a reaction stays up for five seconds, long enough to be read by someone who looked away when
 it arrived.
+
+### Chat at the table
+
+Reactions cover the quick word, but a family at a table also just talks, so the players can type
+to one another. Only seated players send; watchers read along, since a stranger with a watch link
+should not be able to speak at someone else's table. A message is plain text, at most 200
+characters (counted in code points, so an emoji is one), tidied the same way on every host before
+anyone sees it: trimmed, every run of whitespace a single space, and control characters and the
+bidirectional overrides taken out, so a message cannot run into the name beside it or read
+backwards. The rules for that live in the shared package, so the client can tell whether there is
+anything to send without asking. Each seat has its own budget, apart from its reactions: five at
+once, then one every two seconds. Each message carries the sender's name as well as their seat,
+because seats close up when someone leaves the lobby and a number alone could later name someone
+else. Nothing is moderated: the game is played among people who know each other, and a screen
+shows the text as text, never as markup or links.
+
+Unlike a reaction, a message is worth reading after the moment has passed, so the table remembers
+the last 50, oldest first, and sends them to whoever sits down, takes a seat back after a reload,
+or starts watching. They are kept beside the game, never in it: not in the room's record, not in
+the action log, and so not in a match's record or a replay, because the log is the corpus the
+reinforcement-learning agent learns from and what players say is not part of the game. On
+Cloudflare the history has a key of its own in the table object's storage, rewritten with each
+message, so a table that sleeps or is restarted keeps it; the key goes when the table is closed,
+and a rematch or a next game is a new table that starts with none. The Node server keeps it in
+memory only, so a restart there forgets it: a database column for chat would buy little for a host
+that is not the one in production.
+
+Chat costs the free plan little. A message is one WebSocket message into the table's object, which
+Cloudflare bills at a twentieth of a request, and one row written to its storage; what goes out to
+the players costs nothing. A message to a sleeping table wakes it, as any request does. The budget
+bounds a seat at 30 messages a minute after its burst, so even a client stuck sending in a loop
+spends at most about 1.5 requests and 30 written rows a minute, and a refused message writes
+nothing.
 
 ### Rules chosen when a room is opened
 
@@ -649,10 +682,10 @@ open nothing. The engine's property tests check, on every state of random games,
 or stock card is ever in it, and the server's tests check the same over the wire for a whole stretch
 of play.
 
-A watcher is a connection at the table holding no seat: it hears what the table hears — the room,
-the results, the reactions, the table closing — and every request it makes is refused as not
-seated. Taking a seat on the same connection ends watching. On Cloudflare, a watcher survives the
-table's object sleeping as a seat does, by a mark on its socket. The table shows how many are
+A watcher is a connection at the table holding no seat: it hears what the table hears (the room,
+the results, the reactions, the chat, the table closing), and every request it makes is refused as
+not seated. Taking a seat on the same connection ends watching. On Cloudflare, a watcher survives
+the table's object sleeping as a seat does, by a mark on its socket. The table shows how many are
 watching; it changes nothing else.
 
 ### Watching a game back

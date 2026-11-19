@@ -705,6 +705,27 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   (`hf.muteReactions`) and hides theirs and their blip sound, never your own. A watched table
   (`controls` null) has no picker. Emoji need a colour emoji font: real devices have one, headless
   Chromium does not (see `scripts/pr-media/README.md`, `EMOJI_FONT`).
+- **Chat at the table, server half (change list item 5, PR 12a).** Shared: `CHAT_MAX_LENGTH` 200
+  (code points, `chatLength`), `normalizeChat(value)` (whitespace to single spaces, control
+  characters and bidi overrides/isolates stripped, trimmed; null when not text or empty, which is
+  also the client's "anything to send?" check), `ChatMessage {seq, seat, name, text, at}` (`name`
+  because lobby seats close up), request `chat {text}`, events `chat` (to `audience()`, sender and
+  watchers included) and `chatBacklog` (per socket, the kept history oldest first, possibly empty,
+  meant to replace what the screen holds; sent on `resumeSeat`, so on every join too, and on
+  `watchRoom`; not on `adoptSeat`/`adoptWatcher` after a wake). Server: `chat.ts` (`CHAT_BURST` 5,
+  `CHAT_REFILL_MS` 2s, `CHAT_KEPT` 50, all pinned as literals; `ChatLimiter`), the token bucket is
+  now `SeatLimiter` in `reactions.ts` (`ReactionLimiter` extends it). `Room.chat(seat, text)`:
+  seat, empty, length, then budget (refusals cost no token); seq `max(last + 1, now)`; keeps the
+  last 50 (`chatHistory()`) and calls the optional `RoomStore.saveChat(uid, messages)`;
+  `Room.restore` takes `StoredRoom.chat`. Watchers are refused as `NOT_SEATED`. Never in the
+  record, the log, a match record or a replay (pinned in `room.chat.test.ts`). Node: memory only
+  (neither `InMemoryRoomStore` nor Postgres implements `saveChat`, so a restart forgets it).
+  Worker: `DurableRoomStore` key `chat:<uid>` (rewritten per message, read by `current()`, deleted
+  by `closeRoom`). Cost (DESIGN.md "Chat at the table"): one incoming WebSocket message (1/20 of a
+  DO request) and one written row per message. Tests: `room.chat.test.ts`, `protocol.test.ts`,
+  `socket.integration.test.ts` "chat over the wire", `worker.test.ts` "chat at a table" (sleep and
+  `webSockets: "close"` eviction, closing). Mutation-tested: 33/33 killed (shared, server, Worker).
+  The client (PR 12b) is not built yet.
 - **Scenario library and autoplay viewer (roadmap item 1).** Three layers, kept apart on purpose:
   - **Engine, `playback.ts`:** `buildTimeline(GameLog)` takes any `{ config, setup: {seed,
     playerCount} | {state}, actions, names?, moments? }` — a scenario, a golden game, a recorded
