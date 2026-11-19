@@ -534,7 +534,97 @@ const run = async () => {
       ],
     );
   }
-  if (action !== "home")
+  if (action === "history") {
+    // History with a few recorded games, a seat still held at HFDEMO (above) and
+    // one game saved for later.
+    const day = 24 * 60 * 60_000;
+    const now = Date.now();
+    const players = (...rows) => rows.map(([name, total], seat) => ({ seat, name, total }));
+    const recent = [
+      {
+        id: "m1",
+        roomId: "AB2CD3",
+        endedAt: now - 2 * day,
+        rounds: 4,
+        roundsPlayed: 4,
+        finished: true,
+        seat: 0,
+        place: 1,
+        won: true,
+        preset: "east-coast",
+        awards: ["clean"],
+        players: players(["Jack", 14320], ["Kate", 12905], ["Mom", 9440], ["Dad", 8110]),
+      },
+      {
+        id: "m2",
+        roomId: "BC3DE4",
+        endedAt: now - 6 * day,
+        rounds: 4,
+        roundsPlayed: 4,
+        finished: true,
+        seat: 1,
+        place: 2,
+        won: false,
+        preset: "west-coast",
+        awards: [],
+        players: players(["Sam", 11200], ["Jack", 9870], ["Priya", 7650]),
+      },
+      {
+        id: "m3",
+        roomId: "CD4EF5",
+        endedAt: now - 9 * day,
+        rounds: 4,
+        roundsPlayed: 2,
+        finished: false,
+        seat: 0,
+        place: null,
+        won: false,
+        preset: "east-coast",
+        awards: [],
+        players: players(["Jack", 4180], ["Kate", 3990], ["Mom", 2700]),
+      },
+    ];
+    const stats = {
+      played: 42,
+      wins: 26,
+      unfinished: 1,
+      averageScore: 3940,
+      bestMatch: 14320,
+      bestRound: 6210,
+      roundsPlayed: 130,
+      grabbyPants: 4,
+      marvaRules: 2,
+      wentOut: 9,
+      cleanBooks: 31,
+      dirtyBooks: 11,
+      pilesTaken: 57,
+      redThreesEaten: 12,
+      awards: { grabby: 1, marva: 0, clean: 2, out: 1, pile: 1, "red-threes": 0 },
+    };
+    await page.route("**/api/users/matches", (route) =>
+      route.fulfill({ json: { ok: true, data: { stats, recent } } }),
+    );
+    await page.evaluate(
+      ([games, identity]) => {
+        localStorage.setItem("hf.identity", JSON.stringify(identity));
+        localStorage.setItem("hf.savedGames", JSON.stringify(games));
+      },
+      [
+        [
+          {
+            roomId: "KQ7RTX",
+            seat: 1,
+            token: "u",
+            savedUntil: now + 5 * day,
+            names: ["Grandma", "Jack", "Kate"],
+            round: 3,
+          },
+        ],
+        { userId: "u".repeat(16), secret: "s".repeat(32) },
+      ],
+    );
+    await page.goto(`${base}/history`);
+  } else if (action !== "home")
     await page.goto(`${base}/${process.env.WATCHING ? "watch" : "room"}/HFDEMO`);
   else await page.goto(base);
   await page.waitForTimeout(800);
@@ -579,7 +669,7 @@ const run = async () => {
     }
   } else {
     await page.waitForTimeout(Number(process.env.SHOT_AT ?? 300));
-    await page.screenshot({ path: out });
+    await page.screenshot({ path: out, fullPage: !!process.env.FULL_PAGE });
   }
   console.log(
     JSON.stringify(

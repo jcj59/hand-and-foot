@@ -9,9 +9,11 @@ import {
 } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import type { Ack, MatchHistory as History, MatchListing } from "@hf/shared";
+import { EAST_COAST } from "@hf/shared";
+import { CREDENTIALS_KEY, loadCredentials, saveCredentials } from "../credentials";
 import { IDENTITY_KEY, saveIdentity, type Post } from "../identity";
 import { forgetHistory } from "../historyCache";
-import { SAVED_GAMES_KEY } from "../savedGames";
+import { loadSavedGames, SAVED_GAMES_KEY, type SavedGame } from "../savedGames";
 import { useSession } from "../session";
 import type { HfClientSocket } from "../socket";
 import { HistoryPage } from "./HistoryPage";
@@ -158,7 +160,8 @@ function cards(): string[] {
 
 beforeEach(() => {
   window.localStorage.clear();
-  useSession.getState().setNotice(null);
+  window.sessionStorage.clear();
+  useSession.setState({ credentials: null, room: null, notice: null });
 });
 
 afterEach(() => {
@@ -316,6 +319,8 @@ describe("the history page", () => {
     const resume = await screen.findByRole("button", { name: "Resume the game at table CDE456" });
     expect(resume).toHaveTextContent("Resume");
     expect(screen.getAllByRole("link", { name: /^Watch the game/ })).toHaveLength(3);
+    // On record already, so not repeated as a game in progress.
+    expect(screen.queryByRole("list", { name: "Games in progress" })).toBeNull();
     fireEvent.click(resume);
     await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/room/CDE456"));
     expect(sent).toEqual(["resumeSeat"]);
@@ -372,5 +377,200 @@ describe("the history page", () => {
       expect(screen.queryByText("No games yet.")).toBeNull();
       unmount();
     }
+  });
+});
+
+/** A saved game, kept for a day from now unless told otherwise. */
+function savedGame(over: Partial<SavedGame> = {}): SavedGame {
+  return {
+    roomId: "SAV234",
+    seat: 0,
+    token: "saved-token",
+    savedUntil: now + DAY,
+    names: ["Ana", "Kate", "Mom"],
+    round: 2,
+    ...over,
+  };
+}
+
+function keepSaved(...games: SavedGame[]): void {
+  window.localStorage.setItem(SAVED_GAMES_KEY, JSON.stringify(games));
+}
+
+const held = { roomId: "HLD234", seat: 1, token: "held-token" };
+
+/** The games in progress shown, by their headings and the line under each. */
+function inProgress(): string[] {
+  const list = screen.queryByRole("list", { name: "Games in progress" });
+  if (!list) return [];
+  return [...list.children].map(
+    (card) =>
+      `${card.querySelector("h3")!.textContent} | ${card.querySelector("h3 + span")!.textContent}`,
+  );
+}
+
+describe("games in progress", () => {
+  it("shows the held seat and each saved game above the recent games, from this device alone", async () => {
+    saveIdentity(user);
+    saveCredentials(held);
+    keepSaved(
+      savedGame(),
+      // Long past keeping: its table has closed.
+      savedGame({ roomId: "OLD234", savedUntil: now - DAY }),
+    );
+    const { post, asked } = server(everything);
+    const { socket, sent } = fakeSocket({ ok: true, data: null });
+    render(post, socket);
+    await screen.findByRole("list", { name: "Recent games" });
+    expect(inProgress()).toEqual([
+      "In progress | Table HLD234 · your seat is waiting",
+      `Saved for later | Table SAV234 · kept until ${new Date(now + DAY).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`,
+    ]);
+    const group = screen.getByRole("heading", { name: "In progress", level: 2 });
+    expect(
+      group.compareDocumentPosition(screen.getByRole("heading", { name: "Recent games" })) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    const [heldCard, savedCard] = [
+      ...screen.getByRole("list", { name: "Games in progress" }).children,
+    ] as HTMLElement[];
+    expect(heldCard).toHaveTextContent("You still have a seat at this table.");
+    expect(
+      within(within(savedCard!).getByRole("list", { name: "At the table" }))
+        .getAllByRole("listitem")
+        .map((li) => li.textContent),
+    ).toEqual(["You", "Kate", "Mom"]);
+    expect(savedCard).toHaveTextContent(/2\s*round/);
+    // The only request is the history's own; nothing is asked of the table.
+    expect(asked).toHaveLength(1);
+    expect(sent).toEqual([]);
+  });
+
+  it("rejoins the held seat by going to its table, as Home's Rejoin does", async () => {
+    saveIdentity(user);
+    saveCredentials(held);
+    const { socket, sent } = fakeSocket({ ok: true, data: null });
+    render(server(everything).post, socket);
+    fireEvent.click(await screen.findByRole("button", { name: "Rejoin the game at table HLD234" }));
+    expect(screen.getByTestId("where")).toHaveTextContent("/room/HLD234");
+    expect(sent).toEqual([]);
+  });
+
+  it("names who sits at the held table when this tab is at it, and marks computers", async () => {
+    saveIdentity(user);
+    useSession.setState({
+      credentials: held,
+      room: {
+        roomId: "HLD234",
+        players: [
+          { seat: 0, name: "Dad", connected: true },
+          { seat: 1, name: "Ana", connected: true },
+          { seat: 2, name: "Robo", connected: true, bot: true, botLevel: "hard" },
+        ],
+        hostSeat: 0,
+        started: true,
+        config: EAST_COAST,
+        playAgain: [],
+        nextRoundReady: [],
+      },
+    });
+    render(server(everything).post);
+    const card = (await screen.findByRole("list", { name: "Games in progress" })).children[0]!;
+    expect(
+      within(within(card as HTMLElement).getByRole("list", { name: "At the table" }))
+        .getAllByRole("listitem")
+        .map((li) => li.textContent),
+    ).toEqual(["Dad", "You", "Robo (computer)"]);
+  });
+
+  it("resumes a saved game with its own seat, and goes to the table", async () => {
+    saveIdentity(user);
+    keepSaved(savedGame());
+    const { socket, sent } = fakeSocket({
+      ok: true,
+      data: { roomId: "SAV234", seat: 0, token: "saved-token" },
+    });
+    render(server(everything).post, socket);
+    fireEvent.click(await screen.findByRole("button", { name: "Resume the game at table SAV234" }));
+    await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/room/SAV234"));
+    expect(sent).toEqual(["resumeSeat"]);
+  });
+
+  it("forgets only the saved game that could not be resumed, never the held seat", async () => {
+    saveIdentity(user);
+    saveCredentials(held);
+    keepSaved(savedGame(), savedGame({ roomId: "TWO234", names: ["Ana", "Sam"] }));
+    const { socket } = fakeSocket({ ok: false, error: "no room with that code" });
+    render(server(everything).post, socket);
+    fireEvent.click(await screen.findByRole("button", { name: "Resume the game at table SAV234" }));
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    await waitFor(() => expect(inProgress()).toHaveLength(2));
+    expect(inProgress().map((line) => line.split(" | ")[1]!.slice(0, 12))).toEqual([
+      "Table HLD234",
+      "Table TWO234",
+    ]);
+    expect(loadSavedGames().map((g) => g.roomId)).toEqual(["TWO234"]);
+    expect(loadCredentials()).toEqual(held);
+    expect(window.localStorage.getItem(CREDENTIALS_KEY)).not.toBeNull();
+  });
+
+  it("shows under All and Unfinished, and only with people known to be at the table", async () => {
+    saveIdentity(user);
+    saveCredentials(held);
+    keepSaved(savedGame(), savedGame({ roomId: "TWO234", names: ["Ana", "Sam"] }));
+    render(server(everything).post);
+    await screen.findByRole("list", { name: "Recent games" });
+    const place = (name: string) =>
+      fireEvent.click(
+        within(screen.getByRole("group", { name: "Place" })).getByRole("button", { name }),
+      );
+    expect(inProgress()).toHaveLength(3);
+    for (const name of ["Won", "2nd", "3rd or lower"]) {
+      place(name);
+      expect(inProgress()).toEqual([]);
+      expect(screen.queryByRole("heading", { name: "In progress", level: 2 })).toBeNull();
+    }
+    place("Unfinished");
+    expect(inProgress()).toHaveLength(3);
+    place("All");
+    fireEvent.click(screen.getByRole("button", { name: "Played with Kate" }));
+    // Kate is at SAV234; who sits at the held table is not known here.
+    expect(inProgress().map((line) => line.split(" | ")[1]!.slice(0, 12))).toEqual([
+      "Table SAV234",
+    ]);
+  });
+
+  it("shows games in progress to a browser with no finished games, or no server", async () => {
+    keepSaved(savedGame());
+    const { post, asked } = server(everything);
+    const first = render(post);
+    expect(inProgress()).toHaveLength(1);
+    expect(screen.getByText("No finished games yet.")).toBeTruthy();
+    expect(asked).toEqual([]);
+    first.unmount();
+
+    saveIdentity(user);
+    forgetHistory();
+    const second = render(server({ ok: true, data: { stats, recent: [] } }).post);
+    expect(await screen.findByText("No finished games yet.")).toBeTruthy();
+    expect(inProgress()).toHaveLength(1);
+    second.unmount();
+
+    forgetHistory();
+    const offline = server(new Error("offline"));
+    render(offline.post);
+    await waitFor(() => expect(inProgress()).toHaveLength(1));
+    expect(screen.queryByText(/games yet/)).toBeNull();
+  });
+
+  it("waits for the history before showing games in progress, so none jumps", async () => {
+    saveIdentity(user);
+    keepSaved(savedGame());
+    let answer: (value: Ack<History>) => void = () => {};
+    render(() => new Promise((resolve) => (answer = resolve)));
+    await act(async () => {});
+    expect(inProgress()).toEqual([]);
+    await act(async () => answer(everything));
+    expect(inProgress()).toHaveLength(1);
   });
 });

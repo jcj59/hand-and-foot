@@ -1060,7 +1060,17 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   month or three months back, `summary`); 60 mutants, 59 killed, 1 equivalent (`place <= 2` for
   second, since place 1 is always a win). Resume shows on an unfinished game only while this
   device holds a live saved seat at that table (`resumeSavedGame`, as Home); since a match is
-  recorded only once its table closes, that is rare today.
+  recorded only once its table closes, that is rare today. **In progress (change plan PR 16):** above Recent
+  games, a card per game this device is still in, in the unfinished color: the held seat ("In
+  progress", Rejoin goes to `/room/<code>`; players named only when this tab's session room is that
+  table) and each live saved game ("Saved for later", who was at the table, the round, Resume via
+  `resumeSavedGame`; a refusal forgets only that entry, never the held seat). Local data only, no
+  request: `history/inProgress.ts` (pure: `inProgressGames`, `keepsInProgress` for the Place and
+  Played with filters, the words), with `heldSeat` and `liveSavedGames` in `savedGames.ts` shared
+  with Home. A saved game already on record as unfinished is left to its recorded card. The group
+  waits for the history to answer (or fail), so that move never makes a card jump. Harness action
+  `history`. Mutation-tested: 17/18 killed, 1 equivalent (pushing the held seat with `unshift`, as
+  the list is empty then).
   **Profile (redesign 8):** `pages/ProfilePage.tsx` is the player card (`profile/ProfileCard.tsx`:
   a row of face and name on a phone, stacked and centered with corner indices on a computer;
   Shuffle, the background colors, "Choose each part" for `AvatarEditor`; name and picture are kept
