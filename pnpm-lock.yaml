@@ -205,9 +205,6 @@ importers:
 
   packages/worker:
     dependencies:
-      '@hf/engine':
-        specifier: workspace:*
-        version: link:../engine
       '@hf/server':
         specifier: workspace:*
         version: link:../server
@@ -221,6 +218,9 @@ importers:
       '@cloudflare/workers-types':
         specifier: ^5.20260929.1
         version: 5.20260929.1
+      '@hf/engine':
+        specifier: workspace:*
+        version: link:../engine
       '@hf/transport':
         specifier: workspace:*
         version: link:../transport

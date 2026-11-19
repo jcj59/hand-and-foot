@@ -10,13 +10,13 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@hf/engine": "workspace:*",
     "@hf/server": "workspace:*",
     "@hf/shared": "workspace:*"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.22.0",
     "@cloudflare/workers-types": "^5.20260929.1",
+    "@hf/engine": "workspace:*",
     "@hf/transport": "workspace:*",
     "typescript": "^5.7.2",
     "vitest": "^4.1.0",
