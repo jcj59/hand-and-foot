@@ -117,6 +117,18 @@ assert a view sent to one player cannot contain another player's hidden cards. T
 defines the observation available to the agent, which by construction cannot see more than a human
 player can.
 
+There is one deliberate exception, and it comes after the hiding stops mattering. When a round
+ends, its result (`RoundEnded.held`) turns every seat's remaining hand and foot face up, split so
+a foot that was never reached shows as such. By then those cards decide nothing: no move is left
+in the round, and the next round is a fresh deal from its own seed, so knowing what someone held
+says nothing about what they will hold. It is also what a real table does: the penalty cards are
+counted face up, and a scoreboard that only says "-180" invites the question of what it was made
+of. The boundary is that the round has ended, not that the client is trusted: the result does not
+exist while a round is played, the cards never ride a `PlayerView`, and tests check every view and
+result a seat or watcher receives over a whole round, live and in a replay, for a card that
+arrives early. The agent's observation is the view, so this changes nothing it can see while
+playing.
+
 ### Phase-grained actions with client-side staging
 
 A turn is represented as a short sequence of atomic, server-validated actions (draw, play melds,
@@ -612,9 +624,10 @@ departures public beside it.
 The player is scored for the round they leave after, as it was played — their cards are still where
 that round left them when the next deal scores it — and for nothing after. Their total stays on the
 scoreboard, marked as having left, but the win is decided among the players who finished: someone
-who led the table and then went home has not won the match. Their cards are never shown to anyone;
-the next round is a fresh deal, and between the departure and that deal the view simply leaves
-their seat out.
+who led the table and then went home has not won the match. The cards they ended that round with
+were turned face up with everyone else's when it ended, and stay on that round's board; none of
+the next round's are ever theirs, since it is a fresh deal, and between the departure and that
+deal the view simply leaves their seat out.
 
 Who may do it follows who knows the player has gone. A player leaving the table between rounds is
 taken out at once; one who leaves mid-round is played for until the round ends and taken out then,

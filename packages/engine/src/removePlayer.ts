@@ -14,8 +14,9 @@ import { isSeated, seatedCount } from "./seats";
  * Nothing about the finished round changes. The departing player is scored for it
  * like everyone else when the next round is dealt — their cards are still where
  * the round left them, which is what that score is worked out from — and the
- * departure only tells the next deal to leave their seat out. Their cards are
- * never shown to anyone: the next round is a fresh deal from a smaller shoe.
+ * departure only tells the next deal to leave their seat out. Their cards were
+ * turned face up with everyone else's when the round ended (`roundResult`), and
+ * they stay on that round's board; the next round is a fresh deal from a smaller shoe.
  */
 export function applyRemovePlayer(state: GameState, seat: number): ApplyResult {
   if (!state.roundEnded) return fail("a player can only leave between rounds");

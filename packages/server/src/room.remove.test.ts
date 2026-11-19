@@ -69,6 +69,8 @@ describe("leaving a family game between rounds", () => {
     // The scoreboard still has their round, and says they have gone.
     expect(room.result()!.scores).toEqual(scoreRound(ended));
     expect(room.result()!.departed).toEqual([{ seat: 1, afterRound: 1 }]);
+    // So do the cards they were left holding, face up as everyone saw them at the end.
+    expect(room.result()!.held!.find((h) => h.seat === 1)!.hand).toEqual(ended.players[1]!.hand);
     expect(room.info().players.map((p) => p.departed ?? false)).toEqual([false, true, false]);
 
     // Cy is the last one anyone is waiting on now.
@@ -99,6 +101,8 @@ describe("leaving a family game between rounds", () => {
     expect(room.matchOver).toBe(true);
     // Ben's total is what he scored in the one round he played.
     expect(room.result()!.totals[1]).toBe(room.gameState!.pastRounds![0]![1]!.score);
+    // He was dealt nothing since, so the last round has no cards of his to show.
+    expect(room.result()!.held!.map((h) => h.seat)).toEqual([0, 2]);
   });
 
   it("refuses the leaver's seat back: the game carried on without them", () => {

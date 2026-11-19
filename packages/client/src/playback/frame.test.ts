@@ -93,6 +93,40 @@ describe("a replayed step, as one seat sees it", () => {
     expect(frameAt(match, roundOne, 0, null).result!.tallies).toBeUndefined();
   });
 
+  it("turns every hand face up in the result at each round's end, and at no step before it", () => {
+    const match = buildTimeline(buildScenario(SCENARIOS.find((s) => s.id === "match")!));
+    let ends = 0;
+    for (let step = 0; step <= match.length; step++) {
+      const state = match.stateAt(step);
+      for (let seat = 0; seat < match.playerCount; seat++) {
+        const frame = frameAt(match, step, seat, step);
+        // The view stays the seat's own, round over or not: no other seat's card in it.
+        const view = JSON.stringify(frame.update);
+        expect(view).not.toContain('"held"');
+        for (const [s, p] of state.players.entries()) {
+          if (s === seat) continue;
+          for (const c of [...p.hand, ...p.foot]) expect(view).not.toContain(`"${c.id}"`);
+        }
+        if (!state.roundEnded) {
+          expect(frame.result, `step ${step} has a result`).toBeNull();
+          continue;
+        }
+        expect(frame.result!.held).toEqual(
+          state.players.map((p, s) => ({
+            seat: s,
+            hand: p.hand,
+            foot: p.foot,
+            footUntouched: !p.inFoot,
+          })),
+        );
+      }
+      if (state.roundEnded) ends++;
+    }
+    // Every round of the match ended at a step, and each was checked.
+    expect(match.rounds.length).toBe(match.stateAt(match.length).config.rounds);
+    expect(ends).toBe(match.rounds.length);
+  });
+
   it("marks a player who has left as departed, and shows no seat of theirs to the others", () => {
     const left = buildTimeline(buildScenario(SCENARIOS.find((s) => s.id === "player-leaves")!));
     const gone = left.moments.find((m) => m.kind === "playerLeft")!;

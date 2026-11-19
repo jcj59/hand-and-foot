@@ -856,6 +856,75 @@ describe("a whole round, end to end", () => {
     expect(endings[0].scores.map((s) => s.seat)).toEqual([0, 1]);
   }, 30_000);
 
+  it("turns every hand face up to the table once the round ends, and not one move before", async () => {
+    // The held cards are the one place another player's hand leaves the server.
+    // What each socket is sent is what decides whether they leak early, so this
+    // watches every view and result a seat and a watcher receive, all round long.
+    const { server, port } = await boot();
+    const room = server.manager.create({
+      ...EAST_COAST,
+      extraDecks: 0,
+      stockExhaustion: "end",
+    });
+    const host = await connect(port);
+    const guest = await connect(port);
+    expect((await joinRoom(host, room.id, "ana")).ok).toBe(true);
+    expect((await joinRoom(guest, room.id, "ben")).ok).toBe(true);
+    const watcher = await connect(port);
+    const watched = await new Promise<Ack<RoomInfo>>((resolve) =>
+      watcher.emit("watchRoom", { roomId: room.id }, resolve),
+    );
+    expect(watched.ok).toBe(true);
+
+    const sockets = [host, guest];
+    const everyone = [host, guest, watcher];
+    const views: ViewUpdate[][] = everyone.map(() => []);
+    // Each result with whether the server's round had ended when it arrived.
+    const endings: { ended: boolean; result: RoundEnded }[][] = everyone.map(() => []);
+    everyone.forEach((s, i) => {
+      s.on("view", (u) => views[i]!.push(u));
+      s.on("roundEnded", (result) =>
+        endings[i]!.push({ ended: room.gameState?.roundEnded === true, result }),
+      );
+    });
+    expect((await startGame(host)).ok).toBe(true);
+
+    let moves = 0;
+    while (!room.gameState?.roundEnded && moves < 500) {
+      const state = room.gameState!;
+      const action = defaultAction(state)!;
+      const ack = await submit(sockets[state.currentSeat], action);
+      expect(ack.ok, `move ${moves} rejected`).toBe(true);
+      moves++;
+    }
+    expect(room.gameState?.roundEnded).toBe(true);
+    await new Promise((r) => setTimeout(r, 50));
+
+    const final = room.gameState!;
+    for (let i = 0; i < everyone.length; i++) {
+      // One result each, sent once the round was over, carrying every seat's cards.
+      expect(endings[i]!.map((e) => e.ended)).toEqual([true]);
+      expect(endings[i]![0]!.result.held).toEqual(
+        final.players.map((p, seat) => ({
+          seat,
+          hand: p.hand,
+          foot: p.foot,
+          footUntouched: !p.inFoot,
+        })),
+      );
+      // No view, the last one included, carries them.
+      expect(views[i]!.length).toBeGreaterThan(moves);
+      for (const v of views[i]!) expect(JSON.stringify(v)).not.toContain('"held"');
+    }
+    // The default never takes the pile, so a card the other seat ended holding was never
+    // face up: no view sent to this seat may name it.
+    for (const seat of [0, 1]) {
+      const other = final.players[1 - seat]!;
+      const sent = JSON.stringify(views[seat]);
+      for (const c of [...other.hand, ...other.foot]) expect(sent).not.toContain(`"${c.id}"`);
+    }
+  }, 30_000);
+
   it("gives a seat that resumes after the round ended the result, and only that seat", async () => {
     // The result is broadcast once, at the end of the round. A player who reloads
     // after that holds a finished view with no scores, and the table would go back

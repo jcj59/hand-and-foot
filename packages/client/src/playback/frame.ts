@@ -4,9 +4,11 @@
  *
  * It goes through the same projection the server uses — `project` for the view,
  * `legalHints` for the seat's options, `moveSeenBy` for the latest move — so the
- * table shows a replayed seat exactly what that seat saw, and nothing more. What
- * a replay may show beyond one seat's view (every hand, once a game is over) is
- * the player's to add on top, not something this lets through.
+ * table shows a replayed seat exactly what that seat saw, and nothing more. The
+ * result at a round's end turns every hand face up (`RoundEnded.held`), as the
+ * live table's does; before that step there is no result to carry them. Anything
+ * else a replay may show beyond one seat's view is the player's to add on top,
+ * not something this lets through.
  */
 import type { ClockState, GameState, RoomInfo, RoundEnded, ViewUpdate } from "@hf/shared";
 import {

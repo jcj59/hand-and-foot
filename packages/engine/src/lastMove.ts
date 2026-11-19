@@ -1,8 +1,9 @@
-import type { Action, GameState, LastMove, RoundEnded } from "@hf/shared";
+import type { Action, GameState, HeldCards, LastMove, RoundEnded } from "@hf/shared";
 import { activeCards } from "./core";
 import { gotDownByMarva } from "./marva";
 import { isMatchOver, matchTotals } from "./nextRound";
 import { scoreRound } from "./scoreRound";
+import { sitsOut } from "./seats";
 
 /**
  * What a table would say about an action it just applied, as the full truth: a
@@ -58,7 +59,15 @@ export function moveSeenBy(move: LastMove, seat: number): LastMove {
   return { seq: move.seq, seat: move.seat, kind: "draw" };
 }
 
-/** How a finished round came out, as every seat is told it. Null while it is being played. */
+/**
+ * How a finished round came out, as every seat is told it. Null while it is being played.
+ *
+ * Once the round is over it also turns every seat's hand and foot face up
+ * (`held`). That is the one point where another player's cards may leave the
+ * server: they no longer decide anything, since the next round is a fresh deal,
+ * and a real table counts its penalty cards face up. The null while the round is
+ * played is what keeps them hidden until then.
+ */
 export function roundResult(state: GameState): RoundEnded | null {
   if (!state.roundEnded) return null;
   return {
@@ -68,5 +77,19 @@ export function roundResult(state: GameState): RoundEnded | null {
     totals: matchTotals(state),
     matchOver: isMatchOver(state),
     ...(state.departed ? { departed: state.departed } : {}),
+    held: heldCards(state),
   };
+}
+
+/**
+ * The cards each seat dealt into this round still holds. A seat that left before
+ * the round was dealt sat it out and holds nothing, so it is left out; one that
+ * leaves after playing it keeps its cards on the board, as it keeps its score.
+ */
+function heldCards(state: GameState): HeldCards[] {
+  return state.players.flatMap((p, seat) =>
+    sitsOut(state.departed ?? [], seat, state.roundNumber)
+      ? []
+      : [{ seat, hand: p.hand, foot: p.foot, footUntouched: !p.inFoot }],
+  );
 }

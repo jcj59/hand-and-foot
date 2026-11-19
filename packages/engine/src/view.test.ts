@@ -85,6 +85,19 @@ describe("project (per-player view)", () => {
     }
   });
 
+  it("keeps hiding them once the round is over: the face-up cards ride the result, never a view", () => {
+    const ended: GameState = { ...state, roundEnded: true };
+    for (const seat of [0, 1, SPECTATOR_SEAT]) {
+      const seen = seat === SPECTATOR_SEAT ? spectate(ended) : project(ended, seat);
+      expect("held" in seen).toBe(false);
+      const serialized = JSON.stringify(seen);
+      const foreign = ended.players
+        .filter((_, s) => s !== seat)
+        .flatMap((p) => [...p.hand, ...p.foot].map((c) => c.id));
+      for (const id of foreign) expect(serialized).not.toContain(id);
+    }
+  });
+
   it("hides the viewer's own foot until it is picked up", () => {
     expect(view.inFoot).toBe(false);
     expect(view.foot).toBeNull();
