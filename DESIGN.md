@@ -828,6 +828,21 @@ indefinitely. So a spare clean book is given a wild when a dirty book is missing
 of bonus for the ability to go out. Since the rules close a finished book to wilds, that wild can only
 go on a spare clean book the same play completes; a book already down keeps its kind.
 
+Holding wilds back has a cost the first version did not count. Its discard judgement ranks a wild
+above every other card, so a wild is thrown only when nothing else is left, and that happened often:
+a down seat whose hand had shrunk to wilds, or whose foot held only the wild it was saving for the
+clean prospect, threw one away. Counting over 300 arena matches found some 1,900 wild discards, and
+in all but about a hundred of them a meld of the seat's own would have taken the card. A wild on the
+pile is the scarcest card in the game given away for nothing, so the heuristic now plays one rather
+than throw it whenever an unfinished meld will take it within the ratio, nearest a book first. A
+wild is still discarded when no meld will take one (every meld a finished book, or the ratio full),
+which the rules force, since the turn must end with a discard. The one deliberate exception is the
+guarded clean prospect: letting a wild dirty it as a last resort cut wild discards to a twelfth,
+but made rounds that can never end more than four times as common over 10,000 matches, because
+both seats could lose their last route to a clean book. Holding the guard there still cut wild
+discards by more than two thirds, and left the rate of rounds that never end within noise of before
+(38 against 32 over 17,500 matches).
+
 The choices were settled by measurement, not intuition. A small arena plays whole matches
 headlessly with a policy per seat, and a script reports the heuristic's results against the
 default, against itself, and whether rounds end. Variants were played head to head with seats
@@ -835,7 +850,7 @@ swapped: declining a pile with three or more red threes beat both a stricter and
 and guarding the clean prospect was worth about ten points of win rate, while two ideas that
 sounded right, spending wilds from the hand and avoiding discards an opponent's meld could use,
 changed nothing measurable and were left out. Against the default it wins about 99% of two-player
-matches and 87% at four seats; against copies of itself the seats split evenly, and all but a
+matches and 88% at four seats; against copies of itself the seats split evenly, and all but a
 handful of thousands of rounds end with someone going out.
 
 That handful is a property of the rules rather than the heuristic. With the stock reshuffled from

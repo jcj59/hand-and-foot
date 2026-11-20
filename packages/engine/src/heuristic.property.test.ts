@@ -5,11 +5,15 @@ import {
   WEST_COAST,
   type Card,
   type GameState,
+  type Meld,
   type RulesConfig,
   isRedThree,
+  isWild,
 } from "@hf/shared";
 import { type Policy, defaultPolicy, heuristicPolicy, playMatch } from "./arena";
+import { activeCards } from "./core";
 import { canTakePile } from "./feasibility";
+import { isFinishedBook, validateMeld } from "./meld";
 import { MAX_PILE_RED_THREES } from "./policy";
 import { prng, shuffle } from "./rng";
 
@@ -45,8 +49,9 @@ function reshuffleHidden(state: GameState, seat: number, seed: number): GameStat
 
 /**
  * The heuristic, checked at every decision it makes: that it never reads a card
- * its seat cannot see, and that it turns down a pile it could take only for the
- * reason it gives. (That the reducer accepts every move is `playMatch`'s own
+ * its seat cannot see, that it turns down a pile it could take only for the
+ * reason it gives, and that it throws a wild away only when no meld of its own
+ * would take it (the clean prospect it guards aside). (That the reducer accepts every move is `playMatch`'s own
  * check: it throws on a refused one.)
  */
 function checked(seed: number): Policy {
@@ -60,6 +65,26 @@ function checked(seed: number): Policy {
     }
     if (action?.type === "draw" && canTakePile(state, seat).feasible) {
       expect(state.discard.filter(isRedThree).length).toBeGreaterThan(MAX_PILE_RED_THREES);
+    }
+    if (action?.type === "discard") {
+      const { melds } = state.players[seat];
+      const thrown = activeCards(state.players[seat]).find((c) => c.id === action.cardId)!;
+      // A wild is thrown only when no unfinished meld of the seat's would take
+      // it, but for the clean meld nearest a book while a clean book is owed.
+      if (isWild(thrown.rank)) {
+        const unfinished = melds.filter((m) => !isFinishedBook(m.cards));
+        const clean = (m: Meld) => !m.cards.some((c) => isWild(c.rank));
+        const owed =
+          melds.filter((m) => isFinishedBook(m.cards) && clean(m)).length <
+          state.config.goOutCleanBooks;
+        const prospect = Math.max(0, ...unfinished.filter(clean).map((m) => m.cards.length));
+        const open = unfinished.filter(
+          (m) =>
+            validateMeld([...m.cards, thrown], state.config).valid &&
+            !(owed && clean(m) && m.cards.length === prospect),
+        );
+        expect(open.map((m) => m.rank)).toEqual([]);
+      }
     }
     return action;
   };

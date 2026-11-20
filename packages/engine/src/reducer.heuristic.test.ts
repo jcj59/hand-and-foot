@@ -424,6 +424,144 @@ describe("heuristicAction — once down", () => {
   });
 });
 
+describe("heuristicAction — a wild is played, not thrown away", () => {
+  // Every case here was found by counting the heuristic's wild discards over
+  // arena matches: each one came when the zone held nothing but wilds.
+  const discards = (actions: readonly Action[]): string[] =>
+    actions.flatMap((a) => (a.type === "discard" ? [a.cardId] : []));
+
+  it("plays a hand of only wilds onto its melds rather than discarding one", () => {
+    // Arena seed 1, round 1: two twos left in the hand, and the twos thrown.
+    // Named ids, so their order is fixed whatever the counter has reached.
+    const wilds = [
+      { ...card("2", "diamonds"), id: "w1" },
+      { ...card("2", "clubs"), id: "w2" },
+    ];
+    const state = table(
+      seat({
+        isDown: true,
+        melds: [meld("8", 4), meld("A", 2, 1), meld("Q", 4), meld("6", 3)],
+        // Held out of id order: the play still lists them by id, so it never
+        // depends on how the hand happens to be arranged.
+        hand: [wilds[1], wilds[0]],
+        foot: [card("9"), card("5"), card("4")],
+      }),
+    );
+    const { action, state: after } = step(state);
+    // The 8s are the clean meld kept clean; the Qs are the nearest book after them.
+    expect(action).toEqual({
+      type: "playMelds",
+      melds: [{ rank: "Q", cardIds: [wilds[0].id, wilds[1].id] }],
+    });
+    expect(after.players[0].melds.find((m) => m.rank === "Q")!.cards).toHaveLength(6);
+    // The emptied hand picks up the foot, and the turn goes on from there.
+    expect(after.players[0].inFoot).toBe(true);
+    expect(after.currentSeat).toBe(0);
+    const { actions } = turn(after);
+    expect(discards(actions).filter((id) => wilds.some((w) => w.id === id))).toEqual([]);
+  });
+
+  it("still never dirties the clean meld it guards, even to save its last wild", () => {
+    // Arena seed 6, round 2: the clean 4s were the only meld that would take it.
+    // Dirtying them made rounds that never end four times as common; see rescueWilds.
+    const wild = card("2");
+    const state = table(
+      seat({
+        isDown: true,
+        inFoot: true,
+        melds: [meld("A", 5, 3), meld("7", 5, 3), meld("4", 5), meld("5", 4, 3)],
+        foot: [wild],
+      }),
+    );
+    const { action } = step(state);
+    expect(action).toEqual({ type: "discard", cardId: wild.id });
+  });
+
+  it("plays it on the clean meld once the clean books going out needs are down", () => {
+    const wild = card("2");
+    const state = table(
+      seat({
+        isDown: true,
+        melds: [meld("K", 7), meld("A", 5, 3), meld("4", 5)],
+        hand: [wild],
+      }),
+    );
+    expect(choose(state)).toEqual({
+      type: "playMelds",
+      melds: [{ rank: "4", cardIds: [wild.id] }],
+    });
+  });
+
+  it("passes over the guarded clean meld for another that takes the wild", () => {
+    const wild = card("2");
+    const state = table(seat({ isDown: true, melds: [meld("Q", 5), meld("J", 3)], hand: [wild] }));
+    expect(choose(state)).toEqual({
+      type: "playMelds",
+      melds: [{ rank: "J", cardIds: [wild.id] }],
+    });
+  });
+
+  it("puts it on the meld nearest a book", () => {
+    // A clean book is down, so no meld is guarded.
+    const wild = card("2");
+    const state = table(
+      seat({
+        isDown: true,
+        melds: [meld("K", 7), meld("Q", 3), meld("J", 5), meld("9", 4)],
+        hand: [wild],
+      }),
+    );
+    expect(choose(state)).toEqual({
+      type: "playMelds",
+      melds: [{ rank: "J", cardIds: [wild.id] }],
+    });
+  });
+
+  it("breaks a tie between melds equally near a book by rank, whatever their order", () => {
+    const wild = card("2");
+    const state = table(
+      seat({ isDown: true, melds: [meld("K", 7), meld("Q", 4), meld("J", 4)], hand: [wild] }),
+    );
+    expect(choose(state)).toEqual({
+      type: "playMelds",
+      melds: [{ rank: "J", cardIds: [wild.id] }],
+    });
+  });
+
+  it("places a joker before a two when only one fits, and throws the two", () => {
+    // Q Q Q and a wild takes one more within the ratio, not two.
+    // The two sorts first by id, so only the value order puts the joker first.
+    const two = { ...card("2"), id: "w1" };
+    const joker = { ...card("JOKER"), id: "w2" };
+    const state = table(
+      seat({ isDown: true, melds: [meld("K", 7), meld("Q", 3, 1)], hand: [two, joker] }),
+    );
+    const { action, state: after } = step(state);
+    expect(action).toEqual({ type: "playMelds", melds: [{ rank: "Q", cardIds: [joker.id] }] });
+    expect(choose(after)).toEqual({ type: "discard", cardId: two.id });
+  });
+
+  it("discards a wild only when no meld will take it: every meld a finished book", () => {
+    // Arena seed 11, round 4.
+    const wild = card("2");
+    const state = table(
+      seat({ isDown: true, melds: [meld("5", 7), meld("6", 6, 1)], hand: [wild] }),
+    );
+    const { action } = step(state);
+    expect(action).toEqual({ type: "discard", cardId: wild.id });
+  });
+
+  it("discards a wild only when no meld will take it: the ratio is full", () => {
+    // Arena seed 50, round 4: K is a book, and J J and a wild take no more.
+    const wilds = [card("2"), card("2")];
+    const state = table(
+      seat({ isDown: true, melds: [meld("K", 7), meld("J", 2, 1)], hand: wilds }),
+    );
+    const { action } = step(state);
+    expect(action).toEqual({ type: "discard", cardId: wilds[0].id });
+  });
+});
+
 describe("heuristicAction — going out", () => {
   const books = (): Meld[] => [meld("K", 7), meld("Q", 6, 1), meld("J", 6, 1)];
 

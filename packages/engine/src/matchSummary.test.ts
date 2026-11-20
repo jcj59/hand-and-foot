@@ -192,8 +192,9 @@ describe("a match someone left", () => {
 
   it("does not hand the win to a leaver who led the table", () => {
     // Find a match where the leaver's one round outscores what either finisher totals.
+    // Which seeds qualify depends on how the heuristic plays, so search widely.
     let found = false;
-    for (let seed = 1; seed <= 60 && !found; seed++) {
+    for (let seed = 1; seed <= 300 && !found; seed++) {
       const played = play(
         seed,
         3,
