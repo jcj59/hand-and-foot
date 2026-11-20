@@ -784,6 +784,17 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   meld nearest seven, then a dirty book (since the finished-book rule below, only a book the same
   play completes: no wild ever goes on a book already down). The spare-clean rule exists because without it a seat
   melded seven clean books, ran out of cards for a dirty one, and drew and discarded threes forever.
+  **A wild is played, not thrown (2026-11-20, change list item 20):** `discardFrom` picks a wild only
+  when the zone is all wilds; then `rescueWilds` plays every wild it can (highest value first, id
+  tie-break) onto unfinished melds within the ratio, nearest seven first, rank tie-break, never a
+  finished book and never the guarded clean prospect (`guardedProspect`, shared with `placeWilds`).
+  A wild is discarded only when no other meld takes one. Counted over 300 arena matches: 1,879 wild
+  discards before, 526 after (409 of them the guarded case). Letting the guarded meld take a wild
+  too cut them to 155 but made stalled rounds over four times as common (102 vs 23 in 10,000
+  matches), so the guard stays. `heuristic.property.test.ts` asserts no wild is thrown while a meld
+  other than the guarded one would take it. `defaultAction` is unchanged. Mutation: 16 mutants, 15
+  killed, 1 equivalent (`break` vs `continue` when a wild finds no meld: every wild counts alike
+  against the ratio, so none of the rest would either).
   `arena.ts` has `playMatch(policies, config, seed, roundActionLimit)` (a seat per policy,
   `nextRound` dealt as the table would, **throws** on a refused or missing move, calls a round
   stalled after `ROUND_ACTION_LIMIT` 5,000 actions), `winners`, and
@@ -791,9 +802,10 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   `arena.test.ts`, `heuristic.property.test.ts` (~650 random matches at 2–6 seats on both presets,
   plus mixed tables, plus 300 fixed-seed matches asserting >99% of rounds end, all by going out).
   Mutation: 68 mutants over the heuristic, `discardFrom` and the arena, 67 killed, 1 equivalent
-  (table above). Measured (`pnpm bot:measure`, 500 matches per row, East Coast): beats
-  `defaultAction` in 99.5% / 96.8% / 86.8% of 2- / 3- / 4-player matches; against itself the seats
-  split about evenly; every round of bot-only play ends but 2 in some 6,000. Tuning was done head to
+  (table above). Measured (`pnpm bot:measure`, 500 matches per row, East Coast, as of item 20):
+  beats `defaultAction` in 98.9% / 96.4% / 87.7% of 2- / 3- / 4-player matches; against itself the
+  seats split about evenly; every round of bot-only play ends but 2 in some 6,000. Levels: Hard
+  beats Standard 58.0%, Standard beats Easy 95.2%, Hard beats Easy 90.8%. Tuning was done head to
   head (two copies, seats swapped): a red-three limit of 2 beat 1, 3 and 4; the clean-book guard is
   worth about ten points of win rate; spending wilds from the hand too, and avoiding discards an
   opponent's meld could use, made no measurable difference, so neither is in.
