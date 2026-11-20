@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { EAST_COAST, type RoundEnded, type ScoreBreakdown, type SeatTally } from "@hf/shared";
->>>>>>> 4d5dc74 (feat(client): a clear turn ding, an "I Hate You" phrase, and celebrations you can click away)
 import { roundRecap } from "./recap";
 import { AWARDS_MS, AwardsCelebration, awardsOf, useAwardsCelebration, winnersOf } from "./awards";
 import { CELEBRATION_DISMISS_AFTER_MS } from "./Celebration";
