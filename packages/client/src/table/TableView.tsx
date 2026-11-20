@@ -847,24 +847,43 @@ export function TableView({
               boxShadow: "inset 0 0 0 10px #3A2A1C, inset 0 0 0 12px #5A4330",
             }}
           >
-            <Seats
-              opponents={view.opponents}
-              room={room}
-              realRoom={realRoom}
-              // Once the round is over nobody is playing, whatever seat the update names.
-              seatToAct={result ? -1 : hints.seatToAct}
-              clock={clock}
-              order={meldOrder}
-              reactions={bubbles}
-            />
+            {/* The piles are what everyone watches, so they stay whole on the felt.
+                When the felt is too short for everything (a laptop's window, a full
+                table), the melds below give way first, then the players above, each
+                scrolling in its own part; the felt as a whole scrolls only when even
+                that is not enough. Before, the felt scrolled as one, and on a short
+                window the pile sat cut off at its bottom edge. */}
+            <div data-felt-part="seats" className={`${FELT_PART} min-h-14 shrink`}>
+              <Seats
+                opponents={view.opponents}
+                room={room}
+                realRoom={realRoom}
+                // Once the round is over nobody is playing, whatever seat the update names.
+                seatToAct={result ? -1 : hints.seatToAct}
+                clock={clock}
+                order={meldOrder}
+                reactions={bubbles}
+              />
+            </div>
             {banners}
-            <div className="flex flex-col items-center gap-2.5 py-1.5">
+            <div className="flex shrink-0 flex-col items-center gap-2.5 py-1.5">
               {piles}
               {latest}
             </div>
+            {/* A lay-down being built is the task at hand: it keeps its whole size
+                (it does not scroll, so it cannot shrink), and scrolls the felt to
+                bring itself into view when it has to. */}
             {staging_}
-            {meldsPanel}
-            {feltHand}
+            {(meldsPanel || feltHand) && (
+              <div
+                data-felt-part="melds"
+                // Shrinks far faster than the players do, so it gives way first.
+                className={`${FELT_PART} min-h-12 shrink-[1000] ${onFelt ? "gap-3" : "gap-4"}`}
+              >
+                {meldsPanel}
+                {feltHand}
+              </div>
+            )}
           </section>
           {aside ? (
             <aside aria-label="Scores and moves" className="w-[260px] shrink-0 overflow-y-auto">
@@ -1036,6 +1055,14 @@ function writeChoice(key: string, value: string): void {
 /** The felt, lit from above the piles, as the design paints it. */
 const FELT = "radial-gradient(ellipse at 50% 30%, #2C6B53, #1A4535 70%, #143629)";
 const FELT_CENTER = "radial-gradient(ellipse at 50% 35%, #2C6B53, #1A4535 70%, #143629)";
+
+/**
+ * A part of the computer's felt that gives way when the felt is short: it shrinks,
+ * never below its own minimum, and scrolls itself. The pixel of padding, taken
+ * back by the margin, keeps a ring drawn just outside a box inside it (the seat
+ * whose turn it is) from being cut.
+ */
+const FELT_PART = "-m-px flex flex-col overflow-y-auto p-px";
 
 /** A message on the felt: the last lap, a debt to the pile, the books to go out. */
 const BANNER = "m-0 rounded-2xl border px-3 py-2.5 text-center text-[13px] leading-snug";
