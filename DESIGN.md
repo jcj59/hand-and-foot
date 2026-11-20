@@ -211,6 +211,13 @@ hands, and lets a replay show it at exactly the moment the live table did. The a
 is a shared overlay that Grabby Pants and the match awards also use, so each new announcement has
 one place to build on.
 
+An announcement covers the whole table for four to six seconds, which is a long time to wait when it
+is your move. So once its entrance has played (800 milliseconds, the pop and the settle) a click,
+a tap or Escape puts it away, and the voice with it: a line cut off never brings on what was to
+follow it, so a dismissed Marva Rule does not sound its horn a moment later. Before then the overlay
+lets every click through to the table, so a tap meant for a card as an announcement appears is not
+swallowed by it.
+
 ### Grabby Pants
 
 Grabby Pants is the table's title for a player who takes the discard pile three times running, with
@@ -314,7 +321,8 @@ The list only ever grows. An id can be in flight to a client loaded before a cha
 or renaming one would break a table mid-game, while adding one costs an older client nothing worse
 than a reaction it cannot name. It is kept short enough to find one at a glance — a couple of dozen
 — and a reaction stays up for five seconds, long enough to be read by someone who looked away when
-it arrived.
+it arrived. A reaction the page cannot name is simply not shown: a tab opened before a new phrase
+was added drops it when it arrives rather than draw an empty bubble or fail.
 
 ### Chat at the table
 
@@ -963,14 +971,22 @@ melded. The narration is an optional part of the shared player rather than a cop
 ### Calling a player back to the table
 
 A family game is mostly waiting. Between turns a player reads something else in another tab, and
-the turn chime is easy to miss: the sound may be muted, the browser may be holding it back until the
+the turn's ding is easy to miss: the sound may be muted, the browser may be holding it back until the
 page is tapped, or the speakers may simply be off. So the tab itself says when the turn has come.
 While it is the player's turn and the page is hidden or another window has focus, the title
 alternates with "Your turn!" once a second and the favicon gains an amber mark; both are put back
 the moment the turn passes or the player returns. A player who has asked their system for reduced
 motion gets the same news standing still: the marked icon and a prefix on the title, with nothing
 blinking. Whether it is the player's turn is not worked out a second time for this. It is the very
-flag the chime is played from, so the tab and the table cannot disagree.
+flag the ding is played from, so the tab and the table cannot disagree.
+
+The sound itself is a bell, struck: five partials at a bell's uneven ratios over an E6, a few
+milliseconds' attack and a ring that dies away over about a second, the high partials first. It
+replaced a soft two-note chime that was easy to lose, most of all because the move that hands a
+player the turn, the previous player's discard, arrives in the same instant and its recorded card
+sound covered the chime. The ding now waits a quarter of a second after any card sound in the same
+moment. The wait is scheduled on the audio clock rather than with a timer, so a background tab,
+whose timers the browser slows, still hears it on time.
 
 A browser notification can go up as well, but only for a player who has turned it on at the table.
 The browser's permission is asked for from that tap and never on page load, because a prompt nobody
