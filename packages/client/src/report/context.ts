@@ -6,8 +6,9 @@
  * report is read by whoever fixes the bug, so it must never carry a card the
  * player could not show them. Of the player's own cards it carries only how
  * many there are; of other players' cards, nothing. The moves it carries are
- * the ones this seat was sent, which the server already cut to what this seat
- * may see (another player's drawn card is never in them).
+ * the ones this seat was sent, minus the card of a draw: the server sends it
+ * only to the player who drew, and for this seat that is a card in their own
+ * hand. Discards and pile takes are public, so their cards stay.
  *
  * The whole report must fit the server's `MAX_REPORT_BYTES`, so `fitReport`
  * drops the oldest errors, then the oldest moves, until it does.
@@ -108,7 +109,7 @@ function moveRecord(move: LastMove): LastMove {
     seq: move.seq,
     seat: move.seat,
     kind: move.kind,
-    ...(move.card
+    ...(move.card && move.kind !== "draw"
       ? { card: { id: move.card.id, rank: move.card.rank, suit: move.card.suit } }
       : {}),
     ...(move.count !== undefined ? { count: move.count } : {}),

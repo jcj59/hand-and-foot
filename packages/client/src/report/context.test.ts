@@ -194,6 +194,14 @@ describe("the table's details", () => {
     expect(idsIn(JSON.stringify(details))).toEqual([PILE[1]!.id]);
   });
 
+  it("leaves out the card of a draw, which is a card in the player's own hand", () => {
+    const details = tableDetails(
+      table({ lastMoves: [move(6, { seat: 0, kind: "draw", card: HAND[0]! })] }),
+    );
+    expect(details.lastMoves).toEqual([{ seq: 6, seat: 0, kind: "draw" }]);
+    expect(idsIn(JSON.stringify(details))).toEqual([]);
+  });
+
   it("keeps a move's count of 0", () => {
     expect(
       tableDetails(table({ lastMoves: [move(4, { kind: "takePile", count: 0 })] })).lastMoves,

@@ -326,6 +326,7 @@ function atTable(): void {
   for (const move of [
     { seq: 8, seat: 1, kind: "discard", card: PILE[1]! },
     { seq: 8, seat: 1, kind: "discard", card: PILE[1]! },
+    { seq: 9, seat: 0, kind: "draw", card: HAND[0]! },
   ] as LastMove[]) {
     act(() => useSession.getState().applyUpdate(update(move)));
   }
@@ -351,7 +352,7 @@ describe("from the table's menu", () => {
     await waitFor(() => expect(reports).toHaveLength(1));
 
     const json = JSON.stringify(reports[0]);
-    // Of every card on the table, only the one the moves named (a public discard) is sent.
+    // Of every card on the table, only the one the moves named (a public discard) is sent, not the player's own draw.
     expect(EVERY_CARD.filter((c) => json.includes(c.id)).map((c) => c.id)).toEqual([PILE[1]!.id]);
     for (const c of THEIRS[0]!.cards) expect(json).not.toContain(c.id);
     expect(reports[0]!.context).toMatchObject({
@@ -362,10 +363,11 @@ describe("from the table's menu", () => {
         round: 2,
         phase: "play",
         yourCards: { hand: 3, foot: 11, melds: 1 },
-        moveLines: ["ben took the pile (3 cards)", "ben discarded the 8♥"],
+        moveLines: ["ben took the pile (3 cards)", "ben discarded the 8♥", "You drew a card"],
         lastMoves: [
           { seq: 7, seat: 1, kind: "takePile", count: 3 },
           { seq: 8, seat: 1, kind: "discard", card: PILE[1] },
+          { seq: 9, seat: 0, kind: "draw" },
         ],
       },
     });
