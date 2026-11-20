@@ -41,7 +41,11 @@ an animation) in its description, under `## Screenshots`.
    History with three recorded games (answered by a mock), the seat at HFDEMO still held and one
    game saved for later; with `PEOPLE=1` two more games and three more people (enough for "More"
    in Played with), `MORE=1` opens the More sheet and `PERSON=<name>` opens that person's card;
-   `FILTERS=1` scrolls the filters into view. `FULL_PAGE=1` shoots the whole page rather than the window.
+   `FILTERS=1` scrolls the filters into view.
+   Action `report` opens the table menu's Report a bug sheet with a few
+   words written, and `profile-report` the same sheet from Profile (signed in as "jack");
+   `REPORT_SEND=1` sends it to a mock for the thanks, and `REPORT_SCROLL=1` scrolls the sheet
+   to its foot. Action `profile` is Profile alone, signed in. `FULL_PAGE=1` shoots the whole page rather than the window.
    On this machine Chromium needs nss/nspr/alsa from the `pwlibs` conda env. Emoji (the quick
    reactions) draw as boxes without a colour emoji font: set `EMOJI_FONT=<path to
    NotoColorEmoji.ttf>` and the page loads it for emoji only. Do not install it system-wide —

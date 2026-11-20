@@ -15,3 +15,6 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+/** The git short sha the client was built from, written in by Vite's `define`. */
+declare const __BUILD_ID__: string;

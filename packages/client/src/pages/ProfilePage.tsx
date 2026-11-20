@@ -1,7 +1,8 @@
 /**
  * Your profile: the player card (face and name, kept on this device as they
  * change), the awards your matches have given you, the account this device is
- * signed in to, and whether the table makes sounds.
+ * signed in to, whether the table makes sounds, and a way to report a bug (at a
+ * table the menu offers one too, with the table's details).
  *
  * A phone stacks it all, the account and Sounds as one settings list; a computer
  * puts the card and awards beside the account and an "At the table" card. The
@@ -22,7 +23,9 @@ import {
   type Post,
 } from "../identity";
 import { loadHistory } from "../historyCache";
+import { ReportSheet } from "../report/ReportSheet";
 import { readMuted, writeMuted } from "../table/sounds";
+import { Button } from "../ui/Button";
 import { PageHeader } from "../ui/PageHeader";
 import { usePhone } from "../usePhone";
 
@@ -31,6 +34,7 @@ export function ProfilePage({ post = serverPost() }: { readonly post?: Post }) {
   const [name, setName] = useState(loadName);
   const [avatar, setAvatar] = useState(loadAvatar);
   const [muted, setMuted] = useState(readMuted);
+  const [reporting, setReporting] = useState(false);
   const counts = useAwardCounts(post);
 
   const card = (
@@ -58,15 +62,21 @@ export function ProfilePage({ post = serverPost() }: { readonly post?: Post }) {
       phone={phone}
       onSignedIn={setName}
       rows={
-        <SettingsRow
-          label="Sounds"
-          value={muted ? "Off" : "On"}
-          role="switch"
-          checked={!muted}
-          onClick={() => sounds(muted)}
-        />
+        <>
+          <SettingsRow
+            label="Sounds"
+            value={muted ? "Off" : "On"}
+            role="switch"
+            checked={!muted}
+            onClick={() => sounds(muted)}
+          />
+          <SettingsRow label="Report a bug" value="" onClick={() => setReporting(true)} />
+        </>
       }
     />
+  );
+  const reportSheet = reporting && (
+    <ReportSheet table={null} post={post} onClose={() => setReporting(false)} />
   );
 
   if (phone) {
@@ -76,6 +86,7 @@ export function ProfilePage({ post = serverPost() }: { readonly post?: Post }) {
         {card}
         <AwardGrid counts={counts} phone />
         {account}
+        {reportSheet}
       </main>
     );
   }
@@ -107,8 +118,23 @@ export function ProfilePage({ post = serverPost() }: { readonly post?: Post }) {
               />
             </label>
           </section>
+          <section aria-label="Help" className="flex flex-col gap-2.5">
+            <SectionHeading>Help</SectionHeading>
+            <div className="flex min-h-[60px] items-center justify-between gap-3 rounded-[18px] border border-white/6 bg-surface px-4 py-2.5">
+              <span>
+                <span className="block text-[15px] font-medium">Something not working?</span>
+                <span className="block text-xs text-muted">
+                  Tell us what happened, and we will look into it
+                </span>
+              </span>
+              <Button variant="secondary" onClick={() => setReporting(true)}>
+                Report a bug
+              </Button>
+            </div>
+          </section>
         </div>
       </div>
+      {reportSheet}
     </main>
   );
 }
