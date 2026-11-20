@@ -12,7 +12,14 @@
  * clock offset, because only it knows what its own clock reads.
  */
 import { create } from "zustand";
-import type { Reaction, RoomInfo, RoundEnded, SeatCredentials, ViewUpdate } from "@hf/shared";
+import {
+  isReactionId,
+  type Reaction,
+  type RoomInfo,
+  type RoundEnded,
+  type SeatCredentials,
+  type ViewUpdate,
+} from "@hf/shared";
 import { clearCredentials, saveCredentials } from "./credentials";
 import { forgetHistory } from "./historyCache";
 import { noteRoom } from "./savedGames";
@@ -136,8 +143,12 @@ export const useSession = create<SessionState>((set, get) => ({
     set({ result });
   },
 
-  applyReaction: (reaction) =>
-    set({ reactions: [...get().reactions, reaction].slice(-KEPT_REACTIONS) }),
+  applyReaction: (reaction) => {
+    // A reaction added after this page loaded (the server is newer) has nothing
+    // here to show it with: it is left out rather than shown as nothing.
+    if (!isReactionId(reaction.id)) return;
+    set({ reactions: [...get().reactions, reaction].slice(-KEPT_REACTIONS) });
+  },
 
   setNotice: (notice) => set({ notice }),
 }));
