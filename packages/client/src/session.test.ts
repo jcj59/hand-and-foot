@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { EAST_COAST, type RoomInfo, type RoundEnded, type ViewUpdate } from "@hf/shared";
+import {
+  EAST_COAST,
+  type ReactionId,
+  type RoomInfo,
+  type RoundEnded,
+  type ViewUpdate,
+} from "@hf/shared";
 import { clearCredentials, loadCredentials } from "./credentials";
 import { loadHistory } from "./historyCache";
 import type { Post } from "./identity";
@@ -360,6 +366,14 @@ describe("attachSession", () => {
     applyReaction({ seq: 1, seat: 0, id: "nice" });
     useSession.getState().leave();
     expect(useSession.getState().reactions).toEqual([]);
+  });
+
+  it("leaves out a reaction whose id this page does not know", () => {
+    const { applyReaction } = useSession.getState();
+    applyReaction({ seq: 1, seat: 0, id: "brand-new" as ReactionId });
+    expect(useSession.getState().reactions).toEqual([]);
+    applyReaction({ seq: 2, seat: 0, id: "i-hate-you" });
+    expect(useSession.getState().reactions.map((r) => r.id)).toEqual(["i-hate-you"]);
   });
 
   it("does not apply anything on its own", () => {

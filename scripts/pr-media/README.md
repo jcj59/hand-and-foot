@@ -29,7 +29,8 @@ an animation) in its description, under `## Screenshots`.
    `oppdraw`, `grabby`, `react` — quick reactions arriving from two opponents and
    the viewer — and `stale` — a finished round at one table, then a fresh
    deal at another), with `FRAMES=40,120,300` giving the milliseconds after the
-   change to capture. `BIG_MELDS=1` adds enough melds that the middle scrolls;
+   change to capture, and `CLICK_AT=500,1000` the milliseconds at which to click the middle of
+   the window (a frame and a click at the same time: the frame first). `BIG_MELDS=1` adds enough melds that the middle scrolls;
    `GRABBY_ME=1` makes the viewer the Grabby Pants holder; `TWO_DISCARDS=1` puts two
    cards on the discard pile, `PILE=<n>` puts n; mode `takepile` has the viewer take the pile;
    `BIG_OPP=1` gives an opponent enough melds to fill its box;
@@ -47,8 +48,11 @@ an animation) in its description, under `## Screenshots`.
    `FILTERS=1` scrolls the filters into view. `FULL_PAGE=1` shoots the whole page rather than the window.
    On this machine Chromium needs nss/nspr/alsa from the `pwlibs` conda env. Emoji (the quick
    reactions) draw as boxes without a colour emoji font: set `EMOJI_FONT=<path to
-   NotoColorEmoji.ttf>` and the page loads it for emoji only. Do not install it system-wide —
-   fontconfig then hands it digits and spaces too, and every number on the table spreads out.
+   NotoColorEmoji.ttf>` and the page loads it for emoji only (as a face of the page's own font
+   families, limited to emoji code points: Chromium never falls back to a web font by name).
+   Do not install it system-wide: fontconfig then hands it digits and spaces too, and every
+   number on the table spreads out. A copy is at
+   `https://github.com/googlefonts/noto-emoji/raw/v2.047/fonts/NotoColorEmoji.ttf`.
    Its range also covers the suit symbols, so cards draw emoji suits: set it only for shots of
    reactions. `BASE=<url>` points the harness at another origin, such as `vite` dev on :5173
    (which needs no build).
