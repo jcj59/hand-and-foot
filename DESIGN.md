@@ -910,6 +910,23 @@ learning, in the lessons and the narrated demo game. The table's Hints button, t
 still works out why the pile cannot be taken (`LegalHints.takePileWhy`) and sends it, but nothing in
 the client reads it today; it is kept on the wire so the lessons' coach can use it later.
 
+A later pass (November 2026, at the family's request) took out the advice that was left at a real
+table, drawing the line between words that tell a player what to do and marks that show the state or
+a rule. Gone: the warning on a risky discard and its "Discard anyway" button (a wild, a rank another
+player has down, a card that fits the player's own meld), the "Add N to my melds" button, the foot's
+go-out tracker (the clean and dirty book counts and "Your Ks need two more cards"), the "You have the
+books to go out" banner, and the how-to lines ("Click the stock to draw, or the pile to take it",
+the lay-down panel's "Click cards in your hand to add them"). The line by the hand now says only
+whose turn it is, or the rule holding the player: a card owed to the pile, a clock that has run out.
+The pile's glow went too, and with it the rule that the pile was a button only when the server's
+solver said it could be taken: both told the player what the solver had found. The pile can now be
+tried whenever a draw is open, and a take the rules refuse comes back with the engine's own reason,
+as any refused move does. Kept, because each shows a rule or the state rather than advice: the
+underline under cards of a rank already down, the lay-down's points bar and its refusal reasons, the
+ring and banner for a card owed to the pile, the dimmed red threes, the last-lap banner, the stock's
+glow while a draw is open, and the one-card "Add to Ks meld" in a card's menu, which is an action,
+not a suggestion.
+
 ### How to play, for this table
 
 The rules page is written from a table's own rules rather than as a general description of the
@@ -1027,6 +1044,14 @@ button, the hand in even rows sized to the screen. On a computer pages widen int
 follows the reader, and the table gains a side panel with the scores and the latest moves, which a
 player can put away to a narrow rail to give the table the room (remembered per device). Each
 screen was checked against its mockup at both sizes as it was built.
+
+**The piles stay whole.** On a computer the felt holds the other players, the piles and the
+player's own melds, which is more than a laptop's window has room for once five or six sit down.
+It used to scroll as one, and at 1366 by 768 the discard pile sat at its bottom edge, cut through
+the card beneath. The piles are what every player watches, so now they never shrink or scroll:
+the melds below give way first, then the other players above, each scrolling in its own part
+down to a minimum (the melds' heading, a strip of the players' names), and only past that does
+the felt scroll as a whole. A window tall enough for everything looks exactly as before.
 
 ## Testing
 

@@ -21,7 +21,10 @@ an animation) in its description, under `## Screenshots`.
    card's choices; `CARD=<name>` picks the card, the Ten of hearts by default), `meld` (a
    lay-down being built) and `hidescores` (the computer's side panel put away, or brought back
    with `HIDE_SCORES=1`, which starts with it put away); `PILE_WHY=1` puts the viewer in their
-   draw phase with the pile not takeable. Modes stage a state
+   draw phase with the pile not takeable, and `TAKEABLE=1` in their draw phase with it takeable;
+   `FOOT=1` puts the viewer in their foot a dirty book short of going out, with a card of a melded
+   rank, a wild and a red three, and `GO_OUT=1` has the server say the books to go out are in
+   place. Modes stage a state
    (`mine`, `theirs`) or a change to capture mid-animation (`draw`, `discard`,
    `oppdraw`, `grabby`, `react` — quick reactions arriving from two opponents and
    the viewer — and `stale` — a finished round at one table, then a fresh
