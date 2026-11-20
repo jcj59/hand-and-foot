@@ -1019,6 +1019,28 @@ single-page fallback would answer with. Telling a player it is their turn while 
 would need web push and a service worker after all; that is left as a follow-up, to be taken up only
 if it fits the free plan.
 
+### Bug reports from players
+
+A player who finds a bug can report it from the game, and the game keeps the report for whoever
+fixes bugs to read. Reports are not filed as GitHub issues, although that would have needed no
+storage at all: the repository is public, and a report carries names, a room code and what a table
+was doing, which are the family's business and not the internet's. They are kept instead in one
+Durable Object for the whole game, since reports are read all together and there are few of them.
+Each report is its own key, numbered in order, so keeping one is a single write and the newest 500
+are kept by deleting the one that falls past the cap: a flood of reports pushes out old ones rather
+than growing storage without end.
+
+What a report holds is checked the same way on every host, before anything is stored: the player's
+own words, trimmed and at most 2,000 characters, and whatever the client attaches to help find the
+bug, which must be a JSON object, with the whole report at most 8 KB. The attachment's contents are
+not checked; it is read by a person, never by the game. The Worker counts reports by the address
+they came from, five an hour, in the isolate's memory like the history reads, and the count is
+asked before the object is, so a refused report costs no Durable Object request. A report that
+passes costs exactly one. Reading them back is a GET with a bearer token, a Wrangler secret, and a
+host with no token set does not offer the route at all; a small script fetches them and prints
+them as Markdown, which a person or an agent can work through. The Node server keeps reports in
+memory and writes each one to its log, which is where the operator of that host reads them.
+
 ## Visual design
 
 The client was redesigned in November 2026, screen by screen, against a set of mockups drawn for

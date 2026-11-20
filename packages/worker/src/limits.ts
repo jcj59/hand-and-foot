@@ -1,6 +1,7 @@
 /**
- * A cap on how often one identity may read its history and replays, checked in
- * the Worker before any Durable Object is asked.
+ * A cap on how often one identity may read its history and replays, and one on
+ * how often a sender may report a bug, both checked in the Worker before any
+ * Durable Object is asked.
  *
  * The Workers free plan allows 100,000 Durable Object requests a day for the whole
  * game, and each history or replay read is one request to the player's identity
@@ -19,6 +20,8 @@
  * share counts within a location, but it needs a namespace configured by hand,
  * and an isolate's own count is enough for a family's few tabs.
  */
+
+import { isUserId } from "@hf/shared";
 
 /** Reads of history and replays one identity may make a minute. */
 export const READ_LIMIT = 30;
@@ -82,4 +85,27 @@ export class RateLimiter {
       this.windows.delete(this.windows.keys().next().value!);
     }
   }
+}
+
+/**
+ * Bug reports one sender may make an hour. A report is one Durable Object request
+ * and one written row, and only the newest 500 are kept, so the cap is what stops
+ * one sender from spending the quota or pushing everyone else's reports out. A
+ * player who hits it has said what they had to say several times over.
+ */
+export const REPORT_LIMIT = 5;
+export const REPORT_WINDOW_MS = 3_600_000;
+/** What a refused report says; kept here for the same reason as `TOO_MANY_READS`. */
+export const TOO_MANY_REPORTS = "too many reports; try again in an hour";
+
+/**
+ * Who a report is counted against: the address it came from, which Cloudflare
+ * always gives; else the user id the client attached, if it is shaped like one;
+ * else everyone without either, together. The id is not verified (that would cost
+ * an object request), so it only stands in where there is no address.
+ */
+export function reportKey(address: string | null, userId: unknown): string {
+  if (address) return `ip:${address}`;
+  if (isUserId(userId)) return `user:${userId}`;
+  return "anonymous";
 }

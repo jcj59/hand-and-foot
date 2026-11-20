@@ -14,3 +14,4 @@ export * from "./table";
 export * from "./users";
 export * from "./accounts";
 export * from "./matches";
+export * from "./reports";

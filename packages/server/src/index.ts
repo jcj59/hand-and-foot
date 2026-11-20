@@ -6,6 +6,7 @@ import type { RoomStore } from "./store";
 import type { UserStore } from "./users";
 import type { LoginStore } from "./accounts";
 import { InMemoryMatchStore, type MatchStore } from "./matches";
+import type { ReportStore } from "./reports";
 
 export * from "./clock";
 export * from "./lobby";
@@ -19,6 +20,7 @@ export * from "./table";
 export * from "./users";
 export * from "./accounts";
 export * from "./matches";
+export * from "./reports";
 
 export interface ServerOptions {
   readonly clock?: Clock;
@@ -44,6 +46,8 @@ export interface ServerOptions {
   readonly logins?: LoginStore;
   /** Where finished matches are kept; the store's own when it keeps them, else in memory. */
   readonly matches?: MatchStore;
+  /** Where players' bug reports are kept; in memory when unset (each one is also logged). */
+  readonly reports?: ReportStore;
 }
 
 export interface HandAndFootServer {
@@ -82,6 +86,7 @@ export function createServer(options: ServerOptions = {}): HandAndFootServer {
     users: options.users ?? options.store?.users?.(),
     logins: options.logins ?? options.store?.logins?.(),
     matches,
+    reports: options.reports,
     now: () => (options.clock ?? systemClock).now(),
   });
   manager.startSweeping();

@@ -22,6 +22,7 @@ import {
   SIGN_IN_PATH,
   SIGN_OUT_PATH,
   MATCH_PATH,
+  REPORTS_PATH,
   type Ack,
   type ClientFrame,
 } from "@hf/shared";
@@ -37,6 +38,7 @@ import {
   type LoginStore,
 } from "./accounts";
 import { InMemoryMatchStore, matchHistory, matchReplay, type MatchStore } from "./matches";
+import { InMemoryReportStore, parseReport, type ReportStore } from "./reports";
 import type { RoomManager } from "./manager";
 import type { Room } from "./room";
 import { refusal, TableChannel } from "./table";
@@ -57,6 +59,8 @@ export interface TransportOptions {
   readonly logins?: LoginStore;
   /** Where finished matches are kept; in memory when unset. */
   readonly matches?: MatchStore;
+  /** Where players' bug reports are kept; in memory when unset. */
+  readonly reports?: ReportStore;
   /** The time an identity was registered or updated; the system clock when unset. */
   readonly now?: () => number;
 }
@@ -84,6 +88,7 @@ export function attachTables(
 ): Tables {
   const users = options.users ?? new InMemoryUserStore();
   const matches = options.matches ?? new InMemoryMatchStore();
+  const reports = options.reports ?? new InMemoryReportStore();
   const accounts: AccountStores = { users, logins: options.logins ?? new InMemoryLoginStore() };
   const accountRoutes = {
     [CLAIM_PATH]: claimUsername,
@@ -163,6 +168,15 @@ export function attachTables(
     }
     if (path === MATCH_PATH) {
       return json(response, 200, await matchReplay(users, matches, body));
+    }
+    if (path === REPORTS_PATH) {
+      // Kept in memory and logged, which is where an operator of this host reads
+      // them; only the Worker serves them back (see the Worker's `index.ts`).
+      const report = parseReport(body, now());
+      if (!report.ok) return json(response, 200, report);
+      const kept = await reports.add(report.data);
+      console.log(`bug report ${kept.id}: ${JSON.stringify(kept)}`);
+      return json(response, 200, { ok: true, data: { id: kept.id } });
     }
     // Who is sitting down, if their browser proved an identity (anonymous otherwise),
     // and their picture, if it is one (none otherwise; never a reason to refuse).
