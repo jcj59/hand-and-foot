@@ -11,6 +11,7 @@ import { RoomManager } from "./manager";
 import { InMemoryMatchStore, keptFor, matchHistory, matchReplay, type MatchStore } from "./matches";
 import { openPostgresStore, type PostgresRoomStore } from "./postgres";
 import { BOT_MOVE_MS, Room } from "./room";
+import { InMemoryRoomStore } from "./store";
 import { ownDatabase } from "./testDatabase";
 import { InMemoryUserStore, registerUser } from "./users";
 
@@ -265,6 +266,120 @@ describe("a table keeping its match", () => {
     }
     expect(kept[0]!.seats[1]).toMatchObject({ name: "Robo Rita", bot: true });
     expect(kept[0]!.log.some((m) => m.source === "bot")).toBe(true);
+  });
+});
+
+describe("the id to watch a finished match back by", () => {
+  /** Two seats, Ana under an identity unless told otherwise, kept in a store to restart from. */
+  function stored(
+    kept: MatchRecord[] | null,
+    profile: { userId?: string } = { userId: "u-ana" },
+  ): { room: Room; store: InMemoryRoomStore; play: () => void } {
+    const store = new InMemoryRoomStore();
+    let token = 0;
+    const room = new Room("WATCH2", SHORT, {
+      clock: new FakeClock(1_700_000_000_000),
+      seed: 21,
+      newToken: () => `t${token++}`,
+      uid: "uid-watch",
+      pauseWhenIdle: false,
+      store,
+      ...(kept ? { recordMatch: (r: MatchRecord) => kept.push(r) } : {}),
+    });
+    store.saveRoom(room.record());
+    room.join("ana", profile);
+    room.join("ben");
+    room.start(0);
+    const play = (): void => {
+      for (let guard = 0; !room.gameState!.roundEnded; guard++) {
+        expect(guard).toBeLessThan(3_000);
+        const state = room.gameState!;
+        room.submitAction(state.currentSeat, defaultAction(state)!);
+      }
+    };
+    return { room, store, play };
+  }
+
+  it("comes with the last round's result only, and is the id the match was kept under", () => {
+    const kept: MatchRecord[] = [];
+    const { room, play } = stored(kept);
+    play();
+    expect(room.result()!.matchId).toBeUndefined();
+    room.readyForNextRound(0);
+    room.readyForNextRound(1);
+    play();
+    const result = room.result()!;
+    expect(result.matchOver).toBe(true);
+    expect(kept).toHaveLength(1);
+    expect(result.matchId).toBe("uid-watch");
+    expect(result.matchId).toBe(kept[0]!.id);
+    // The awards still come with it.
+    expect(result.tallies).toEqual(kept[0]!.summary.tallies);
+  });
+
+  it("is not sent for a match nobody played under an identity, since none was kept", () => {
+    const kept: MatchRecord[] = [];
+    const { room, play } = stored(kept, {});
+    play();
+    room.readyForNextRound(0);
+    room.readyForNextRound(1);
+    play();
+    expect(kept).toEqual([]);
+    expect(room.result()!.matchOver).toBe(true);
+    // Absent, not undefined, as the result's other optional fields are.
+    expect(room.result()).not.toHaveProperty("matchId");
+  });
+
+  it("is not sent where nothing keeps matches", () => {
+    const { room, play } = stored(null);
+    play();
+    room.readyForNextRound(0);
+    room.readyForNextRound(1);
+    play();
+    expect(room.result()!.matchOver).toBe(true);
+    expect(room.result()!.matchId).toBeUndefined();
+  });
+
+  it("is still sent by a table restored after its last round", async () => {
+    const kept: MatchRecord[] = [];
+    const { room, store, play } = stored(kept);
+    play();
+    room.readyForNextRound(0);
+    room.readyForNextRound(1);
+    play();
+    const [saved] = await store.loadOpen();
+    const restored = Room.restore(saved!, {
+      clock: new FakeClock(),
+      newToken: () => "x",
+      store,
+      recordMatch: (r) => kept.push(r),
+    });
+    if (!restored.ok) throw new Error(restored.error);
+    expect(restored.value.result()!.matchId).toBe("uid-watch");
+    // Restoring kept nothing a second time.
+    expect(kept).toHaveLength(1);
+  });
+
+  it("is not sent when the match could not be worked out", () => {
+    const kept: MatchRecord[] = [];
+    const { room, play } = stored(kept);
+    play();
+    room.readyForNextRound(0);
+    room.readyForNextRound(1);
+    play();
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const entries = room.log.entries();
+      const bad = { ...entries[0]!, action: { type: "nextRound" as const } };
+      vi.spyOn(room.log, "entries").mockReturnValue([bad, ...entries.slice(1)]);
+      const result = room.result()!;
+      expect(log).toHaveBeenCalled();
+      expect(result.matchOver).toBe(true);
+      expect(result.matchId).toBeUndefined();
+      expect(result.tallies).toBeUndefined();
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 });
 

@@ -771,6 +771,20 @@ over, so the replay may follow any seat or show every hand; it opens on the play
 player who was in the match can open it, on a browser holding their identity — an id on its own
 opens nothing — and what is sent is the record without anyone's identity in it.
 
+A finished match can also be watched back straight from the final scoreboard. The last round's
+result names the match it was kept under, and only when one was kept, so the scoreboard never offers
+a replay that could not open; the id is the table's own unique id, which is not a secret, since the
+replay is still refused to anyone who was not in the match. Whether a match is kept is worked out
+from the record (somewhere keeps matches, and a person played under an identity) rather than
+remembered from having sent it, so a table restored after its last round still names it. The button
+is not shown to someone watching the table, nor to a player whose browser has no identity, as
+neither could open it. The record is written in the background as the match ends (on Cloudflare
+under the table's `waitUntil`), so a player quick to press it can ask before it has landed: the
+replay asks once more after a second and a half, and never again, because every read counts against
+the per-identity read limit and the daily quota, and a loop is what that limit exists to prevent.
+The table it was opened from rides along in the router's state, so Back from the replay returns to
+the table while the browser still holds a seat there, and to the main screen otherwise.
+
 What a player is sent about a match is a listing built for them: the names, pictures and totals at
 the table, where they came, and whether they won — never another player's identity, which a listing
 has no use for.
