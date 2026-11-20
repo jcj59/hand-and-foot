@@ -39,7 +39,9 @@ an animation) in its description, under `## Screenshots`.
    table (`LOBBY_GUEST=1`: as a guest, Ana hosting). `WATCHING=1` renders the table as a spectator sees it, at `/watch/HFDEMO`. Action `home` renders the home screen
    instead of the table, with `SAVED_LIST=1` seeding two saved games. Action `history` renders
    History with three recorded games (answered by a mock), the seat at HFDEMO still held and one
-   game saved for later. `FULL_PAGE=1` shoots the whole page rather than the window.
+   game saved for later; with `PEOPLE=1` two more games and three more people (enough for "More"
+   in Played with), `MORE=1` opens the More sheet and `PERSON=<name>` opens that person's card;
+   `FILTERS=1` scrolls the filters into view. `FULL_PAGE=1` shoots the whole page rather than the window.
    On this machine Chromium needs nss/nspr/alsa from the `pwlibs` conda env. Emoji (the quick
    reactions) draw as boxes without a colour emoji font: set `EMOJI_FONT=<path to
    NotoColorEmoji.ttf>` and the page loads it for emoji only. Do not install it system-wide —

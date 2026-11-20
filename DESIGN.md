@@ -786,6 +786,19 @@ they do on Home. Having no place yet, these games count as unfinished for the Pl
 game whose match is already on record as unfinished is left to that card, which offers the same
 Resume beside its scores.
 
+Each person a player has played with has a card on History, opened from their face under "Played
+with" (where each face carries a first name, and "More" lists everyone beyond the first few) or from
+their name on a game. It is built only from the player's own list: games together, when the last
+was, and the two of them side by side over those games (wins, average and best score, counting
+games played to the end that each did not leave). That is deliberately not the other person's
+record. A listing names people and nothing more, so the card cannot tell two people with the same
+name apart, and it says "from your games together" rather than claim more. A real public profile
+would need a public id for each player, a new route, and a decision about who may see whose stats;
+none of that was wanted for a family game. Choosing to see only the games with someone is the
+card's button, so a face always leads to the person, and the filter it sets is the same one as
+before (a chosen face stays in the row, ringed, even when it is not among the first few). Computers
+have no card: they are never a person here.
+
 ### Recaps and awards
 
 At the end of each round the scoreboard adds a few lines — the books made, the best and worst round,

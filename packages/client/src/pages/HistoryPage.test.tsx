@@ -16,6 +16,7 @@ import { forgetHistory } from "../historyCache";
 import { loadSavedGames, SAVED_GAMES_KEY, type SavedGame } from "../savedGames";
 import { useSession } from "../session";
 import type { HfClientSocket } from "../socket";
+import { day } from "../history/describe";
 import { HistoryPage } from "./HistoryPage";
 
 const user = { userId: "u".repeat(16), secret: "s".repeat(32) };
@@ -158,6 +159,18 @@ function cards(): string[] {
     .map((heading) => heading.textContent!);
 }
 
+/**
+ * Toggles "only the games with `name`" the way a player does: their face in
+ * "Played with" opens their card, whose button shows or stops showing them.
+ */
+function choose(name: string): void {
+  const people = screen.getByRole("group", { name: "Played with" });
+  fireEvent.click(within(people).getByRole("button", { name: new RegExp(`^${name}\\b`) }));
+  const card = screen.getByRole("dialog", { name });
+  fireEvent.click(within(card).getByRole("button", { name: /^(Show our|Stop showing)/ }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+}
+
 beforeEach(() => {
   window.localStorage.clear();
   window.sessionStorage.clear();
@@ -280,18 +293,18 @@ describe("the history page", () => {
       within(people)
         .getAllByRole("button")
         .map((b) => b.getAttribute("aria-label")),
-    ).toEqual(["Played with Kate", "Played with Mom", "Played with Sam"]);
-    const kate = within(people).getByRole("button", { name: "Played with Kate" });
-    fireEvent.click(kate);
-    expect(kate).toHaveAttribute("aria-pressed", "true");
+    ).toEqual(["Kate", "Mom", "Sam"]);
+    choose("Kate");
+    expect(within(people).getByRole("button", { name: /^Kate, only your games/ })).toBeTruthy();
     expect(cards()).toEqual(["You won", "Unfinished"]);
     expect(within(filters).getByRole("status")).toHaveTextContent("2 games with Kate");
-    fireEvent.click(within(people).getByRole("button", { name: "Played with Mom" }));
+    choose("Mom");
     expect(cards()).toEqual(["You won"]);
     expect(within(filters).getByRole("status")).toHaveTextContent("1 game with Kate and Mom");
-    fireEvent.click(kate);
-    fireEvent.click(within(people).getByRole("button", { name: "Played with Mom" }));
-    expect(kate).toHaveAttribute("aria-pressed", "false");
+    choose("Kate");
+    choose("Mom");
+    expect(within(people).getByRole("button", { name: "Kate" })).toBeTruthy();
+    expect(cards()).toHaveLength(4);
 
     fireEvent.change(within(filters).getByLabelText("Sort by"), { target: { value: "low" } });
     expect(
@@ -408,6 +421,114 @@ function inProgress(): string[] {
       `${card.querySelector("h3")!.textContent} | ${card.querySelector("h3 + span")!.textContent}`,
   );
 }
+
+describe("people you have played with", () => {
+  it("names each face in Played with by first name, with the full name to hover", async () => {
+    saveIdentity(user);
+    const named = listing({
+      players: [
+        { seat: 0, name: "Ana", total: 100 },
+        { seat: 1, name: "Aunt May", total: 50 },
+      ],
+    });
+    render(server({ ok: true, data: { stats, recent: [named, ...everything.data.recent] } }).post);
+    const people = await screen.findByRole("group", { name: "Played with" });
+    const faces = within(people).getAllByRole("button");
+    expect(faces.map((b) => b.textContent)).toEqual(["Kate", "Aunt", "Mom", "Sam"]);
+    expect(faces[1]).toHaveAttribute("title", "Aunt May");
+    expect(faces[1]).toHaveAttribute("aria-label", "Aunt May");
+    // Six faces fit, so there is no More.
+    expect(within(people).queryByRole("button", { name: /Everyone/ })).toBeNull();
+  });
+
+  it("opens a person's card from their face, with what your games together say", async () => {
+    saveIdentity(user);
+    render(server(everything).post);
+    const people = await screen.findByRole("group", { name: "Played with" });
+    fireEvent.click(within(people).getByRole("button", { name: "Kate" }));
+    const card = screen.getByRole("dialog", { name: "Kate" });
+    expect(card).toHaveTextContent(`2 games togetherLast played ${day(now - DAY)}`);
+    expect(card).toHaveTextContent("From your games together");
+    // The unfinished game counts as a game together, not toward wins or scores.
+    const rows = within(card)
+      .getAllByRole("row")
+      .map((row) => [...row.querySelectorAll("th, td")].map((c) => c.textContent));
+    expect(rows).toEqual([
+      ["Stat", "Kate", "You"],
+      ["Wins", "0", "1"],
+      ["Average score", "12,905", "14,320"],
+      ["Best score", "12,905", "14,320"],
+    ]);
+    // Closing changes nothing.
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(cards()).toHaveLength(4);
+  });
+
+  it("opens a person's card from their name on a game, never a computer's or your own", async () => {
+    saveIdentity(user);
+    render(server(everything).post);
+    const list = await screen.findByRole("list", { name: "Recent games" });
+    const [won, second, , practice] = [...list.children] as HTMLElement[];
+    expect(within(practice!).queryAllByRole("button")).toEqual([]);
+    expect(
+      within(within(won!).getByRole("list", { name: "Final scores" }))
+        .getAllByRole("button")
+        .map((b) => b.textContent),
+    ).toEqual(["Kate", "Mom"]);
+    fireEvent.click(within(second!).getByRole("button", { name: "Sam" }));
+    const card = screen.getByRole("dialog", { name: "Sam" });
+    expect(card).toHaveTextContent("1 game together");
+    fireEvent.click(within(card).getByRole("button", { name: "Show our 1 game" }));
+    expect(cards()).toEqual(["2nd of 2"]);
+    expect(screen.getByRole("status")).toHaveTextContent("1 game with Sam");
+  });
+
+  it("lists everyone under More, and keeps a chosen face in the row", async () => {
+    saveIdentity(user);
+    const names = ["Abe", "Bea", "Cal", "Dot", "Eve", "Fay", "Gus", "Hal"];
+    const recent = names.map((name, i) =>
+      listing({
+        id: `p${i}`,
+        players: [
+          { seat: 0, name: "Ana", total: 100 },
+          { seat: 1, name, total: 50 },
+        ],
+      }),
+    );
+    render(server({ ok: true, data: { stats, recent } }).post);
+    const people = await screen.findByRole("group", { name: "Played with" });
+    const faces = (): string[] =>
+      within(people)
+        .getAllByRole("button")
+        .map((b) => b.textContent!);
+    expect(faces()).toEqual([...names.slice(0, 6), "+2More"]);
+
+    fireEvent.click(
+      within(people).getByRole("button", { name: "Everyone you have played with (2 more)" }),
+    );
+    const more = screen.getByRole("dialog", { name: "Played with" });
+    const everyone = within(more).getByRole("list", { name: "Everyone you have played with" });
+    expect(
+      within(everyone)
+        .getAllByRole("button")
+        .map((b) => b.textContent),
+    ).toEqual(names.map((n) => `${n}1 game together`));
+    fireEvent.click(within(everyone).getByRole("button", { name: /^Hal/ }));
+    expect(screen.queryByRole("dialog", { name: "Played with" })).toBeNull();
+    const hal = screen.getByRole("dialog", { name: "Hal" });
+    fireEvent.click(within(hal).getByRole("button", { name: "Show our 1 game" }));
+    expect(cards()).toHaveLength(1);
+    expect(faces()).toEqual([...names.slice(0, 6), "Hal", "+1More"]);
+
+    fireEvent.click(within(people).getByRole("button", { name: /Everyone/ }));
+    expect(
+      within(screen.getByRole("dialog", { name: "Played with" })).getByRole("button", {
+        name: /^Hal/,
+      }),
+    ).toHaveTextContent("1 game together · shown");
+  });
+});
 
 describe("games in progress", () => {
   it("shows the held seat and each saved game above the recent games, from this device alone", async () => {
@@ -533,7 +654,7 @@ describe("games in progress", () => {
     place("Unfinished");
     expect(inProgress()).toHaveLength(3);
     place("All");
-    fireEvent.click(screen.getByRole("button", { name: "Played with Kate" }));
+    choose("Kate");
     // Kate is at SAV234; who sits at the held table is not known here.
     expect(inProgress().map((line) => line.split(" | ")[1]!.slice(0, 12))).toEqual([
       "Table SAV234",

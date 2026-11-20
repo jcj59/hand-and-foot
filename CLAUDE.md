@@ -1114,6 +1114,17 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   waits for the history to answer (or fail), so that move never makes a card jump. Harness action
   `history`. Mutation-tested: 17/18 killed, 1 equivalent (pushing the held seat with `unshift`, as
   the list is empty then).
+  **People (change plan PR 17):** each face under "Played with" has its first name under it
+  (`firstName`), the row shows the first 6 (5 on a phone) plus anyone chosen beyond them, and
+  "+N More" opens a `Sheet` listing everyone (`companions(recent, Infinity)`). A face, a row in
+  More, or a person's name on a game card opens their card (`history/People.tsx`: `PeopleRow`,
+  `MoreSheet`, `PersonSheet`): games together, last played, and them beside "You" over wins,
+  average and best score, from `history/together.ts` (pure: `together(recent, name)`, counting only
+  games played to the end that the side did not leave; a win is the top total among those who
+  stayed, ties included), worded "From your games together", never their record. Its button "Show
+  our N games" / "Stop showing only games with X" toggles the existing `with` filter, so a face no
+  longer toggles the filter itself. Computers and "You" have no card. No request. Harness:
+  `PEOPLE=1`, `MORE=1`, `PERSON=<name>`, `FILTERS=1`. Mutation-tested: 27/27 killed.
   **Profile (redesign 8):** `pages/ProfilePage.tsx` is the player card (`profile/ProfileCard.tsx`:
   a row of face and name on a phone, stacked and centered with corner indices on a computer;
   Shuffle, the background colors, "Choose each part" for `AvatarEditor`; name and picture are kept

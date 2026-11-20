@@ -639,6 +639,33 @@ const run = async () => {
         players: players(["Jack", 4180], ["Kate", 3990], ["Mom", 2700]),
       },
     ];
+    // PEOPLE=1: more games with more people, enough for "More" in Played with.
+    if (process.env.PEOPLE)
+      recent.push(
+        {
+          ...recent[0],
+          id: "m4",
+          roomId: "DE5FG6",
+          endedAt: now - 14 * day,
+          awards: [],
+          won: false,
+          place: 3,
+          players: players(["Jack", 7210], ["Kate", 10400], ["Grandma", 12400], ["Dad", 6050]),
+        },
+        {
+          ...recent[0],
+          id: "m5",
+          roomId: "EF6GH7",
+          endedAt: now - 20 * day,
+          awards: [],
+          players: players(
+            ["Jack", 13050],
+            ["Kate", 9010],
+            ["Uncle Ray", 11880],
+            ["Aunt May", 8800],
+          ),
+        },
+      );
     const stats = {
       played: 42,
       wins: 26,
@@ -683,6 +710,15 @@ const run = async () => {
     await page.goto(`${base}/${process.env.WATCHING ? "watch" : "room"}/HFDEMO`);
   else await page.goto(base);
   await page.waitForTimeout(800);
+  if (action === "history" && process.env.FILTERS)
+    await page.getByRole("group", { name: "Filter games" }).scrollIntoViewIfNeeded();
+  if (action === "history" && process.env.MORE)
+    await page.getByRole("button", { name: /^Everyone you have played with/ }).click();
+  if (action === "history" && process.env.PERSON)
+    await page
+      .getByRole("group", { name: "Played with" })
+      .getByRole("button", { name: new RegExp(`^${process.env.PERSON}`) })
+      .click();
   if (action === "menu") await page.getByRole("button", { name: "Main menu" }).click();
   if (action === "scores") await page.getByRole("button", { name: "Scores so far" }).click();
   if (action === "expand") await page.getByRole("button", { name: /^Expand Cyrus/ }).click();
