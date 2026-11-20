@@ -53,7 +53,7 @@ export function since(when: WhenFilter, now: number): number {
 }
 
 /** The other people (never computers) at a game's table, by name. */
-function people(match: MatchListing): MatchListing["players"] {
+export function people(match: MatchListing): MatchListing["players"] {
   return match.players.filter((p) => p.seat !== match.seat && !p.bot);
 }
 

@@ -44,9 +44,10 @@ import {
   keepsInProgress,
   type InProgressGame,
 } from "../history/inProgress";
+import { MoreSheet, PeopleRow, PersonSheet, type PeopleSheet } from "../history/People";
 import { loadIdentity, serverPost, type Post } from "../identity";
 import { loadHistory } from "../historyCache";
-import { AvatarFace, BACKGROUND_COLORS } from "../profile/Avatar";
+import { BACKGROUND_COLORS } from "../profile/Avatar";
 import { faceOf } from "../profile/avatarStore";
 import { loadCredentials } from "../credentials";
 import { liveSavedGames, type SavedGame } from "../savedGames";
@@ -61,8 +62,12 @@ export interface HistoryPageProps {
   readonly post?: Post;
 }
 
-/** How many people the "Played with" filter offers, most played with first. */
+/**
+ * How many faces the "Played with" filter shows, most played with first (a phone
+ * has room for fewer); "More" lists everyone.
+ */
 const COMPANIONS_SHOWN = 6;
+const COMPANIONS_SHOWN_PHONE = 5;
 
 /** Each result's card: its gradient, the glow in its corner, and its badge. */
 const THEMES: Record<Result, { card: string; glow: string; badge: string }> = {
@@ -191,8 +196,11 @@ function Games({
   readonly playing: React.ReactNode;
 }): React.ReactElement {
   const { stats, recent } = history;
-  const people = useMemo(() => companions(recent, COMPANIONS_SHOWN), [recent]);
+  // Everyone, most played with first: the row shows the first few, "More" the rest.
+  const people = useMemo(() => companions(recent, Infinity), [recent]);
   const shown = filterGames(recent, filters, Date.now());
+  const [sheet, setSheet] = useState<PeopleSheet | null>(null);
+  const openPerson = (name: string): void => setSheet({ kind: "person", name });
 
   const tiles: [string, string, string][] = [
     ["Games", "Games", points(stats.played)],
@@ -267,6 +275,7 @@ function Games({
           filters={filters}
           onChange={onFilters}
           people={people}
+          onPeople={setSheet}
           count={shown.length}
         />
         {shown.length === 0 ? (
@@ -276,11 +285,39 @@ function Games({
         ) : (
           <ul aria-label="Recent games" className={phone ? `${GRID_PHONE} pb-5` : GRID}>
             {shown.map((match) => (
-              <GameCard key={match.id} match={match} phone={phone} resume={resume} />
+              <GameCard
+                key={match.id}
+                match={match}
+                phone={phone}
+                resume={resume}
+                onPerson={openPerson}
+              />
             ))}
           </ul>
         )}
       </section>
+
+      {sheet?.kind === "more" && (
+        <MoreSheet
+          everyone={people}
+          recent={recent}
+          chosen={filters.with}
+          onOpen={openPerson}
+          onClose={() => setSheet(null)}
+        />
+      )}
+      {sheet?.kind === "person" && (
+        <PersonSheet
+          name={sheet.name}
+          recent={recent}
+          chosen={filters.with.includes(sheet.name)}
+          onShow={() => {
+            onFilters({ ...filters, with: toggled(filters.with, sheet.name) });
+            setSheet(null);
+          }}
+          onClose={() => setSheet(null)}
+        />
+      )}
     </>
   );
 }
@@ -293,12 +330,14 @@ function FilterBar({
   filters,
   onChange,
   people,
+  onPeople,
   count,
 }: {
   readonly phone: boolean;
   readonly filters: Filters;
   readonly onChange: (filters: Filters) => void;
   readonly people: readonly Companion[];
+  readonly onPeople: (sheet: PeopleSheet) => void;
   readonly count: number;
 }): React.ReactElement {
   const label = phone ? "text-[11px] text-quiet" : "text-xs text-quiet";
@@ -327,27 +366,13 @@ function FilterBar({
     </div>
   );
   const withWho = people.length > 0 && (
-    <div role="group" aria-label="Played with" className="flex items-center gap-2">
-      {phone && <span className={`${label} mr-0.5`}>With</span>}
-      {people.map((person) => {
-        const on = filters.with.includes(person.name);
-        return (
-          <button
-            key={person.name}
-            type="button"
-            aria-pressed={on}
-            aria-label={`Played with ${person.name}`}
-            title={person.name}
-            onClick={() => onChange({ ...filters, with: toggled(filters.with, person.name) })}
-            className={`shrink-0 rounded-full ${
-              on ? "shadow-[0_0_0_2px_#14181C,0_0_0_4px_#4ADE9B]" : "opacity-45 hover:opacity-75"
-            }`}
-          >
-            <AvatarFace avatar={faceOf(person)} size={36} />
-          </button>
-        );
-      })}
-    </div>
+    <PeopleRow
+      everyone={people}
+      shown={phone ? COMPANIONS_SHOWN_PHONE : COMPANIONS_SHOWN}
+      chosen={filters.with}
+      phone={phone}
+      onOpen={onPeople}
+    />
   );
   const when = (
     <label className="flex flex-col gap-1 md:gap-1.5">
@@ -382,7 +407,10 @@ function FilterBar({
     </label>
   );
   const said = (
-    <p role="status" className={phone ? "text-xs text-muted" : "ml-auto text-[13px] text-muted"}>
+    <p
+      role="status"
+      className={phone ? "text-xs text-muted" : "ml-auto self-center text-[13px] text-muted"}
+    >
       {summary(count, filters.with)}
     </p>
   );
@@ -405,7 +433,7 @@ function FilterBar({
     <div
       role="group"
       aria-label="Filter games"
-      className="flex flex-wrap items-end gap-x-5 gap-y-3.5 rounded-[18px] border border-white/6 bg-[#14181C] px-4 py-3.5"
+      className="flex flex-wrap items-start gap-x-5 gap-y-3.5 rounded-[18px] border border-white/6 bg-[#14181C] px-4 py-3.5"
     >
       <div className="flex flex-col gap-1.5">
         <span className={label}>Place</span>
@@ -603,10 +631,13 @@ function GameCard({
   match,
   phone,
   resume,
+  onPerson,
 }: {
   readonly match: MatchListing;
   readonly phone: boolean;
   readonly resume: Resume;
+  /** Open someone's card from their name. */
+  readonly onPerson: (name: string) => void;
 }): React.ReactElement {
   const result = resultOf(match);
   const theme = THEMES[result];
@@ -641,7 +672,7 @@ function GameCard({
 
       <ol aria-label="Final scores" className="relative flex flex-col gap-2 md:gap-[9px]">
         {rows.map((row, i) => (
-          <ScoreLine key={row.player.seat} row={row} first={i === 0} />
+          <ScoreLine key={row.player.seat} row={row} first={i === 0} onPerson={onPerson} />
         ))}
       </ol>
 
@@ -710,9 +741,11 @@ function PauseGlyph(): React.ReactElement {
 function ScoreLine({
   row,
   first,
+  onPerson,
 }: {
   readonly row: ScoreRow;
   readonly first: boolean;
+  readonly onPerson: (name: string) => void;
 }): React.ReactElement {
   const { player, you, share } = row;
   const color = player.bot
@@ -727,14 +760,28 @@ function ScoreLine({
       >
         <PlayerFace player={player} size={30} />
       </span>
-      <span
-        className={`w-[76px] shrink-0 truncate text-sm ${you ? "font-bold" : "font-medium"}`}
-        title={player.name}
-      >
-        {you ? "You" : player.name}
-        {player.bot && <span className="sr-only"> (computer)</span>}
-        {player.left && <span className="sr-only"> (left)</span>}
-      </span>
+      {you || player.bot ? (
+        <span
+          className={`w-[76px] shrink-0 truncate text-sm ${you ? "font-bold" : "font-medium"}`}
+          title={player.name}
+        >
+          {you ? "You" : player.name}
+          {player.bot && <span className="sr-only"> (computer)</span>}
+          {player.left && <span className="sr-only"> (left)</span>}
+        </span>
+      ) : (
+        // A person's name opens their card; computers and the player have none.
+        <button
+          type="button"
+          aria-haspopup="dialog"
+          onClick={() => onPerson(player.name)}
+          className="w-[76px] shrink-0 truncate text-left text-sm font-medium decoration-white/50 underline-offset-2 hover:underline"
+          title={player.name}
+        >
+          {player.name}
+          {player.left && <span className="sr-only"> (left)</span>}
+        </button>
+      )}
       <span aria-hidden="true" className="h-2 flex-1 overflow-hidden rounded bg-black/28">
         <span
           className="block h-full rounded"
