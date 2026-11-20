@@ -688,10 +688,11 @@ describe("the round result", () => {
     });
     const ana = screen.getByRole("listitem", { name: /^ana:/ });
     // The parts as counts, as the design's columns give them: clean books, dirty
-    // books, card points, cards left; then the round and the total.
-    expect(ana.textContent).toMatch(/You\s*Went out\s*2\s*1\s*185\s*0/);
+    // books, card points, cards left, what red threes cost; then the round and the
+    // total.
+    expect(ana.textContent).toMatch(/You\s*Went out\s*2\s*1\s*185\s*0\s*0/);
     const ben = screen.getByRole("listitem", { name: /^ben:/ });
-    expect(ben.textContent).toMatch(/ben\s*\d+\s*\d+\s*\d+\s*3-480/);
+    expect(ben.textContent).toMatch(/ben\s*\d+\s*\d+\s*\d+\s*3\s*0\s*-480/);
     // Highest score first.
     const rows = within(screen.getByLabelText(/round result/i))
       .getAllByRole("listitem")

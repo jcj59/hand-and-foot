@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { act, render, screen } from "@testing-library/react";
-import type { RoundEnded, ScoreBreakdown, SeatTally } from "@hf/shared";
+import { EAST_COAST, type RoundEnded, type ScoreBreakdown, type SeatTally } from "@hf/shared";
 import { roundRecap } from "./recap";
 import { AWARDS_MS, AwardsCelebration, awardsOf, useAwardsCelebration, winnersOf } from "./awards";
 
@@ -54,11 +54,24 @@ describe("the round in a few lines", () => {
       [-320, { redThreesHeld: 1 }],
       [400, { dirtyBooks: 1 }],
     ]);
-    expect(roundRecap(r, nameOf)).toEqual([
+    expect(roundRecap(r, nameOf, EAST_COAST)).toEqual([
       "Books: Ana 1 clean, 2 dirty · Cy 1 dirty.",
       "Best round: Ana, +1850.",
       "Worst round: Ben, -320.",
-      "Caught with red threes: Ben (1).",
+      "Ben was caught with a red three, -500.",
+    ]);
+  });
+
+  it("says what each player's red threes cost, at the table's own value", () => {
+    const r = result([
+      [-200, { redThreesHeld: 1 }],
+      [100, {}],
+      [-800, { redThreesHeld: 2 }],
+    ]);
+    const cheap = { ...EAST_COAST, scoring: { ...EAST_COAST.scoring, redThree: -300 } };
+    expect(roundRecap(r, nameOf, cheap).slice(-2)).toEqual([
+      "Ana was caught with a red three, -300.",
+      "Cy was caught with 2 red threes, -600.",
     ]);
   });
 
@@ -70,6 +83,7 @@ describe("the round in a few lines", () => {
           [40, {}],
         ]),
         nameOf,
+        EAST_COAST,
       ),
     ).toEqual(["No books were made this round.", "Best round: Ben, +40."]);
   });
@@ -86,7 +100,7 @@ describe("the round in a few lines", () => {
         departed: [{ seat: 1, afterRound: 1 }],
       },
     );
-    expect(roundRecap(r, nameOf)).toEqual([
+    expect(roundRecap(r, nameOf, EAST_COAST)).toEqual([
       "No books were made this round.",
       "Best round: Cy, -50.",
       "Worst round: Ana, -100.",

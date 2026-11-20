@@ -1145,7 +1145,20 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   `room.rounds.test.ts` (every view at every move), `room.remove.test.ts`,
   `socket.integration.test.ts` (every view and result a seat and a watcher receive) and
   `frame.test.ts` (every step of the `match` scenario). Not in `ScoreBreakdown`, so
-  `pastRounds` and golden replays are untouched. The client does not show it yet.
+  `pastRounds` and golden replays are untouched.
+  **Shown since change list items 25 to 27:** `RoundResult` rows open ("Show cards",
+  `aria-expanded`) to `table/HeldDetail.tsx`: hand, foot ("never reached" when `footUntouched`)
+  and red threes as groups (`table/heldBreakdown.ts`: each card's cost is `-|cardValue|`, red
+  threes pulled out of their zone so the sums add up to `heldPenalty`), then the score's parts.
+  A "Red 3s" column on a computer (`redThreePenalty`), and the recap says "Kate was caught with a
+  red three, -500." (`roundRecap` now takes the config). `RoundResult.test.tsx` plays real rounds
+  (two heuristic seats and a default one) and checks the shown sums equal every seat's
+  `heldPenalty`. On a computer both boards drag by their heading (`table/drag.ts`:
+  `useDraggable`, pointer capture, `clampOffset` keeps it `EDGE_MARGIN` 8 inside the window,
+  arrows on the "Move the scores" grip move `ARROW_STEP` 24 or 96 with Shift; reset per result,
+  not kept); once moved the backdrop lightens. Phone unchanged. Harness: `ROUND_OVER=1` now sends
+  every seat's held cards; action `expandrows` opens rows, `dragboard` drags the board aside. Mutation-tested: 28 of 29 killed, 1 equivalent (the arrow handler's `enabled` guard: the
+  grip is not rendered when dragging is off).
 
 - **Rematch (roadmap item 12a).** `Room.rematchPlayers(bySeat)` (host, match over, nobody gone on
   yet — `nextRoomId` null; brings every seated player not gone on and not walked away, bots
