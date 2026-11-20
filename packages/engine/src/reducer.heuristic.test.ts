@@ -424,7 +424,7 @@ describe("heuristicAction — once down", () => {
   });
 });
 
-describe("heuristicAction — a wild is played, not thrown away", () => {
+describe("heuristicAction: a wild is played, not thrown away", () => {
   // Every case here was found by counting the heuristic's wild discards over
   // arena matches: each one came when the zone held nothing but wilds.
   const discards = (actions: readonly Action[]): string[] =>
