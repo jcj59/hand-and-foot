@@ -617,17 +617,34 @@ describe("taking a turn", () => {
     expect(screen.getByRole("img", { name: "Stock: 40" })).toBeInTheDocument();
   });
 
-  it("offers the pile only when the server says it can be taken", () => {
-    // Whether the pile is takeable is decided by a solver over the whole state, so
-    // the client cannot second-guess it.
-    mount(fakeSocket().socket);
-    expect(screen.queryByRole("button", { name: /take the pile/i })).toBeNull();
+  it("lets the pile be tried whenever a draw is open, whatever the server thinks of it", () => {
+    // Offering the pile only when the solver says yes would tell the player what
+    // the solver found. Here the server says it cannot be taken, and it is still
+    // a button: trying is how a player finds out, as at a real table.
+    mount(fakeSocket().socket, update({ hints: { canTakePile: false } }));
+    expect(screen.getByRole("button", { name: /take the pile \(1 cards\)/i })).toBeInTheDocument();
 
     // Through act, because a store write from outside React is not flushed otherwise.
     act(() => {
-      useSession.setState({ update: update({ hints: { canTakePile: true } }) });
+      useSession.setState({ update: update({ hints: { canDraw: false, phase: "play" } }) });
     });
-    expect(screen.getByRole("button", { name: /take the pile \(1 cards\)/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /take the pile/i })).toBeNull();
+  });
+
+  it("offers no pile to take when there is nothing on it", () => {
+    mount(fakeSocket().socket, update({ view: { discard: [] } }));
+    expect(screen.queryByRole("button", { name: /take the pile/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /^draw a card/i })).toBeInTheDocument();
+  });
+
+  it("refuses a take the rules do not allow with the engine's own reason", async () => {
+    const reason =
+      "you cannot take the pile: no pile card is playable, or the minimum is not reachable";
+    const { socket, sent } = fakeSocket([{ ok: false, error: reason }]);
+    mount(socket, update({ hints: { canTakePile: false } }));
+    fireEvent.click(screen.getByRole("button", { name: /take the pile/i }));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(reason));
+    expect(sent.map((s) => s.args[0])).toEqual([{ type: "takePile" }]);
   });
 
   it("sends takePile", async () => {
@@ -988,17 +1005,21 @@ describe("staging a lay-down", () => {
     mount(fakeSocket().socket, inPlay(meldable()));
     meld("King of clubs");
     fireEvent.click(handCard("King of clubs"));
-    // Still in meld mode, with nothing picked: the panel says how it works.
-    expect(screen.getByLabelText(/lay-down being built/i).textContent).toMatch(
-      /click cards in your hand/i,
-    );
+    // Still in meld mode, with nothing picked: the panel is open and empty.
+    expect(
+      within(screen.getByLabelText(/lay-down being built/i)).queryByRole("button", {
+        name: "Select the Ks meld",
+      }),
+    ).toBeNull();
 
     meld("King of clubs");
     const panel = screen.getByLabelText(/lay-down being built/i);
     fireEvent.click(within(panel).getByRole("button", { name: "King of clubs" }));
-    expect(screen.getByLabelText(/lay-down being built/i).textContent).toMatch(
-      /click cards in your hand/i,
-    );
+    expect(
+      within(screen.getByLabelText(/lay-down being built/i)).queryByRole("button", {
+        name: "King of clubs",
+      }),
+    ).toBeNull();
   });
 
   it("selects a group by clicking its box", () => {
@@ -1091,45 +1112,39 @@ describe("discarding", () => {
     expect(sent[0].args[0]).toEqual({ type: "discard", cardId: "9-hearts" });
   });
 
-  it("asks again before discarding a wild", async () => {
+  it("discards a wild at once, with no warning", async () => {
     const { socket, sent } = fakeSocket();
     mount(socket, readyToDiscard({ hand: [card("JOKER", null), card("9", "hearts")] }));
-    // The reason is said before the choice, and the button owns up to it.
     fireEvent.click(handCard("Joker, wild"));
     const sheet = screen.getByRole("dialog", { name: /actions for joker/i });
-    expect(sheet.textContent).toMatch(/wild card/i);
-    expect(within(sheet).queryByRole("menuitem", { name: /^discard$/i })).toBeNull();
-    expect(sent).toEqual([]);
-    fireEvent.click(within(sheet).getByRole("menuitem", { name: /discard anyway/i }));
+    expect(sheet.textContent).not.toMatch(/wild card|pile|anyway/i);
+    expect(within(sheet).queryByRole("menuitem", { name: /discard anyway/i })).toBeNull();
+    fireEvent.click(within(sheet).getByRole("menuitem", { name: /^discard$/i }));
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0].args[0]).toEqual({ type: "discard", cardId: "JOKER-null" });
   });
 
-  it("asks again before discarding a card that could go on one of your melds", () => {
+  it("says nothing about who could use a discard, nor that it fits a meld of your own", async () => {
+    // Another player has 9s down and so does the player: once, the menu said
+    // either could take the pile with it or that it could go on the meld.
+    const nines = [card("9", "clubs"), card("9", "spades"), card("9", "diamonds")];
     const { socket, sent } = fakeSocket();
-    mount(
-      socket,
-      readyToDiscard({
-        isDown: true,
-        melds: [
-          { rank: "9", cards: [card("9", "clubs"), card("9", "spades"), card("9", "diamonds")] },
-        ],
-      }),
-    );
+    const ready = readyToDiscard({ isDown: true, melds: [{ rank: "9", cards: nines }] });
+    mount(socket, {
+      ...ready,
+      view: {
+        ...ready.view,
+        opponents: ready.view.opponents.map((o, i) =>
+          i === 0 ? { ...o, isDown: true, melds: [{ rank: "9", cards: nines }] } : o,
+        ),
+      },
+    });
     fireEvent.click(handCard("Nine of hearts"));
-    expect(screen.getByRole("dialog").textContent).toMatch(/you have 9s down/i);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Cancel" }));
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(sent).toEqual([]);
-  });
-
-  it("does not ask about an ordinary card", async () => {
-    const { socket, sent } = fakeSocket();
-    mount(socket, readyToDiscard());
-    fireEvent.click(handCard("King of spades"));
-    expect(screen.getByRole("dialog").textContent).not.toMatch(/could|wild/i);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Discard" }));
+    const sheet = screen.getByRole("dialog");
+    expect(sheet.textContent).not.toMatch(/down|could|pile|anyway/i);
+    fireEvent.click(within(sheet).getByRole("menuitem", { name: /^discard$/i }));
     await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0].args[0]).toEqual({ type: "discard", cardId: "9-hearts" });
   });
 
   it("is blocked while melds are staged", () => {
@@ -1140,13 +1155,12 @@ describe("discarding", () => {
     // With a lay-down under way a click stages, so no discard is on offer at all.
     fireEvent.click(handCard("Nine of hearts"));
     expect(screen.queryByRole("menuitem", { name: "Discard" })).toBeNull();
-    expect(screen.getByText(/click cards to add them/i)).toBeInTheDocument();
   });
 
   it("offers nothing to click during the draw phase", () => {
     mount(fakeSocket().socket);
     expect(screen.queryByRole("button", { name: "Ace of spades" })).toBeNull();
-    expect(screen.getByText(/click the stock to draw/i)).toBeInTheDocument();
+    expect(screen.getByText("Your turn.")).toBeInTheDocument();
   });
 });
 
@@ -1267,17 +1281,13 @@ describe("when the turn ends without the player", () => {
 });
 
 describe("going out", () => {
-  it("says so when the books are in place", () => {
+  it("says nothing about it, even when the server says the books are in place", () => {
     mount(
       fakeSocket().socket,
       update({ hints: { canGoOut: true, phase: "play", canDraw: false }, view: { phase: "play" } }),
     );
-    expect(screen.getByText(/books to go out/i)).toBeInTheDocument();
-  });
-
-  it("says nothing when they are not", () => {
-    mount(fakeSocket().socket);
-    expect(screen.queryByText(/books to go out/i)).toBeNull();
+    expect(screen.queryByText(/go out/i)).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
   });
 });
 
@@ -1479,7 +1489,7 @@ describe("the controls added from play-testing", () => {
       down([card("K", "clubs"), card("K", "hearts"), card("K", "spades")]),
     );
     fireEvent.click(screen.getByRole("button", { name: /^meld$/i }));
-    expect(screen.getByLabelText(/lay-down being built/i).textContent).toMatch(/click cards/i);
+    expect(screen.getByLabelText(/lay-down being built/i)).toBeInTheDocument();
     fireEvent.click(handCard("King of clubs"));
     expect(screen.queryByRole("menu")).toBeNull();
     expect(screen.getByLabelText(/lay-down being built/i)).toHaveTextContent(/Ks· wilds go here/);
@@ -1498,32 +1508,16 @@ describe("the controls added from play-testing", () => {
     });
   });
 
-  it("adds every natural it can to the melds already down, and never a wild", async () => {
-    const { socket, sent } = fakeSocket();
-    mount(socket, down([card("9", "hearts"), card("2", "clubs"), card("K", "spades")]));
-    fireEvent.click(screen.getByRole("button", { name: /add 1 to my melds/i }));
-    await waitFor(() => expect(sent).toHaveLength(1));
-    expect(sent[0].args[0]).toEqual({
-      type: "playMelds",
-      melds: [{ rank: "9", cardIds: ["9-hearts"] }],
-    });
-  });
-
-  it("plays the last card of the foot straight away, with nothing to confirm", async () => {
+  it("plays the last card of the foot straight onto its meld, with nothing to confirm", async () => {
     const { socket, sent } = fakeSocket();
     mount(socket, down([], { inFoot: true, foot: [card("9", "hearts")], hand: [] }));
-    fireEvent.click(screen.getByRole("button", { name: /add 1 to my melds/i }));
+    choose("Nine of hearts", /add to 9s meld/i);
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0].args[0]).toEqual({
       type: "playMelds",
       melds: [{ rank: "9", cardIds: ["9-hearts"] }],
     });
     expect(screen.queryByRole("button", { name: /keep it/i })).toBeNull();
-  });
-
-  it("shows the auto-add for a single card of a melded rank in the hand", () => {
-    mount(fakeSocket().socket, down([card("9", "hearts")]));
-    expect(screen.getByRole("button", { name: /add 1 to my melds/i })).toBeInTheDocument();
   });
 
   it("puts Play melds beside Stop melding, above the hand", async () => {
@@ -1567,31 +1561,30 @@ describe("the controls added from play-testing", () => {
     expect(screen.getByRole("button", { name: /take the pile/i })).toBeInTheDocument();
   });
 
-  it("pulses the piles and their labels in step", () => {
+  it("pulses the stock on a draw, and never lights the pile up, takeable or not", () => {
     const now = vi.spyOn(Date, "now").mockReturnValue(10_250);
     try {
       mount(fakeSocket().socket, update({ hints: { canTakePile: true } }));
-      // 10 250 ms is 450 ms into a 1 400 ms cycle, so each starts 450 ms in.
-      const delays = [
-        screen.getByRole("button", { name: /draw a card/i }),
-        screen.getByRole("button", { name: /take the pile/i }),
-      ].map((el) => el.style.animationDelay);
-      expect(delays).toEqual(["-450ms", "-450ms"]);
+      // 10 250 ms is 450 ms into a 1 400 ms cycle, so the stock starts 450 ms in.
+      const stock = screen.getByRole("button", { name: /draw a card/i });
+      expect(stock.style.animationDelay).toBe("-450ms");
+      expect(stock).toHaveClass("pile-prompt");
+      // A pile that glowed only when the solver said yes would be a hint.
+      const pile = screen.getByRole("button", { name: /take the pile/i });
+      expect(pile).not.toHaveClass("pile-prompt");
+      expect(pile.style.animationDelay).toBe("");
     } finally {
       now.mockRestore();
     }
   });
 
-  it("sets a pile's phase when it becomes clickable, not when it first appeared", () => {
+  it("sets the stock's phase when it becomes clickable, not when it first appeared", () => {
     const now = vi.spyOn(Date, "now").mockReturnValue(10_250);
     try {
       mount(fakeSocket().socket, update({ hints: { canDraw: false, phase: "play" } }));
       now.mockReturnValue(11_000);
-      act(() => useSession.getState().applyUpdate(update({ hints: { canTakePile: true } })));
+      act(() => useSession.getState().applyUpdate(update()));
       // 11 000 is 1 200 ms into the cycle: in step with a pulse started at any time.
-      expect(screen.getByRole("button", { name: /take the pile/i }).style.animationDelay).toBe(
-        "-1200ms",
-      );
       expect(screen.getByRole("button", { name: /draw a card/i }).style.animationDelay).toBe(
         "-1200ms",
       );
@@ -1698,8 +1691,8 @@ describe("the controls added from play-testing", () => {
       }),
     );
     expect(handCard("Three of spades, blocks the pile").className).not.toMatch(/opacity-60/);
-    // And the auto-add picks it up with the rest.
-    fireEvent.click(screen.getByRole("button", { name: /add 1 to my melds/i }));
+    // And its menu adds it to the book in one click.
+    choose("Three of spades, blocks the pile", /add to 3s meld/i);
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0].args[0]).toEqual({
       type: "playMelds",
@@ -2118,7 +2111,7 @@ describe("on a phone", () => {
     for (const name of ["Main menu", "React", "Scores so far"]) {
       expect(screen.getByRole("button", { name }).textContent).toBe("");
     }
-    expect(screen.getByText(/Tap the stock to draw/)).toBeInTheDocument();
+    expect(screen.getByText("Your turn.")).toBeInTheDocument();
   });
 });
 
@@ -3445,6 +3438,197 @@ describe("hints", () => {
     expect(screen.queryByRole("button", { name: /hints/i })).toBeNull();
     expect(screen.queryByRole("button", { name: "Suggest a move" })).toBeNull();
     expect(screen.queryByText(/short of the 60/)).toBeNull();
+  });
+
+  // A seat in its foot, down, with a clean book of 9s and four queens, holding a
+  // queen, a joker, a red three and a king; Ben has queens down too, and the
+  // server says the books to go out are in place. Every aid that once spoke up
+  // here is checked gone, and every mark of a rule or of the state is checked kept.
+  const nines = Array.from({ length: 7 }, (_, i) => ({
+    id: `n9-${i}`,
+    rank: "9" as Rank,
+    suit: (["clubs", "spades", "diamonds", "hearts"] as const)[i % 4] as Suit,
+  }));
+  const queens = [
+    card("Q", "clubs"),
+    card("Q", "hearts"),
+    card("Q", "diamonds"),
+    card("2", "clubs"),
+  ];
+  function inFootNearlyOut(over: Partial<PlayerView> = {}): ViewUpdate {
+    const base = update({
+      view: {
+        hand: [],
+        inFoot: true,
+        isDown: true,
+        foot: [card("Q", "spades"), card("JOKER", null), card("3", "hearts"), card("K", "spades")],
+        footCount: 4,
+        melds: [
+          { rank: "9", cards: nines },
+          { rank: "Q", cards: queens },
+        ],
+        phase: "play",
+        ...over,
+      },
+      hints: { phase: "play", canDraw: false, canGoOut: true },
+    });
+    return {
+      ...base,
+      view: {
+        ...base.view,
+        opponents: base.view.opponents.map((o, i) =>
+          i === 0 ? { ...o, isDown: true, melds: [{ rank: "Q", cards: queens }] } : o,
+        ),
+      },
+    };
+  }
+
+  it("say nothing in the foot about going out or how near a book is", () => {
+    mount(fakeSocket().socket, inFootNearlyOut());
+    expect(screen.queryByRole("group", { name: /to go out/i })).toBeNull();
+    expect(screen.queryByText(/to go out|go out/i)).toBeNull();
+    expect(screen.queryByText(/clean books|dirty books/i)).toBeNull();
+    expect(screen.queryByText(/need \w+ more card/i)).toBeNull();
+  });
+
+  it("offer no bulk add to the melds, though the one-card add stays on the card", async () => {
+    const { socket, sent } = fakeSocket();
+    mount(socket, inFootNearlyOut());
+    expect(screen.queryByRole("button", { name: /to my melds/i })).toBeNull();
+    choose("Queen of spades", /^add to qs meld$/i);
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0].args[0]).toEqual({
+      type: "playMelds",
+      melds: [{ rank: "Q", cardIds: ["Q-spades"] }],
+    });
+  });
+
+  it("never warn about a discard: a wild, a rank someone has down, or one that fits a meld", () => {
+    mount(fakeSocket().socket, inFootNearlyOut());
+    for (const name of ["Joker, wild", "Queen of spades"]) {
+      fireEvent.click(handCard(name));
+      const sheet = screen.getByRole("dialog");
+      expect(sheet.textContent).not.toMatch(/wild card|could|pile|anyway/i);
+      expect(within(sheet).getByRole("menuitem", { name: /^discard$/i })).toBeInTheDocument();
+      fireEvent.click(within(sheet).getByRole("menuitem", { name: "Cancel" }));
+    }
+  });
+
+  it("say only whose turn it is, never how to take it", () => {
+    for (const phase of ["draw", "play"] as const) {
+      cleanup();
+      mount(
+        fakeSocket().socket,
+        update({
+          view: { phase },
+          hints: { phase, canDraw: phase === "draw", canTakePile: true },
+        }),
+      );
+      const bar = screen.getByRole("region", { name: /your turn/i });
+      expect(within(bar).getByText("Your turn.")).toBeInTheDocument();
+      expect(screen.queryByText(/click|tap|stock to draw|to meld or discard/i)).toBeNull();
+    }
+    cleanup();
+    mount(fakeSocket().socket, update({ hints: { seatToAct: 1, canDraw: false } }));
+    expect(screen.getByRole("region", { name: /your turn/i })).toHaveTextContent(
+      "Waiting for ben.",
+    );
+    cleanup();
+    mount(
+      fakeSocket().socket,
+      update({
+        hints: { seatToAct: 1, canDraw: false },
+        clock: { deadlineAt: null, paused: true },
+      }),
+    );
+    expect(screen.getByRole("region", { name: /your turn/i })).toHaveTextContent(
+      "The table is paused.",
+    );
+  });
+
+  it("still say the rule that holds a turn: a debt to the pile, a clock run out", () => {
+    const owed = card("7", "clubs");
+    mount(
+      fakeSocket().socket,
+      update({
+        view: { hand: [owed, card("K", "spades")], phase: "play", pickedUp: [owed.id] },
+        hints: { phase: "play", canDraw: false },
+      }),
+    );
+    expect(screen.getByRole("region", { name: /your turn/i })).toHaveTextContent(
+      "Play a card from the pile before you can discard.",
+    );
+    cleanup();
+    mount(
+      fakeSocket().socket,
+      update({
+        view: { phase: "play" },
+        hints: { phase: "play", canDraw: false },
+        clock: { inDiscardGrace: true },
+      }),
+    );
+    expect(screen.getByRole("region", { name: /your turn/i })).toHaveTextContent(
+      "Time is up. Only a discard will be accepted.",
+    );
+  });
+
+  it("never light the pile up for being takeable", () => {
+    mount(fakeSocket().socket, update({ hints: { canTakePile: true } }));
+    const pile = screen.getByRole("button", { name: /take the pile/i });
+    expect(pile).not.toHaveClass("pile-prompt");
+    expect(pile.getAttribute("style")).toBeNull();
+  });
+
+  it("give no instructions in a lay-down being built, only what it is worth", () => {
+    mount(
+      fakeSocket().socket,
+      update({
+        view: {
+          hand: [card("K", "clubs"), card("K", "hearts"), card("K", "spades"), card("9", "clubs")],
+          phase: "play",
+        },
+        hints: { phase: "play", canDraw: false },
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^meld$/i }));
+    const panel = screen.getByLabelText(/lay-down being built/i);
+    expect(panel.textContent).not.toMatch(/click|tap|send wilds/i);
+    // The arithmetic and the engine's refusal reasons stay.
+    expect(screen.getByLabelText(/worth 0 of 60 needed/i)).toBeInTheDocument();
+    for (const name of ["King of clubs", "King of hearts", "King of spades"]) {
+      fireEvent.click(handCard(name));
+    }
+    expect(screen.getByLabelText(/worth 30 of 60 needed/i)).toBeInTheDocument();
+    expect(panel).toHaveTextContent("30 more to get down");
+    expect(screen.getByText(/below the round minimum of 60/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Play melds" })).toBeDisabled();
+  });
+
+  it("keep the marks of the rules and the state: melded ranks, dimmed red threes, the pile's debt, the last lap", () => {
+    mount(fakeSocket().socket, inFootNearlyOut());
+    const foot = screen.getByRole("region", { name: /your foot/i });
+    expect(within(foot).getByTitle(/you have a meld of Qs/i)).toBeInTheDocument();
+    expect(within(foot).queryByTitle(/meld of Ks/i)).toBeNull();
+    expect(handCard("Three of hearts, penalty").className).toMatch(/opacity-60/);
+
+    cleanup();
+    const owed = card("7", "clubs");
+    mount(
+      fakeSocket().socket,
+      update({
+        view: {
+          hand: [owed, card("K", "spades")],
+          phase: "play",
+          pickedUp: [owed.id],
+          wentOutSeat: 1,
+          finalLapRemaining: 1,
+        },
+        hints: { phase: "play", canDraw: false },
+      }),
+    );
+    expect(screen.getByText(/play at least one of the ringed cards/i)).toBeInTheDocument();
+    expect(screen.getByTitle(/taken from the pile/i)).toBeInTheDocument();
+    expect(screen.getByText("ben went out! This is your last turn.")).toBeInTheDocument();
   });
 });
 
