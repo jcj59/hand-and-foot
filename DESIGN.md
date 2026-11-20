@@ -798,6 +798,20 @@ the same per-seat tallies a player's stats are made of, worked out once from the
 it ends and sent with the final result, so an award and the stats cannot disagree; a replay
 derives them from its own timeline the same way.
 
+The scoreboard also shows how each score was made. A "Red 3s" column says what red threes cost
+each player, and each row opens ("Show cards") to the cards left in hand and foot, face up, with
+each card's cost and a sum for the hand, the foot (marked "never reached" when the player never
+picked it up) and the red threes, then the round's score as its parts: books, cards melded, going
+out and cards left. The red threes are pulled out of the zone they sat in, so the three sums add up
+to the penalty rather than counting a red three twice. Each card's cost comes from the engine's own
+`cardValue`, and a test plays real rounds and checks that what the board shows adds up to the
+penalty `scoreRound` charged, for every seat, so the two cannot drift apart unnoticed.
+
+On a computer the board can be dragged by its heading (or moved with the arrow keys on its grip),
+kept inside the window, so the table behind it shows beside the scores; the backdrop lightens once
+it is moved. The place is not kept: each result opens where results always do. A phone keeps its
+bottom sheet, where there is no room beside it, and "Look at the table" hides the board instead.
+
 ### A heuristic opponent
 
 The safe default above never melds, so it cannot serve as an opponent: it never scores and never

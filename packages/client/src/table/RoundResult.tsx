@@ -6,18 +6,24 @@
  * still win on two clean books. So on a computer each row shows, beside the round's
  * score and the total, the engine's own breakdown as the board draws it: how many
  * clean and dirty books, the face value of the cards melded, and how many cards were
- * left in hand. These explain the score rather than add up to it, since the go-out
- * bonus and the book bonuses are not columns of their own.
+ * left in hand, and what red threes cost. These explain the score rather than add
+ * up to it, since the go-out bonus and the book bonuses are not columns of their
+ * own. Each row opens ("Show cards") to the cards the player was left holding and
+ * the sum the score was made of (`HeldDetail`).
  *
  * It opens over the table, headed by how the round ended, because the end of a
  * round is the biggest thing that happens in it and a line of text among the
- * cards is easy to miss. It can be hidden to look back at the table.
+ * cards is easy to miss. It can be hidden to look back at the table, and on a
+ * computer dragged aside by its heading to keep the scores beside it.
  */
-import { useState } from "react";
+import { useId, useState } from "react";
 import { LEVEL_WORDS } from "../home/sheets";
 import { Icon } from "../ui/icons";
 import { usePhone } from "../usePhone";
 import { AwardIcon, awardsOf, winnersOf } from "./awards";
+import { useDraggable } from "./drag";
+import { redThreePenalty } from "./heldBreakdown";
+import { HeldDetail, signed } from "./HeldDetail";
 import { PlayerFace } from "./PlayerFace";
 import { roundRecap } from "./recap";
 import { MIN_PLAYERS, type RoomInfo, type RoundEnded, type RulesConfig } from "@hf/shared";
@@ -56,12 +62,6 @@ export interface RoundResultActions {
    * the last round, at family tables, as pausing is.
    */
   readonly onSaveForLater: () => void;
-}
-
-/** A signed number the way a scoreboard writes one: "+1,245", "-140". */
-function signed(n: number): string {
-  const digits = Math.abs(n).toLocaleString("en-US");
-  return n > 0 ? `+${digits}` : n < 0 ? `-${digits}` : "0";
 }
 
 /** "Kate", "Kate and Mom", "Kate, Mom and you". */
@@ -104,6 +104,17 @@ export function RoundResult({
 }: RoundResultProps): React.ReactElement {
   const phone = usePhone();
   const [hidden, setHidden] = useState(false);
+  // The rows opened to show their cards, by seat.
+  const [open, setOpen] = useState<readonly number[]>([]);
+  const detailId = useId();
+  // Dragged aside on a computer; a new result opens where results always do.
+  const drag = useDraggable<HTMLElement>(
+    !phone && !hidden,
+    `${result.roundNumber}:${result.matchOver}`,
+  );
+  const heldOf = (seat: number) => result.held?.find((h) => h.seat === seat);
+  const toggle = (seat: number): void =>
+    setOpen((o) => (o.includes(seat) ? o.filter((s) => s !== seat) : [...o, seat]));
   const totalOf = (seat: number): number => result.totals[seat] ?? 0;
   // The round a player left the match after, if they have left it.
   const leftAfter = (seat: number): number | undefined =>
@@ -225,7 +236,7 @@ export function RoundResult({
 
   const cols = phone
     ? "grid-cols-[22px_minmax(0,1fr)_66px_70px]"
-    : "grid-cols-[28px_minmax(0,1fr)_repeat(4,74px)_84px_90px]";
+    : "grid-cols-[28px_minmax(0,1fr)_repeat(4,70px)_64px_84px_90px]";
   const awards = awardsOf(result);
 
   const table = (
@@ -239,6 +250,7 @@ export function RoundResult({
             <span>Dirty books</span>
             <span>Card points</span>
             <span>Cards left</span>
+            <span>Red 3s</span>
           </>
         )}
         <span>{phone ? "Round" : "This round"}</span>
@@ -254,6 +266,9 @@ export function RoundResult({
           const after = leftAfter(seat);
           // Gone before this round was dealt: there is nothing of theirs to break down.
           const sat = after === undefined || after >= result.roundNumber;
+          const held = sat ? heldOf(seat) : undefined;
+          const isOpen = held !== undefined && open.includes(seat);
+          const red = redThreePenalty(b.redThreesHeld, config);
           const tag =
             after !== undefined
               ? `Left after round ${after}`
@@ -280,6 +295,17 @@ export function RoundResult({
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-semibold">{name}</span>
                   {tag && <span className="block text-[11px] text-muted">{tag}</span>}
+                  {held && (
+                    <button
+                      type="button"
+                      aria-expanded={isOpen}
+                      aria-controls={`${detailId}-${seat}`}
+                      onClick={() => toggle(seat)}
+                      className="block min-h-6 text-left text-[11px] font-semibold text-accent hover:underline"
+                    >
+                      {isOpen ? "Hide cards" : "Show cards"}
+                    </button>
+                  )}
                 </span>
               </span>
               {!phone &&
@@ -289,9 +315,16 @@ export function RoundResult({
                     <span className="text-sm font-semibold text-ink-soft">{b.dirtyBooks}</span>
                     <span className="text-sm font-semibold text-ink-soft">{b.meldedCards}</span>
                     <span className="text-sm font-semibold text-ink-soft">{b.heldCount}</span>
+                    <span
+                      className={`text-sm font-semibold tabular-nums ${
+                        red < 0 ? "text-salmon" : "text-ink-soft"
+                      }`}
+                    >
+                      {signed(red)}
+                    </span>
                   </>
                 ) : (
-                  <span className="col-span-4" />
+                  <span className="col-span-5" />
                 ))}
               <span
                 className={`font-display text-sm font-bold md:text-[15px] ${
@@ -303,6 +336,16 @@ export function RoundResult({
               <span className="text-right font-display text-base font-bold tabular-nums">
                 {totalOf(seat).toLocaleString("en-US")}
               </span>
+              {isOpen && (
+                <HeldDetail
+                  id={`${detailId}-${seat}`}
+                  name={name}
+                  held={held}
+                  breakdown={b}
+                  score={score}
+                  config={config}
+                />
+              )}
             </li>
           );
         })}
@@ -318,7 +361,7 @@ export function RoundResult({
           aria-label="Round recap"
           className="m-0 flex list-none flex-col gap-1.5 rounded-2xl bg-white/3 p-3"
         >
-          {roundRecap(result, nameOf).map((line) => (
+          {roundRecap(result, nameOf, config).map((line) => (
             <li key={line} className="text-[13px] leading-snug text-ink-soft">
               {line}
             </li>
@@ -406,16 +449,43 @@ export function RoundResult({
     </>
   );
 
+  // On a computer the heading is the handle the board is dragged by, and the grip
+  // in it takes the arrow keys, for anyone not using a mouse.
+  const handle = phone ? {} : drag.handle;
+  const handleLook = phone ? "" : "cursor-grab select-none active:cursor-grabbing";
+  const grip = !phone && (
+    <button
+      type="button"
+      aria-label="Move the scores"
+      title="Drag the heading, or use the arrow keys, to move the scores aside"
+      onKeyDown={drag.onKeyDown}
+      className="ml-auto flex h-9 w-9 shrink-0 cursor-grab items-center justify-center self-start rounded-lg text-faint hover:bg-white/5 hover:text-ink-soft"
+    >
+      <Icon name="move" size={18} />
+    </button>
+  );
+  const placed = phone
+    ? undefined
+    : { transform: `translate(${drag.offset.x}px, ${drag.offset.y}px)` };
+  // Once the board is moved aside, the table behind it shows through.
+  const backdrop = drag.moved ? "bg-[rgba(6,10,12,0.2)]" : "";
+
   if (result.matchOver) {
     const champion = winnerSeats.length === 1 ? infoOf(winnerSeats[0]!) : undefined;
     return (
-      <div className="fixed inset-0 z-30 flex items-center justify-center overflow-hidden bg-[rgba(6,10,12,0.7)] p-3">
+      <div
+        className={`fixed inset-0 z-30 flex items-center justify-center overflow-hidden p-3 transition-colors ${
+          backdrop || "bg-[rgba(6,10,12,0.7)]"
+        }`}
+      >
         <section
+          ref={drag.ref}
+          style={placed}
           role="dialog"
           aria-label="Round result"
-          className="relative flex max-h-[94%] w-full max-w-[820px] flex-col gap-3.5 overflow-y-auto rounded-[28px] border border-gold/40 bg-sheet px-[18px] py-[22px]"
+          className="relative flex max-h-[94%] w-full max-w-[880px] flex-col gap-3.5 overflow-y-auto rounded-[28px] border border-gold/40 bg-sheet px-[18px] py-[22px] shadow-[0_24px_60px_rgba(0,0,0,0.55)]"
         >
-          <div className="flex items-center gap-3.5">
+          <div {...handle} className={`flex items-center gap-3.5 ${handleLook}`}>
             {champion && (
               <span className="relative shrink-0 pt-2">
                 <PlayerFace player={champion} size={64} />
@@ -433,6 +503,7 @@ export function RoundResult({
                 {headline}
               </h2>
             </div>
+            {grip}
           </div>
           {table}
           {extras}
@@ -442,21 +513,34 @@ export function RoundResult({
   }
 
   return (
-    <div className="fixed inset-0 z-30 flex items-end justify-center bg-[rgba(6,10,12,0.66)]">
+    <div
+      className={`fixed inset-0 z-30 flex items-end justify-center transition-colors ${
+        backdrop || "bg-[rgba(6,10,12,0.66)]"
+      }`}
+    >
       <section
+        ref={drag.ref}
+        style={placed}
         role="dialog"
         aria-label="Round result"
-        className="flex max-h-[92%] w-full max-w-[820px] flex-col gap-3 overflow-y-auto rounded-t-[28px] border border-white/8 bg-sheet px-[18px] pt-[18px] pb-[calc(22px+env(safe-area-inset-bottom,0px))]"
+        className={`flex max-h-[92%] w-full max-w-[880px] flex-col gap-3 overflow-y-auto rounded-t-[28px] border border-white/8 bg-sheet px-[18px] pt-[18px] pb-[calc(22px+env(safe-area-inset-bottom,0px))] ${
+          drag.moved ? "rounded-b-[28px] shadow-[0_24px_60px_rgba(0,0,0,0.55)]" : ""
+        }`}
       >
-        <span
-          aria-hidden="true"
-          className="h-[5px] w-10 shrink-0 self-center rounded bg-selected"
-        />
-        <div>
-          <h2 className="m-0 font-display text-[26px] font-bold">
-            Round {result.roundNumber} over
-          </h2>
-          <p className="m-0 mt-0.5 text-[13px] text-muted">{sub}</p>
+        <div {...handle} className={`flex flex-col gap-3 ${handleLook}`}>
+          <span
+            aria-hidden="true"
+            className="h-[5px] w-10 shrink-0 self-center rounded bg-selected"
+          />
+          <div className="flex items-start gap-3">
+            <div>
+              <h2 className="m-0 font-display text-[26px] font-bold">
+                Round {result.roundNumber} over
+              </h2>
+              <p className="m-0 mt-0.5 text-[13px] text-muted">{sub}</p>
+            </div>
+            {grip}
+          </div>
         </div>
         {table}
         {extras}
