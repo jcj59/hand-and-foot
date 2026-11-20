@@ -325,6 +325,37 @@ describe("the piles", () => {
     );
   });
 
+  it("keeps the piles whole on a short computer window: the melds give way, then the players", () => {
+    // jsdom lays nothing out, so this pins the structure that does it in a browser.
+    // On a 1366 by 768 window with five other players the felt scrolled as one, and
+    // the pile sat cut off at its bottom edge, the card beneath missing its corner.
+    mount(
+      fakeSocket().socket,
+      update({ view: { discard: [card("5", "spades"), card("9", "clubs")] } }),
+    );
+    const felt = screen.getByRole("region", { name: "Table" });
+    const scrollerOf = (el: HTMLElement) =>
+      el.parentElement!.closest<HTMLElement>(".overflow-y-auto");
+    // Nothing between the piles and the felt scrolls or shrinks.
+    const piles = screen.getByRole("region", { name: "Piles" });
+    expect(scrollerOf(piles)).toBe(felt);
+    const pilesRow = [...felt.children].find((child) => child.contains(piles))!;
+    expect(pilesRow.className).toMatch(/\bshrink-0\b/);
+    // The other players scroll in a part of their own, which shrinks down to a strip.
+    const seats = scrollerOf(screen.getByRole("list", { name: "Other players" }))!;
+    expect(seats.parentElement).toBe(felt);
+    expect(seats.className).toMatch(/\bshrink\b/);
+    expect(seats.className).toMatch(/\bmin-h-14\b/);
+    // So do the melds, and they shrink far faster, so they give way first.
+    const melds = scrollerOf(screen.getByRole("region", { name: "Your melds" }))!;
+    expect(melds.parentElement).toBe(felt);
+    expect(melds.className).toMatch(/\bshrink-\[1000\]/);
+    expect(melds.className).toMatch(/\bmin-h-12\b/);
+    // In that order: players, piles, melds.
+    expect([...felt.children].indexOf(seats)).toBeLessThan([...felt.children].indexOf(pilesRow));
+    expect([...felt.children].indexOf(pilesRow)).toBeLessThan([...felt.children].indexOf(melds));
+  });
+
   it("says when the pile is empty", () => {
     mount(fakeSocket().socket, update({ view: { discard: [] } }));
     expect(screen.getByRole("img", { name: "Discard pile, empty" })).toBeInTheDocument();

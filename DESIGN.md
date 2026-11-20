@@ -1028,6 +1028,14 @@ follows the reader, and the table gains a side panel with the scores and the lat
 player can put away to a narrow rail to give the table the room (remembered per device). Each
 screen was checked against its mockup at both sizes as it was built.
 
+**The piles stay whole.** On a computer the felt holds the other players, the piles and the
+player's own melds, which is more than a laptop's window has room for once five or six sit down.
+It used to scroll as one, and at 1366 by 768 the discard pile sat at its bottom edge, cut through
+the card beneath. The piles are what every player watches, so now they never shrink or scroll:
+the melds below give way first, then the other players above, each scrolling in its own part
+down to a minimum (the melds' heading, a strip of the players' names), and only past that does
+the felt scroll as a whole. A window tall enough for everything looks exactly as before.
+
 ## Testing
 
 The rules engine is the component where correctness matters most, and it receives the majority of

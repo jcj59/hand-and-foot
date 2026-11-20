@@ -1040,7 +1040,17 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   for round n" with aria "Next round", Save for later, Leave with aria "Back to the main screen",
   Look at the table) and a centered card at match end (winner, awards with `AwardIcon`); the old
   drag handle is gone. Celebrations use `CelebrationCard`. Faces of computers are `BotFace` via
-  `PlayerFace`. Mutation-tested: 12/12 over `meldView`, `moveLine`, `discardWarning`.
+  `PlayerFace`. **The computer's felt keeps the piles whole** (2026-11-19, item 6 of that day's
+  change list): the seats and the melds/felt hand are each a `FELT_PART` (own scroller,
+  `data-felt-part`), the piles row is `shrink-0` between them, and the `StagingPanel` keeps its
+  full size outside both (it scrolls the felt into view as before); the melds part (`min-h-12`,
+  `shrink-[1000]`) gives way first, then the seats (`min-h-14`, `shrink`), and the felt scrolls
+  only past both minimums. The felt used to scroll as one, so at 1366 by 768 with five opponents
+  the pile was cut at its bottom edge. A tall window renders pixel for pixel as before. Pinned in
+  `Table.test.tsx` ("keeps the piles whole"); jsdom lays nothing out, so check it in a browser
+  (`scene.mjs` at 1366 768). The same day's item 14 (a card's menu cut off) did not reproduce
+  over hands of 1 to 4 and 15 cards, the foot, 768 to 1920 wide, 125% and 150% zoom, side panel
+  shown and hidden. Mutation-tested: 12/12 over `meldView`, `moveLine`, `discardWarning`.
   **Practice (redesign 4):** `home/PracticeSheet.tsx`, also at `/practice` (closing goes home).
   New table without Mode (always family) and without empty seats: a computer stepper
   (`PRACTICE_BOTS` 1 to 7) and a chip per computer opening `BotEditor` (no Remove: the stepper
