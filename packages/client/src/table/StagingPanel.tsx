@@ -10,12 +10,13 @@
  * Each meld being built is a box; the one wilds will go to is ringed in gold.
  * Clicking a box aims the next wild at it, and clicking a card in it takes that
  * card back. Playing or abandoning the lay-down is the action bar's, by the hand.
+ * There is no line on how to build one: the panel says only what the lay-down is
+ * and what it is worth.
  */
 import { useEffect, useRef } from "react";
 import type { Card, Rank } from "@hf/shared";
 import { isWild } from "@hf/shared";
 import { PlayingCard } from "../cards/PlayingCard";
-import { usePhone } from "../usePhone";
 import type { LayDownPreview, Staging } from "./staging";
 
 export interface StagingPanelProps {
@@ -35,8 +36,6 @@ export function StagingPanel({
   onUnstage,
   onFocus,
 }: StagingPanelProps): React.ReactElement {
-  const phone = usePhone();
-  const click = phone ? "Tap" : "Click";
   // Opened from the hand, below the felt: brought into view, so the bar and the
   // groups it describes are seen as they fill. Not every browser can (jsdom).
   const panel = useRef<HTMLElement>(null);
@@ -76,11 +75,7 @@ export function StagingPanel({
         </div>
       )}
 
-      {groups.length === 0 ? (
-        <p className="m-0 text-[13px] text-ink/75">
-          {click} cards in your hand to add them. {click} a meld to send wilds to it.
-        </p>
-      ) : (
+      {groups.length > 0 && (
         <ul className="m-0 flex list-none flex-wrap gap-2 p-0">
           {groups.map((group) => {
             const groupPreview = preview.groups.find((g) => g.rank === group.rank);

@@ -112,6 +112,22 @@ if (process.env.BLACK_BOOK) {
   ];
   view.playedThisTurn = [];
 }
+if (process.env.FOOT) {
+  // In the foot, a book short of going out: a queen, a 9 and a 7 of melded ranks
+  // or not, a wild and a red three, with four queens down.
+  view.inFoot = true;
+  view.hand = [];
+  view.foot = [
+    c("Q", "spades", 60),
+    c("9", "hearts", 61),
+    c("7", "clubs", 62),
+    c("JOKER", null, 63),
+    c("3", "hearts", 64),
+  ];
+  view.footCount = 5;
+  view.melds = view.melds.slice(0, 3);
+  view.playedThisTurn = [];
+}
 if (process.env.TWO_DISCARDS) view.discard = [c("3", "hearts", 40), c("3", "diamonds", 41)];
 if (process.env.PILE) {
   const ranks = ["5", "9", "Q", "4", "8", "J", "6", "10", "A"];
@@ -273,12 +289,14 @@ const run = async () => {
         const now = Date.now();
         ws.send(JSON.stringify({ event: "room", payload: room }));
         const mine = mode !== "theirs" && mode !== "oppdraw" && mode !== "grabby";
-        const pileWhy = process.env.PILE_WHY
-          ? "with the pile your best lay-down is worth 45, short of the 90 you need to get down"
-          : null;
+        const takeable = !!process.env.TAKEABLE;
+        const pileWhy =
+          process.env.PILE_WHY && !takeable
+            ? "with the pile your best lay-down is worth 45, short of the 90 you need to get down"
+            : null;
         const v = !mine
           ? { ...view, currentSeat: 1, phase: "draw", playedThisTurn: [] }
-          : pileWhy
+          : pileWhy || takeable
             ? { ...view, phase: "draw", playedThisTurn: [] }
             : view;
         const base = {
@@ -294,8 +312,9 @@ const run = async () => {
             canDraw: false,
             canTakePile: false,
             meldableRanks: ["K", "9", "Q", "5"],
-            canGoOut: false,
+            canGoOut: !!process.env.GO_OUT,
             ...(pileWhy ? { phase: "draw", canDraw: true, takePileWhy: pileWhy } : {}),
+            ...(takeable ? { phase: "draw", canDraw: true, canTakePile: true } : {}),
           },
         };
         ws.send(
