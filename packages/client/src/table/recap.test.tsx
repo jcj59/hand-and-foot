@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import type { RoundEnded, ScoreBreakdown, SeatTally } from "@hf/shared";
 import { roundRecap } from "./recap";
 import { AWARDS_MS, AwardsCelebration, awardsOf, useAwardsCelebration, winnersOf } from "./awards";
+import { CELEBRATION_DISMISS_AFTER_MS } from "./Celebration";
 
 const names = ["Ana", "Ben", "Cy"];
 const nameOf = (seat: number): string => names[seat]!;
@@ -134,8 +135,8 @@ describe("the awards", () => {
   });
 
   function Probe({ r, quiet = false }: { r: RoundEnded | null; quiet?: boolean }) {
-    const shown = useAwardsCelebration(r, quiet);
-    return shown ? <AwardsCelebration shown={shown} nameOf={nameOf} /> : null;
+    const { shown, dismiss } = useAwardsCelebration(r, quiet);
+    return shown ? <AwardsCelebration shown={shown} nameOf={nameOf} onDismiss={dismiss} /> : null;
   }
 
   it("are announced when the match ends while the page is open, and go after their time", () => {
@@ -150,6 +151,19 @@ describe("the awards", () => {
     act(() => vi.advanceTimersByTime(AWARDS_MS - 1));
     rerender(<Probe r={{ ...final }} />);
     act(() => vi.advanceTimersByTime(1));
+    expect(screen.queryByRole("status", { name: "Awards" })).toBeNull();
+  });
+
+  it("can be clicked away once they have popped in, and stay away", () => {
+    vi.useFakeTimers();
+    const { rerender } = render(<Probe r={null} />);
+    rerender(<Probe r={final} />);
+    const overlay = screen.getByRole("status", { name: "Awards" }).parentElement!;
+    act(() => vi.advanceTimersByTime(CELEBRATION_DISMISS_AFTER_MS));
+    fireEvent.click(overlay);
+    expect(screen.queryByRole("status", { name: "Awards" })).toBeNull();
+    // The same result sent again does not bring them back.
+    rerender(<Probe r={{ ...final }} />);
     expect(screen.queryByRole("status", { name: "Awards" })).toBeNull();
   });
 
