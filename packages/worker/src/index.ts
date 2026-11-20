@@ -6,8 +6,11 @@
  * else is the client, served from the static assets.
  */
 import {
+  bearerMatches,
   changePassword,
   claimUsername,
+  parseReport,
+  parseSince,
   signIn,
   signOut,
   type AccountStores,
@@ -24,6 +27,7 @@ import {
   parseUsername,
   PASSWORD_PATH,
   parseRoomPath,
+  REPORTS_PATH,
   resolveRules,
   ROOMS_PATH,
   SIGN_IN_PATH,
@@ -33,12 +37,23 @@ import {
 } from "@hf/shared";
 import { newCode } from "./codes";
 import type { Env } from "./env";
-import { RateLimiter, READ_LIMIT, READ_WINDOW_MS, TOO_MANY_READS } from "./limits";
+import {
+  RateLimiter,
+  READ_LIMIT,
+  READ_WINDOW_MS,
+  REPORT_LIMIT,
+  REPORT_WINDOW_MS,
+  reportKey,
+  TOO_MANY_READS,
+  TOO_MANY_REPORTS,
+} from "./limits";
+import { REPORTS_OBJECT } from "./reports";
 import { TAKEN } from "./table";
 
 export { TableObject } from "./table";
 export { UserObject } from "./users";
 export { LoginObject } from "./logins";
+export { ReportsObject } from "./reports";
 
 /** The largest request body read, well above any real one. */
 const MAX_BODY_BYTES = 16 * 1024;
@@ -52,16 +67,18 @@ function json(body: unknown, status = 200): Response {
 
 /** Reads of history and replays per identity, counted in this isolate; see `limits.ts`. */
 const reads = new RateLimiter(READ_LIMIT, READ_WINDOW_MS);
+/** Bug reports per sender, counted the same way. */
+const reports = new RateLimiter(REPORT_LIMIT, REPORT_WINDOW_MS);
 
 /**
- * Count a read by `userId`: null if it may go ahead, else the refusal to send,
- * with Retry-After. Asked before the identity's object is, so a refused read
- * costs no Durable Object request.
+ * Count a take by `key`: null if it may go ahead, else the refusal to send, with
+ * Retry-After. Asked before any object is, so a refused request costs no Durable
+ * Object request.
  */
-function throttled(userId: string): Response | null {
-  const wait = reads.take(userId, Date.now());
+function throttled(limiter: RateLimiter, key: string, error: string): Response | null {
+  const wait = limiter.take(key, Date.now());
   if (wait === null) return null;
-  return new Response(JSON.stringify({ ok: false, error: TOO_MANY_READS }), {
+  return new Response(JSON.stringify({ ok: false, error }), {
     status: 429,
     headers: { "content-type": "application/json", "retry-after": String(wait) },
   });
@@ -146,7 +163,7 @@ export default {
       const body = await readJson(request);
       if (!body) return json({ ok: false, error: "that request was not JSON" }, 400);
       if (!isUserCredentials(body.user)) return json({ ok: false, error: NOT_AN_IDENTITY });
-      const refused = throttled(body.user.userId);
+      const refused = throttled(reads, body.user.userId, TOO_MANY_READS);
       if (refused) return refused;
       return json(await env.USERS.getByName(body.user.userId).history(body.user));
     }
@@ -155,9 +172,34 @@ export default {
       const body = await readJson(request);
       if (!body) return json({ ok: false, error: "that request was not JSON" }, 400);
       if (!isUserCredentials(body.user)) return json({ ok: false, error: NOT_AN_IDENTITY });
-      const refused = throttled(body.user.userId);
+      const refused = throttled(reads, body.user.userId, TOO_MANY_READS);
       if (refused) return refused;
       return json(await env.USERS.getByName(body.user.userId).replay(body.user, body.id));
+    }
+
+    if (pathname === REPORTS_PATH && request.method === "POST") {
+      const body = await readJson(request);
+      if (!body) return json({ ok: false, error: "that request was not JSON" }, 400);
+      // Checked first, so a report that would be refused costs nothing and counts
+      // against nobody; then counted, before the object is addressed.
+      const report = parseReport(body, Date.now());
+      if (!report.ok) return json(report);
+      const context = report.data.context;
+      const key = reportKey(request.headers.get("cf-connecting-ip"), context.userId);
+      const refused = throttled(reports, key, TOO_MANY_REPORTS);
+      if (refused) return refused;
+      const id = await env.REPORTS.getByName(REPORTS_OBJECT).add(report.data);
+      return json({ ok: true, data: { id } });
+    }
+
+    if (pathname === REPORTS_PATH && request.method === "GET") {
+      // Not offered at all until a token is set; then only to a request bearing it.
+      if (!env.REPORTS_TOKEN) return new Response(null, { status: 404 });
+      if (!bearerMatches(request.headers.get("authorization"), env.REPORTS_TOKEN)) {
+        return json({ ok: false, error: "that is not the reports token" }, 401);
+      }
+      const since = parseSince(new URL(request.url).searchParams.get("since"));
+      return json({ ok: true, data: await env.REPORTS.getByName(REPORTS_OBJECT).since(since) });
     }
 
     if (pathname === ROOMS_PATH && request.method === "POST") {

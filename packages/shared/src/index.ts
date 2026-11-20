@@ -406,3 +406,4 @@ export * from "./wire";
 export * from "./matches";
 export * from "./awards";
 export * from "./bots";
+export * from "./reports";

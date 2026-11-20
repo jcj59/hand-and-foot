@@ -9,12 +9,13 @@
   },
   "scripts": {
     "build": "turbo run build",
-    "typecheck": "turbo run typecheck && tsc -p scripts/bot-eval",
+    "typecheck": "turbo run typecheck && tsc -p scripts/bot-eval && tsc -p scripts/reports",
     "test": "turbo run test",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "bot:measure": "tsx scripts/bot-eval/measure.ts"
+    "bot:measure": "tsx scripts/bot-eval/measure.ts",
+    "reports:pull": "tsx scripts/reports/pull.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

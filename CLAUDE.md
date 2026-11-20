@@ -519,7 +519,7 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
     hitting the same one. Cloudflare's rate limiting binding was not used: it is per location and
     eventually consistent too, and needs a namespace set up by hand. The client's `httpPost` turns
     any 429 into that refusal (even a non-JSON one); History and Home show nothing, Replay shows
-    the sentence. Only these two routes are capped: the others write (sit down, register, sign in)
+    the sentence. Only these two routes (and bug reports since PR 18a, below) are capped: the others write (sit down, register, sign in)
     or are sockets, where the table's own rules apply. The Worker's entry module (`index.ts`) must
     export only classes and the handler: workerd refuses to start on a plain exported value, which
     is why `TOO_MANY_READS` lives in `limits.ts` (a test guards the entry's exports).
@@ -726,6 +726,28 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   `socket.integration.test.ts` "chat over the wire", `worker.test.ts` "chat at a table" (sleep and
   `webSockets: "close"` eviction, closing). Mutation-tested: 33/33 killed (shared, server, Worker).
   The client (PR 12b) is not built yet.
+- **Bug reports, server half (change list item 31, PR 18a).** Shared `reports.ts`:
+  `REPORTS_PATH` (`/api/reports`), `REPORT_TEXT_MAX` 2000, `MAX_REPORT_BYTES` 8 KB (UTF-8 JSON of
+  the whole report), `ReportBody {text, context?}`, `BugReport {id, at, text, context}`, refusal
+  strings. Server `reports.ts` (host-agnostic): `parseReport(body, now): Ack<ReportDraft>` (text
+  trimmed and required, context a plain object or absent), `REPORTS_KEPT` 500, `ReportStore` /
+  `InMemoryReportStore`, `parseSince`, `bearerMatches` (constant time), `reportsMarkdown`; all
+  limits pinned as literals. Node: `POST /api/reports` into `ServerOptions.reports` (memory) plus
+  one `console.log` line per report; no GET. Worker: `ReportsObject` (`REPORTS` binding, migration
+  tag `v4`, one object named `REPORTS_OBJECT`; key `report:<12-digit id>`, `next` counter, deletes
+  `id - 500` on each add), `POST /api/reports` validates, then `limits.ts` `REPORT_LIMIT` 5 per
+  `REPORT_WINDOW_MS` 1h keyed by `reportKey` (`cf-connecting-ip`, else a well-formed
+  `context.userId`, else `anonymous`) before the object is addressed, 429 `TOO_MANY_REPORTS`.
+  **Cost: one DO request per accepted report, none for a refused one; one per pull.** `GET
+  /api/reports?since=<ms>` needs `Authorization: Bearer <REPORTS_TOKEN>`; 404 while the secret is
+  unset, 401 for a wrong token. **Set the secret:** `pnpm --filter @hf/worker exec wrangler secret
+  put REPORTS_TOKEN` (paste a long random value, e.g. from `openssl rand -hex 32`, and keep it).
+  **Pull:** `REPORTS_TOKEN=<token> pnpm reports:pull --url https://<host> [--since 2026-11-20]`
+  (`scripts/reports/pull.ts`, typechecked by the root `typecheck`; `HF_REPORTS_URL` instead of
+  `--url`). Locally: `wrangler dev --var REPORTS_TOKEN:<token>`. Worker tests set the token through
+  `miniflare.bindings` in `vitest.config.ts`, and test the unset case by calling the handler with
+  another `env`. Tests: `server/src/reports.test.ts`, `worker/test/reports.test.ts`. The client
+  (PR 18b) is not built yet.
 - **Scenario library and autoplay viewer (roadmap item 1).** Three layers, kept apart on purpose:
   - **Engine, `playback.ts`:** `buildTimeline(GameLog)` takes any `{ config, setup: {seed,
     playerCount} | {state}, actions, names?, moments? }` — a scenario, a golden game, a recorded
