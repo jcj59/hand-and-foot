@@ -771,6 +771,20 @@ over, so the replay may follow any seat or show every hand; it opens on the play
 player who was in the match can open it, on a browser holding their identity — an id on its own
 opens nothing — and what is sent is the record without anyone's identity in it.
 
+A finished match can also be watched back straight from the final scoreboard. The last round's
+result names the match it was kept under, and only when one was kept, so the scoreboard never offers
+a replay that could not open; the id is the table's own unique id, which is not a secret, since the
+replay is still refused to anyone who was not in the match. Whether a match is kept is worked out
+from the record (somewhere keeps matches, and a person played under an identity) rather than
+remembered from having sent it, so a table restored after its last round still names it. The button
+is not shown to someone watching the table, nor to a player whose browser has no identity, as
+neither could open it. The record is written in the background as the match ends (on Cloudflare
+under the table's `waitUntil`), so a player quick to press it can ask before it has landed: the
+replay asks once more after a second and a half, and never again, because every read counts against
+the per-identity read limit and the daily quota, and a loop is what that limit exists to prevent.
+The table it was opened from rides along in the router's state, so Back from the replay returns to
+the table while the browser still holds a seat there, and to the main screen otherwise.
+
 What a player is sent about a match is a listing built for them: the names, pictures and totals at
 the table, where they came, and whether they won — never another player's identity, which a listing
 has no use for.
@@ -797,6 +811,20 @@ left out when nobody earned one, and never to a player who left before the end. 
 the same per-seat tallies a player's stats are made of, worked out once from the match's log when
 it ends and sent with the final result, so an award and the stats cannot disagree; a replay
 derives them from its own timeline the same way.
+
+The scoreboard also shows how each score was made. A "Red 3s" column says what red threes cost
+each player, and each row opens ("Show cards") to the cards left in hand and foot, face up, with
+each card's cost and a sum for the hand, the foot (marked "never reached" when the player never
+picked it up) and the red threes, then the round's score as its parts: books, cards melded, going
+out and cards left. The red threes are pulled out of the zone they sat in, so the three sums add up
+to the penalty rather than counting a red three twice. Each card's cost comes from the engine's own
+`cardValue`, and a test plays real rounds and checks that what the board shows adds up to the
+penalty `scoreRound` charged, for every seat, so the two cannot drift apart unnoticed.
+
+On a computer the board can be dragged by its heading (or moved with the arrow keys on its grip),
+kept inside the window, so the table behind it shows beside the scores; the backdrop lightens once
+it is moved. The place is not kept: each result opens where results always do. A phone keeps its
+bottom sheet, where there is no room beside it, and "Look at the table" hides the board instead.
 
 ### A heuristic opponent
 

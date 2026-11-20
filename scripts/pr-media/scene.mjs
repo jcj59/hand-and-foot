@@ -1,6 +1,7 @@
 /* global process, setTimeout, console, localStorage, document, innerWidth */
 // Renders the real built client at phone size against a mocked table socket, so
 // any game state can be looked at. Usage: node scene.mjs <out.png> [W] [H] [action]
+import { readFileSync } from "node:fs";
 import { chromium } from "playwright";
 const [out, W = "390", H = "844", action = "", mode = "mine"] = process.argv.slice(2);
 const base = process.env.BASE ?? "http://localhost:8787";
@@ -321,10 +322,65 @@ const run = async () => {
             heldPenalty: 0,
             redThreesHeld: 0,
           };
+          // What each seat was left holding, face up, with breakdowns that add up to it
+          // as the engine's would: Ben went out, Cyrus never reached his foot.
+          const cost = (x) =>
+            x.rank === "JOKER"
+              ? 50
+              : x.rank === "2"
+                ? 20
+                : x.rank === "A"
+                  ? 15
+                  : x.rank === "3"
+                    ? x.suit === "hearts" || x.suit === "diamonds"
+                      ? 500
+                      : 5
+                    : ["10", "J", "Q", "K"].includes(x.rank)
+                      ? 10
+                      : 5;
+          const heldBy = [
+            { hand: [c("7", "spades", 7), c("Q", "hearts", 7), c("4", "clubs", 7)], foot: [] },
+            { hand: [c("K", "clubs", 7), c("3", "diamonds", 7), c("9", "hearts", 7)], foot: [] },
+            { hand: [], foot: [] },
+            {
+              hand: [c("A", "spades", 7), c("8", "clubs", 7)],
+              foot: [
+                ...["5", "6", "J", "Q", "K", "9", "10", "4", "A", "2", "8", "7"].map((r, i) =>
+                  c(r, ["spades", "hearts", "clubs", "diamonds"][i % 4], 8),
+                ),
+                c("JOKER", null, 8),
+                c("3", "hearts", 8),
+              ],
+            },
+            { hand: [c("6", "hearts", 7)], foot: [c("10", "spades", 7)] },
+            { hand: [c("2", "spades", 7)], foot: [] },
+          ];
+          const held = names.map((_, seat) => ({
+            seat,
+            ...heldBy[seat],
+            footUntouched: seat === 3,
+          }));
+          const scoreOf = (seat, b) => {
+            const cards = [...held[seat].hand, ...held[seat].foot];
+            const heldPenalty = -cards.reduce((n, x) => n + cost(x), 0);
+            const full = {
+              ...b,
+              goOutBonus: seat === 2 ? 100 : 0,
+              heldCount: cards.length,
+              heldPenalty,
+              redThreesHeld: cards.filter((x) => x.rank === "3" && cost(x) === 500).length,
+            };
+            return {
+              seat,
+              score: full.bookBonus + full.meldedCards + full.goOutBonus + heldPenalty,
+              breakdown: full,
+            };
+          };
           ws.send(
             JSON.stringify({
               event: "roundEnded",
               payload: {
+                held: departed ? held.filter((h) => h.seat !== 1) : held,
                 scores: names.map((_, seat) =>
                   departed && seat === 1
                     ? {
@@ -338,12 +394,13 @@ const run = async () => {
                           meldedCards: 0,
                         },
                       }
-                    : { seat, score: 900 - seat * 150, breakdown: bd },
+                    : scoreOf(seat, { ...bd, meldedCards: 260 - seat * 30 }),
                 ),
                 wentOutSeat: 2,
                 roundNumber: process.env.MATCH_OVER ? 4 : 2,
                 totals: names.map((_, seat) => 1500 - seat * 200),
                 matchOver: !!process.env.MATCH_OVER,
+                ...(process.env.MATCH_OVER && process.env.KEPT ? { matchId: "m-hfdemo" } : {}),
                 ...(process.env.MATCH_OVER
                   ? {
                       tallies: names.map((_, seat) => ({
@@ -506,6 +563,20 @@ const run = async () => {
   await page.evaluate(() =>
     localStorage.setItem("hf.seat", JSON.stringify({ roomId: "HFDEMO", seat: 0, token: "t" })),
   );
+  if (process.env.KEPT) {
+    // The finished match was kept: the viewer has an identity, and the replay the
+    // final scoreboard opens is answered from REPLAY_JSON (a recorded `ReplayMatch`).
+    await page.evaluate(
+      (identity) => localStorage.setItem("hf.identity", JSON.stringify(identity)),
+      { userId: "u".repeat(16), secret: "s".repeat(32) },
+    );
+    if (process.env.REPLAY_JSON) {
+      const replay = JSON.parse(readFileSync(process.env.REPLAY_JSON, "utf8"));
+      await page.route("**/api/users/match", (route) =>
+        route.fulfill({ json: { ok: true, data: replay } }),
+      );
+    }
+  }
   // The computer's side panel put away, as a player who hid it left it.
   if (process.env.HIDE_SCORES)
     await page.evaluate(() => localStorage.setItem("hf.hideScores", "1"));
@@ -638,7 +709,33 @@ const run = async () => {
     if (!(await button.isVisible())) await page.getByRole("button", { name: "Main menu" }).click();
     await button.click();
   }
+  if (action === "watchbutton")
+    await page.getByRole("button", { name: "Watch it back" }).scrollIntoViewIfNeeded();
+  if (action === "watchback") {
+    // Open the replay from the final scoreboard, and let it play a little way in.
+    await page.getByRole("button", { name: "Watch it back" }).click();
+    await page.getByRole("combobox", { name: "Watch" }).waitFor();
+    await page.waitForTimeout(Number(process.env.PLAY_FOR ?? 4000));
+  }
   if (action === "chip") await page.getByRole("button", { name: /^Cyrus/ }).click();
+  if (action === "expandrows") {
+    // Open the scoreboard rows of Cyrus (foot never reached) and Ana (a red three).
+    const board = page.getByRole("dialog", { name: "Round result" });
+    for (const who of ["Cyrus", "Ana"])
+      await board
+        .getByRole("listitem", { name: new RegExp(`^${who}:`) })
+        .getByRole("button", { name: "Show cards" })
+        .click();
+  }
+  if (action === "dragboard") {
+    // Drag the scoreboard aside by its heading, as far left and up as it goes.
+    const heading = page.getByRole("dialog", { name: "Round result" }).getByRole("heading").first();
+    const box = await heading.boundingBox();
+    await page.mouse.move(box.x + 10, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x - 400, box.y - 600, { steps: 8 });
+    await page.mouse.up();
+  }
   if (action === "card")
     await page
       .getByRole("button", { name: new RegExp(process.env.CARD ?? "Ten of hearts", "i") })

@@ -3,6 +3,7 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { EAST_COAST, type Ack, type RoomInfo, type ViewUpdate } from "@hf/shared";
 import { createServerClock } from "../serverTime";
+import { IDENTITY_KEY, saveIdentity } from "../identity";
 import { useSession } from "../session";
 import type { HfClientSocket } from "../socket";
 import { Watch } from "./Watch";
@@ -124,6 +125,42 @@ describe("watching a table", () => {
     expect(screen.queryByRole("region", { name: /melds$/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /react/i })).toBeNull();
     expect(screen.getByText(/· 1 watching$/)).toBeInTheDocument();
+  });
+
+  it("offers a watcher no way to watch the match back, even on a device with an identity", () => {
+    saveIdentity({ userId: "u".repeat(16), secret: "s".repeat(32) });
+    try {
+      mount(fakeSocket({ ok: true, data: room }).socket);
+      act(() => useSession.getState().applyUpdate(spectatorUpdate()));
+      act(() =>
+        useSession.setState({
+          result: {
+            scores: [0, 1].map((seat) => ({
+              seat,
+              score: 100,
+              breakdown: {
+                cleanBooks: 0,
+                dirtyBooks: 0,
+                bookBonus: 0,
+                meldedCards: 100,
+                goOutBonus: 0,
+                heldCount: 0,
+                heldPenalty: 0,
+                redThreesHeld: 0,
+              },
+            })),
+            roundNumber: 4,
+            totals: [900, 800],
+            matchOver: true,
+            matchId: "uid-123",
+          },
+        }),
+      );
+      expect(screen.getByRole("list", { name: "Final scores" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Watch it back" })).toBeNull();
+    } finally {
+      window.localStorage.removeItem(IDENTITY_KEY);
+    }
   });
 
   it("says so when there is no table at that code", async () => {

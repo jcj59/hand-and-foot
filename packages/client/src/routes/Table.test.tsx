@@ -14,7 +14,8 @@ import {
   type Suit,
   type ViewUpdate,
 } from "@hf/shared";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation, useParams } from "react-router-dom";
+import { IDENTITY_KEY, saveIdentity } from "../identity";
 import { createServerClock } from "../serverTime";
 import { useSession } from "../session";
 import type { HfClientSocket } from "../socket";
@@ -688,10 +689,11 @@ describe("the round result", () => {
     });
     const ana = screen.getByRole("listitem", { name: /^ana:/ });
     // The parts as counts, as the design's columns give them: clean books, dirty
-    // books, card points, cards left; then the round and the total.
-    expect(ana.textContent).toMatch(/You\s*Went out\s*2\s*1\s*185\s*0/);
+    // books, card points, cards left, what red threes cost; then the round and the
+    // total.
+    expect(ana.textContent).toMatch(/You\s*Went out\s*2\s*1\s*185\s*0\s*0/);
     const ben = screen.getByRole("listitem", { name: /^ben:/ });
-    expect(ben.textContent).toMatch(/ben\s*\d+\s*\d+\s*\d+\s*3-480/);
+    expect(ben.textContent).toMatch(/ben\s*\d+\s*\d+\s*\d+\s*3\s*0\s*-480/);
     // Highest score first.
     const rows = within(screen.getByLabelText(/round result/i))
       .getAllByRole("listitem")
@@ -3515,6 +3517,70 @@ describe("a rematch", () => {
     act(() => useSession.setState({ result: final() }));
     act(() => useSession.getState().applyRoom(roomInfo({ playAgain: [1] })));
     expect(screen.queryByRole("button", { name: "Rematch" })).toBeNull();
+  });
+});
+
+describe("watching the match back from the final scores", () => {
+  const final = (matchId?: string): RoundEnded => ({
+    ...scored(
+      [
+        [0, 40],
+        [1, 90],
+      ],
+      0,
+      { matchOver: true, roundNumber: 4, totals: [2400, 1800] },
+    ),
+    ...(matchId ? { matchId } : {}),
+  });
+
+  /** Where the replay route was opened, and with what. */
+  function Opened(): React.ReactElement {
+    const { matchId } = useParams();
+    const { state } = useLocation();
+    return <p>replay {`${matchId} from ${JSON.stringify(state)}`}</p>;
+  }
+
+  function mountWithReplay(): void {
+    useSession.getState().applyUpdate(update());
+    render(
+      <MemoryRouter initialEntries={["/room/ABC234"]}>
+        <Routes>
+          <Route path="/room/:roomId" element={<Table socket={fakeSocket().socket} />} />
+          <Route path="/replay/:matchId" element={<Opened />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+  }
+
+  afterEach(() => window.localStorage.removeItem(IDENTITY_KEY));
+
+  it("opens the replay of the match just played, saying which table to come back to", () => {
+    saveIdentity({ userId: "u".repeat(16), secret: "s".repeat(32) });
+    mountWithReplay();
+    act(() => useSession.setState({ result: final("uid-123") }));
+    fireEvent.click(screen.getByRole("button", { name: "Watch it back" }));
+    expect(screen.getByText('replay uid-123 from {"table":"ABC234"}')).toBeInTheDocument();
+  });
+
+  it("is not offered for a match that was not kept, nor between rounds", () => {
+    saveIdentity({ userId: "u".repeat(16), secret: "s".repeat(32) });
+    mountWithReplay();
+    act(() => useSession.setState({ result: final() }));
+    expect(screen.getByRole("button", { name: "Play again" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Watch it back" })).toBeNull();
+    act(() =>
+      useSession.setState({
+        result: { ...final("uid-123"), matchOver: false, roundNumber: 2 },
+      }),
+    );
+    expect(screen.queryByRole("button", { name: "Watch it back" })).toBeNull();
+  });
+
+  it("is not offered to a player with no identity on this device, who could not open it", () => {
+    mountWithReplay();
+    act(() => useSession.setState({ result: final("uid-123") }));
+    expect(screen.getByRole("button", { name: "Play again" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Watch it back" })).toBeNull();
   });
 });
 

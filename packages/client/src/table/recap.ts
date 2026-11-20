@@ -3,12 +3,18 @@
  * worst rounds, and who was caught holding red threes. Who went out is the
  * scoreboard's headline already, so it is not said twice.
  *
- * Worked out from the round's result alone — what every seat is sent — so the
- * recap tells nobody anything the scores do not.
+ * Worked out from the round's result alone (what every seat is sent), so the
+ * recap tells nobody anything the scores do not. A red three is said with what it
+ * cost, at the table's own value, since that is the line people remember.
  */
-import type { RoundEnded } from "@hf/shared";
+import type { RoundEnded, RulesConfig } from "@hf/shared";
+import { redThreePenalty } from "./heldBreakdown";
 
-export function roundRecap(result: RoundEnded, nameOf: (seat: number) => string): string[] {
+export function roundRecap(
+  result: RoundEnded,
+  nameOf: (seat: number) => string,
+  config: RulesConfig,
+): string[] {
   // A player who had left before this round was dealt played no part in it.
   const sat = (seat: number): boolean =>
     !(result.departed ?? []).some((d) => d.seat === seat && d.afterRound < result.roundNumber);
@@ -33,12 +39,12 @@ export function roundRecap(result: RoundEnded, nameOf: (seat: number) => string)
     if (worst.score < 0) lines.push(`Worst round: ${nameOf(worst.seat)}, ${signed(worst.score)}.`);
   }
 
-  const caught = scores.filter((s) => s.breakdown.redThreesHeld > 0);
-  if (caught.length > 0) {
+  for (const s of scores) {
+    const n = s.breakdown.redThreesHeld;
+    if (n === 0) continue;
+    const threes = n === 1 ? "a red three" : `${n} red threes`;
     lines.push(
-      `Caught with red threes: ${caught
-        .map((s) => `${nameOf(s.seat)} (${s.breakdown.redThreesHeld})`)
-        .join(", ")}.`,
+      `${nameOf(s.seat)} was caught with ${threes}, ${signed(redThreePenalty(n, config))}.`,
     );
   }
   return lines;

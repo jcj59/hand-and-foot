@@ -1637,17 +1637,30 @@ export class Room {
     // Worked out once, when first asked: the match is over, so it cannot change.
     if (this.finalTallies === undefined) {
       try {
-        this.finalTallies = this.matchRecord()!.summary.tallies;
+        const record = this.matchRecord()!;
+        this.finalTallies = record.summary.tallies;
+        this.keptId = this.keeps(record) ? record.id : null;
       } catch (error) {
         console.error(`could not tally match ${this.uid}:`, error);
         this.finalTallies = null;
+        this.keptId = null;
       }
     }
-    return this.finalTallies ? { ...result, tallies: this.finalTallies } : result;
+    return {
+      ...result,
+      ...(this.finalTallies ? { tallies: this.finalTallies } : {}),
+      ...(this.keptId ? { matchId: this.keptId } : {}),
+    };
   }
 
   /** The match's tallies, once it is over; null if they could not be worked out. */
   private finalTallies: readonly SeatTally[] | null | undefined = undefined;
+  /**
+   * The id the finished match is kept under, so the scoreboard can open its replay;
+   * null when it is not kept. Decided from the record rather than remembered from
+   * sending it, so a table restored after its last round still knows.
+   */
+  private keptId: string | null = null;
 
   /**
    * The match as it is kept: who played it, the log that replays it, and its
@@ -1698,11 +1711,19 @@ export class Room {
     if (!this.deps.recordMatch) return;
     try {
       const record = this.matchRecord();
-      if (!record || !record.seats.some((s) => s.userId && !s.bot)) return;
+      if (!record || !this.keeps(record)) return;
       this.deps.recordMatch(record);
     } catch (error) {
       console.error(`could not record match ${this.uid}:`, error);
     }
+  }
+
+  /**
+   * Whether a match is sent to be kept: only where something keeps matches, and
+   * only if a person with an identity played it, since nobody else could ask for it.
+   */
+  private keeps(record: MatchRecord): boolean {
+    return this.deps.recordMatch !== undefined && record.seats.some((s) => s.userId && !s.bot);
   }
 
   /** Whether the last round of the match has been played. */
