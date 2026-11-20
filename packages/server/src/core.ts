@@ -6,6 +6,7 @@
 export * from "./clock";
 export * from "./log";
 export * from "./reactions";
+export * from "./chat";
 export { DEFAULT_ABANDONED_ROOM_MS } from "./manager";
 export * from "./room";
 export * from "./store";

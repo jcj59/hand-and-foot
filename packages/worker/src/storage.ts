@@ -10,12 +10,17 @@
  * Each game at a code keeps its own record and log, under its `uid`; `current`
  * names the one being played. A finished game is closed rather than deleted,
  * which keeps it as a record of how it was played.
+ *
+ * The table's recent chat has a key of its own beside them, so a hibernation wake
+ * or an eviction keeps it without it ever entering the record or the log. Unlike
+ * those it goes when the game is closed: it was only ever for the people at it.
  */
-import type { LoggedAction } from "@hf/shared";
+import type { ChatMessage, LoggedAction } from "@hf/shared";
 import type { RoomRecord, RoomStore, StoredRoom } from "@hf/server/core";
 
 const CURRENT = "current";
 const roomKey = (uid: string): string => `room:${uid}`;
+const chatKey = (uid: string): string => `chat:${uid}`;
 const logPrefix = (uid: string): string => `log:${uid}:`;
 // Zero-padded so the keys list in the order the moves were made.
 const logKey = (uid: string, seq: number): string =>
@@ -35,8 +40,13 @@ export class DurableRoomStore implements RoomStore {
     this.kv.put(logKey(uid, entry.seq), entry);
   }
 
+  saveChat(uid: string, messages: readonly ChatMessage[]): void {
+    this.kv.put(chatKey(uid), messages);
+  }
+
   closeRoom(uid: string, at: number): void {
     this.kv.put(`closed:${uid}`, at);
+    this.kv.delete(chatKey(uid));
     if (this.kv.get(CURRENT) === uid) this.kv.delete(CURRENT);
   }
 
@@ -48,7 +58,8 @@ export class DurableRoomStore implements RoomStore {
     /* v8 ignore next -- current is only ever set alongside the record it names */
     if (!room) return null;
     const actions = [...this.kv.list<LoggedAction>({ prefix: logPrefix(uid) })].map(([, a]) => a);
-    return { room, actions };
+    const chat = this.kv.get<readonly ChatMessage[]>(chatKey(uid));
+    return chat ? { room, actions, chat } : { room, actions };
   }
 
   async loadOpen(): Promise<readonly StoredRoom[]> {

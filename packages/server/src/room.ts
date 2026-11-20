@@ -10,10 +10,14 @@ import {
   MAX_PLAYERS,
   MIN_PLAYERS,
   isReactionId,
+  normalizeChat,
+  chatLength,
+  CHAT_MAX_LENGTH,
   type Action,
   type ActionSource,
   type Avatar,
   type BotLevel,
+  type ChatMessage,
   type ClockState,
   type CloseReason,
   type GameState,
@@ -47,6 +51,7 @@ import {
 } from "@hf/engine";
 import type { Clock } from "./clock";
 import { ReactionLimiter } from "./reactions";
+import { ChatLimiter, withMessage } from "./chat";
 import { type ActionLog, InMemoryActionLog, StoredActionLog } from "./log";
 import type { RoomRecord, RoomStore, SeatRecord, StoredRoom } from "./store";
 
@@ -363,6 +368,10 @@ export class Room {
   /** Each seat's budget of quick reactions; see `react`. */
   private readonly reactionLimit: ReactionLimiter;
   private reactionSeq = 0;
+  /** Each seat's budget of chat messages; see `chat`. */
+  private readonly chatLimit: ChatLimiter;
+  /** The last few messages said at the table, oldest first; see `chat`. */
+  private chatLog: readonly ChatMessage[] = [];
   /** The latest move, for views; see `noteMove`. Not saved: it is only news. */
   private lastMove: LastMove | null = null;
 
@@ -376,6 +385,7 @@ export class Room {
     this.log = deps.store ? new StoredActionLog(log, deps.store, this.uid) : log;
     this.createdAt = deps.createdAt ?? deps.clock.now();
     this.reactionLimit = new ReactionLimiter(deps.clock);
+    this.chatLimit = new ChatLimiter(deps.clock);
   }
 
   /**
@@ -472,6 +482,9 @@ export class Room {
       room.savedUntil = record.savedUntil ?? null;
     }
     room.state = state;
+    // Kept apart from the record and the log by a store that keeps it at all (the
+    // Durable Object's); a store that does not, as the Node server's, brings back none.
+    room.chatLog = stored.chat ?? [];
     if (state && !state.roundEnded) room.beginTurn(state.currentSeat);
     return succeed(room);
   }
@@ -1080,6 +1093,36 @@ export class Room {
     if (!this.reactionLimit.take(seat)) return fail("too many reactions; wait a moment");
     this.reactionSeq = Math.max(this.reactionSeq + 1, this.deps.clock.now());
     return succeed({ seq: this.reactionSeq, seat, id });
+  }
+
+  /**
+   * Something a seated player said, to be shown to everyone at the table. Like a
+   * reaction it touches nothing in the game, the log, or the record, and it is
+   * numbered the same way, from the clock. Unlike one it is remembered: the last
+   * few are kept for whoever sits down or comes back (`chatHistory`), and handed
+   * to the store's `saveChat` when it has one, so a Durable Object that sleeps
+   * and wakes still has them. A Node restart forgets them, as it does reactions.
+   */
+  chat(seat: number, text: unknown): RoomResult<ChatMessage> {
+    const player = this.players[seat];
+    if (!player) return fail("no such seat");
+    const said = normalizeChat(text);
+    if (said === null) return fail("there is nothing to send");
+    if (chatLength(said) > CHAT_MAX_LENGTH) {
+      return fail(`a message can be at most ${CHAT_MAX_LENGTH} characters`);
+    }
+    if (!this.chatLimit.take(seat)) return fail("too many messages; wait a moment");
+    const now = this.deps.clock.now();
+    const seq = Math.max((this.chatLog.at(-1)?.seq ?? 0) + 1, now);
+    const message: ChatMessage = { seq, seat, name: player.name, text: said, at: now };
+    this.chatLog = withMessage(this.chatLog, message);
+    this.deps.store?.saveChat?.(this.uid, this.chatLog);
+    return succeed(message);
+  }
+
+  /** What has been said at the table so far: the last few messages, oldest first. */
+  chatHistory(): readonly ChatMessage[] {
+    return this.chatLog;
   }
 
   /**

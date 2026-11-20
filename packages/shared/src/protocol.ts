@@ -351,6 +351,13 @@ export interface ClientToServerEvents {
    */
   react: (payload: { readonly id: ReactionId }, ack: (result: Ack) => void) => void;
   /**
+   * Say something to everyone at the table, watchers included. Seated players only;
+   * the text is put through `normalizeChat` and refused when nothing is left, when
+   * it is longer than `CHAT_MAX_LENGTH`, or when the seat has sent too many too
+   * quickly.
+   */
+  chat: (payload: { readonly text: string }, ack: (result: Ack) => void) => void;
+  /**
    * Keep a paused family table for days rather than minutes, so the game can be
    * picked up again later. Only while paused; resuming ends it.
    */
@@ -413,6 +420,59 @@ export interface Reaction {
   readonly id: ReactionId;
 }
 
+/** The longest chat message, in characters (code points, so an emoji counts as one). */
+export const CHAT_MAX_LENGTH = 200;
+
+/**
+ * Characters a message never carries: control characters (a line break or a tab
+ * among them, which are turned into spaces first) and the bidirectional overrides
+ * and isolates, which can make a message read as something other than what was
+ * typed, or run on into the name shown beside it.
+ */
+const CHAT_STRIPPED = /[\p{Cc}\u202a-\u202e\u2066-\u2069]/gu;
+
+/**
+ * A chat message as the table will show it: trimmed, every run of whitespace one
+ * space, and nothing invisible left in it. Null when it is not text or nothing is
+ * left, which is what the server refuses and what a screen can check before
+ * offering to send. Length is not checked here; see `CHAT_MAX_LENGTH`.
+ */
+export function normalizeChat(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  // Whitespace first, so a line break becomes a space rather than vanishing; then
+  // the invisible characters, whose going can leave two spaces side by side.
+  const text = value.replace(/\s/gu, " ").replace(CHAT_STRIPPED, "").replace(/ {2,}/g, " ").trim();
+  return text === "" ? null : text;
+}
+
+/** How long a message is, as `CHAT_MAX_LENGTH` counts it. */
+export function chatLength(text: string): number {
+  return [...text].length;
+}
+
+/**
+ * One chat message, as everyone at the table is told it. The table keeps the last
+ * few for whoever sits down or comes back, but never in its record, its log, or a
+ * match's record: what was said is not part of the game.
+ */
+export interface ChatMessage {
+  /**
+   * Increases with each message at this table, so a screen can tell them apart and
+   * keep them in order, across a server restart or a Durable Object waking too: it
+   * is taken from the clock, as a reaction's is (see `Room.chat`).
+   */
+  readonly seq: number;
+  readonly seat: number;
+  /**
+   * The sender's name when they said it. Seats close up when someone leaves the
+   * lobby, so a seat number alone could later name the wrong person.
+   */
+  readonly name: string;
+  readonly text: string;
+  /** When it was said, on the server's clock. */
+  readonly at: number;
+}
+
 /**
  * The refusal a player gets for a seat they no longer have because the match went
  * on without them — they left between rounds, or the host carried on without
@@ -439,6 +499,14 @@ export interface ServerToClientEvents {
   rematch: (seat: SeatCredentials) => void;
   /** Broadcast: a player's quick reaction, to show by their seat for a moment. */
   reaction: (reaction: Reaction) => void;
+  /** Broadcast: something a player said, to everyone at the table, the sender too. */
+  chat: (message: ChatMessage) => void;
+  /**
+   * Per-socket: what has been said at the table so far (the last few messages,
+   * oldest first), sent when a seat is taken or taken back and when a watcher starts
+   * watching. It replaces whatever the screen held, and may be empty.
+   */
+  chatBacklog: (messages: readonly ChatMessage[]) => void;
   /** Broadcast: the table has been closed, and why. Nothing more will come. */
   tableClosed: (payload: { readonly reason: CloseReason }) => void;
 }

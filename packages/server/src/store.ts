@@ -13,7 +13,7 @@
  * the game has already moved on, and nothing on the hot path waits for one: a
  * slow or unreachable database costs recoverability, not a player's turn.
  */
-import type { Avatar, BotLevel, LoggedAction, RulesConfig } from "@hf/shared";
+import type { Avatar, BotLevel, ChatMessage, LoggedAction, RulesConfig } from "@hf/shared";
 import type { UserStore } from "./users";
 import type { LoginStore } from "./accounts";
 import { InMemoryMatchStore, type MatchStore } from "./matches";
@@ -84,6 +84,11 @@ export interface RoomRecord {
 export interface StoredRoom {
   readonly room: RoomRecord;
   readonly actions: readonly LoggedAction[];
+  /**
+   * What was said at the table, from a store that keeps it (`saveChat`). Never part
+   * of the record or the log; absent means nothing was kept.
+   */
+  readonly chat?: readonly ChatMessage[];
 }
 
 export interface RoomStore {
@@ -100,6 +105,12 @@ export interface RoomStore {
   saveRoom(room: RoomRecord): void;
   /** Record one accepted action. */
   appendAction(uid: string, entry: LoggedAction): void;
+  /**
+   * Keep the table's recent chat, replacing what was there, for a store whose
+   * tables sleep and wake (the Durable Object's). Optional: the Node server keeps
+   * chat in memory only, so a restart there forgets it. Never the record or the log.
+   */
+  saveChat?(uid: string, messages: readonly ChatMessage[]): void;
   /**
    * Mark a room finished with, so it is not brought back. Its rows are kept: a
    * finished game is a regression test and a training example, not garbage.
