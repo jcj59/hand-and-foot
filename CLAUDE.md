@@ -564,7 +564,7 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   under each pile. Motion attributes and accessible names are unchanged.
 - **Sounds.** `table/sounds.ts`. Card sounds are recordings from Kenney's Casino Audio (CC0) in
   `client/public/sounds` (licence file beside them), loaded after the first gesture, with a
-  synthesized flick standing in until they arrive; the chimes are synthesized with Web Audio.
+  synthesized flick standing in until they arrive; the round and match phrases and the turn's ding are synthesized with Web Audio.
   `soundsFor` (pure, tested) maps a change in `{moveSeq, moveKind, myTurn, result}` to sounds:
   **one** recording per move, by kind, however many cards it moves, a ding when the turn comes to
   this player, phrases for round and match end. Mute is per device (`hf.muted`). Since the
@@ -710,7 +710,7 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   name. **Per device, not on the identity** (like `hf.rules`): storing it on the identity needed a
   users migration and a transfer that carries it, which waits for accounts (item 15).
 - **Quick reactions (roadmap item 3).** A fixed list, `REACTIONS` in `@hf/shared/protocol.ts`
-  (twelve emoji, thirteen phrases since P2; **only ever add** — an id may be in flight to an older
+  (twelve emoji, fourteen phrases since P2 and item 23; **only ever add** — an id may be in flight to an older
   client — pinned in `protocol.test.ts`, along with a cap of 30; the picker tells a phrase from an
   emoji by `text === label`, so a phrase's label must be its text); only an id crosses the wire
   (`isReactionId` is the server's check), so there is nothing to moderate. `react {id}` →
@@ -865,7 +865,7 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   literals and mutation-tested together with the hook: 47/47 killed. `table/turnAttention.ts`
   (`useTurnAttention(myTurn, label, muted)`) is the glue: away = `visibilityState === "hidden" ||
   !document.hasFocus()`, swaps `/favicon.svg` ↔ `/favicon-turn.svg` and puts back whatever href was
-  there. `TableView` builds the chime's `Moment` once and passes `moment.myTurn` to both hooks, so a
+  there. `TableView` builds the ding's `Moment` once and passes `moment.myTurn` to both hooks, so a
   watched table (`controls` null) never flashes. Notifications: off by default, `hf.notifyTurn`,
   permission requested only from the bell's tap (callback-form `requestPermission` handled too),
   `silent` when muted, closed when spent or on unmount, and a constructor that throws (Android
