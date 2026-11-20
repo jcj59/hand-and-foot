@@ -947,6 +947,25 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   check still refuses, since no store finds a non-string id; it is kept so a malformed id never
   reaches a SQL query.
 
+- **Watching the match back as it ends (change list item 28, PR 15).** `RoundEnded.matchId?` on
+  the last round's result only, and only when the match is kept: `Room.result()` sets it beside
+  `tallies` from the same one-time `matchRecord()`, by `Room.keeps(record)` (a `recordMatch` dep,
+  and a person with an identity played; `keepMatch` uses the same predicate), derived rather than
+  remembered so a table restored after its last round still sends it. Client:
+  `TableControls.watchBack?(matchId)` (given by `routes/Table.tsx` only when the device has an identity; watchers
+  have no controls), `RoundResultActions.onWatchBack?`, a "Watch it back" ghost button on the final
+  scoreboard navigating to `/replay/<id>` with router state `ReplayFrom {table}`; `Replay`'s Back
+  (and its error screen's button, "Back to the table") goes to `/room/<table>` while
+  `credentials.roomId` is that table, else `/`. `loadReplay(post, user, id, wait)` asks again once
+  after `REPLAY_RETRY_MS` 1500 (pinned) on `NO_SUCH_MATCH` only, since the record is written in the
+  background (the Worker's `waitUntil`); leaving the page during the wait cancels the second ask.
+  Tests: `matches.test.ts` "the id to watch a finished match back by", `Replay.test.tsx`,
+  `Table.test.tsx`, `Watch.test.tsx`, and `watchback.integration.test.ts` (real server, a match
+  store that saves late, match end to a loaded replay, asked exactly twice). Harness: `KEPT=1`
+  with `MATCH_OVER=1`, actions `watchbutton` and `watchback` (`REPLAY_JSON`). Mutation-tested:
+  15/16 killed, 1 equivalent (dropping `first.ok ||` in `loadReplay`: an accepted answer has no
+  `error`, so it still returns at once).
+
 - **In-game hints (roadmap item 9a).** Engine: `canTakePile` returns `why` (`empty` /
   `unplayable` / `short {value, minimum}`) and `takePileWhy(state, seat)` words it, null unless it
   is that seat's draw phase and the pile cannot be taken; `legalHints` adds

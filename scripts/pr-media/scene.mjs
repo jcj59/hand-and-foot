@@ -1,6 +1,7 @@
 /* global process, setTimeout, console, localStorage, document, innerWidth */
 // Renders the real built client at phone size against a mocked table socket, so
 // any game state can be looked at. Usage: node scene.mjs <out.png> [W] [H] [action]
+import { readFileSync } from "node:fs";
 import { chromium } from "playwright";
 const [out, W = "390", H = "844", action = "", mode = "mine"] = process.argv.slice(2);
 const base = process.env.BASE ?? "http://localhost:8787";
@@ -399,6 +400,7 @@ const run = async () => {
                 roundNumber: process.env.MATCH_OVER ? 4 : 2,
                 totals: names.map((_, seat) => 1500 - seat * 200),
                 matchOver: !!process.env.MATCH_OVER,
+                ...(process.env.MATCH_OVER && process.env.KEPT ? { matchId: "m-hfdemo" } : {}),
                 ...(process.env.MATCH_OVER
                   ? {
                       tallies: names.map((_, seat) => ({
@@ -561,6 +563,20 @@ const run = async () => {
   await page.evaluate(() =>
     localStorage.setItem("hf.seat", JSON.stringify({ roomId: "HFDEMO", seat: 0, token: "t" })),
   );
+  if (process.env.KEPT) {
+    // The finished match was kept: the viewer has an identity, and the replay the
+    // final scoreboard opens is answered from REPLAY_JSON (a recorded `ReplayMatch`).
+    await page.evaluate(
+      (identity) => localStorage.setItem("hf.identity", JSON.stringify(identity)),
+      { userId: "u".repeat(16), secret: "s".repeat(32) },
+    );
+    if (process.env.REPLAY_JSON) {
+      const replay = JSON.parse(readFileSync(process.env.REPLAY_JSON, "utf8"));
+      await page.route("**/api/users/match", (route) =>
+        route.fulfill({ json: { ok: true, data: replay } }),
+      );
+    }
+  }
   // The computer's side panel put away, as a player who hid it left it.
   if (process.env.HIDE_SCORES)
     await page.evaluate(() => localStorage.setItem("hf.hideScores", "1"));
@@ -692,6 +708,14 @@ const run = async () => {
     const button = page.getByRole("button", { name: "How to play" });
     if (!(await button.isVisible())) await page.getByRole("button", { name: "Main menu" }).click();
     await button.click();
+  }
+  if (action === "watchbutton")
+    await page.getByRole("button", { name: "Watch it back" }).scrollIntoViewIfNeeded();
+  if (action === "watchback") {
+    // Open the replay from the final scoreboard, and let it play a little way in.
+    await page.getByRole("button", { name: "Watch it back" }).click();
+    await page.getByRole("combobox", { name: "Watch" }).waitFor();
+    await page.waitForTimeout(Number(process.env.PLAY_FOR ?? 4000));
   }
   if (action === "chip") await page.getByRole("button", { name: /^Cyrus/ }).click();
   if (action === "expandrows") {

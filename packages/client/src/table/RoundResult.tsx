@@ -62,6 +62,11 @@ export interface RoundResultActions {
    * the last round, at family tables, as pausing is.
    */
   readonly onSaveForLater: () => void;
+  /**
+   * Watch the finished match back. Offered once the match is over, when it was kept
+   * and this player can open it; absent otherwise.
+   */
+  readonly onWatchBack?: () => void;
 }
 
 /** "Kate", "Kate and Mom", "Kate, Mom and you". */
@@ -195,6 +200,11 @@ export function RoundResult({
           className={primary}
         >
           {iAmReady ? "Waiting for the others…" : `I'm ready for round ${result.roundNumber + 1}`}
+        </button>
+      )}
+      {result.matchOver && actions.onWatchBack && (
+        <button type="button" onClick={actions.onWatchBack} className={ghost}>
+          Watch it back
         </button>
       )}
       {!result.matchOver && room.config.pauseEnabled && (

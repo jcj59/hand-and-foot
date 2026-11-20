@@ -111,6 +111,11 @@ export interface TableControls {
   nextRound(): void;
   /** Carry on without a player who has gone, between rounds. The host's to offer. */
   removePlayer(seat: number): void;
+  /**
+   * Open the finished match's replay. Absent for a player who could not open it:
+   * one with no identity on this device.
+   */
+  watchBack?(matchId: string): void;
 }
 
 export interface TableViewProps {
@@ -916,6 +921,9 @@ export function TableView({
               onNextRound: controls.nextRound,
               onRemovePlayer: controls.removePlayer,
               onSaveForLater: () => void controls.saveForLater(),
+              ...(controls.watchBack && result.matchId
+                ? { onWatchBack: () => controls.watchBack!(result.matchId!) }
+                : {}),
             }
           }
           notice={notice}

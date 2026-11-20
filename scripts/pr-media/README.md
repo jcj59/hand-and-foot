@@ -33,7 +33,11 @@ an animation) in its description, under `## Screenshots`.
    `BLACK_BOOK=1` puts the viewer in their foot beside a book of black threes, holding a red
    three and a black one. `PAUSED=1` has Ana pause the table, `SAVED=1` has her save it for later
    (three players back; the viewer hosts unless `SAVED_GUEST=1`), and `ROUND_OVER=1` opens the
-   scoreboard between rounds (with `MATCH_OVER=1`, the final one, with awards; every seat's held cards come with it, Cyrus's foot never reached; action `expandrows` opens Cyrus's and Ana's rows and `dragboard` drags the board aside by its heading); with `LEFT=1`, Ana has left the match after round 1 (and Dee,
+   scoreboard between rounds (with `MATCH_OVER=1`, the final one, with awards; every seat's held cards come with it, Cyrus's foot never reached; action `expandrows` opens Cyrus's and Ana's rows and `dragboard` drags the board aside by its heading); `KEPT=1` (with `MATCH_OVER=1`) makes the match one that was kept: the result names
+   it (`matchId`), the viewer has an identity, so the board offers "Watch it back" (action `watchbutton` scrolls the board to it; `SHOT_AT=7000` waits out
+   the awards), and with
+   `REPLAY_JSON=<path to a recorded ReplayMatch>` action `watchback` opens the replay from it and
+   lets it play for `PLAY_FOR` ms (4000); with `LEFT=1`, Ana has left the match after round 1 (and Dee,
    seat 4, is not at the table, so the host is offered to carry on without her). `BOTS=1` makes Ben and Dee
    computer players ("Robo Rita", "Robo Ray"); `LOBBY=1` renders the waiting room instead of the
    table (`LOBBY_GUEST=1`: as a guest, Ana hosting). `WATCHING=1` renders the table as a spectator sees it, at `/watch/HFDEMO`. Action `home` renders the home screen
