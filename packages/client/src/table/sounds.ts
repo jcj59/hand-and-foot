@@ -2,9 +2,10 @@
  * The table's sounds, played with the Web Audio API.
  *
  * Each kind of move has one short recording (Kenney's Casino Audio, CC0, in
- * `public/sounds`), played once per move however many cards it moves. The turn
- * chime and round-end phrases are synthesized — a few sine notes with a soft
- * envelope — and a synthesized flick stands in for a recording not yet loaded.
+ * `public/sounds`), played once per move however many cards it moves. The turn's
+ * ding (a struck bell's partials) and the round-end phrases (a few sine notes with
+ * a soft envelope) are synthesized, and a synthesized flick stands in for a
+ * recording not yet loaded.
  *
  * What plays when is decided by `soundsFor`, a pure function over the table as it
  * was and as it is — so the decision is tested without a speaker, and the audio
@@ -42,15 +43,32 @@ export interface Moment {
   readonly result: RoundEnded | null;
 }
 
-/** The sounds that mark the change from one moment to the next, in order. */
-export function soundsFor(before: Moment, now: Moment): Sound[] {
-  const sounds: Sound[] = [];
+/** One sound to play, and how long after the moment to start it. */
+export interface Cue {
+  readonly sound: Sound;
+  /** Milliseconds after the change is heard. */
+  readonly delayMs: number;
+}
+
+/**
+ * How long the turn's ding waits after a card sound in the same moment: the move
+ * that hands you the turn (their discard, usually) and the ding arrive together,
+ * and a ding started under a card's rustle is easily lost in it.
+ */
+export const TURN_AFTER_CARD_MS = 250;
+
+/** The sounds that mark the change from one moment to the next, in order, with when each starts. */
+export function soundsFor(before: Moment, now: Moment): Cue[] {
+  const cues: Cue[] = [];
   if (now.moveSeq !== null && now.moveSeq !== before.moveSeq && now.moveKind) {
-    sounds.push(CARD_SOUND[now.moveKind]);
+    cues.push({ sound: CARD_SOUND[now.moveKind], delayMs: 0 });
   }
-  if (now.result && !before.result) sounds.push(now.result.matchOver ? "match" : "round");
-  else if (now.myTurn && !before.myTurn) sounds.push("turn");
-  return sounds;
+  if (now.result && !before.result)
+    cues.push({ sound: now.result.matchOver ? "match" : "round", delayMs: 0 });
+  else if (now.myTurn && !before.myTurn) {
+    cues.push({ sound: "turn", delayMs: cues.length > 0 ? TURN_AFTER_CARD_MS : 0 });
+  }
+  return cues;
 }
 
 const MUTE_KEY = "hf.muted";
@@ -130,13 +148,14 @@ function note(
   osc.stop(at + duration + 0.05);
 }
 
-/** Play one sound now. */
+/** Play one sound, now or `delay` seconds from now (scheduled on the audio clock, not a timer). */
 export function play(
   ctx: AudioContext,
   sound: Sound,
   recordings: ReadonlyMap<CardSound, AudioBuffer>,
+  delay = 0,
 ): void {
-  const t = ctx.currentTime + 0.01;
+  const t = ctx.currentTime + 0.01 + delay;
   switch (sound) {
     case "draw":
     case "discard":
@@ -159,9 +178,7 @@ export function play(
       return;
     }
     case "turn":
-      // Up a fourth, bright and short: your move.
-      note(ctx, 659.25, t, 0.25);
-      note(ctx, 880, t + 0.12, 0.35);
+      ding(ctx, t);
       return;
     case "round":
       // A rising major arpeggio.
@@ -180,6 +197,42 @@ export function play(
       note(ctx, 880, t, 0.09, 0.08);
       note(ctx, 1_318.5, t + 0.05, 0.12, 0.07);
       return;
+  }
+}
+
+/**
+ * The turn's ding, as a struck bell: partials at a bell's inharmonic ratios to the
+ * strike note, the higher ones quieter and quicker to die, each with a few
+ * milliseconds' attack and an exponential ring-out. The strike note is doubled a
+ * few hertz apart, so it shimmers as a real bell beats.
+ */
+export const DING_PARTIALS: readonly {
+  readonly ratio: number;
+  readonly gain: number;
+  readonly decay: number;
+}[] = [
+  { ratio: 1, gain: 0.26, decay: 1.2 },
+  { ratio: 1.004, gain: 0.12, decay: 1.2 },
+  { ratio: 2.32, gain: 0.1, decay: 0.75 },
+  { ratio: 4.25, gain: 0.05, decay: 0.4 },
+  { ratio: 6.63, gain: 0.025, decay: 0.22 },
+];
+
+/** The ding's strike note: E6, high enough to cut through talk at the table. */
+const DING_HZ = 1_318.5;
+
+function ding(ctx: AudioContext, at: number): void {
+  for (const { ratio, gain, decay } of DING_PARTIALS) {
+    const osc = ctx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.value = DING_HZ * ratio;
+    const level = ctx.createGain();
+    level.gain.setValueAtTime(0, at);
+    level.gain.linearRampToValueAtTime(gain, at + 0.004);
+    level.gain.exponentialRampToValueAtTime(0.0001, at + decay);
+    osc.connect(level).connect(ctx.destination);
+    osc.start(at);
+    osc.stop(at + decay + 0.05);
   }
 }
 
@@ -277,7 +330,7 @@ export function useTableSounds(
     const sounds = soundsFor(previous, now);
     if (sounds.length === 0) return;
     withAudio((ctx) => {
-      for (const sound of sounds) play(ctx, sound, recordings);
+      for (const { sound, delayMs } of sounds) play(ctx, sound, recordings, delayMs / 1000);
     });
   }, [now, muted, quiet]);
 

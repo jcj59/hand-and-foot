@@ -115,6 +115,85 @@ describe("the app shell", () => {
     expect(within(nav).getByText("@jackie")).toBeTruthy();
   });
 
+  it("folds the sidebar to a rail of icons that still names every page, and unfolds it", () => {
+    window.localStorage.setItem(NAME_KEY, "Jack");
+    app("/history");
+    const nav = screen.getByRole("navigation", { name: "Main" });
+    expect(nav.className).toMatch(/w-\[240px\]/);
+    const fold = within(nav).getByRole("button", { name: "Fold the menu" });
+    expect(fold).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.click(fold);
+    expect(nav.className).toMatch(/w-\[72px\]/);
+    expect(nav).toHaveAttribute("data-folded");
+    expect(window.localStorage.getItem("hf.navFolded")).toBe("1");
+    expect(within(nav).queryByText("Hand & Foot")).toBeNull();
+    // Each page is an icon now, named for a screen reader and by a tooltip.
+    const links = within(nav).getAllByRole("link");
+    expect(links.slice(0, 5).map((l) => l.textContent)).toEqual([
+      "Play",
+      "History",
+      "Learn",
+      "Rules",
+      "Profile",
+    ]);
+    for (const link of links.slice(0, 5)) {
+      expect(link.querySelector("svg")).not.toBeNull();
+      expect(link.getAttribute("title")).toBe(link.textContent);
+    }
+    expect(within(nav).getByRole("link", { name: "History" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    // The player is their face, their name kept for a screen reader.
+    expect(within(nav).getByRole("link", { name: "Jack" })).toHaveAttribute("title", "Jack");
+    fireEvent.click(within(nav).getByRole("link", { name: "Rules" }));
+    expect(screen.getByText("rules page")).toBeTruthy();
+
+    const unfold = within(nav).getByRole("button", { name: "Show the menu" });
+    expect(unfold).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(unfold);
+    expect(nav.className).toMatch(/w-\[240px\]/);
+    expect(within(nav).getByText("Hand & Foot")).toBeTruthy();
+    expect(within(nav).getByRole("link", { name: "Rules" }).getAttribute("title")).toBeNull();
+    expect(window.localStorage.getItem("hf.navFolded")).toBe("0");
+  });
+
+  it("remembers the folded sidebar on this device", () => {
+    window.localStorage.setItem("hf.navFolded", "1");
+    app("/");
+    expect(screen.getByRole("button", { name: "Show the menu" })).toBeInTheDocument();
+  });
+
+  it("folds the sidebar when the browser blocks storage, for as long as the page is open", () => {
+    const get = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    const set = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    try {
+      app("/");
+      fireEvent.click(screen.getByRole("button", { name: "Fold the menu" }));
+      expect(screen.getByRole("button", { name: "Show the menu" })).toBeInTheDocument();
+    } finally {
+      get.mockRestore();
+      set.mockRestore();
+    }
+  });
+
+  it("has nothing to fold on a phone, where the pages are tabs", () => {
+    asPhone();
+    window.localStorage.setItem("hf.navFolded", "1");
+    app("/");
+    expect(screen.queryByRole("button", { name: /the menu/ })).toBeNull();
+    expect(
+      within(screen.getByRole("navigation", { name: "Main" }))
+        .getAllByRole("link")
+        .map((l) => l.textContent),
+    ).toEqual(["Play", "History", "Rules", "Profile"]);
+  });
+
   it("leaves the table full screen, with no navigation", () => {
     app("/room/ABC234");
     expect(screen.getByText("table")).toBeTruthy();
