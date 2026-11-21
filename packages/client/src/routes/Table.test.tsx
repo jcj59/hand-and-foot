@@ -194,6 +194,8 @@ function mount(socket: HfClientSocket, payload: ViewUpdate | null = update()): v
 }
 
 beforeEach(() => {
+  // A hand's arrangement is kept in the tab's session storage, per table and seat.
+  window.sessionStorage.clear();
   useSession.setState({
     status: "connected",
     credentials: { roomId: "ABC234", seat: 0, token: "t0" },
@@ -1284,6 +1286,216 @@ describe("marking your hand", () => {
     const hand = screen.getByRole("region", { name: /your hand/i });
     expect(within(hand).getByTitle(/you have a meld of 9s/i)).toBeInTheDocument();
     expect(within(hand).queryByTitle(/meld of Ks/i)).toBeNull();
+  });
+});
+
+describe("arranging your own cards", () => {
+  const three = [card("A", "spades"), card("4", "hearts"), card("K", "clubs")];
+  const region = (): HTMLElement => screen.getByRole("region", { name: /^your (hand|foot)$/i });
+  /** The cards' names, left to right, as shown. */
+  const shown = (): string[] =>
+    [...region().querySelectorAll("[data-card-id]")].map((el) => el.getAttribute("aria-label")!);
+  const cardEl = (name: string): HTMLElement =>
+    region().querySelector<HTMLElement>(`[data-card-id][aria-label="${name}"]`)!;
+  const sortButton = (): HTMLElement | null => screen.queryByRole("button", { name: "Sort" });
+
+  it("moves a focused card with Alt and the arrow keys, and says where it went", () => {
+    mount(fakeSocket().socket, update({ view: { hand: three } }));
+    expect(shown()).toEqual(["Four of hearts", "King of clubs", "Ace of spades"]);
+    expect(sortButton()).toBeNull();
+    // Out of turn the cards are not buttons, yet each can still be focused and moved.
+    const four = cardEl("Four of hearts");
+    expect(four).toHaveAttribute("tabindex", "0");
+    expect(four).toHaveAttribute("aria-keyshortcuts", "Alt+ArrowLeft Alt+ArrowRight");
+    four.focus();
+    fireEvent.keyDown(four, { key: "ArrowRight", altKey: true });
+    expect(shown()).toEqual(["King of clubs", "Four of hearts", "Ace of spades"]);
+    expect(document.activeElement).toBe(cardEl("Four of hearts"));
+    const live = region().querySelector('[aria-live="polite"]')!;
+    expect(live.textContent).toBe("Four of hearts moved to place 2 of 3");
+    fireEvent.keyDown(cardEl("Four of hearts"), { key: "ArrowRight", altKey: true });
+    expect(shown()).toEqual(["King of clubs", "Ace of spades", "Four of hearts"]);
+    fireEvent.keyDown(cardEl("Four of hearts"), { key: "ArrowRight", altKey: true });
+    expect(shown()).toEqual(["King of clubs", "Ace of spades", "Four of hearts"]);
+    expect(live.textContent).toBe("Four of hearts is already last");
+    fireEvent.keyDown(cardEl("King of clubs"), { key: "ArrowLeft", altKey: true });
+    expect(live.textContent).toBe("King of clubs is already first");
+    fireEvent.keyDown(cardEl("Ace of spades"), { key: "ArrowLeft", altKey: true });
+    expect(shown()).toEqual(["Ace of spades", "King of clubs", "Four of hearts"]);
+  });
+
+  it("needs Alt: a plain arrow key moves nothing", () => {
+    mount(fakeSocket().socket, update({ view: { hand: three } }));
+    fireEvent.keyDown(cardEl("Four of hearts"), { key: "ArrowRight" });
+    fireEvent.keyDown(cardEl("Four of hearts"), { key: "Enter", altKey: true });
+    expect(shown()).toEqual(["Four of hearts", "King of clubs", "Ace of spades"]);
+  });
+
+  it("moves a card in the player's turn too, where it is a button", () => {
+    mount(fakeSocket().socket, update({ view: { hand: three }, hints: { phase: "play" } }));
+    const king = handCard("King of clubs");
+    expect(king).toHaveAttribute("aria-keyshortcuts", "Alt+ArrowLeft Alt+ArrowRight");
+    king.focus();
+    fireEvent.keyDown(king, { key: "ArrowLeft", altKey: true });
+    expect(shown()).toEqual(["King of clubs", "Four of hearts", "Ace of spades"]);
+    expect(document.activeElement).toBe(handCard("King of clubs"));
+  });
+
+  it("puts the usual order back with Sort, which shows only once the cards are moved", () => {
+    mount(fakeSocket().socket, update({ view: { hand: three } }));
+    fireEvent.keyDown(cardEl("Ace of spades"), { key: "ArrowLeft", altKey: true });
+    // Beside the heading, not part of its name.
+    const heading = within(region()).getByRole("heading");
+    expect(heading.textContent).toMatch(/^ana · hand · 3 cards$/);
+    expect(heading.parentElement).toContainElement(sortButton());
+    fireEvent.click(sortButton()!);
+    expect(shown()).toEqual(["Four of hearts", "King of clubs", "Ace of spades"]);
+    expect(sortButton()).toBeNull();
+    expect(region().querySelector('[aria-live="polite"]')!.textContent).toBe("Cards sorted");
+    expect(window.sessionStorage.getItem("hf.handOrder:ABC234:0")).toBeNull();
+  });
+
+  it("keeps the arrangement through a reload, in this tab", () => {
+    mount(fakeSocket().socket, update({ view: { hand: three } }));
+    fireEvent.keyDown(cardEl("Four of hearts"), { key: "ArrowRight", altKey: true });
+    cleanup();
+    mount(fakeSocket().socket, update({ view: { hand: three } }));
+    expect(shown()).toEqual(["King of clubs", "Four of hearts", "Ace of spades"]);
+    expect(sortButton()).not.toBeNull();
+  });
+
+  it("puts a card just drawn at the right end, under its NEW mark", () => {
+    mount(fakeSocket().socket, update({ view: { hand: three } }));
+    fireEvent.keyDown(cardEl("Ace of spades"), { key: "ArrowLeft", altKey: true });
+    act(() =>
+      useSession.getState().applyUpdate(
+        update({
+          view: { hand: [...three, card("5", "clubs")], phase: "play" },
+          hints: { phase: "play" },
+          lastMove: { seq: 1, seat: 0, kind: "draw", card: card("5", "clubs") },
+        }),
+      ),
+    );
+    expect(shown()).toEqual(["Four of hearts", "Ace of spades", "King of clubs", "Five of clubs"]);
+  });
+
+  it("starts each round, and the foot, in the usual order", () => {
+    mount(fakeSocket().socket, update({ view: { hand: three } }));
+    fireEvent.keyDown(cardEl("Ace of spades"), { key: "ArrowLeft", altKey: true });
+    act(() => useSession.getState().applyUpdate(update({ view: { hand: three, roundNumber: 2 } })));
+    expect(shown()).toEqual(["Four of hearts", "King of clubs", "Ace of spades"]);
+    expect(sortButton()).toBeNull();
+    fireEvent.keyDown(cardEl("Ace of spades"), { key: "ArrowLeft", altKey: true });
+    act(() =>
+      useSession
+        .getState()
+        .applyUpdate(update({ view: { hand: [], foot: three, inFoot: true, roundNumber: 2 } })),
+    );
+    expect(shown()).toEqual(["Four of hearts", "King of clubs", "Ace of spades"]);
+  });
+
+  it("opens the card's menu on a plain click, even one that shook a little", () => {
+    mount(fakeSocket().socket, update({ view: { hand: three }, hints: { phase: "play" } }));
+    const king = handCard("King of clubs");
+    fireEvent.pointerDown(king, { button: 0, pointerId: 1, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(king, { pointerId: 1, clientX: 104, clientY: 104 });
+    fireEvent.pointerUp(king, { pointerId: 1, clientX: 104, clientY: 104 });
+    fireEvent.click(king);
+    expect(screen.getByRole("dialog", { name: /actions for/i })).toBeInTheDocument();
+  });
+
+  it("does not open the menu at the end of a drag", () => {
+    mount(fakeSocket().socket, update({ view: { hand: three }, hints: { phase: "play" } }));
+    const king = handCard("King of clubs");
+    fireEvent.pointerDown(king, { button: 0, pointerId: 1, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(king, { pointerId: 1, clientX: 107, clientY: 100 });
+    // The card follows the pointer while it is held, its place left faded.
+    expect(document.body.querySelector("[data-dragging]")).not.toBeNull();
+    fireEvent.pointerUp(king, { pointerId: 1, clientX: 107, clientY: 100 });
+    fireEvent.click(king);
+    expect(screen.queryByRole("dialog", { name: /actions for/i })).toBeNull();
+    // Let go where it was (jsdom lays nothing out, so every card is at 0,0): nothing moved.
+    expect(shown()).toEqual(["Four of hearts", "King of clubs", "Ace of spades"]);
+    expect(window.sessionStorage.getItem("hf.handOrder:ABC234:0")).toBeNull();
+    expect(region().querySelector('[aria-live="polite"]')!.textContent).toBe("");
+    expect(document.body.querySelector("[data-dragging]")).toBeNull();
+    // The next click is an ordinary one again.
+    fireEvent.click(handCard("King of clubs"));
+    expect(screen.getByRole("dialog", { name: /actions for/i })).toBeInTheDocument();
+  });
+
+  it("drags with the main button only", () => {
+    mount(fakeSocket().socket, update({ view: { hand: three }, hints: { phase: "play" } }));
+    const king = handCard("King of clubs");
+    fireEvent.pointerDown(king, { button: 2, pointerId: 1, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(king, { pointerId: 1, clientX: 140, clientY: 100 });
+    expect(document.body.querySelector("[data-dragging]")).toBeNull();
+  });
+
+  it("keeps a card focused when the keyboard moves it to another of a phone's rows", () => {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: (query: string) => ({
+        matches: query === PHONE_QUERY,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }),
+    });
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+    try {
+      const ranks: Rank[] = ["4", "5", "6", "7", "8", "9", "10", "J"];
+      mount(fakeSocket().socket, update({ view: { hand: ranks.map((r) => card(r, "clubs")) } }));
+      // Seven fit a row at this width, so eight are two rows of four.
+      expect(region().querySelectorAll("[data-rows] > div")).toHaveLength(2);
+      cardEl("Seven of clubs").focus();
+      fireEvent.keyDown(cardEl("Seven of clubs"), { key: "ArrowRight", altKey: true });
+      expect(shown().slice(3, 5)).toEqual(["Eight of clubs", "Seven of clubs"]);
+      expect(document.activeElement).toBe(cardEl("Seven of clubs"));
+    } finally {
+      delete (window as { matchMedia?: unknown }).matchMedia;
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: 1024 });
+    }
+  });
+
+  it("is not offered for a hand that is not the viewer's to arrange", () => {
+    const props = {
+      cards: three,
+      interactive: false,
+      stagedIds: new Set<string>(),
+      owedIds: new Set<string>(),
+      meldRanks: new Set<Rank>(),
+      playContext: { inFoot: false, blackThreesHeld: 0, wildsHeld: 0, hasBlackThreeMeld: false },
+      onSelect: () => {},
+      chosenId: null,
+      menu: null,
+      title: "Ben's hand",
+    };
+    render(<Hand {...props} />);
+    const four = screen.getByRole("img", { name: "Four of hearts" });
+    expect(four).not.toHaveAttribute("tabindex");
+    expect(four).not.toHaveAttribute("aria-keyshortcuts");
+    fireEvent.keyDown(four, { key: "ArrowRight", altKey: true });
+    expect(screen.getAllByRole("img").map((el) => el.getAttribute("aria-label"))).toEqual([
+      "Four of hearts",
+      "King of clubs",
+      "Ace of spades",
+    ]);
+    cleanup();
+    // A watched or replayed hand is a fan; it ignores an arrangement even if handed one.
+    render(
+      <Hand
+        {...props}
+        fan="medium"
+        order={["A-spades", "K-clubs", "4-hearts"]}
+        onArrange={() => {}}
+      />,
+    );
+    expect(screen.getByRole("img", { name: "Four of hearts" })).not.toHaveAttribute("tabindex");
+    expect(screen.getAllByRole("img").map((el) => el.getAttribute("aria-label"))).toEqual([
+      "Four of hearts",
+      "King of clubs",
+      "Ace of spades",
+    ]);
   });
 });
 
@@ -4243,7 +4455,7 @@ describe("resizing the table's parts on a computer", () => {
     expect(scroller).not.toContainElement(screen.getByRole("region", { name: "Your turn" }));
     // Scrolled, the hand still says whose it is: its heading stays at the top.
     const heading = within(screen.getByRole("region", { name: /Your hand/ })).getByRole("heading");
-    expect(heading.className).toMatch(/\bsticky top-0\b/);
+    expect(heading.parentElement!.className).toMatch(/\bsticky top-0\b/);
   });
 
   it("widens the side panel with the arrow keys, its contents with it", () => {

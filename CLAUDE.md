@@ -1210,9 +1210,26 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   as its name): `PlayerFace` (28px, 20 on a phone) of the seat on view in `realRoom`, its name,
   " · hand" or " · foot", then the count ("ana · hand · 14 cards"); the Grabby holder gets
   `GrabbyIcon`, "Grabby Pants" and the real name in parentheses, as `Seats` does. Watched, it is
-  the watched seat's (`watched`). The heading is `sticky top-0` with `bg-nav`, so a hand scrolled
+  the watched seat's (`watched`). The heading's row is `sticky top-0` with `bg-nav`, so a hand scrolled
   in a short footer keeps the name row in view (the "NEW" tag is `z-[4]`, under it; a reaction
-  bubble, z-10, stays over it). A lesson's learner is named "You". Harness: `GRABBY_ME=1`.
+  bubble, z-10, stays over it). A lesson's learner is named "You". Harness: `GRABBY_ME=1`. **Your own order (same change list, item 15):** `arrange(cards, order)`
+  (`cards/handOrder.ts`; ids in `order` keep it, new cards go right in display order, gone ids
+  drop; `moveTo`/`moveBy` are the drop and Alt+arrow) over `useHandOrder` (`table/handArrangement.ts`:
+  `hf.handOrder:<roomId>:<seat>` in session storage, `{round, zone, ids}`, so a new round or the
+  foot reads as none; each change to the cards writes the shown order back so arrivals keep
+  arrival order; null scope, i.e. no `controls` or `onFelt`, has none). `Hand` takes `order` and
+  `onArrange` (ignored on a `fan`): pointer events on each card's `data-slot` wrapper, a drag past
+  `DRAG_START_PX` (6, pinned) captures the pointer, measures every slot relative to the section
+  and drops by `dropAt` (rows first, then before the first card whose middle is right of the
+  pointer); the click ending a drag is swallowed; the card follows the pointer as a portalled copy
+  (`data-dragging`, no `data-motion`) while its slot fades, so motion measurements never see a
+  dragged card; `touch-pan-y` lets a vertical swipe scroll a phone's hand. Out of turn a card is a
+  focusable `img` (`PlayingCard` `focusable`, `keyShortcuts`); Alt+Left/Right is announced in a
+  polite live region and keeps focus. Sort sits beside the `h2` in the sticky row (not in its
+  name), only when the order differs from `sortForDisplay`. A reorder sends no `lastMove`, so
+  `useCardMotion` flies nothing. Harness: action `arrange` (`ARRANGE_CARD`, `ARRANGE_BEFORE`,
+  frames `out-0..6.png`). Mutation-tested: 45/45 killed over `arrange`, `moveTo`/`moveBy`,
+  `handArrangement.ts` and `Hand`'s drag and keys (a `moveBy` guard found equivalent was removed).
   Banners (last lap, pile debt), the
   `StagingPanel` (points bar, gold ring where wilds go, scrolls itself into view) and
   `MeldsPanel` (sort Rank/Newest, per device `hf.meldOrder`; Collapse `hf.compactMelds`). `Melds` fans small cards with a note
