@@ -348,7 +348,7 @@ describe("the piles", () => {
     const seats = scrollerOf(screen.getByRole("list", { name: "Other players" }))!;
     expect(seats.parentElement).toBe(felt);
     expect(seats.className).toMatch(/\bshrink\b/);
-    expect(seats.className).toMatch(/\bmin-h-14\b/);
+    expect(seats.className).toMatch(/\bmin-h-\[92px\]/);
     // So do the melds, and they shrink far faster, so they give way first.
     const melds = scrollerOf(screen.getByRole("region", { name: "Your melds" }))!;
     expect(melds.parentElement).toBe(felt);
