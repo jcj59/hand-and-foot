@@ -827,6 +827,33 @@ const run = async () => {
     }
     await page.mouse.up();
   }
+  if (action === "arrange") {
+    // Drag a card of the player's own hand (ARRANGE_CARD, the Joker by default) to
+    // just before another (ARRANGE_BEFORE, the Four of hearts), sideways first as a
+    // thumb would, in ten steps: out-0.png before, out-1..5.png along the way and
+    // out-6.png once it is let go. Logs whether anything animated after the drop.
+    const hand = page.getByRole("region", { name: "Your hand" });
+    const cardBox = (name) =>
+      hand.locator(`[data-card-id][aria-label="${name}"]`).first().boundingBox();
+    const from = await cardBox(process.env.ARRANGE_CARD ?? "Joker, wild");
+    const to = await cardBox(process.env.ARRANGE_BEFORE ?? "Four of hearts");
+    const x = from.x + from.width / 2;
+    const y = from.y + from.height / 2;
+    const [tx, ty] = [to.x + to.width * 0.25, to.y + to.height / 2];
+    await page.mouse.move(x, y);
+    await page.screenshot({ path: out.replace(".png", "-0.png") });
+    await page.mouse.down();
+    await page.mouse.move(x - 12, y);
+    for (let i = 1; i <= 10; i++) {
+      await page.mouse.move(x - 12 + ((tx - x + 12) * i) / 10, y + ((ty - y) * i) / 10);
+      if (i % 2 === 0) await page.screenshot({ path: out.replace(".png", `-${i / 2}.png`) });
+    }
+    await page.mouse.up();
+    const moving = await page.evaluate(() => document.getAnimations().length);
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: out.replace(".png", "-6.png") });
+    console.log(JSON.stringify({ animationsAfterDrop: moving }));
+  }
   if (action === "meld") {
     await page.getByRole("button", { name: /^Meld$/ }).click();
     await page.getByRole("button", { name: /Ten of hearts/i }).click({ position: { x: 8, y: 30 } });

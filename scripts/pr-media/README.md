@@ -25,7 +25,10 @@ an animation) in its description, under `## Screenshots`.
    dragged it to (as `hf.tableLayout` keeps them: `{"sideWidth":420,"footerHeight":360,"seatsHeight":null}`),
    `NAV_FOLDED=1` the app's sidebar folded to its rail, and action `drag` drags a divider
    (`DRAG_LABEL`, "Resize your hand" by default; `DRAG_BY=dx,dy`, default `0,-160`) in ten steps,
-   shooting `out-0.png` before it and `out-1.png` to `out-5.png` along the way; `COMPACT_MELDS=1` starts with the
+   shooting `out-0.png` before it and `out-1.png` to `out-5.png` along the way; action `arrange` drags a card
+   of the player's own hand (`ARRANGE_CARD`, "Joker, wild" by default) to just before another
+   (`ARRANGE_BEFORE`, "Four of hearts"), sideways first, shooting `out-0.png` to `out-5.png` and
+   `out-6.png` once it is let go, and logs `animationsAfterDrop`; `COMPACT_MELDS=1` starts with the
    player's own melds collapsed to chips; `PILE_WHY=1` puts the viewer in their
    draw phase with the pile not takeable, and `TAKEABLE=1` in their draw phase with it takeable;
    `FOOT=1` puts the viewer in their foot a dirty book short of going out, with a card of a melded

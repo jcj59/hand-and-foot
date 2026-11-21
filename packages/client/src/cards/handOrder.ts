@@ -71,6 +71,46 @@ export function sortForDisplay(cards: readonly Card[]): Card[] {
   return [...cards].sort(compareForDisplay);
 }
 
+/**
+ * The cards in the order the player arranged them, or in display order when they
+ * have not (`order` null).
+ *
+ * `order` is card ids, left to right, as the player last left them. Cards it
+ * names keep that order; cards it does not (a draw, the pile) go at the right
+ * end, where the "NEW" marker points, in display order among themselves; ids no
+ * longer held (played, discarded) simply drop out. So an arrangement survives
+ * every move without being rewritten by each one.
+ */
+export function arrange(cards: readonly Card[], order: readonly string[] | null): Card[] {
+  const sorted = sortForDisplay(cards);
+  if (order === null) return sorted;
+  const at = new Map(order.map((id, i) => [id, i]));
+  const kept = cards.filter((card) => at.has(card.id));
+  kept.sort((a, b) => at.get(a.id)! - at.get(b.id)!);
+  return [...kept, ...sorted.filter((card) => !at.has(card.id))];
+}
+
+/**
+ * `ids` with `id` taken out and put back before the id now at `slot` (or at the
+ * end for `slot` equal to the length), `slot` counted in `ids` as it was: what a
+ * drop between two cards does. `ids` itself is left alone.
+ */
+export function moveTo(ids: readonly string[], id: string, slot: number): string[] {
+  const from = ids.indexOf(id);
+  if (from === -1) return [...ids];
+  const rest = ids.filter((other) => other !== id);
+  const to = Math.max(0, Math.min(rest.length, slot > from ? slot - 1 : slot));
+  rest.splice(to, 0, id);
+  return rest;
+}
+
+/** `ids` with `id` one place left (`by` -1) or right (1), staying put at either end. */
+export function moveBy(ids: readonly string[], id: string, by: -1 | 1): string[] {
+  // A card not in `ids` (index -1) is left alone by `moveTo` itself.
+  const from = ids.indexOf(id);
+  return moveTo(ids, id, by === 1 ? from + 2 : from - 1);
+}
+
 /** True when a card is one the player cannot do anything with. Dimmed on screen. */
 export function isDeadWeight(card: Card): boolean {
   return isRedThree(card);

@@ -1186,6 +1186,20 @@ title, and their name after it in parentheses. A watched seat shows the watched 
 heading stays at the top of the hand when a short footer scrolls it, so the name row is always in
 view.
 
+**Cards in the player's own order.** The hand is sorted by how cards play (naturals by rank, then
+black threes, wilds and red threes), which is a good start and nobody's finished plan: a player
+holding cards for a meld, or keeping the ones to throw at one end, wants them where they put them,
+as they would in their own hand of paper cards. A card can be dragged to any place, across a
+phone's rows too, or moved one place with Alt and an arrow key, which is announced. A drag starts
+only once the pointer has moved six pixels, so a click that shook still opens the card's menu; on a
+touchscreen a drag starts sideways, and a swipe up or down still scrolls the hand. A card that
+arrives later goes at the right end, where the "NEW" mark already points, and a card played simply
+leaves; Sort, beside the heading once the cards are moved, puts the usual order back. The order is
+the player's alone: the server never hears of it, it is kept in the tab (so a reload keeps it) per
+table and seat, and it starts over with each deal and when the foot is picked up, a new set of
+cards. Moving a card is not a move in the game, so nothing flies: only a card that changes zone is
+animated. A hand being watched or replayed keeps the usual order.
+
 ## Testing
 
 The rules engine is the component where correctness matters most, and it receives the majority of
