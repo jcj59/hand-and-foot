@@ -1154,7 +1154,7 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   `HeldCards` (in `OpponentStrip.tsx`): `CardFan` (`PlayingCard.tsx`), one back per card up to
   `FAN_BACKS_MAX` 14 (`fanBacks`), the exact count beside it (`data-held`), and while not in the
   foot a `BackStack` of fixed depth labeled "Foot" (`data-foot`); in the foot the fan is the
-  foot. It sits between the header and the melds' scroller (`shrink-0`), so `BIG_OPP=1` still
+  foot. It sits in the header's text column under the status line, with the book markers after the foot pile (cards 24px tall), so `BIG_OPP=1` still
   scrolls only the melds. A phone chip shows `HeldGlyphs` (a mini fan with the count and a mini
   stack for the foot) beside the book markers, and the sheet the full `HeldCards`. Backs carry no
   ids and no `data-motion`; `data-anchor="seat-N"` stays on the box or chip. Harness:
@@ -1196,7 +1196,7 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   change list): the seats and the melds/felt hand are each a `FELT_PART` (own scroller,
   `data-felt-part`), the piles row is `shrink-0` between them, and the `StagingPanel` keeps its
   full size outside both (it scrolls the felt into view as before); the melds part (`min-h-12`,
-  `shrink-[1000]`) gives way first, then the seats (`min-h-14`, `shrink`), and the felt scrolls
+  `shrink-[1000]`) gives way first, then the seats (`min-h-[92px]`, so the held row is never cut, `shrink`), and the felt scrolls
   only past both minimums. The felt used to scroll as one, so at 1366 by 768 with five opponents
   the pile was cut at its bottom edge. A tall window renders pixel for pixel as before. Pinned in
   `Table.test.tsx` ("keeps the piles whole"); jsdom lays nothing out, so check it in a browser
