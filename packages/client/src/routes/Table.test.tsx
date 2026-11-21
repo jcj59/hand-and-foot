@@ -225,8 +225,46 @@ describe("your own cards", () => {
       update({ view: { hand: [card("2", "clubs"), card("JOKER", null), card("A", "spades")] } }),
     );
     expect(
-      screen.getByRole("heading", { name: /^your hand\s*·\s*3 cards, 2 wild$/i }),
+      screen.getByRole("heading", { name: /^ana\s*·\s*hand\s*·\s*3 cards, 2 wild$/i }),
     ).toBeInTheDocument();
+  });
+
+  it("heads the hand with the player's own face and name", () => {
+    mount(fakeSocket().socket);
+    const hand = screen.getByRole("region", { name: "Your hand" });
+    const heading = within(hand).getByRole("heading");
+    expect(heading.textContent).toMatch(/^ana · hand · \d+ cards/);
+    const face = heading.querySelector("svg[data-avatar]")!;
+    expect(face).toHaveAttribute("data-avatar", Object.values(defaultAvatar("ana")).join(" "));
+    expect(face).toHaveAttribute("width", "28");
+  });
+
+  it("draws the picture the player chose, not the one from their name", () => {
+    const drawn = defaultAvatar("ana");
+    const avatar = { ...drawn, top: drawn.top === "bun" ? "cap" : "bun" } as const;
+    mount(
+      fakeSocket().socket,
+      update({
+        room: {
+          players: [
+            { seat: 0, name: "ana", connected: true, avatar },
+            { seat: 1, name: "ben", connected: true },
+          ],
+        },
+      }),
+    );
+    const heading = within(screen.getByRole("region", { name: "Your hand" })).getByRole("heading");
+    expect(heading.querySelector("[data-avatar]")).toHaveAttribute(
+      "data-avatar",
+      Object.values(avatar).join(" "),
+    );
+  });
+
+  it("still says whose it is with no cards left", () => {
+    mount(fakeSocket().socket, update({ view: { hand: [], inFoot: true, foot: [] } }));
+    const heading = within(screen.getByRole("region", { name: "Your foot" })).getByRole("heading");
+    expect(heading.textContent).toBe("ana · foot");
+    expect(heading.querySelector("[data-avatar]")).not.toBeNull();
   });
 
   it("shows the foot face down until it is picked up", () => {
@@ -240,7 +278,9 @@ describe("your own cards", () => {
       fakeSocket().socket,
       update({ view: { inFoot: true, foot: [card("K", "diamonds")], hand: [] } }),
     );
-    expect(screen.getByRole("heading", { name: /^your foot\s*·\s*1 card$/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /^ana\s*·\s*foot\s*·\s*1 card$/i }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "King of diamonds" })).toBeInTheDocument();
     expect(screen.queryByRole("img", { name: /your foot: / })).toBeNull();
   });
@@ -2105,6 +2145,17 @@ describe("on a phone", () => {
     ),
   };
 
+  it("puts a compact face and the player's name on the hand's line in the footer", () => {
+    asPhone();
+    mount(fakeSocket().socket, update({ room: { grabbyPants: { seat: 0, streak: 3 } } }));
+    const footer = screen.getByRole("contentinfo");
+    const heading = within(
+      within(footer).getByRole("region", { name: "Your hand (Grabby Pants)" }),
+    ).getByRole("heading");
+    expect(heading.textContent).toMatch(/^Grabby Pants \(ana\) · hand · \d+ cards/);
+    expect(heading.querySelector("svg[data-avatar]")).toHaveAttribute("width", "20");
+  });
+
   it("shows each opponent as a chip, with their melds a tap away", () => {
     asPhone();
     mount(
@@ -2989,8 +3040,14 @@ describe("Grabby Pants", () => {
       act(() => useSession.getState().applyRoom(roomInfo({ grabbyPants: { seat: 0, streak: 3 } })));
       const hand = screen.getByRole("region", { name: "Your hand (Grabby Pants)" });
       const heading = within(hand).getByRole("heading");
-      expect(heading.textContent).toMatch(/^Your hand \(Grabby Pants\) · \d+ cards/);
+      // The title and its icon, the real name after it, as another player's box says it.
+      expect(heading.textContent).toMatch(/^Grabby Pants \(ana\) · hand · \d+ cards/);
       expect(heading.querySelector("svg path[fill='#2f5da8']")).not.toBeNull();
+      // Renamed but not re-faced: still the face drawn from ana's own name.
+      expect(heading.querySelector("[data-avatar]")).toHaveAttribute(
+        "data-avatar",
+        Object.values(defaultAvatar("ana")).join(" "),
+      );
     } finally {
       speech.restore();
     }
@@ -4119,6 +4176,9 @@ describe("resizing the table's parts on a computer", () => {
     expect(scroller.className).toMatch(/\boverflow-y-auto\b/);
     expect(scroller).toContainElement(screen.getByRole("region", { name: /Your hand/ }));
     expect(scroller).not.toContainElement(screen.getByRole("region", { name: "Your turn" }));
+    // Scrolled, the hand still says whose it is: its heading stays at the top.
+    const heading = within(screen.getByRole("region", { name: /Your hand/ })).getByRole("heading");
+    expect(heading.className).toMatch(/\bsticky top-0\b/);
   });
 
   it("widens the side panel with the arrow keys, its contents with it", () => {

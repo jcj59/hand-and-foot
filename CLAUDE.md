@@ -1111,7 +1111,15 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   `body[data-resizing]` (no transitions or text selection, `index.css`). The app's sidebar
   (`AppShell`) folds to a 72px icon rail, "Fold the menu"/"Show the menu", per device
   `hf.navFolded`. Phone untouched. Harness: `LAYOUT=<json>`, `NAV_FOLDED=1`, action `drag`
-  (`DRAG_LABEL`, `DRAG_BY=dx,dy`, frames `out-0..5.png`). Banners (last lap, pile debt), the
+  (`DRAG_LABEL`, `DRAG_BY=dx,dy`, frames `out-0..5.png`). **Your own name and face (same change
+  list, item 4):** the hand's heading is `Hand`'s `owner` (the region keeps `title`, "Your hand",
+  as its name): `PlayerFace` (28px, 20 on a phone) of the seat on view in `realRoom`, its name,
+  " · hand" or " · foot", then the count ("ana · hand · 14 cards"); the Grabby holder gets
+  `GrabbyIcon`, "Grabby Pants" and the real name in parentheses, as `Seats` does. Watched, it is
+  the watched seat's (`watched`). The heading is `sticky top-0` with `bg-nav`, so a hand scrolled
+  in a short footer keeps the name row in view (the "NEW" tag is `z-[4]`, under it; a reaction
+  bubble, z-10, stays over it). A lesson's learner is named "You". Harness: `GRABBY_ME=1`.
+  Banners (last lap, pile debt), the
   `StagingPanel` (points bar, gold ring where wilds go, scrolls itself into view) and
   `MeldsPanel` (sort Rank/Newest, per device `hf.meldOrder`; Collapse `hf.compactMelds`). `Melds` fans small cards with a note
   (`meldView`: `sortMelds`, `meldNote`, `meldChip`, `booksOf`); the note is the pre-redesign
