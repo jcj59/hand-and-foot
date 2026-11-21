@@ -54,6 +54,8 @@
   --color-card: #f7f5ee;
   --color-suit-red: #c2353a;
   --color-suit-black: #15181b;
+  /* A clean book's red as text on the felt, where the cards' own red is too dark to read. */
+  --color-book-red: #ff7b80;
 
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Space Grotesk", "Inter", ui-sans-serif, system-ui, sans-serif;
@@ -93,10 +95,11 @@ body,
   height: 100%;
 }
 
-/* Whatever the player can click right now to take their turn — the piles, and the
-   words under them: a soft glow that breathes, all on one rhythm (see pulse.ts,
-   which puts each one in phase), so the choice between drawing and taking the pile
-   is hard to miss. Off for anyone who has asked their system for less motion. */
+/* The stock while the player can draw: a soft glow that breathes, on one rhythm
+   (see pulse.ts, which puts it in phase), so the start of a turn is hard to miss.
+   The discard pile never glows: lighting it only when it can be taken would say
+   what the server's solver found. Off for anyone who has asked their system for
+   less motion. */
 @keyframes pile-glow {
   0%,
   100% {

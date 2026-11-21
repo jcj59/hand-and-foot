@@ -128,9 +128,13 @@ describe("quick reactions", () => {
       "ha",
       "close-one",
       "gg",
+      "i-hate-you",
     ]) {
       expect(ids).toContain(id);
     }
+    // The last one added, in the user's own words (a phrase: its label is its text).
+    expect(REACTIONS.at(-1)).toEqual({ id: "i-hate-you", text: "I Hate You", label: "I Hate You" });
+    expect(REACTIONS).toHaveLength(26);
     // Small enough to find one at a glance.
     expect(REACTIONS.length).toBeLessThanOrEqual(30);
   });

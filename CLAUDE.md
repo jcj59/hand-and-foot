@@ -564,10 +564,21 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   under each pile. Motion attributes and accessible names are unchanged.
 - **Sounds.** `table/sounds.ts`. Card sounds are recordings from Kenney's Casino Audio (CC0) in
   `client/public/sounds` (licence file beside them), loaded after the first gesture, with a
-  synthesized flick standing in until they arrive; the chimes are synthesized with Web Audio.
+  synthesized flick standing in until they arrive; the round and match phrases and the turn's ding are synthesized with Web Audio.
   `soundsFor` (pure, tested) maps a change in `{moveSeq, moveKind, myTurn, result}` to sounds:
-  **one** recording per move, by kind, however many cards it moves, a chime when the turn comes to
-  this player, phrases for round and match end. Mute is per device (`hf.muted`).
+  **one** recording per move, by kind, however many cards it moves, a ding when the turn comes to
+  this player, phrases for round and match end. Mute is per device (`hf.muted`). Since the
+  2026-11-19 change list (item 22) `soundsFor` returns `Cue {sound, delayMs}` and the turn's
+  sound is `ding` (`DING_PARTIALS`: five sines at a bell's inharmonic ratios over E6, 4ms attack,
+  exponential decay of 1.2s for the strike note, the higher partials sooner; several times
+  the reaction blip's peak), started `TURN_AFTER_CARD_MS` (250, pinned) after a card sound in the
+  same moment, on the audio clock (`play(ctx, sound, recordings, delay)`), never a timer. Checked
+  with Playwright under `--autoplay-policy=user-gesture-required` (pass
+  `ignoreDefaultArgs: ["--autoplay-policy=no-user-gesture-required"]` too, or Playwright's own
+  default wins): the discard's recording at `currentTime + 0.01`, the ding's five partials at
+  `+ 0.26`, also with the tab staged hidden. Note that Playwright's `page.evaluate` counts as a
+  user gesture and that its Chromium runs an `AudioContext` before any activation even under that
+  flag, so the blocked path is covered by the jsdom tests, not by the browser.
   **The `AudioContext` is page-level, in `table/audio.ts`**, not per table. It used to be made on
   the first gesture *after the table mounted* and closed on unmount, and nothing resumed it once
   the browser suspended it (background tab, sleep, a call, an output switch). So a game dealt from
@@ -605,6 +616,19 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   available, and synthesis needs no asset. `useTableSounds` now returns `playSound` for one-offs.
   Reduced motion hides the confetti and the pop; the announcement stays. `Celebration` takes its
   duration as `--celebration-ms`, which the CSS animation reads.
+- **Putting a celebration away (2026-11-19 change list, item 21).** `Celebration`'s `onDismiss`:
+  after `CELEBRATION_DISMISS_AFTER_MS` (800, pinned) a click or tap anywhere on the overlay, or
+  Escape, calls it; before then (and always without one) the overlay is `pointer-events-none` and
+  Escape does nothing, so a tap meant for a card is never eaten. The three hooks
+  (`useGrabbyAnnouncement`, `useMarvaCelebration`, `useAwardsCelebration`) return
+  `Shown<T> {shown, dismiss}` (`Shown` in `grabby.tsx`); `dismiss` clears the hook's timer and
+  stops the line being said: `sayDeep` returns a `stop` that cancels speech only if its own line
+  started (it may still be waiting for voices) and makes sure `after` (the Marva horn) never
+  runs. Tests: `Table.test.tsx` (Grabby, end to end through the table), `marva.test.tsx`,
+  `recap.test.tsx`. Harness: `CLICK_AT` in `scene.mjs`. Mutation-tested with items 22 and 23's
+  guards: 26/29 killed, 3 equivalent: `clearTimeout` in each hook's `dismiss` (the next
+  announcement clears the stale timer itself, and a stale one only sets null over null) and, in
+  `stop`, the voices fallback's (`speak` checks `finished` first).
 - **Identity (roadmap item 4a).** `@hf/shared/identity.ts`: `UserCredentials {userId, secret}`
   (ids 16–64 and secrets 32–128 URL-safe chars, `isUserCredentials`), `normalizeName`
   (`MAX_NAME_LENGTH` 24), transfer codes `hf1.<id>.<secret>`. Server `users.ts` (host-agnostic):
@@ -686,7 +710,7 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   name. **Per device, not on the identity** (like `hf.rules`): storing it on the identity needed a
   users migration and a transfer that carries it, which waits for accounts (item 15).
 - **Quick reactions (roadmap item 3).** A fixed list, `REACTIONS` in `@hf/shared/protocol.ts`
-  (twelve emoji, thirteen phrases since P2; **only ever add** — an id may be in flight to an older
+  (twelve emoji, fourteen phrases since P2 and item 23; **only ever add** — an id may be in flight to an older
   client — pinned in `protocol.test.ts`, along with a cap of 30; the picker tells a phrase from an
   emoji by `text === label`, so a phrase's label must be its text); only an id crosses the wire
   (`isReactionId` is the server's check), so there is nothing to moderate. `react {id}` →
@@ -694,7 +718,8 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   `REACTION_REFILL_MS` 2s, on the injected clock) → `TableChannel` acks and sends `reaction
   {seq, seat, id}` to every seated connection, the sender too. Never logged, never in the record:
   the bucket lives in memory and a wake simply refills it. Client: `session.reactions` keeps the
-  last `KEPT_REACTIONS` (16), reset with the table; `table/reactions.tsx` has the picker (menu on a
+  last `KEPT_REACTIONS` (16), reset with the table, and drops an id `isReactionId` does not know
+  (a tab loaded before a deploy that added one; `ReactionBubble` draws nothing for one too); `table/reactions.tsx` has the picker (menu on a
   computer, opening towards the side with room; bottom sheet portalled to `body` on a phone),
   `REACTION_COOLDOWN_MS` (1.5s) rest after sending, and `useReactionBubbles`, which shows each
   seat's latest for `REACTION_SHOW_MS` (5s since P2, pinned as a literal; the bubble's CSS fade
@@ -874,7 +899,7 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   literals and mutation-tested together with the hook: 47/47 killed. `table/turnAttention.ts`
   (`useTurnAttention(myTurn, label, muted)`) is the glue: away = `visibilityState === "hidden" ||
   !document.hasFocus()`, swaps `/favicon.svg` ↔ `/favicon-turn.svg` and puts back whatever href was
-  there. `TableView` builds the chime's `Moment` once and passes `moment.myTurn` to both hooks, so a
+  there. `TableView` builds the ding's `Moment` once and passes `moment.myTurn` to both hooks, so a
   watched table (`controls` null) never flashes. Notifications: off by default, `hf.notifyTurn`,
   permission requested only from the bell's tap (callback-form `requestPermission` handled too),
   `silent` when muted, closed when spent or on unmount, and a constructor that throws (Android
@@ -989,7 +1014,17 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   in the redesign (1c):** no Hints toggle, no Suggest a move, no "why not the pile" line at a real
   table (`table/hints.ts` is gone; `Table.test.tsx` "hints" pins their absence). Hints live only in
   the lessons and the demo, which use their own step hints; `takePileWhy` is kept on the wire but
-  no client code reads it now, so the lessons' coach can use it later.
+  no client code reads it now, so the lessons' coach can use it later. **The word hints left at
+  a real table went too (2026-11-19 change list, items 16 to 18):** no risky-discard warning or
+  "Discard anyway" (`discardWarning.ts` is gone), no "Add N to my melds", no foot go-out tracker
+  (`goOutProgress` is gone: no book counts, no "Your Ks need two more cards"), no "books to go
+  out" banner, no how-to lines (the staging panel's intro is gone; `guidanceLine` says only
+  "Your turn.", "Waiting for X.", "The table is paused.", or a rule: the pile debt, the discard
+  grace). The pile has no glow and is a button whenever a draw is open and it has cards,
+  whatever `hints.canTakePile` says; an illegal take is refused with the engine's reason as a
+  notice. Kept: the melded-rank underline, the points bar and refusal reasons, the pile-debt ring
+  and banner, dimmed red threes, the last-lap banner, the stock's glow, the one-card "Add to Ks
+  meld". `Table.test.tsx` "hints" pins each gone and each kept.
 
 - **Redesign shell (redesign PR 0).** Theme tokens live in `client/src/index.css` (charcoal
   surfaces, green accent, gold); Inter, Space Grotesk and JetBrains Mono are self-hosted variable
@@ -1052,24 +1087,31 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   the piles, the latest move as a pill (`moveLine`; the side panel keeps the last
   `MOVES_KEPT` 3 via `withMove`, and on a live or watched table can be put away to a rail,
   "Hide scores and moves", per device `hf.hideScores`, `SidePanel` in `TableView.tsx`; a
-  lesson or player's `aside` keeps it fixed), banners (last lap, pile debt, books to go out), the
+  lesson or player's `aside` keeps it fixed), banners (last lap, pile debt), the
   `StagingPanel` (points bar, gold ring where wilds go, scrolls itself into view) and
-  `MeldsPanel` (sort Rank/Newest, per device `hf.meldOrder`; Collapse `hf.compactMelds`; the
-  go-out tracker `goOutProgress` in the foot). `Melds` fans small cards with a note
+  `MeldsPanel` (sort Rank/Newest, per device `hf.meldOrder`; Collapse `hf.compactMelds`). `Melds` fans small cards with a note
   (`meldView`: `sortMelds`, `meldNote`, `meldChip`, `booksOf`); the note is the pre-redesign
   caption, size, kind and the cards' `meldPoints` ("5 cards · 70", "7 cards · clean · 120",
   the user's choice over the mockups' "3 more for a book"). A finished book is one squared-up
   `BookCard` (edges by `bookEdges`), topped by `bookTop`: a red natural on a clean book, a black
   one on a dirty book, and inked in that color whatever its suit; its image is named
-  "<card> on top", the meld's `li` keeps the book's name. "Newest first" is `PlayerState.melds` reversed, which the engine keeps in laid
+  "<card> on top", the meld's `li` keeps the book's name. **Books are red and black everywhere,
+  and a folded meld shows its size and wilds (2026-11-19 change list, items 7, 9, 10):** a chip
+  (`Melds` with `chips`: other seats' boxes, the player's own melds collapsed) is the structured
+  `meldChip` value `{rank, count, tone, wilds}` (count = every card; wilds `"2"`/`"JK"`, twos
+  first) drawn as `K 6 [2][JK]` with gold-faced glyphs (`data-wild`); a clean book's chip is
+  `bg-suit-red`, a dirty one's `bg-suit-black` with a light inset outline; `BookMarkers` are tiny
+  cards in the same two colors (`data-book`); a clean book's note is `text-book-red` (a lighter
+  red token, readable on the felt). `meldLabel` (now in `meldView`) adds the wilds: "Meld of Ks, 6
+  cards, 2 wild". Nothing marks a book as locked: it refuses wilds but still takes naturals.
+  Harness: `BIG_OPP=1` melds hold twos and jokers, `COMPACT_MELDS=1`, `SEAT=<name>` for
+  `expand`/`chip`. "Newest first" is `PlayerState.melds` reversed, which the engine keeps in laid
   order (pinned in `reducer.meldorder.test.ts`). The card's choices (`CardMenu`) are a sheet on
   a phone and a popover on a computer (`CardPopover` in `Hand.tsx`, portalled to `body`,
   `position: fixed`, placed by the pure `placeMenu` in `menuPlacement.ts`: above the card, from
   its left edge or else its right, below when there is no room above, clamped inside the
   window; it used to open by the card's index in the hand, which ran off the left for the
-  first card of a wrapped row); a risky discard (`discardWarning`: a wild, a rank another
-  player has down, or one that fits the player's own meld) is said up front and the button reads
-  "Discard anyway" (no second confirmation). `RoundResult` is a bottom sheet between rounds
+  first card of a wrapped row); a discard is never warned about. `RoundResult` is a bottom sheet between rounds
   (ranked rows with counts per column on a computer, the recap, `readiness` sentence, "I'm ready
   for round n" with aria "Next round", Save for later, Leave with aria "Back to the main screen",
   Look at the table) and a centered card at match end (winner, awards with `AwardIcon`); the old
@@ -1084,7 +1126,8 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   `Table.test.tsx` ("keeps the piles whole"); jsdom lays nothing out, so check it in a browser
   (`scene.mjs` at 1366 768). The same day's item 14 (a card's menu cut off) did not reproduce
   over hands of 1 to 4 and 15 cards, the foot, 768 to 1920 wide, 125% and 150% zoom, side panel
-  shown and hidden. Mutation-tested: 12/12 over `meldView`, `moveLine`, `discardWarning`.
+  shown and hidden. Mutation-tested: 12/12 over `meldView`, `moveLine` and the since-removed
+  `discardWarning`.
   **Practice (redesign 4):** `home/PracticeSheet.tsx`, also at `/practice` (closing goes home).
   New table without Mode (always family) and without empty seats: a computer stepper
   (`PRACTICE_BOTS` 1 to 7) and a chip per computer opening `BotEditor` (no Remove: the stepper

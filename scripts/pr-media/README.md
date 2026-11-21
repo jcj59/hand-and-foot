@@ -17,19 +17,26 @@ an animation) in its description, under `## Screenshots`.
    Arguments: `<out.png> <width> <height> <action> <mode>`. Actions include `picker`, which opens
    the reaction picker, `rules`, which opens the
    table's How to play dialog, `menu` (the table's menu), `scores` (the phone's scores sheet),
-   `expand` (a seat's melds on a computer), `chip` (a phone chip's melds sheet), `card` (a
+   `expand` (a seat's melds on a computer), `chip` (a phone chip's melds sheet; both pick
+   Cyrus, or `SEAT=<name>`), `card` (a
    card's choices; `CARD=<name>` picks the card, the Ten of hearts by default), `meld` (a
    lay-down being built) and `hidescores` (the computer's side panel put away, or brought back
-   with `HIDE_SCORES=1`, which starts with it put away); `PILE_WHY=1` puts the viewer in their
-   draw phase with the pile not takeable. Modes stage a state
+   with `HIDE_SCORES=1`, which starts with it put away); `COMPACT_MELDS=1` starts with the
+   player's own melds collapsed to chips; `PILE_WHY=1` puts the viewer in their
+   draw phase with the pile not takeable, and `TAKEABLE=1` in their draw phase with it takeable;
+   `FOOT=1` puts the viewer in their foot a dirty book short of going out, with a card of a melded
+   rank, a wild and a red three, and `GO_OUT=1` has the server say the books to go out are in
+   place. Modes stage a state
    (`mine`, `theirs`) or a change to capture mid-animation (`draw`, `discard`,
    `oppdraw`, `grabby`, `react` — quick reactions arriving from two opponents and
    the viewer — and `stale` — a finished round at one table, then a fresh
    deal at another), with `FRAMES=40,120,300` giving the milliseconds after the
-   change to capture. `BIG_MELDS=1` adds enough melds that the middle scrolls;
+   change to capture, and `CLICK_AT=500,1000` the milliseconds at which to click the middle of
+   the window (a frame and a click at the same time: the frame first). `BIG_MELDS=1` adds enough melds that the middle scrolls;
    `GRABBY_ME=1` makes the viewer the Grabby Pants holder; `TWO_DISCARDS=1` puts two
    cards on the discard pile, `PILE=<n>` puts n; mode `takepile` has the viewer take the pile;
-   `BIG_OPP=1` gives an opponent enough melds to fill its box;
+   `BIG_OPP=1` gives an opponent enough melds to fill its box (clean and dirty books, and open
+   melds holding a two, a joker, both, or no wild);
    `BLACK_BOOK=1` puts the viewer in their foot beside a book of black threes, holding a red
    three and a black one. `PAUSED=1` has Ana pause the table, `SAVED=1` has her save it for later
    (three players back; the viewer hosts unless `SAVED_GUEST=1`), and `ROUND_OVER=1` opens the
@@ -44,8 +51,11 @@ an animation) in its description, under `## Screenshots`.
    `FILTERS=1` scrolls the filters into view. `FULL_PAGE=1` shoots the whole page rather than the window.
    On this machine Chromium needs nss/nspr/alsa from the `pwlibs` conda env. Emoji (the quick
    reactions) draw as boxes without a colour emoji font: set `EMOJI_FONT=<path to
-   NotoColorEmoji.ttf>` and the page loads it for emoji only. Do not install it system-wide —
-   fontconfig then hands it digits and spaces too, and every number on the table spreads out.
+   NotoColorEmoji.ttf>` and the page loads it for emoji only (as a face of the page's own font
+   families, limited to emoji code points: Chromium never falls back to a web font by name).
+   Do not install it system-wide: fontconfig then hands it digits and spaces too, and every
+   number on the table spreads out. A copy is at
+   `https://github.com/googlefonts/noto-emoji/raw/v2.047/fonts/NotoColorEmoji.ttf`.
    Its range also covers the suit symbols, so cards draw emoji suits: set it only for shots of
    reactions. `BASE=<url>` points the harness at another origin, such as `vite` dev on :5173
    (which needs no build).

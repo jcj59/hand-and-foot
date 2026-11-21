@@ -107,8 +107,10 @@ export function ReactionBubble({
   readonly name: string;
   /** The sender's face, drawn small at the start of the bubble so it reads as theirs. */
   readonly avatar?: Avatar;
-}): React.ReactElement {
-  const def = REACTIONS.find((r) => r.id === reaction.id)!;
+}): React.ReactElement | null {
+  const def = REACTIONS.find((r) => r.id === reaction.id);
+  // One this page does not know (sent by a newer server) shows nothing.
+  if (!def) return null;
   // The phrases are their own label; an emoji is not.
   const emoji = def.text !== def.label;
   return (

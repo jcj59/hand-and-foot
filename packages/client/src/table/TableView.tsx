@@ -15,12 +15,14 @@
  * clock runs out the server plays it rather than it being lost.
  *
  * Clicking a card opens a menu of what it can do right now — meld it, discard it,
- * take it back — rather than one click meaning different things by mode. A discard
- * that looks like a mistake (a wild, a rank another player has down and could take
- * the pile with, or a card the player could lay off on a meld they already have) is
- * warned about in the menu itself, whose button then reads "Discard anyway".
+ * take it back — rather than one click meaning different things by mode.
+ *
+ * A real table gives no advice: nothing says which move is wise, whether the pile
+ * could be taken, or how near a book or going out is. What it says is the state
+ * (whose turn, a debt to the pile, the last lap) and, when a move is refused, the
+ * engine's own reason for refusing it.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   isBlackThree,
   isWild,
@@ -40,10 +42,8 @@ import { faceOf } from "../profile/avatarStore";
 import { CountPill, DiscardPile, FaceDownPile } from "../cards/PlayingCard";
 import { usePhone } from "../usePhone";
 import { Hand } from "./Hand";
-import { pulseStyle } from "./pulse";
 import { CardMenu } from "./CardMenu";
 import { Icon } from "../ui/icons";
-import { discardWarning } from "./discardWarning";
 import { MeldsPanel } from "./MeldsPanel";
 import type { MeldOrder } from "./meldView";
 import { moveLine, withMove } from "./moveLine";
@@ -192,12 +192,6 @@ export function TableView({
     if (draftOpen) controls?.stageDraft(toMeldPlays(staging));
   }, [draftOpen, staging, controls]);
 
-  // The discard pile's glow starts when it becomes takeable, so its phase is set
-  // then, to agree with the stock's and the labels'. Worked out before the early
-  // return below, as a hook has to be.
-  const takeable = turnOpen && update.hints.canTakePile && !busy;
-  const pilePulse = useMemo(() => (takeable ? pulseStyle() : undefined), [takeable]);
-
   // Other players' discards and pickups announced, and this player's draw marked.
   // Real names, for saying who took the Grabby Pants title from whom.
   const realRoom = latestRoom;
@@ -255,13 +249,13 @@ export function TableView({
     heading ?? `Table ${latestRoom.roomId}`,
     muted,
   );
-  const grabbyHeadline = useGrabbyAnnouncement(realRoom, muted, quiet);
+  const grabbyNews = useGrabbyAnnouncement(realRoom, muted, quiet);
   const [muteReactions, setMuteReactions] = useState(readMuteReactions);
   const bubbles = useReactionBubbles(reactions, update.view.seat, muteReactions, (r) => {
     if (r.seat !== update.view.seat) playSound("reaction");
   });
   // Real names: the celebration is about the player, not their title.
-  const marva = useMarvaCelebration(
+  const marvaNews = useMarvaCelebration(
     update.lastMove,
     (s) => realRoom.players.find((p) => p.seat === s)?.name ?? `Seat ${s}`,
     muted,
@@ -289,7 +283,7 @@ export function TableView({
   const owed = new Set(view.pickedUp);
   const obligationOpen = view.pickedUp.length > 0;
   const nameOf = (s: number): string => room.players.find((p) => p.seat === s)?.name ?? `Seat ${s}`;
-  const awardsShown = useAwardsCelebration(result, quiet);
+  const awardsNews = useAwardsCelebration(result, quiet);
   // Watching, the seat on view is someone's rather than the viewer's own — by their
   // own name, since the Grabby Pants badge already says who holds the title.
   // Watching the table without a seat: nobody's hand is ours to show.
@@ -339,19 +333,6 @@ export function TableView({
   const building = canMeld && (melding || stagedCount(staging) > 0);
 
   /**
-   * Cards that can go straight onto a meld already down: naturals of a melded rank,
-   * never wilds — where a wild goes is a choice, and this is the button for not
-   * having to make choices.
-   */
-  const layOffs = (() => {
-    if (!canMeld || !view.isDown) return [];
-    const fits = zone.filter(
-      (card) => canLayOff(card, meldRanks, playContext) && !staged.has(card.id),
-    );
-    return fits;
-  })();
-
-  /**
    * Take back this turn's melds, and put the same cards straight back into the
    * lay-down being built, grouped as they were played — so moving a wild is two
    * taps and a replay, not rebuilding the lay-down from nothing.
@@ -368,15 +349,6 @@ export function TableView({
       closeMenu();
       setStaging(restaged);
       setMelding(true);
-    });
-  }
-
-  function layOffAll(): void {
-    const byRank = new Map<Rank, string[]>();
-    for (const card of layOffs) byRank.set(card.rank, [...(byRank.get(card.rank) ?? []), card.id]);
-    void send({
-      type: "playMelds",
-      melds: [...byRank].map(([rank, cardIds]) => ({ rank, cardIds })),
     });
   }
 
@@ -417,16 +389,6 @@ export function TableView({
     });
   }
 
-  /** Why throwing this card away is probably a mistake, if it is. */
-  function warningFor(card: Card): string | null {
-    return discardWarning(card, {
-      canLayOff: canLayOff(card, meldRanks, playContext),
-      others: view.opponents
-        .filter((o) => o.isDown)
-        .map((o) => ({ name: nameOf(o.seat), ranks: new Set(o.melds.map((m) => m.rank)) })),
-    });
-  }
-
   const chosen = zone.find((card) => card.id === chosenId) ?? null;
   const menu = chosen && (
     <CardMenu
@@ -445,7 +407,6 @@ export function TableView({
       // Discarding would silently throw the staged lay-down away, so the melds have
       // to be played or taken back first.
       discardBlocked={stagedCount(staging) > 0}
-      warning={warningFor(chosen)}
       busy={busy}
       onMeld={() => meld(chosen)}
       onLayOff={() => {
@@ -464,9 +425,11 @@ export function TableView({
   );
 
   const canDraw = myTurn && hints.canDraw && !busy;
-  // Whether the pile can be taken is decided by a solver over the whole state, so
-  // this is the server's answer, not a guess made here.
-  const canTake = myTurn && hints.canTakePile && !busy;
+  // The pile can be tried whenever a draw can: whether it may be taken is the
+  // engine's to say, and it says why when it refuses. Asking the server first
+  // (`hints.canTakePile`) and lighting the pile up only when the answer was yes
+  // would tell the player what the solver found, which a real table does not.
+  const canTake = canDraw && view.discard.length > 0;
 
   const lastLap = view.finalLapRemaining !== null && view.wentOutSeat !== null;
 
@@ -566,8 +529,7 @@ export function TableView({
             type="button"
             aria-label={`Take the pile (${view.discard.length} cards)`}
             onClick={() => void send({ type: "takePile" })}
-            style={pilePulse}
-            className="pile-prompt rounded-xl p-1 transition hover:bg-white/5"
+            className="rounded-xl p-1 transition hover:bg-white/5"
           >
             <DiscardPile cards={view.discard} size={pileSize} />
           </button>
@@ -612,7 +574,6 @@ export function TableView({
           ? "Nothing down yet."
           : `Nothing down yet. ${controls ? "You need" : `${watched} needs`} ${minimum} to get down this round.`
       }
-      inFoot={view.inFoot}
       // Clicking a meld on the table aims the next cards at it: the only way to
       // add a wild to a meld already down.
       onSelect={canMeld ? (rank) => setStaging((current) => focusGroup(current, rank)) : undefined}
@@ -637,11 +598,6 @@ export function TableView({
       {obligationOpen && myTurn && (
         <p role="status" className={`${BANNER} border-blue/50 bg-blue/14 text-[#D6E5F7]`}>
           You took the pile. Play at least one of the ringed cards before discarding.
-        </p>
-      )}
-      {hints.canGoOut && myTurn && (
-        <p role="status" className={`${BANNER} border-accent/45 bg-accent/12 text-[#C9F5DF]`}>
-          You have the books to go out. Shed your last card to end the round.
         </p>
       )}
     </>
@@ -690,16 +646,6 @@ export function TableView({
               className={`${ACTION} border border-blue/60 bg-blue/8 text-[#CFE0F5]`}
             >
               Take back melds
-            </button>
-          )}
-          {layOffs.length > 0 && !building && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={layOffAll}
-              className={`${ACTION} border border-accent/60 bg-accent/8 text-[#BDF5DA]`}
-            >
-              Add {layOffs.length} to my melds
             </button>
           )}
         </>
@@ -918,9 +864,17 @@ export function TableView({
       )}
 
       {rulesOpen && <RulesDialog config={room.config} onClose={() => setRulesOpen(false)} />}
-      {grabbyHeadline && <GrabbyAnnouncement headline={grabbyHeadline} />}
-      {marva && <MarvaCelebration news={marva} />}
-      {awardsShown && <AwardsCelebration shown={awardsShown} nameOf={nameOf} />}
+      {grabbyNews.shown && (
+        <GrabbyAnnouncement headline={grabbyNews.shown} onDismiss={grabbyNews.dismiss} />
+      )}
+      {marvaNews.shown && <MarvaCelebration news={marvaNews.shown} onDismiss={marvaNews.dismiss} />}
+      {awardsNews.shown && (
+        <AwardsCelebration
+          shown={awardsNews.shown}
+          nameOf={nameOf}
+          onDismiss={awardsNews.dismiss}
+        />
+      )}
 
       {result && (
         <RoundResult
@@ -944,25 +898,19 @@ export function TableView({
     </main>
   );
 
-  /** One line saying what the table is waiting for, in the order the rules impose. */
+  /**
+   * One line saying where the table stands: whose turn it is, and on the player's
+   * own turn the rule that is holding them, if any. It never says what to do next.
+   */
   function guidanceLine(): string {
     if (!controls) return `${nameOf(hints.seatToAct)} to play.`;
     if (!myTurn) {
       if (clock.paused) return "The table is paused.";
       return `Waiting for ${nameOf(hints.seatToAct)}.`;
     }
-    return guidance();
-  }
-
-  function guidance(): string {
-    const click = phone ? "Tap" : "Click";
-    if (hints.phase === "draw") return `${click} the stock to draw, or the pile to take it.`;
-    if (building) return `${click} cards to add them, or a meld to aim wilds at it.`;
-    if (stagedCount(staging) > 0) return "Play or take back your melds, then discard.";
     if (obligationOpen) return "Play a card from the pile before you can discard.";
     if (clock.inDiscardGrace) return "Time is up. Only a discard will be accepted.";
-    if (zone.length === 0) return "No cards left; your turn ends itself.";
-    return `${click} a card to meld or discard it.`;
+    return "Your turn.";
   }
 }
 
@@ -1064,7 +1012,7 @@ const FELT_CENTER = "radial-gradient(ellipse at 50% 35%, #2C6B53, #1A4535 70%, #
  */
 const FELT_PART = "-m-px flex flex-col overflow-y-auto p-px";
 
-/** A message on the felt: the last lap, a debt to the pile, the books to go out. */
+/** A message on the felt: the last lap, a debt to the pile. */
 const BANNER = "m-0 rounded-2xl border px-3 py-2.5 text-center text-[13px] leading-snug";
 
 /** The buttons by the hand, as the design sizes them. */

@@ -211,6 +211,13 @@ hands, and lets a replay show it at exactly the moment the live table did. The a
 is a shared overlay that Grabby Pants and the match awards also use, so each new announcement has
 one place to build on.
 
+An announcement covers the whole table for four to six seconds, which is a long time to wait when it
+is your move. So once its entrance has played (800 milliseconds, the pop and the settle) a click,
+a tap or Escape puts it away, and the voice with it: a line cut off never brings on what was to
+follow it, so a dismissed Marva Rule does not sound its horn a moment later. Before then the overlay
+lets every click through to the table, so a tap meant for a card as an announcement appears is not
+swallowed by it.
+
 ### Grabby Pants
 
 Grabby Pants is the table's title for a player who takes the discard pile three times running, with
@@ -314,7 +321,8 @@ The list only ever grows. An id can be in flight to a client loaded before a cha
 or renaming one would break a table mid-game, while adding one costs an older client nothing worse
 than a reaction it cannot name. It is kept short enough to find one at a glance — a couple of dozen
 — and a reaction stays up for five seconds, long enough to be read by someone who looked away when
-it arrived.
+it arrived. A reaction the page cannot name is simply not shown: a tab opened before a new phrase
+was added drops it when it arrives rather than draw an empty bubble or fail.
 
 ### Chat at the table
 
@@ -952,6 +960,23 @@ learning, in the lessons and the narrated demo game. The table's Hints button, t
 still works out why the pile cannot be taken (`LegalHints.takePileWhy`) and sends it, but nothing in
 the client reads it today; it is kept on the wire so the lessons' coach can use it later.
 
+A later pass (November 2026, at the family's request) took out the advice that was left at a real
+table, drawing the line between words that tell a player what to do and marks that show the state or
+a rule. Gone: the warning on a risky discard and its "Discard anyway" button (a wild, a rank another
+player has down, a card that fits the player's own meld), the "Add N to my melds" button, the foot's
+go-out tracker (the clean and dirty book counts and "Your Ks need two more cards"), the "You have the
+books to go out" banner, and the how-to lines ("Click the stock to draw, or the pile to take it",
+the lay-down panel's "Click cards in your hand to add them"). The line by the hand now says only
+whose turn it is, or the rule holding the player: a card owed to the pile, a clock that has run out.
+The pile's glow went too, and with it the rule that the pile was a button only when the server's
+solver said it could be taken: both told the player what the solver had found. The pile can now be
+tried whenever a draw is open, and a take the rules refuse comes back with the engine's own reason,
+as any refused move does. Kept, because each shows a rule or the state rather than advice: the
+underline under cards of a rank already down, the lay-down's points bar and its refusal reasons, the
+ring and banner for a card owed to the pile, the dimmed red threes, the last-lap banner, the stock's
+glow while a draw is open, and the one-card "Add to Ks meld" in a card's menu, which is an action,
+not a suggestion.
+
 ### How to play, for this table
 
 The rules page is written from a table's own rules rather than as a general description of the
@@ -988,14 +1013,22 @@ melded. The narration is an optional part of the shared player rather than a cop
 ### Calling a player back to the table
 
 A family game is mostly waiting. Between turns a player reads something else in another tab, and
-the turn chime is easy to miss: the sound may be muted, the browser may be holding it back until the
+the turn's ding is easy to miss: the sound may be muted, the browser may be holding it back until the
 page is tapped, or the speakers may simply be off. So the tab itself says when the turn has come.
 While it is the player's turn and the page is hidden or another window has focus, the title
 alternates with "Your turn!" once a second and the favicon gains an amber mark; both are put back
 the moment the turn passes or the player returns. A player who has asked their system for reduced
 motion gets the same news standing still: the marked icon and a prefix on the title, with nothing
 blinking. Whether it is the player's turn is not worked out a second time for this. It is the very
-flag the chime is played from, so the tab and the table cannot disagree.
+flag the ding is played from, so the tab and the table cannot disagree.
+
+The sound itself is a bell, struck: five partials at a bell's uneven ratios over an E6, a few
+milliseconds' attack and a ring that dies away over about a second, the high partials first. It
+replaced a soft two-note chime that was easy to lose, most of all because the move that hands a
+player the turn, the previous player's discard, arrives in the same instant and its recorded card
+sound covered the chime. The ding now waits a quarter of a second after any card sound in the same
+moment. The wait is scheduled on the audio clock rather than with a timer, so a background tab,
+whose timers the browser slows, still hears it on time.
 
 A browser notification can go up as well, but only for a player who has turned it on at the table.
 The browser's permission is asked for from that tap and never on page load, because a prompt nobody
@@ -1053,10 +1086,10 @@ then a card, a sheet and a raised control, each a few points brighter than the o
 thin white borders at a few percent opacity rather than shadows. Text comes in a handful of greys
 from near white down to a faint label. One green (`#4ADE9B`) is the accent: the primary button, the
 current tab, a ring around what can be played now. Gold (`#F2C14E`) is kept for highlights that
-mean something in the game: wilds, clean books, awards, and the East and West Coast call-out on the
-rules page. A small set of softer colors (coral, blue, violet, teal, orange, lime, salmon) is shared
-by player faces, computer levels, chips and icon tiles, so a color says the same thing everywhere it
-appears. Red is reserved for danger and suits. The palette lives once, as Tailwind theme variables
+mean something in the game: wilds, awards, and the East and West Coast call-out on the rules page.
+A small set of softer colors (coral, blue, violet, teal, orange, lime, salmon) is shared by player
+faces, computer levels, chips and icon tiles, so a color says the same thing everywhere it appears.
+Red is reserved for danger, suits and clean books. The palette lives once, as Tailwind theme variables
 in `client/src/index.css`, and components refer to it by name.
 
 **Type.** Three self-hosted variable fonts, with no font service at run time: Space Grotesk for
@@ -1081,6 +1114,22 @@ scale to any size with no image assets and a screen reader can name each one. A 
 warmer still, with a gold inner line, so the cards that play anywhere stand out in a hand. Small
 cards show only the corner index; larger ones the full face. The table itself is a green felt with a
 wooden rim, the one place the old look survives, because a card table is what the game is.
+
+**Books in red and black.** At a real table a finished book is squared into one pile with a red
+card on top when it is clean and a black one when it is dirty, so which bonus it earned shows from
+across the room. The app does the same everywhere a book appears: the book's top card, a folded
+book's chip (solid red, or near-black with a light outline so it reads on the dark felt), the tiny
+card marker per book under a player's name, and the note under a clean book, in a red light enough
+to read as text. The first redesign used gold for clean and silver for dirty; the family plays
+with red and black, so the app does too. Nothing about a book's look says it is closed: a finished book refuses wilds but
+still takes naturals, so it is drawn as finished, not locked.
+
+**Folded melds.** A meld folded to a chip (another player's box on a computer, or the player's own
+melds collapsed) shows its rank, the number of cards in it, and each wild as a small gold-faced card
+labeled by its own rank: `K 6 [2][JK]`. The count is the meld's whole size, the same number written
+under a meld laid out as cards, rather than how many more a book needs; and a wild is shown as what
+it is, a two or a joker, rather than as a star, because which wilds are gone matters to the players
+still holding theirs. Its accessible name says the same in words ("Meld of Ks, 6 cards, 2 wild").
 
 **Phone and computer.** The two layouts share their content but not their markup. Below 768 pixels
 (`usePhone`, read from `matchMedia` so a narrow desktop window gets the phone layout too) a sheet

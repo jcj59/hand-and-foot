@@ -112,6 +112,22 @@ if (process.env.BLACK_BOOK) {
   ];
   view.playedThisTurn = [];
 }
+if (process.env.FOOT) {
+  // In the foot, a book short of going out: a queen, a 9 and a 7 of melded ranks
+  // or not, a wild and a red three, with four queens down.
+  view.inFoot = true;
+  view.hand = [];
+  view.foot = [
+    c("Q", "spades", 60),
+    c("9", "hearts", 61),
+    c("7", "clubs", 62),
+    c("JOKER", null, 63),
+    c("3", "hearts", 64),
+  ];
+  view.footCount = 5;
+  view.melds = view.melds.slice(0, 3);
+  view.playedThisTurn = [];
+}
 if (process.env.TWO_DISCARDS) view.discard = [c("3", "hearts", 40), c("3", "diamonds", 41)];
 if (process.env.PILE) {
   const ranks = ["5", "9", "Q", "4", "8", "J", "6", "10", "A"];
@@ -121,7 +137,16 @@ if (process.env.PILE) {
   );
 }
 if (process.env.BIG_OPP) {
-  // An opponent with a table full of melds, as tall as a seat gets.
+  // An opponent with a table full of melds, as tall as a seat gets: clean and dirty
+  // books, and open melds with a two, a joker, both, or no wild at all.
+  const wilds = (i) =>
+    [
+      [],
+      [c("2", "spades", 100 + i)],
+      [],
+      [c("JOKER", null, 100 + i)],
+      [c("2", "hearts", 100 + i), c("JOKER", null, 110 + i)],
+    ][i % 5];
   view.opponents[0] = {
     ...view.opponents[0],
     melds: ["J", "Q", "4", "7", "A", "K", "9", "8", "5"].map((r, i) =>
@@ -132,6 +157,7 @@ if (process.env.BIG_OPP) {
             c(r, "clubs", 70 + i),
             c(r, "spades", 80 + i),
             c(r, "diamonds", 90 + i),
+            ...wilds(i),
           ]),
     ),
   };
@@ -249,9 +275,15 @@ const run = async () => {
     await page.addInitScript(() => {
       document.addEventListener("DOMContentLoaded", () => {
         const style = document.createElement("style");
-        style.textContent =
-          '@font-face{font-family:"Noto Color Emoji";src:url(/__emoji.ttf);' +
-          "unicode-range:U+1F000-1FAFF,U+2600-27BF,U+2B50,U+FE0F}";
+        // Declared as a face of each of the page's own families too, limited to
+        // emoji, since Chromium never falls back to a web font by name.
+        style.textContent = ["Noto Color Emoji", "Inter", "Space Grotesk", "JetBrains Mono"]
+          .map(
+            (family) =>
+              `@font-face{font-family:"${family}";src:url(/__emoji.ttf);font-weight:100 900;` +
+              "unicode-range:U+1F000-1FAFF,U+2600-27BF,U+2B50,U+FE0F}",
+          )
+          .join("");
         document.head.append(style);
       });
     });
@@ -273,12 +305,14 @@ const run = async () => {
         const now = Date.now();
         ws.send(JSON.stringify({ event: "room", payload: room }));
         const mine = mode !== "theirs" && mode !== "oppdraw" && mode !== "grabby";
-        const pileWhy = process.env.PILE_WHY
-          ? "with the pile your best lay-down is worth 45, short of the 90 you need to get down"
-          : null;
+        const takeable = !!process.env.TAKEABLE;
+        const pileWhy =
+          process.env.PILE_WHY && !takeable
+            ? "with the pile your best lay-down is worth 45, short of the 90 you need to get down"
+            : null;
         const v = !mine
           ? { ...view, currentSeat: 1, phase: "draw", playedThisTurn: [] }
-          : pileWhy
+          : pileWhy || takeable
             ? { ...view, phase: "draw", playedThisTurn: [] }
             : view;
         const base = {
@@ -294,8 +328,9 @@ const run = async () => {
             canDraw: false,
             canTakePile: false,
             meldableRanks: ["K", "9", "Q", "5"],
-            canGoOut: false,
+            canGoOut: !!process.env.GO_OUT,
             ...(pileWhy ? { phase: "draw", canDraw: true, takePileWhy: pileWhy } : {}),
+            ...(takeable ? { phase: "draw", canDraw: true, canTakePile: true } : {}),
           },
         };
         ws.send(
@@ -564,6 +599,9 @@ const run = async () => {
   // The computer's side panel put away, as a player who hid it left it.
   if (process.env.HIDE_SCORES)
     await page.evaluate(() => localStorage.setItem("hf.hideScores", "1"));
+  // The player's own melds folded to chips, as a player who collapsed them left them.
+  if (process.env.COMPACT_MELDS)
+    await page.evaluate(() => localStorage.setItem("hf.compactMelds", "1"));
   if (process.env.SAVED_LIST) {
     // Two games this device saved for later, for the home screen.
     const day = 24 * 60 * 60_000;
@@ -721,7 +759,9 @@ const run = async () => {
       .click();
   if (action === "menu") await page.getByRole("button", { name: "Main menu" }).click();
   if (action === "scores") await page.getByRole("button", { name: "Scores so far" }).click();
-  if (action === "expand") await page.getByRole("button", { name: /^Expand Cyrus/ }).click();
+  const seatName = process.env.SEAT ?? "Cyrus";
+  if (action === "expand")
+    await page.getByRole("button", { name: new RegExp(`^Expand ${seatName}`) }).click();
   if (action === "picker") await page.getByRole("button", { name: "React" }).click();
   if (action === "rules") {
     // On a phone the rules are an item in the table's menu.
@@ -729,7 +769,8 @@ const run = async () => {
     if (!(await button.isVisible())) await page.getByRole("button", { name: "Main menu" }).click();
     await button.click();
   }
-  if (action === "chip") await page.getByRole("button", { name: /^Cyrus/ }).click();
+  if (action === "chip")
+    await page.getByRole("button", { name: new RegExp(`^${seatName}`) }).click();
   if (action === "expandrows") {
     // Open the scoreboard rows of Cyrus (foot never reached) and Ana (a red three).
     const board = page.getByRole("dialog", { name: "Round result" });
@@ -770,11 +811,24 @@ const run = async () => {
   }[mode];
   if (waitText) {
     await page.getByText(waitText).first().waitFor();
+    // Frames to capture, and (CLICK_AT) moments to click the middle of the window,
+    // both in milliseconds after the change, in time order.
+    const times = (name, fallback) =>
+      (process.env[name] ?? fallback)
+        .split(",")
+        .filter(Boolean)
+        .map((ms) => ({ ms: Number(ms), click: name === "CLICK_AT" }));
+    const steps = [...times("FRAMES", "80,300,600"), ...times("CLICK_AT", "")].sort(
+      (a, b) => a.ms - b.ms || Number(a.click) - Number(b.click),
+    );
     let elapsed = 0;
-    for (const ms of (process.env.FRAMES ?? "80,300,600").split(",").map(Number)) {
+    for (const { ms, click } of steps) {
       await page.waitForTimeout(ms - elapsed);
       elapsed = ms;
-      await page.screenshot({ path: out.replace(".png", `-${ms}.png`) });
+      if (click) {
+        const size = page.viewportSize();
+        await page.mouse.click(size.width / 2, size.height / 2);
+      } else await page.screenshot({ path: out.replace(".png", `-${ms}.png`) });
     }
   } else {
     await page.waitForTimeout(Number(process.env.SHOT_AT ?? 300));
