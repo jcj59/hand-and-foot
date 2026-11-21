@@ -7,10 +7,10 @@
  * itself (`LastMove.marva`), so nothing here judges a lay-down; this only notices
  * a move it has not seen before that says so.
  */
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { LastMove } from "@hf/shared";
 import { Celebration, CelebrationCard } from "./Celebration";
-import { sayDeep } from "./grabby";
+import { sayDeep, type Shown } from "./grabby";
 
 /** How long the celebration stays up: long enough for the voice and the horn. */
 export const MARVA_MS = 5_000;
@@ -25,7 +25,8 @@ export interface MarvaNews {
  * null. Nothing is celebrated for the move the page opened on — that happened
  * before anyone here was watching — nor for one reached `quiet`ly, as a replay
  * seeking past the moment does. Unless muted, the voice says it and then the horn
- * plays; `horn` is how the table plays a sound.
+ * plays; `horn` is how the table plays a sound. Dismissing it stops the voice, and
+ * the horn that was to follow.
  */
 export function useMarvaCelebration(
   move: LastMove | undefined,
@@ -33,10 +34,11 @@ export function useMarvaCelebration(
   muted: boolean,
   quiet: boolean,
   horn: () => void,
-): MarvaNews | null {
+): Shown<MarvaNews> {
   const [shown, setShown] = useState<MarvaNews | null>(null);
   const seen = useRef<number | null | undefined>(undefined);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const stopSpeech = useRef<() => void>(() => {});
   const latest = useRef({ nameOf, horn });
   latest.current = { nameOf, horn };
 
@@ -47,19 +49,30 @@ export function useMarvaCelebration(
     seen.current = seq;
     if (previous === undefined || !move?.marva || quiet) return;
     setShown({ seq: move.seq, name: latest.current.nameOf(move.seat) });
-    if (!muted) sayDeep("Marva Rule", () => latest.current.horn());
+    if (!muted) stopSpeech.current = sayDeep("Marva Rule", () => latest.current.horn());
     clearTimeout(timer.current);
     timer.current = setTimeout(() => setShown(null), MARVA_MS);
   }, [move, muted, quiet]);
 
   useEffect(() => () => clearTimeout(timer.current), []);
-  return shown;
+  const dismiss = useCallback(() => {
+    clearTimeout(timer.current);
+    stopSpeech.current();
+    setShown(null);
+  }, []);
+  return { shown, dismiss };
 }
 
 /** The announcement: the rule's name, large, over a shower of confetti. */
-export function MarvaCelebration({ news }: { readonly news: MarvaNews }): React.ReactElement {
+export function MarvaCelebration({
+  news,
+  onDismiss,
+}: {
+  readonly news: MarvaNews;
+  readonly onDismiss?: () => void;
+}): React.ReactElement {
   return (
-    <Celebration label="Marva Rule" ms={MARVA_MS} confetti>
+    <Celebration label="Marva Rule" ms={MARVA_MS} confetti onDismiss={onDismiss}>
       <CelebrationCard
         icon="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.5-7 10-7 10z"
         color="#F59E8B"

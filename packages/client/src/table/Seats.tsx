@@ -1,8 +1,10 @@
 /**
  * The other players on a computer: a box each across the top of the felt, with
- * who they are, what they are doing ("Playing · 0:41", "Foot · 9", "Reconnecting"),
- * a marker per book, and their melds as chips ("K ×4 +★"), which Expand opens
- * into the cards themselves.
+ * who they are, what they are doing ("Playing · 0:41", "In the foot", "Reconnecting"),
+ * a marker per book, what they hold as card backs (a fan with the count beside it,
+ * and their foot as a pile while they have not picked it up), and their melds as
+ * chips (rank, size and wilds: `K 6 [2][JK]`), which Expand opens into the cards
+ * themselves. The backs never scroll: only the melds do, inside the box's height.
  *
  * Counts rather than cards, because counts are all the server sends: every hidden
  * zone is reduced to a number before it leaves, which is the anti-cheat boundary.
@@ -17,7 +19,7 @@ import { faceOf } from "../profile/avatarStore";
 import { GRABBY_NAME, GrabbyIcon } from "./grabby";
 import { Melds } from "./Melds";
 import { booksOf, type MeldOrder } from "./meldView";
-import { BookMarkers, LINE_COLOR, seatLine } from "./OpponentStrip";
+import { BookMarkers, HeldCards, LINE_COLOR, seatLine } from "./OpponentStrip";
 import { PlayerFace } from "./PlayerFace";
 import { ReactionBubble } from "./reactions";
 import { useRemaining } from "./TurnClock";
@@ -32,6 +34,11 @@ export interface SeatsProps {
   readonly order: MeldOrder;
   /** A quick reaction to show by each seat that has one up. */
   readonly reactions?: ReadonlyMap<number, Reaction>;
+  /**
+   * The tallest a box may be, once the player has dragged the players' row to a
+   * height; without it a box stops at `BOX_MAX_HEIGHT`. Its melds scroll inside.
+   */
+  readonly boxHeight?: number;
 }
 
 export function Seats({
@@ -42,6 +49,7 @@ export function Seats({
   clock,
   order,
   reactions,
+  boxHeight = BOX_MAX_HEIGHT,
 }: SeatsProps): React.ReactElement {
   const [open, setOpen] = useState<ReadonlySet<number>>(new Set());
   const remaining = useRemaining(clock);
@@ -64,7 +72,8 @@ export function Seats({
             data-anchor={`seat-${opponent.seat}`}
             data-zone="seat"
             aria-label={seatLabel(opponent, name, onTurn)}
-            className={`relative flex max-h-64 min-w-0 flex-col gap-2.5 rounded-2xl border bg-black/26 p-3 ${
+            style={{ maxHeight: boxHeight }}
+            className={`relative flex min-w-0 flex-col gap-2.5 rounded-2xl border bg-black/26 p-3 ${
               onTurn ? "border-gold ring-1 ring-gold" : "border-transparent"
             } ${line.tone === "warn" ? "opacity-55" : ""}`}
           >
@@ -90,7 +99,9 @@ export function Seats({
                   {info?.bot && <span className="text-ink/50"> · computer</span>}
                 </span>
                 <span className="mt-1 block">
-                  <BookMarkers books={booksOf(opponent.melds)} />
+                  <HeldCards opponent={opponent} cardHeight={HELD_CARD_HEIGHT}>
+                    <BookMarkers books={booksOf(opponent.melds)} />
+                  </HeldCards>
                 </span>
               </span>
               {opponent.melds.length > 0 && (
@@ -129,6 +140,12 @@ export function Seats({
     </ul>
   );
 }
+
+/** A box's height when the player has not sized the row: room for a few rows of chips. */
+export const BOX_MAX_HEIGHT = 256;
+
+/** One back's height in a seat's fan: small enough that the melds keep most of the box. */
+const HELD_CARD_HEIGHT = 24;
 
 function seatLabel(opponent: OpponentView, name: string, onTurn: boolean): string {
   const parts = [

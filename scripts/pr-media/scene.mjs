@@ -112,6 +112,33 @@ if (process.env.BLACK_BOOK) {
   ];
   view.playedThisTurn = [];
 }
+if (process.env.FOOT) {
+  // In the foot, a book short of going out: a queen, a 9 and a 7 of melded ranks
+  // or not, a wild and a red three, with four queens down.
+  view.inFoot = true;
+  view.hand = [];
+  view.foot = [
+    c("Q", "spades", 60),
+    c("9", "hearts", 61),
+    c("7", "clubs", 62),
+    c("JOKER", null, 63),
+    c("3", "hearts", 64),
+  ];
+  view.footCount = 5;
+  view.melds = view.melds.slice(0, 3);
+  view.playedThisTurn = [];
+}
+if (process.env.TOOK_PILE) {
+  // Round 1, not down yet, just after taking the pile: its cards are in the hand
+  // and owed, nothing is melded, and nothing has been played this turn.
+  view.roundNumber = 1;
+  view.isDown = false;
+  view.melds = [];
+  view.playedThisTurn = [];
+  view.hand = [...view.hand, ...view.discard];
+  view.pickedUp = view.discard.map((x) => x.id);
+  view.discard = [];
+}
 if (process.env.TWO_DISCARDS) view.discard = [c("3", "hearts", 40), c("3", "diamonds", 41)];
 if (process.env.PILE) {
   const ranks = ["5", "9", "Q", "4", "8", "J", "6", "10", "A"];
@@ -121,7 +148,16 @@ if (process.env.PILE) {
   );
 }
 if (process.env.BIG_OPP) {
-  // An opponent with a table full of melds, as tall as a seat gets.
+  // An opponent with a table full of melds, as tall as a seat gets: clean and dirty
+  // books, and open melds with a two, a joker, both, or no wild at all.
+  const wilds = (i) =>
+    [
+      [],
+      [c("2", "spades", 100 + i)],
+      [],
+      [c("JOKER", null, 100 + i)],
+      [c("2", "hearts", 100 + i), c("JOKER", null, 110 + i)],
+    ][i % 5];
   view.opponents[0] = {
     ...view.opponents[0],
     melds: ["J", "Q", "4", "7", "A", "K", "9", "8", "5"].map((r, i) =>
@@ -132,14 +168,21 @@ if (process.env.BIG_OPP) {
             c(r, "clubs", 70 + i),
             c(r, "spades", 80 + i),
             c(r, "diamonds", 90 + i),
+            ...wilds(i),
           ]),
     ),
   };
 }
+// BIG_HAND=1: Ben has taken a big pile and holds more cards than a seat's fan draws.
+if (process.env.BIG_HAND) view.opponents[1] = { ...view.opponents[1], handCount: 22 };
+// PLAYERS=<n>: only the first n seats are at the table (2 to 6).
+const seats = Math.min(names.length, Math.max(2, Number(process.env.PLAYERS ?? names.length)));
+view.opponents = view.opponents.filter((o) => o.seat < seats);
+view.scoresSoFar = view.scoresSoFar.slice(0, seats);
 const grabbyMe = process.env.GRABBY_ME ? { grabbyPants: { seat: 0, streak: 3 } } : {};
 const room = {
   roomId: "HFDEMO",
-  players: names.map((name, seat) => ({ seat, name, connected: seat !== 4 })),
+  players: names.slice(0, seats).map((name, seat) => ({ seat, name, connected: seat !== 4 })),
   hostSeat: 0,
   ...grabbyMe,
   started: true,
@@ -249,9 +292,15 @@ const run = async () => {
     await page.addInitScript(() => {
       document.addEventListener("DOMContentLoaded", () => {
         const style = document.createElement("style");
-        style.textContent =
-          '@font-face{font-family:"Noto Color Emoji";src:url(/__emoji.ttf);' +
-          "unicode-range:U+1F000-1FAFF,U+2600-27BF,U+2B50,U+FE0F}";
+        // Declared as a face of each of the page's own families too, limited to
+        // emoji, since Chromium never falls back to a web font by name.
+        style.textContent = ["Noto Color Emoji", "Inter", "Space Grotesk", "JetBrains Mono"]
+          .map(
+            (family) =>
+              `@font-face{font-family:"${family}";src:url(/__emoji.ttf);font-weight:100 900;` +
+              "unicode-range:U+1F000-1FAFF,U+2600-27BF,U+2B50,U+FE0F}",
+          )
+          .join("");
         document.head.append(style);
       });
     });
@@ -273,12 +322,14 @@ const run = async () => {
         const now = Date.now();
         ws.send(JSON.stringify({ event: "room", payload: room }));
         const mine = mode !== "theirs" && mode !== "oppdraw" && mode !== "grabby";
-        const pileWhy = process.env.PILE_WHY
-          ? "with the pile your best lay-down is worth 45, short of the 90 you need to get down"
-          : null;
+        const takeable = !!process.env.TAKEABLE;
+        const pileWhy =
+          process.env.PILE_WHY && !takeable
+            ? "with the pile your best lay-down is worth 45, short of the 90 you need to get down"
+            : null;
         const v = !mine
           ? { ...view, currentSeat: 1, phase: "draw", playedThisTurn: [] }
-          : pileWhy
+          : pileWhy || takeable
             ? { ...view, phase: "draw", playedThisTurn: [] }
             : view;
         const base = {
@@ -294,8 +345,9 @@ const run = async () => {
             canDraw: false,
             canTakePile: false,
             meldableRanks: ["K", "9", "Q", "5"],
-            canGoOut: false,
+            canGoOut: !!process.env.GO_OUT,
             ...(pileWhy ? { phase: "draw", canDraw: true, takePileWhy: pileWhy } : {}),
+            ...(takeable ? { phase: "draw", canDraw: true, canTakePile: true } : {}),
           },
         };
         ws.send(
@@ -564,6 +616,14 @@ const run = async () => {
   // The computer's side panel put away, as a player who hid it left it.
   if (process.env.HIDE_SCORES)
     await page.evaluate(() => localStorage.setItem("hf.hideScores", "1"));
+  // The computer table's sizes as a player who dragged its dividers left them
+  // (JSON, as `hf.tableLayout` keeps them), and the app's menu folded to a rail.
+  if (process.env.LAYOUT)
+    await page.evaluate((json) => localStorage.setItem("hf.tableLayout", json), process.env.LAYOUT);
+  if (process.env.NAV_FOLDED) await page.evaluate(() => localStorage.setItem("hf.navFolded", "1"));
+  // The player's own melds folded to chips, as a player who collapsed them left them.
+  if (process.env.COMPACT_MELDS)
+    await page.evaluate(() => localStorage.setItem("hf.compactMelds", "1"));
   if (process.env.SAVED_LIST) {
     // Two games this device saved for later, for the home screen.
     const day = 24 * 60 * 60_000;
@@ -721,7 +781,9 @@ const run = async () => {
       .click();
   if (action === "menu") await page.getByRole("button", { name: "Main menu" }).click();
   if (action === "scores") await page.getByRole("button", { name: "Scores so far" }).click();
-  if (action === "expand") await page.getByRole("button", { name: /^Expand Cyrus/ }).click();
+  const seatName = process.env.SEAT ?? "Cyrus";
+  if (action === "expand")
+    await page.getByRole("button", { name: new RegExp(`^Expand ${seatName}`) }).click();
   if (action === "picker") await page.getByRole("button", { name: "React" }).click();
   if (action === "rules") {
     // On a phone the rules are an item in the table's menu.
@@ -729,7 +791,8 @@ const run = async () => {
     if (!(await button.isVisible())) await page.getByRole("button", { name: "Main menu" }).click();
     await button.click();
   }
-  if (action === "chip") await page.getByRole("button", { name: /^Cyrus/ }).click();
+  if (action === "chip")
+    await page.getByRole("button", { name: new RegExp(`^${seatName}`) }).click();
   if (action === "expandrows") {
     // Open the scoreboard rows of Cyrus (foot never reached) and Ana (a red three).
     const board = page.getByRole("dialog", { name: "Round result" });
@@ -755,6 +818,54 @@ const run = async () => {
       .click({ position: { x: 8, y: 30 } });
   if (action === "hidescores")
     await page.getByRole("button", { name: /(Hide|Show) scores and moves/ }).click();
+  if (action === "drag") {
+    // Drag a divider ("Resize your hand" by default, DRAG_LABEL picks another) by
+    // DRAG_BY=dx,dy pixels in ten steps, shooting a frame before the drag, after
+    // every second step, and once the button is up (out-<n>.png).
+    const handle = page.getByRole("separator", {
+      name: process.env.DRAG_LABEL ?? "Resize your hand",
+    });
+    const box = await handle.boundingBox();
+    const [dx, dy] = (process.env.DRAG_BY ?? "0,-160").split(",").map(Number);
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
+    await page.mouse.move(x, y);
+    await page.screenshot({ path: out.replace(".png", "-0.png") });
+    await page.mouse.down();
+    for (let i = 1; i <= 10; i++) {
+      await page.mouse.move(x + (dx * i) / 10, y + (dy * i) / 10);
+      if (i % 2 === 0) await page.screenshot({ path: out.replace(".png", `-${i / 2}.png`) });
+    }
+    await page.mouse.up();
+  }
+  if (action === "arrange") {
+    // Drag a card of the player's own hand (ARRANGE_CARD, the Joker by default) to
+    // just before another (ARRANGE_BEFORE, the Four of hearts), sideways first as a
+    // thumb would, in ten steps: out-0.png before, out-1..5.png along the way and
+    // out-6.png once it is let go. Logs whether anything animated after the drop.
+    const hand = page.getByRole("region", { name: "Your hand" });
+    const cardBox = (name) =>
+      hand.locator(`[data-card-id][aria-label="${name}"]`).first().boundingBox();
+    const from = await cardBox(process.env.ARRANGE_CARD ?? "Joker, wild");
+    const to = await cardBox(process.env.ARRANGE_BEFORE ?? "Four of hearts");
+    const x = from.x + from.width / 2;
+    const y = from.y + from.height / 2;
+    const [tx, ty] = [to.x + to.width * 0.25, to.y + to.height / 2];
+    await page.mouse.move(x, y);
+    await page.screenshot({ path: out.replace(".png", "-0.png") });
+    await page.mouse.down();
+    await page.mouse.move(x - 12, y);
+    for (let i = 1; i <= 10; i++) {
+      await page.mouse.move(x - 12 + ((tx - x + 12) * i) / 10, y + ((ty - y) * i) / 10);
+      if (i % 2 === 0) await page.screenshot({ path: out.replace(".png", `-${i / 2}.png`) });
+    }
+    await page.mouse.up();
+    const moving = await page.evaluate(() => document.getAnimations().length);
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: out.replace(".png", "-6.png") });
+    console.log(JSON.stringify({ animationsAfterDrop: moving }));
+  }
+  if (action === "laydown") await page.getByRole("button", { name: "Lay down for me" }).click();
   if (action === "meld") {
     await page.getByRole("button", { name: /^Meld$/ }).click();
     await page.getByRole("button", { name: /Ten of hearts/i }).click({ position: { x: 8, y: 30 } });
@@ -770,11 +881,24 @@ const run = async () => {
   }[mode];
   if (waitText) {
     await page.getByText(waitText).first().waitFor();
+    // Frames to capture, and (CLICK_AT) moments to click the middle of the window,
+    // both in milliseconds after the change, in time order.
+    const times = (name, fallback) =>
+      (process.env[name] ?? fallback)
+        .split(",")
+        .filter(Boolean)
+        .map((ms) => ({ ms: Number(ms), click: name === "CLICK_AT" }));
+    const steps = [...times("FRAMES", "80,300,600"), ...times("CLICK_AT", "")].sort(
+      (a, b) => a.ms - b.ms || Number(a.click) - Number(b.click),
+    );
     let elapsed = 0;
-    for (const ms of (process.env.FRAMES ?? "80,300,600").split(",").map(Number)) {
+    for (const { ms, click } of steps) {
       await page.waitForTimeout(ms - elapsed);
       elapsed = ms;
-      await page.screenshot({ path: out.replace(".png", `-${ms}.png`) });
+      if (click) {
+        const size = page.viewportSize();
+        await page.mouse.click(size.width / 2, size.height / 2);
+      } else await page.screenshot({ path: out.replace(".png", `-${ms}.png`) });
     }
   } else {
     await page.waitForTimeout(Number(process.env.SHOT_AT ?? 300));

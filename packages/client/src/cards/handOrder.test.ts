@@ -2,7 +2,10 @@ import { describe, it, expect } from "vitest";
 import type { Card, Rank, Suit } from "@hf/shared";
 import { standardDeck } from "@hf/engine";
 import {
+  arrange,
   canLayOff,
+  moveBy,
+  moveTo,
   compareForDisplay,
   displayGroup,
   isDeadWeight,
@@ -195,5 +198,90 @@ describe("what can go straight onto a meld", () => {
   it("is a black three only when black threes are in play: from the foot, onto their book", () => {
     expect(canLayOff(c("3", "spades"), new Set(["3"]), ctx())).toBe(true);
     expect(canLayOff(c("3", "spades"), new Set(["3"]), ctx({ inFoot: false }))).toBe(false);
+  });
+});
+
+describe("arrange", () => {
+  const ace = card("A", "spades");
+  const four = card("4", "hearts");
+  const king = card("K", "clubs");
+  const joker = card("JOKER", null);
+  const two = card("2", "clubs");
+  const ids = (cards: readonly Card[]): string[] => cards.map((c) => c.id);
+
+  it("is the usual display order when the player has arranged nothing", () => {
+    expect(ids(arrange([joker, king, four, ace], null))).toEqual(
+      ids(sortForDisplay([joker, king, four, ace])),
+    );
+  });
+
+  it("keeps the player's order for every card it names", () => {
+    const order = [joker.id, ace.id, four.id, king.id];
+    expect(ids(arrange([four, king, ace, joker], order))).toEqual(order);
+  });
+
+  it("puts cards it does not name at the right end, in display order", () => {
+    // A draw, or the pile: where the "NEW" marker points.
+    const order = [king.id, four.id];
+    expect(ids(arrange([joker, four, ace, king, two], order))).toEqual([
+      king.id,
+      four.id,
+      ace.id,
+      two.id,
+      joker.id,
+    ]);
+  });
+
+  it("drops ids no longer held", () => {
+    const order = [joker.id, "gone", ace.id, four.id];
+    expect(ids(arrange([four, ace], order))).toEqual([ace.id, four.id]);
+  });
+
+  it("an empty order sorts everything as new", () => {
+    expect(ids(arrange([king, ace, four], []))).toEqual([four.id, king.id, ace.id]);
+  });
+
+  it("never reorders the cards it was given", () => {
+    const cards = [king, ace, four];
+    arrange(cards, [four.id, ace.id, king.id]);
+    expect(ids(cards)).toEqual([king.id, ace.id, four.id]);
+  });
+});
+
+describe("moving a card", () => {
+  const row = ["a", "b", "c", "d"];
+
+  it("drops a card before the one at a slot, counted as the row was", () => {
+    expect(moveTo(row, "a", 2)).toEqual(["b", "a", "c", "d"]);
+    expect(moveTo(row, "d", 1)).toEqual(["a", "d", "b", "c"]);
+    expect(moveTo(row, "b", 0)).toEqual(["b", "a", "c", "d"]);
+  });
+
+  it("drops a card at the end for the slot past the last", () => {
+    expect(moveTo(row, "a", 4)).toEqual(["b", "c", "d", "a"]);
+  });
+
+  it("changes nothing for the slots either side of the card itself", () => {
+    expect(moveTo(row, "b", 1)).toEqual(row);
+    expect(moveTo(row, "b", 2)).toEqual(row);
+  });
+
+  it("keeps a slot out of range inside the row", () => {
+    expect(moveTo(row, "b", 99)).toEqual(["a", "c", "d", "b"]);
+    expect(moveTo(row, "c", -3)).toEqual(["c", "a", "b", "d"]);
+  });
+
+  it("leaves the row alone for a card not in it, and never changes its input", () => {
+    expect(moveTo(row, "z", 0)).toEqual(row);
+    expect(moveBy(row, "z", 1)).toEqual(row);
+    moveTo(row, "a", 3);
+    expect(row).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("moves one place left or right, staying put at either end", () => {
+    expect(moveBy(row, "b", -1)).toEqual(["b", "a", "c", "d"]);
+    expect(moveBy(row, "b", 1)).toEqual(["a", "c", "b", "d"]);
+    expect(moveBy(row, "a", -1)).toEqual(row);
+    expect(moveBy(row, "d", 1)).toEqual(row);
   });
 });

@@ -11,27 +11,33 @@
  * gone to rather than a tab: it has a Back button of its own and no tab bar, which
  * would have nothing to mark as the page being shown.
  */
-import { useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { loadAccount, loadName, onProfileChange } from "../identity";
 import { AvatarFace } from "../profile/Avatar";
 import { faceOf, loadAvatar } from "../profile/avatarStore";
 import { usePhone } from "../usePhone";
+import { Icon, type IconName } from "./icons";
 
 interface Destination {
   readonly to: string;
   readonly label: string;
   /** Shown in the phone's tab bar as well as the sidebar. */
   readonly tab: boolean;
+  /** What stands for it in the sidebar folded to a rail. */
+  readonly icon: IconName;
 }
 
 const DESTINATIONS: readonly Destination[] = [
-  { to: "/", label: "Play", tab: true },
-  { to: "/history", label: "History", tab: true },
-  { to: "/learn", label: "Learn", tab: false },
-  { to: "/rules", label: "Rules", tab: true },
-  { to: "/profile", label: "Profile", tab: true },
+  { to: "/", label: "Play", tab: true, icon: "playCircle" },
+  { to: "/history", label: "History", tab: true, icon: "clock" },
+  { to: "/learn", label: "Learn", tab: false, icon: "book" },
+  { to: "/rules", label: "Rules", tab: true, icon: "rules" },
+  { to: "/profile", label: "Profile", tab: true, icon: "user" },
 ];
+
+/** Whether the sidebar is folded to its rail, kept per device. */
+export const NAV_FOLDED_KEY = "hf.navFolded";
 
 export function AppShell(): React.ReactElement {
   const phone = usePhone();
@@ -95,38 +101,87 @@ function TabBar(): React.ReactElement {
   );
 }
 
+/**
+ * The computer's navigation, which folds to a rail of icons to give a page the
+ * room: each destination keeps its name for a screen reader and as a tooltip, and
+ * the choice is remembered on this device.
+ */
 function Sidebar(): React.ReactElement {
+  const [folded, setFolded] = useState(readFolded);
+  const fold = (on: boolean): void => {
+    setFolded(on);
+    try {
+      window.localStorage.setItem(NAV_FOLDED_KEY, on ? "1" : "0");
+    } catch {
+      // Blocked storage: the choice lasts until the page is reloaded.
+    }
+  };
   return (
     <nav
       aria-label="Main"
-      className="flex w-[240px] shrink-0 flex-col gap-1.5 border-r border-white/6 bg-nav px-4 py-6"
+      data-folded={folded ? "" : undefined}
+      className={`flex shrink-0 flex-col gap-1.5 overflow-hidden border-r border-white/6 bg-nav py-6 transition-[width] duration-200 ease-out motion-reduce:transition-none ${
+        folded ? "w-[72px] px-3" : "w-[240px] px-4"
+      }`}
     >
-      <p className="mx-2.5 mb-5 font-display text-[19px] font-bold">Hand &amp; Foot</p>
+      <div className={`mb-5 flex items-center ${folded ? "justify-center" : "pl-2.5"}`}>
+        {!folded && (
+          <p className="m-0 flex-1 truncate font-display text-[19px] font-bold">Hand &amp; Foot</p>
+        )}
+        <button
+          type="button"
+          aria-label={folded ? "Show the menu" : "Fold the menu"}
+          title={folded ? "Show the menu" : "Fold the menu"}
+          aria-expanded={!folded}
+          onClick={() => fold(!folded)}
+          className="grid size-9 shrink-0 place-items-center rounded-lg text-muted hover:bg-white/8 hover:text-ink"
+        >
+          <Icon name={folded ? "navUnfold" : "navFold"} size={18} />
+        </button>
+      </div>
       {DESTINATIONS.map((d) => (
         <NavLink
           key={d.to}
           to={d.to}
           end={d.to === "/"}
+          title={folded ? d.label : undefined}
           className={({ isActive }) =>
-            `flex min-h-11 items-center gap-2.5 rounded-xl px-3 text-[15px] font-medium ${
+            `flex min-h-11 items-center gap-2.5 rounded-xl text-[15px] font-medium ${
+              folded ? "justify-center" : "px-3"
+            } ${
               isActive ? "bg-accent/10 text-accent" : "text-nav-ink hover:bg-white/4 hover:text-ink"
             }`
           }
         >
-          {({ isActive }) => (
-            <>
-              <span
-                aria-hidden="true"
-                className={`h-[18px] w-1 rounded-sm ${isActive ? "bg-accent" : "bg-transparent"}`}
-              />
-              {d.label}
-            </>
-          )}
+          {({ isActive }) =>
+            folded ? (
+              <>
+                <Icon name={d.icon} size={20} />
+                <span className="sr-only">{d.label}</span>
+              </>
+            ) : (
+              <>
+                <span
+                  aria-hidden="true"
+                  className={`h-[18px] w-1 rounded-sm ${isActive ? "bg-accent" : "bg-transparent"}`}
+                />
+                {d.label}
+              </>
+            )
+          }
         </NavLink>
       ))}
-      <WhoAmI />
+      <WhoAmI folded={folded} />
     </nav>
   );
+}
+
+function readFolded(): boolean {
+  try {
+    return window.localStorage.getItem(NAV_FOLDED_KEY) === "1";
+  } catch {
+    return false;
+  }
 }
 
 /** The player this device sits down as: their face, name and username if signed in. */
@@ -134,7 +189,7 @@ function profileSnapshot(): string {
   return JSON.stringify([loadName().trim(), loadAccount(), loadAvatar()]);
 }
 
-function WhoAmI(): React.ReactElement | null {
+function WhoAmI({ folded }: { readonly folded: boolean }): React.ReactElement | null {
   const [name, account, avatar] = JSON.parse(
     useSyncExternalStore(onProfileChange, profileSnapshot),
   ) as [string, string | null, ReturnType<typeof loadAvatar>];
@@ -143,10 +198,13 @@ function WhoAmI(): React.ReactElement | null {
   return (
     <NavLink
       to="/profile"
-      className="mt-auto flex items-center gap-2.5 rounded-[14px] bg-surface p-3 hover:bg-raised"
+      title={folded ? shown : undefined}
+      className={`mt-auto flex items-center gap-2.5 rounded-[14px] hover:bg-raised ${
+        folded ? "justify-center p-1" : "bg-surface p-3"
+      }`}
     >
       <AvatarFace avatar={avatar ?? faceOf({ name: shown })} size={40} />
-      <span className="min-w-0 flex-1">
+      <span className={folded ? "sr-only" : "min-w-0 flex-1"}>
         <span className="block truncate text-sm font-semibold">{shown}</span>
         {account && <span className="block truncate text-xs text-muted">@{account}</span>}
       </span>
