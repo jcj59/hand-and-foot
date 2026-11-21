@@ -1053,7 +1053,7 @@ the server already cut for this seat, so another player's drawn card is not amon
 player's own drawn card is dropped too, since it is a card in their hand. That part is
 built field by field from an allowlist rather than by copying the view, so a field added to the view
 later does not start travelling in reports unnoticed. When a report would pass the size cap, the
-oldest errors go first, then the oldest moves.
+oldest errors go first, then the oldest moves, then the oldest move lines.
 
 ## Visual design
 
