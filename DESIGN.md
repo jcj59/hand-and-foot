@@ -1086,10 +1086,10 @@ then a card, a sheet and a raised control, each a few points brighter than the o
 thin white borders at a few percent opacity rather than shadows. Text comes in a handful of greys
 from near white down to a faint label. One green (`#4ADE9B`) is the accent: the primary button, the
 current tab, a ring around what can be played now. Gold (`#F2C14E`) is kept for highlights that
-mean something in the game: wilds, clean books, awards, and the East and West Coast call-out on the
-rules page. A small set of softer colors (coral, blue, violet, teal, orange, lime, salmon) is shared
-by player faces, computer levels, chips and icon tiles, so a color says the same thing everywhere it
-appears. Red is reserved for danger and suits. The palette lives once, as Tailwind theme variables
+mean something in the game: wilds, awards, and the East and West Coast call-out on the rules page.
+A small set of softer colors (coral, blue, violet, teal, orange, lime, salmon) is shared by player
+faces, computer levels, chips and icon tiles, so a color says the same thing everywhere it appears.
+Red is reserved for danger, suits and clean books. The palette lives once, as Tailwind theme variables
 in `client/src/index.css`, and components refer to it by name.
 
 **Type.** Three self-hosted variable fonts, with no font service at run time: Space Grotesk for
@@ -1114,6 +1114,22 @@ scale to any size with no image assets and a screen reader can name each one. A 
 warmer still, with a gold inner line, so the cards that play anywhere stand out in a hand. Small
 cards show only the corner index; larger ones the full face. The table itself is a green felt with a
 wooden rim, the one place the old look survives, because a card table is what the game is.
+
+**Books in red and black.** At a real table a finished book is squared into one pile with a red
+card on top when it is clean and a black one when it is dirty, so which bonus it earned shows from
+across the room. The app does the same everywhere a book appears: the book's top card, a folded
+book's chip (solid red, or near-black with a light outline so it reads on the dark felt), the tiny
+card marker per book under a player's name, and the note under a clean book, in a red light enough
+to read as text. The first redesign used gold for clean and silver for dirty; the family plays
+with red and black, so the app does too. Nothing about a book's look says it is closed: a finished book refuses wilds but
+still takes naturals, so it is drawn as finished, not locked.
+
+**Folded melds.** A meld folded to a chip (another player's box on a computer, or the player's own
+melds collapsed) shows its rank, the number of cards in it, and each wild as a small gold-faced card
+labeled by its own rank: `K 6 [2][JK]`. The count is the meld's whole size, the same number written
+under a meld laid out as cards, rather than how many more a book needs; and a wild is shown as what
+it is, a two or a joker, rather than as a star, because which wilds are gone matters to the players
+still holding theirs. Its accessible name says the same in words ("Meld of Ks, 6 cards, 2 wild").
 
 **Phone and computer.** The two layouts share their content but not their markup. Below 768 pixels
 (`usePhone`, read from `matchMedia` so a narrow desktop window gets the phone layout too) a sheet

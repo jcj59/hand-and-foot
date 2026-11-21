@@ -4,8 +4,8 @@
  *
  * A chip carries what a player glances at between turns: who, whether it is
  * their turn and how long they have, whether they dropped, how many cards they
- * hold and whether that is their foot, and a marker per book (gold for clean,
- * silver for dirty). Their melds in full are one tap away, in a sheet over the
+ * hold and whether that is their foot, and a marker per book (a tiny card, red
+ * for clean and black for dirty). Their melds in full are one tap away, in a sheet over the
  * table, sorted the same way as the player's own.
  *
  * Nothing here could leak: the server sends opponents as counts and melds, never
@@ -52,7 +52,11 @@ export function seatLine(
 
 export const LINE_COLOR = { turn: "text-gold", warn: "text-salmon", plain: "text-ink/70" } as const;
 
-/** One marker per book, as the chips and seat boxes show them. */
+/**
+ * One marker per book, as the chips and seat boxes show them: a tiny card, red
+ * for a clean book and black for a dirty one, the color of the book's top card.
+ * The black one carries a light outline, or it would vanish on the dark felt.
+ */
 export function BookMarkers({
   books,
 }: {
@@ -63,8 +67,11 @@ export function BookMarkers({
       {books.map((kind, i) => (
         <span
           key={i}
-          className={`h-[13px] w-2.5 rounded-[3px] ${
-            kind === "clean" ? "bg-gold shadow-[inset_0_0_0_1px_#FFE29A]" : "bg-ink-soft"
+          data-book={kind}
+          className={`h-[13px] w-2.5 rounded-[2px] ${
+            kind === "clean"
+              ? "bg-suit-red shadow-[inset_0_0_0_1px_rgba(255,255,255,0.35)]"
+              : "bg-suit-black shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)]"
           }`}
         />
       ))}

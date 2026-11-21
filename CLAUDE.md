@@ -1095,7 +1095,17 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   the user's choice over the mockups' "3 more for a book"). A finished book is one squared-up
   `BookCard` (edges by `bookEdges`), topped by `bookTop`: a red natural on a clean book, a black
   one on a dirty book, and inked in that color whatever its suit; its image is named
-  "<card> on top", the meld's `li` keeps the book's name. "Newest first" is `PlayerState.melds` reversed, which the engine keeps in laid
+  "<card> on top", the meld's `li` keeps the book's name. **Books are red and black everywhere,
+  and a folded meld shows its size and wilds (2026-11-19 change list, items 7, 9, 10):** a chip
+  (`Melds` with `chips`: other seats' boxes, the player's own melds collapsed) is the structured
+  `meldChip` value `{rank, count, tone, wilds}` (count = every card; wilds `"2"`/`"JK"`, twos
+  first) drawn as `K 6 [2][JK]` with gold-faced glyphs (`data-wild`); a clean book's chip is
+  `bg-suit-red`, a dirty one's `bg-suit-black` with a light inset outline; `BookMarkers` are tiny
+  cards in the same two colors (`data-book`); a clean book's note is `text-book-red` (a lighter
+  red token, readable on the felt). `meldLabel` (now in `meldView`) adds the wilds: "Meld of Ks, 6
+  cards, 2 wild". Nothing marks a book as locked: it refuses wilds but still takes naturals.
+  Harness: `BIG_OPP=1` melds hold twos and jokers, `COMPACT_MELDS=1`, `SEAT=<name>` for
+  `expand`/`chip`. "Newest first" is `PlayerState.melds` reversed, which the engine keeps in laid
   order (pinned in `reducer.meldorder.test.ts`). The card's choices (`CardMenu`) are a sheet on
   a phone and a popover on a computer (`CardPopover` in `Hand.tsx`, portalled to `body`,
   `position: fixed`, placed by the pure `placeMenu` in `menuPlacement.ts`: above the card, from

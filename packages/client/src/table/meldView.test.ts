@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { EAST_COAST, type Card, type Meld, type Rank, type Suit } from "@hf/shared";
-import { booksOf, meldChip, meldNote, sortMelds } from "./meldView";
+import { booksOf, meldChip, meldLabel, meldNote, sortMelds } from "./meldView";
 import { cardShort, moveLine, withMove, MOVES_KEPT } from "./moveLine";
 
 let next = 0;
@@ -64,10 +64,44 @@ describe("what a meld says", () => {
     expect(meldNote(meld("8", 3), rich).text).toBe("3 cards · 21");
   });
 
-  it("folds to a chip with its naturals counted and its wilds starred", () => {
-    expect(meldChip(meld("7", 3))).toBe("7 ×3");
-    expect(meldChip(meld("K", 4, 1))).toBe("K ×4 +★");
-    expect(meldChip(meld("J", 3, 2))).toBe("J ×3 +★2");
+  it("folds to a chip with its whole size and each wild by its own rank", () => {
+    expect(meldChip(meld("7", 3))).toEqual({ rank: "7", count: 3, tone: "open", wilds: [] });
+    // Six cards in all, not the four naturals; the wilds as what they are.
+    const kings: Meld = {
+      rank: "K",
+      cards: [card("JOKER", null), card("K"), card("K"), card("2", "spades"), card("K"), card("K")],
+    };
+    expect(meldChip(kings)).toEqual({ rank: "K", count: 6, tone: "open", wilds: ["2", "JK"] });
+    // Twos before jokers, whatever order they were laid in, as a fan draws them.
+    const jacks: Meld = {
+      rank: "J",
+      cards: [card("JOKER", null), card("J"), card("2", "spades"), card("J"), card("JOKER", null)],
+    };
+    expect(meldChip(jacks).wilds).toEqual(["2", "JK", "JK"]);
+    const twos: Meld = {
+      rank: "8",
+      cards: [card("2", "clubs"), card("8"), card("2", "hearts"), card("8"), card("8")],
+    };
+    expect(meldChip(twos).wilds).toEqual(["2", "2"]);
+  });
+
+  it("colors a folded book by its kind", () => {
+    expect(meldChip(meld("9", 7))).toEqual({ rank: "9", count: 7, tone: "clean", wilds: [] });
+    expect(meldChip(meld("Q", 6, 2))).toEqual({
+      rank: "Q",
+      count: 8,
+      tone: "dirty",
+      wilds: ["2", "2"],
+    });
+  });
+
+  it("names a meld by its rank, size and wilds", () => {
+    expect(meldLabel(meld("K", 4, 2))).toBe("Meld of Ks, 6 cards, 2 wild");
+    expect(meldLabel(meld("K", 3, 1))).toBe("Meld of Ks, 4 cards, 1 wild");
+    expect(meldLabel(meld("8", 3))).toBe("Meld of 8s, 3 cards");
+    expect(meldLabel(meld("A", 1))).toBe("Meld of As, 1 card");
+    expect(meldLabel(meld("9", 7))).toBe("clean book of 9s, 7 cards");
+    expect(meldLabel(meld("Q", 5, 2))).toBe("dirty book of Qs, 7 cards, 2 wild");
   });
 
   it("lists only finished books, as clean or dirty", () => {

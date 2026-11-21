@@ -1,6 +1,7 @@
 /**
  * How melds are read at the table, as words and in an order: what each one is
- * worth, its short form for a chip, and the two ways of sorting them.
+ * worth, its folded form for a chip, its accessible name, and the two ways of
+ * sorting them.
  *
  * Pure, so the table, the other players' boxes and their sheet all say the same
  * thing about the same meld. Whether a meld is a book, and of which kind, is the
@@ -46,12 +47,50 @@ export function meldNote(
   };
 }
 
-/** A meld folded to a chip: "K ×4 +★", the naturals counted and the wilds starred. */
-export function meldChip(meld: Meld): string {
+/** How a wild is labeled on a folded meld: by its own rank, a two or a joker. */
+export type WildLabel = "2" | "JK";
+
+/**
+ * A meld folded to a chip: its rank, every card it holds, its kind, and each wild
+ * by its own rank (`K 6 [2][JK]`). The count is the meld's whole size, the
+ * number a player reads under a meld laid out as cards, so the two views agree;
+ * the wilds are shown for what they are, twos before jokers, the order a fan
+ * draws them in.
+ */
+export interface MeldChip {
+  readonly rank: Rank;
+  readonly count: number;
+  readonly tone: MeldTone;
+  readonly wilds: readonly WildLabel[];
+}
+
+export function meldChip(meld: Meld): MeldChip {
+  const wilds = meld.cards
+    .filter((card) => isWild(card.rank))
+    .map((card): WildLabel => (card.rank === "JOKER" ? "JK" : "2"))
+    .sort((a, b) => (a === b ? 0 : a === "2" ? -1 : 1));
+  const kind = classifyBook(meld);
+  return {
+    rank: meld.rank,
+    count: meld.cards.length,
+    tone: kind === "incomplete" ? "open" : kind,
+    wilds,
+  };
+}
+
+/**
+ * The meld's accessible name. States the rank, the size and the wilds together,
+ * because that is the whole meaning of a meld and hearing seven card names is not
+ * a substitute for it: "Meld of Ks, 6 cards, 2 wild", "clean book of 9s, 7 cards".
+ */
+export function meldLabel(meld: Meld): string {
+  const kind = classifyBook(meld);
+  const size = `${meld.cards.length} card${meld.cards.length === 1 ? "" : "s"}`;
   const wilds = meld.cards.filter((card) => isWild(card.rank)).length;
-  const naturals = meld.cards.length - wilds;
-  const star = wilds === 0 ? "" : wilds === 1 ? " +★" : ` +★${wilds}`;
-  return `${meld.rank} ×${naturals}${star}`;
+  const wild = wilds === 0 ? "" : `, ${wilds} wild`;
+  return kind === "incomplete"
+    ? `Meld of ${meld.rank}s, ${size}${wild}`
+    : `${kind} book of ${meld.rank}s, ${size}${wild}`;
 }
 
 /** Each finished book, in the order the melds are given: the markers on a player's chip. */
