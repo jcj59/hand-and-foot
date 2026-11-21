@@ -1131,6 +1131,19 @@ under a meld laid out as cards, rather than how many more a book needs; and a wi
 it is, a two or a joker, rather than as a star, because which wilds are gone matters to the players
 still holding theirs. Its accessible name says the same in words ("Meld of Ks, 6 cards, 2 wild").
 
+**Other players' hands.** Another player's hand is drawn the way it looks across a real table: a
+small overlapped fan of card backs, one per card, with the exact count written beside it, and
+their foot as a small face-down pile labeled "Foot" until they pick it up, when the fan becomes
+the foot and the pile is gone. The fan stops growing at 14 backs, a dealt hand, so a hand swollen
+by the pile keeps a seat's width; past that only the number grows. The count used to be the line
+under the player's name, which their turn clock replaced, so the one moment everyone watches a
+player was the one moment their count was hidden; the line now says only what they are doing
+("Playing · 0:41", "In the foot", "Waiting"). A phone's chip has no room for a fan: it shows a mini
+fan with the count and a mini stack for the foot, and its sheet the full fan. The backs are only a
+picture of a count: the server sends counts, never cards, and the backs carry no card ids, so a
+card drawn by that player still flies to the seat, not to a back. The fan sits outside the melds'
+scroller and takes a fixed slice of the box, so a box full of melds still scrolls only the melds.
+
 **Phone and computer.** The two layouts share their content but not their markup. Below 768 pixels
 (`usePhone`, read from `matchMedia` so a narrow desktop window gets the phone layout too) a sheet
 rises from the bottom edge instead of opening as a centered dialog, page content is a single

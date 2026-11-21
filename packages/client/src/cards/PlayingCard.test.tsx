@@ -2,11 +2,15 @@ import { describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { Card, Rank, Suit } from "@hf/shared";
 import {
+  BackStack,
   bookEdges,
+  CardFan,
   cardCorners,
   DiscardPile,
   discardLayout,
+  FAN_BACKS_MAX,
   FaceDownPile,
+  fanBacks,
   PlayingCard,
   STOCK_LAYERS_MAX,
   stockLayers,
@@ -121,7 +125,55 @@ describe("a card's face", () => {
   });
 });
 
+describe("another player's hand as backs", () => {
+  it("draws a back per card up to a dealt hand, then stops growing", () => {
+    // 14 is a dealt hand: a hand swollen by the pile stays the width of a seat.
+    expect(FAN_BACKS_MAX).toBe(14);
+    expect([-1, 0, 1, 13, 14, 15, 22, 60].map(fanBacks)).toEqual([0, 0, 1, 13, 14, 14, 14, 14]);
+  });
+
+  it("is a picture of backs only, with no card in it and nothing a card could fly to", () => {
+    const { container } = render(<CardFan count={22} height={30} />);
+    const fan = container.querySelector("svg")!;
+    expect(fan.getAttribute("data-fan")).toBe("14");
+    expect(fan).toHaveAttribute("aria-hidden", "true");
+    expect(fan.querySelectorAll("g[transform^='rotate']")).toHaveLength(14);
+    // One emblem, on the front card.
+    expect(fan.querySelectorAll("rect[transform^='rotate(45']")).toHaveLength(1);
+    expect(container.querySelector("[data-motion]")).toBeNull();
+    expect(screen.queryByRole("img")).toBeNull();
+  });
+
+  it("draws nothing for an empty hand", () => {
+    const { container } = render(<CardFan count={0} height={30} />);
+    expect(container.firstChild).toBeNull();
+  });
+
+  it("is sized from one card's height, the turned corners included", () => {
+    const { container } = render(<CardFan count={1} height={40} />);
+    const fan = container.querySelector("svg")!;
+    // A single card is not turned: exactly one card, 56 by 80 units, at half scale.
+    expect(fan.getAttribute("viewBox")).toBe("0 0 56 80");
+    expect(fan.getAttribute("width")).toBe("28");
+    expect(fan.getAttribute("height")).toBe("40");
+    const wide = render(<CardFan count={5} height={40} />).container.querySelector("svg")!;
+    expect(Number(wide.getAttribute("height"))).toBeGreaterThan(40);
+    expect(Number(wide.getAttribute("width"))).toBeGreaterThan((4 * 13 + 56) / 2);
+  });
+});
+
 describe("a face-down pile", () => {
+  it("can be drawn at a fixed depth, whatever it holds", () => {
+    const backs = (el: Element): number =>
+      el.querySelectorAll("rect[fill='url(#hf-card-back)']").length;
+    const { container, rerender } = render(<BackStack count={13} width={21} />);
+    expect(backs(container)).toBe(1);
+    rerender(<BackStack count={13} width={21} layers={3} />);
+    expect(backs(container)).toBe(3);
+    rerender(<BackStack count={13} width={21} layers={9} />);
+    expect(backs(container)).toBe(5);
+  });
+
   it("is drawn deeper the more it holds, up to a limit", () => {
     expect(STOCK_LAYERS_MAX).toBe(5);
     expect([0, 1, 13, 14, 28, 56, 200].map(stockLayers)).toEqual([0, 1, 1, 2, 3, 5, 5]);

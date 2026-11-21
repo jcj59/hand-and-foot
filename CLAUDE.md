@@ -1082,8 +1082,17 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   `Sheet`) and the menu, which holds Pause, How to play, Sound (phone), turn notifications
   (computer) and "Go to the main menu" (aria "Main menu" is the menu button now). Other players
   are `OpponentStrip` chips on a phone (sheet of their melds on felt) and `Seats` boxes on a
-  computer (chips, Expand for cards); both use `seatLine` ("Playing · 0:41", "Foot · 9",
-  "Reconnecting") and `BookMarkers`, and show nobody playing once a result is up. The felt holds
+  computer (chips, Expand for cards); both use `seatLine` ("Playing · 0:41", "In the foot",
+  "Waiting", "Reconnecting"; never the count) and `BookMarkers`, and show nobody playing once a
+  result is up. **Hands as backs (2026-11-19 change list, items 11 to 13):** a seat box shows
+  `HeldCards` (in `OpponentStrip.tsx`): `CardFan` (`PlayingCard.tsx`), one back per card up to
+  `FAN_BACKS_MAX` 14 (`fanBacks`), the exact count beside it (`data-held`), and while not in the
+  foot a `BackStack` of fixed depth labeled "Foot" (`data-foot`); in the foot the fan is the
+  foot. It sits between the header and the melds' scroller (`shrink-0`), so `BIG_OPP=1` still
+  scrolls only the melds. A phone chip shows `HeldGlyphs` (a mini fan with the count and a mini
+  stack for the foot) beside the book markers, and the sheet the full `HeldCards`. Backs carry no
+  ids and no `data-motion`; `data-anchor="seat-N"` stays on the box or chip. Harness:
+  `PLAYERS=<n>` seats only the first n, `BIG_HAND=1` gives Ben 22 cards. The felt holds
   the piles, the latest move as a pill (`moveLine`; the side panel keeps the last
   `MOVES_KEPT` 3 via `withMove`, and on a live or watched table can be put away to a rail,
   "Hide scores and moves", per device `hf.hideScores`, `SidePanel` in `TableView.tsx`; a
