@@ -7,7 +7,7 @@
  * action log), so every screen agrees and a reload keeps it. The announcement is
  * a change seen here: the holder differing from the one this page last saw.
  */
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { RoomInfo } from "@hf/shared";
 import { faceOf } from "../profile/avatarStore";
 import { Celebration, CelebrationCard } from "./Celebration";
@@ -40,7 +40,7 @@ function grabbyHeadline(room: RoomInfo): string | null {
 }
 
 /** How long the announcement stays up. */
-const GRABBY_MS = 4_000;
+export const GRABBY_MS = 4_000;
 
 /** How long to wait for the device's voices to load before using its default. */
 const VOICES_WAIT_MS = 1_000;
@@ -60,22 +60,30 @@ function pickDeepVoice(voices: readonly SpeechSynthesisVoice[]): SpeechSynthesis
 /**
  * Say a line deep and slow, with whatever voice the device has, then call `after`
  * — once, whether the line finished, could not be said, or the device never says
- * when it is done. Chrome lists no voices until `voiceschanged` fires, so an empty
+ * when it is done. Returns a way to stop it: the line is cut off and `after` never
+ * runs. Chrome lists no voices until `voiceschanged` fires, so an empty
  * list waits for that once before settling for the default voice.
  */
-export function sayDeep(text: string, after?: () => void): void {
+export function sayDeep(text: string, after?: () => void): () => void {
   let finished = false;
+  let speaking = false;
+  const timers: {
+    giveUp?: ReturnType<typeof setTimeout>;
+    fallback?: ReturnType<typeof setTimeout>;
+  } = {};
   const done = (): void => {
     if (finished) return;
     finished = true;
+    clearTimeout(timers.giveUp);
     after?.();
   };
   const synth = typeof window !== "undefined" ? window.speechSynthesis : undefined;
   if (!synth || typeof SpeechSynthesisUtterance === "undefined") {
     done();
-    return;
+    return () => {};
   }
   const speak = (): void => {
+    if (finished) return;
     const line = new SpeechSynthesisUtterance(text);
     line.pitch = 0.1;
     line.rate = 0.75;
@@ -85,30 +93,45 @@ export function sayDeep(text: string, after?: () => void): void {
     line.onerror = done;
     synth.cancel();
     synth.speak(line);
+    speaking = true;
     // Some browsers never report the end of a line; don't let that swallow `after`.
-    setTimeout(done, SPEECH_GIVE_UP_MS);
+    timers.giveUp = setTimeout(done, SPEECH_GIVE_UP_MS);
+  };
+  // Stopping: the line goes quiet and what was to follow it never comes.
+  const stop = (): void => {
+    if (finished) return;
+    finished = true;
+    clearTimeout(timers.giveUp);
+    clearTimeout(timers.fallback);
+    if (speaking) synth.cancel();
   };
   if (synth.getVoices().length > 0 || typeof synth.addEventListener !== "function") {
     speak();
-    return;
+    return stop;
   }
   let started = false;
   const once = (): void => {
     if (started) return;
     started = true;
-    clearTimeout(fallback);
+    clearTimeout(timers.fallback);
     synth.removeEventListener("voiceschanged", once);
     speak();
   };
-  const fallback = setTimeout(once, VOICES_WAIT_MS);
+  timers.fallback = setTimeout(once, VOICES_WAIT_MS);
   synth.addEventListener("voiceschanged", once);
+  return stop;
 }
 
 /** How long a spoken line may take before whatever follows it goes ahead anyway. */
 export const SPEECH_GIVE_UP_MS = 3_000;
 
-function sayGrabbyPants(): void {
-  sayDeep("Grabby Pants");
+/**
+ * What a celebration's hook gives the table: what to show (null for nothing), and
+ * a way to put it away early, which also stops whatever is being said with it.
+ */
+export interface Shown<T> {
+  readonly shown: T | null;
+  readonly dismiss: () => void;
 }
 
 /**
@@ -120,10 +143,11 @@ export function useGrabbyAnnouncement(
   room: RoomInfo | undefined,
   muted: boolean,
   quiet = false,
-): string | null {
+): Shown<string> {
   const [headline, setHeadline] = useState<string | null>(null);
   const seen = useRef<string | null | undefined>(undefined);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const stopSpeech = useRef<() => void>(() => {});
   const key = room?.grabbyPants ? `${room.grabbyPants.seat}:${room.grabbyPants.from ?? ""}` : null;
 
   useEffect(() => {
@@ -134,13 +158,18 @@ export function useGrabbyAnnouncement(
     // The same holder going further keeps the key; only a new holder is news.
     if (previous?.split(":")[0] === key.split(":")[0]) return;
     setHeadline(grabbyHeadline(room));
-    if (!muted) sayGrabbyPants();
+    if (!muted) stopSpeech.current = sayDeep("Grabby Pants");
     clearTimeout(timer.current);
     timer.current = setTimeout(() => setHeadline(null), GRABBY_MS);
   }, [key, room, muted, quiet]);
 
   useEffect(() => () => clearTimeout(timer.current), []);
-  return headline;
+  const dismiss = useCallback(() => {
+    clearTimeout(timer.current);
+    stopSpeech.current();
+    setHeadline(null);
+  }, []);
+  return { shown: headline, dismiss };
 }
 
 /**
@@ -172,11 +201,13 @@ const GRAB_ICON =
 
 export function GrabbyAnnouncement({
   headline,
+  onDismiss,
 }: {
   readonly headline: string;
+  readonly onDismiss?: () => void;
 }): React.ReactElement {
   return (
-    <Celebration label="Grabby Pants" ms={GRABBY_MS} confetti>
+    <Celebration label="Grabby Pants" ms={GRABBY_MS} confetti onDismiss={onDismiss}>
       <CelebrationCard
         icon={GRAB_ICON}
         color="#F2C14E"

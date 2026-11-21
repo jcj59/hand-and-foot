@@ -399,6 +399,7 @@ export const REACTIONS = [
   { id: "ha", text: "Ha!", label: "Ha!" },
   { id: "close-one", text: "Close one", label: "Close one" },
   { id: "gg", text: "GG", label: "GG" },
+  { id: "i-hate-you", text: "I Hate You", label: "I Hate You" },
 ] as const;
 
 export type ReactionId = (typeof REACTIONS)[number]["id"];

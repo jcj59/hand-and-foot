@@ -20,7 +20,9 @@ import { useSession } from "../session";
 import type { HfClientSocket } from "../socket";
 import { STUCK_MS } from "../table/audio";
 import { evenRows, Hand, perRow } from "../table/Hand";
-import { REACTION_COOLDOWN_MS, REACTION_SHOW_MS } from "../table/reactions";
+import { REACTION_COOLDOWN_MS, REACTION_SHOW_MS, ReactionBubble } from "../table/reactions";
+import { CELEBRATION_DISMISS_AFTER_MS } from "../table/Celebration";
+import { GRABBY_MS } from "../table/grabby";
 import { PHONE_QUERY } from "../usePhone";
 import { Table } from "./Table";
 
@@ -223,8 +225,46 @@ describe("your own cards", () => {
       update({ view: { hand: [card("2", "clubs"), card("JOKER", null), card("A", "spades")] } }),
     );
     expect(
-      screen.getByRole("heading", { name: /^your hand\s*·\s*3 cards, 2 wild$/i }),
+      screen.getByRole("heading", { name: /^ana\s*·\s*hand\s*·\s*3 cards, 2 wild$/i }),
     ).toBeInTheDocument();
+  });
+
+  it("heads the hand with the player's own face and name", () => {
+    mount(fakeSocket().socket);
+    const hand = screen.getByRole("region", { name: "Your hand" });
+    const heading = within(hand).getByRole("heading");
+    expect(heading.textContent).toMatch(/^ana · hand · \d+ cards/);
+    const face = heading.querySelector("svg[data-avatar]")!;
+    expect(face).toHaveAttribute("data-avatar", Object.values(defaultAvatar("ana")).join(" "));
+    expect(face).toHaveAttribute("width", "28");
+  });
+
+  it("draws the picture the player chose, not the one from their name", () => {
+    const drawn = defaultAvatar("ana");
+    const avatar = { ...drawn, top: drawn.top === "bun" ? "cap" : "bun" } as const;
+    mount(
+      fakeSocket().socket,
+      update({
+        room: {
+          players: [
+            { seat: 0, name: "ana", connected: true, avatar },
+            { seat: 1, name: "ben", connected: true },
+          ],
+        },
+      }),
+    );
+    const heading = within(screen.getByRole("region", { name: "Your hand" })).getByRole("heading");
+    expect(heading.querySelector("[data-avatar]")).toHaveAttribute(
+      "data-avatar",
+      Object.values(avatar).join(" "),
+    );
+  });
+
+  it("still says whose it is with no cards left", () => {
+    mount(fakeSocket().socket, update({ view: { hand: [], inFoot: true, foot: [] } }));
+    const heading = within(screen.getByRole("region", { name: "Your foot" })).getByRole("heading");
+    expect(heading.textContent).toBe("ana · foot");
+    expect(heading.querySelector("[data-avatar]")).not.toBeNull();
   });
 
   it("shows the foot face down until it is picked up", () => {
@@ -238,7 +278,9 @@ describe("your own cards", () => {
       fakeSocket().socket,
       update({ view: { inFoot: true, foot: [card("K", "diamonds")], hand: [] } }),
     );
-    expect(screen.getByRole("heading", { name: /^your foot\s*·\s*1 card$/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /^ana\s*·\s*foot\s*·\s*1 card$/i }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "King of diamonds" })).toBeInTheDocument();
     expect(screen.queryByRole("img", { name: /your foot: / })).toBeNull();
   });
@@ -345,7 +387,7 @@ describe("the piles", () => {
     const seats = scrollerOf(screen.getByRole("list", { name: "Other players" }))!;
     expect(seats.parentElement).toBe(felt);
     expect(seats.className).toMatch(/\bshrink\b/);
-    expect(seats.className).toMatch(/\bmin-h-14\b/);
+    expect(seats.className).toMatch(/\bmin-h-\[92px\]/);
     // So do the melds, and they shrink far faster, so they give way first.
     const melds = scrollerOf(screen.getByRole("region", { name: "Your melds" }))!;
     expect(melds.parentElement).toBe(felt);
@@ -367,10 +409,12 @@ describe("collapsing the other seats on a computer", () => {
 
   it("shows each player's melds as chips, and their cards once expanded", () => {
     const kings = [
+      card("JOKER", null),
       card("K", "clubs"),
       card("K", "hearts"),
       card("K", "spades"),
       card("2", "clubs"),
+      card("K", "diamonds"),
     ];
     mount(
       fakeSocket().socket,
@@ -391,12 +435,66 @@ describe("collapsing the other seats on a computer", () => {
     );
     const seat = screen.getByLabelText(/ben, 11 in hand, 14 in foot, down/i);
     expect(seat.tagName).toBe("LI");
-    expect(seat).toHaveTextContent("K ×3 +★");
+    // Folded: the rank, every card in the meld, and each wild by its own rank.
+    const chip = within(seat).getByRole("listitem", { name: "Meld of Ks, 6 cards, 2 wild" });
+    expect(chip.textContent).toBe("K62JK");
+    expect([...chip.querySelectorAll("[data-wild]")].map((w) => w.textContent)).toEqual([
+      "2",
+      "JK",
+    ]);
     expect(within(seat).queryByRole("img", { name: "King of clubs" })).toBeNull();
     fireEvent.click(within(seat).getByRole("button", { name: "Expand ben's melds" }));
     expect(within(seat).getByRole("img", { name: "King of clubs" })).toBeInTheDocument();
-    // Its size and the points its cards are worth: 10 + 10 + 10 + 20.
-    expect(seat).toHaveTextContent("4 cards · 50");
+    // Its size and the points its cards are worth: four kings at 10, a two at 20, a joker at 50.
+    expect(seat).toHaveTextContent("6 cards · 110");
+    // The same name for the meld laid out as cards.
+    expect(
+      within(seat).getByRole("listitem", { name: "Meld of Ks, 6 cards, 2 wild" }),
+    ).toBeInTheDocument();
+  });
+
+  it("folds a clean book to red and a dirty one to black, with a marker of each color", () => {
+    const clubs = (rank: Rank, i: number): Card => ({ id: `${rank}c${i}`, rank, suit: "clubs" });
+    const clean = Array.from({ length: 7 }, (_, i) => clubs("9", i));
+    const dirty = [...Array.from({ length: 6 }, (_, i) => clubs("Q", i)), card("2", "hearts")];
+    mount(
+      fakeSocket().socket,
+      update({
+        view: {
+          opponents: [
+            {
+              seat: 1,
+              handCount: 4,
+              footCount: 14,
+              melds: [
+                { rank: "9", cards: clean },
+                { rank: "Q", cards: dirty },
+              ],
+              isDown: true,
+              inFoot: false,
+            },
+          ],
+        },
+      }),
+    );
+    const seat = screen.getByLabelText(/ben, 4 in hand/i);
+    const red = within(seat).getByRole("listitem", { name: "clean book of 9s, 7 cards" });
+    const black = within(seat).getByRole("listitem", {
+      name: "dirty book of Qs, 7 cards, 1 wild",
+    });
+    expect(red.textContent).toBe("97");
+    expect(red.firstElementChild!.className).toMatch(/bg-suit-red/);
+    expect(black.textContent).toBe("Q72");
+    expect(black.firstElementChild!.className).toMatch(/bg-suit-black/);
+    expect(
+      [...seat.querySelectorAll("[data-book]")].map((m) => [
+        m.getAttribute("data-book"),
+        /bg-suit-red/.test(m.className) ? "red" : /bg-suit-black/.test(m.className) ? "black" : "",
+      ]),
+    ).toEqual([
+      ["clean", "red"],
+      ["dirty", "black"],
+    ]);
   });
 });
 
@@ -441,8 +539,12 @@ describe("the other seats", () => {
         },
       }),
     );
-    expect(screen.getByLabelText(/playing from the foot/i)).toBeInTheDocument();
-    expect(screen.getByText("Foot · 9")).toBeInTheDocument();
+    const seat = screen.getByLabelText(/playing from the foot/i);
+    expect(seat).toHaveTextContent("In the foot");
+    // The fan is the foot now, and the face-down foot beside it is gone.
+    expect(seat.querySelector("[data-fan]")).toHaveAttribute("data-fan", "9");
+    expect(seat.querySelector("[data-held]")).toHaveTextContent("9");
+    expect(seat.querySelector("[data-foot]")).toBeNull();
   });
 
   it("falls back to a seat number for a player the room does not name", () => {
@@ -617,17 +719,34 @@ describe("taking a turn", () => {
     expect(screen.getByRole("img", { name: "Stock: 40" })).toBeInTheDocument();
   });
 
-  it("offers the pile only when the server says it can be taken", () => {
-    // Whether the pile is takeable is decided by a solver over the whole state, so
-    // the client cannot second-guess it.
-    mount(fakeSocket().socket);
-    expect(screen.queryByRole("button", { name: /take the pile/i })).toBeNull();
+  it("lets the pile be tried whenever a draw is open, whatever the server thinks of it", () => {
+    // Offering the pile only when the solver says yes would tell the player what
+    // the solver found. Here the server says it cannot be taken, and it is still
+    // a button: trying is how a player finds out, as at a real table.
+    mount(fakeSocket().socket, update({ hints: { canTakePile: false } }));
+    expect(screen.getByRole("button", { name: /take the pile \(1 cards\)/i })).toBeInTheDocument();
 
     // Through act, because a store write from outside React is not flushed otherwise.
     act(() => {
-      useSession.setState({ update: update({ hints: { canTakePile: true } }) });
+      useSession.setState({ update: update({ hints: { canDraw: false, phase: "play" } }) });
     });
-    expect(screen.getByRole("button", { name: /take the pile \(1 cards\)/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /take the pile/i })).toBeNull();
+  });
+
+  it("offers no pile to take when there is nothing on it", () => {
+    mount(fakeSocket().socket, update({ view: { discard: [] } }));
+    expect(screen.queryByRole("button", { name: /take the pile/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /^draw a card/i })).toBeInTheDocument();
+  });
+
+  it("refuses a take the rules do not allow with the engine's own reason", async () => {
+    const reason =
+      "you cannot take the pile: no pile card is playable, or the minimum is not reachable";
+    const { socket, sent } = fakeSocket([{ ok: false, error: reason }]);
+    mount(socket, update({ hints: { canTakePile: false } }));
+    fireEvent.click(screen.getByRole("button", { name: /take the pile/i }));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(reason));
+    expect(sent.map((s) => s.args[0])).toEqual([{ type: "takePile" }]);
   });
 
   it("sends takePile", async () => {
@@ -988,17 +1107,21 @@ describe("staging a lay-down", () => {
     mount(fakeSocket().socket, inPlay(meldable()));
     meld("King of clubs");
     fireEvent.click(handCard("King of clubs"));
-    // Still in meld mode, with nothing picked: the panel says how it works.
-    expect(screen.getByLabelText(/lay-down being built/i).textContent).toMatch(
-      /click cards in your hand/i,
-    );
+    // Still in meld mode, with nothing picked: the panel is open and empty.
+    expect(
+      within(screen.getByLabelText(/lay-down being built/i)).queryByRole("button", {
+        name: "Select the Ks meld",
+      }),
+    ).toBeNull();
 
     meld("King of clubs");
     const panel = screen.getByLabelText(/lay-down being built/i);
     fireEvent.click(within(panel).getByRole("button", { name: "King of clubs" }));
-    expect(screen.getByLabelText(/lay-down being built/i).textContent).toMatch(
-      /click cards in your hand/i,
-    );
+    expect(
+      within(screen.getByLabelText(/lay-down being built/i)).queryByRole("button", {
+        name: "King of clubs",
+      }),
+    ).toBeNull();
   });
 
   it("selects a group by clicking its box", () => {
@@ -1091,45 +1214,39 @@ describe("discarding", () => {
     expect(sent[0].args[0]).toEqual({ type: "discard", cardId: "9-hearts" });
   });
 
-  it("asks again before discarding a wild", async () => {
+  it("discards a wild at once, with no warning", async () => {
     const { socket, sent } = fakeSocket();
     mount(socket, readyToDiscard({ hand: [card("JOKER", null), card("9", "hearts")] }));
-    // The reason is said before the choice, and the button owns up to it.
     fireEvent.click(handCard("Joker, wild"));
     const sheet = screen.getByRole("dialog", { name: /actions for joker/i });
-    expect(sheet.textContent).toMatch(/wild card/i);
-    expect(within(sheet).queryByRole("menuitem", { name: /^discard$/i })).toBeNull();
-    expect(sent).toEqual([]);
-    fireEvent.click(within(sheet).getByRole("menuitem", { name: /discard anyway/i }));
+    expect(sheet.textContent).not.toMatch(/wild card|pile|anyway/i);
+    expect(within(sheet).queryByRole("menuitem", { name: /discard anyway/i })).toBeNull();
+    fireEvent.click(within(sheet).getByRole("menuitem", { name: /^discard$/i }));
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0].args[0]).toEqual({ type: "discard", cardId: "JOKER-null" });
   });
 
-  it("asks again before discarding a card that could go on one of your melds", () => {
+  it("says nothing about who could use a discard, nor that it fits a meld of your own", async () => {
+    // Another player has 9s down and so does the player: once, the menu said
+    // either could take the pile with it or that it could go on the meld.
+    const nines = [card("9", "clubs"), card("9", "spades"), card("9", "diamonds")];
     const { socket, sent } = fakeSocket();
-    mount(
-      socket,
-      readyToDiscard({
-        isDown: true,
-        melds: [
-          { rank: "9", cards: [card("9", "clubs"), card("9", "spades"), card("9", "diamonds")] },
-        ],
-      }),
-    );
+    const ready = readyToDiscard({ isDown: true, melds: [{ rank: "9", cards: nines }] });
+    mount(socket, {
+      ...ready,
+      view: {
+        ...ready.view,
+        opponents: ready.view.opponents.map((o, i) =>
+          i === 0 ? { ...o, isDown: true, melds: [{ rank: "9", cards: nines }] } : o,
+        ),
+      },
+    });
     fireEvent.click(handCard("Nine of hearts"));
-    expect(screen.getByRole("dialog").textContent).toMatch(/you have 9s down/i);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Cancel" }));
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(sent).toEqual([]);
-  });
-
-  it("does not ask about an ordinary card", async () => {
-    const { socket, sent } = fakeSocket();
-    mount(socket, readyToDiscard());
-    fireEvent.click(handCard("King of spades"));
-    expect(screen.getByRole("dialog").textContent).not.toMatch(/could|wild/i);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Discard" }));
+    const sheet = screen.getByRole("dialog");
+    expect(sheet.textContent).not.toMatch(/down|could|pile|anyway/i);
+    fireEvent.click(within(sheet).getByRole("menuitem", { name: /^discard$/i }));
     await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0].args[0]).toEqual({ type: "discard", cardId: "9-hearts" });
   });
 
   it("is blocked while melds are staged", () => {
@@ -1140,13 +1257,12 @@ describe("discarding", () => {
     // With a lay-down under way a click stages, so no discard is on offer at all.
     fireEvent.click(handCard("Nine of hearts"));
     expect(screen.queryByRole("menuitem", { name: "Discard" })).toBeNull();
-    expect(screen.getByText(/click cards to add them/i)).toBeInTheDocument();
   });
 
   it("offers nothing to click during the draw phase", () => {
     mount(fakeSocket().socket);
     expect(screen.queryByRole("button", { name: "Ace of spades" })).toBeNull();
-    expect(screen.getByText(/click the stock to draw/i)).toBeInTheDocument();
+    expect(screen.getByText("Your turn.")).toBeInTheDocument();
   });
 });
 
@@ -1267,17 +1383,13 @@ describe("when the turn ends without the player", () => {
 });
 
 describe("going out", () => {
-  it("says so when the books are in place", () => {
+  it("says nothing about it, even when the server says the books are in place", () => {
     mount(
       fakeSocket().socket,
       update({ hints: { canGoOut: true, phase: "play", canDraw: false }, view: { phase: "play" } }),
     );
-    expect(screen.getByText(/books to go out/i)).toBeInTheDocument();
-  });
-
-  it("says nothing when they are not", () => {
-    mount(fakeSocket().socket);
-    expect(screen.queryByText(/books to go out/i)).toBeNull();
+    expect(screen.queryByText(/go out/i)).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
   });
 });
 
@@ -1479,7 +1591,7 @@ describe("the controls added from play-testing", () => {
       down([card("K", "clubs"), card("K", "hearts"), card("K", "spades")]),
     );
     fireEvent.click(screen.getByRole("button", { name: /^meld$/i }));
-    expect(screen.getByLabelText(/lay-down being built/i).textContent).toMatch(/click cards/i);
+    expect(screen.getByLabelText(/lay-down being built/i)).toBeInTheDocument();
     fireEvent.click(handCard("King of clubs"));
     expect(screen.queryByRole("menu")).toBeNull();
     expect(screen.getByLabelText(/lay-down being built/i)).toHaveTextContent(/Ks· wilds go here/);
@@ -1498,32 +1610,16 @@ describe("the controls added from play-testing", () => {
     });
   });
 
-  it("adds every natural it can to the melds already down, and never a wild", async () => {
-    const { socket, sent } = fakeSocket();
-    mount(socket, down([card("9", "hearts"), card("2", "clubs"), card("K", "spades")]));
-    fireEvent.click(screen.getByRole("button", { name: /add 1 to my melds/i }));
-    await waitFor(() => expect(sent).toHaveLength(1));
-    expect(sent[0].args[0]).toEqual({
-      type: "playMelds",
-      melds: [{ rank: "9", cardIds: ["9-hearts"] }],
-    });
-  });
-
-  it("plays the last card of the foot straight away, with nothing to confirm", async () => {
+  it("plays the last card of the foot straight onto its meld, with nothing to confirm", async () => {
     const { socket, sent } = fakeSocket();
     mount(socket, down([], { inFoot: true, foot: [card("9", "hearts")], hand: [] }));
-    fireEvent.click(screen.getByRole("button", { name: /add 1 to my melds/i }));
+    choose("Nine of hearts", /add to 9s meld/i);
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0].args[0]).toEqual({
       type: "playMelds",
       melds: [{ rank: "9", cardIds: ["9-hearts"] }],
     });
     expect(screen.queryByRole("button", { name: /keep it/i })).toBeNull();
-  });
-
-  it("shows the auto-add for a single card of a melded rank in the hand", () => {
-    mount(fakeSocket().socket, down([card("9", "hearts")]));
-    expect(screen.getByRole("button", { name: /add 1 to my melds/i })).toBeInTheDocument();
   });
 
   it("puts Play melds beside Stop melding, above the hand", async () => {
@@ -1567,31 +1663,30 @@ describe("the controls added from play-testing", () => {
     expect(screen.getByRole("button", { name: /take the pile/i })).toBeInTheDocument();
   });
 
-  it("pulses the piles and their labels in step", () => {
+  it("pulses the stock on a draw, and never lights the pile up, takeable or not", () => {
     const now = vi.spyOn(Date, "now").mockReturnValue(10_250);
     try {
       mount(fakeSocket().socket, update({ hints: { canTakePile: true } }));
-      // 10 250 ms is 450 ms into a 1 400 ms cycle, so each starts 450 ms in.
-      const delays = [
-        screen.getByRole("button", { name: /draw a card/i }),
-        screen.getByRole("button", { name: /take the pile/i }),
-      ].map((el) => el.style.animationDelay);
-      expect(delays).toEqual(["-450ms", "-450ms"]);
+      // 10 250 ms is 450 ms into a 1 400 ms cycle, so the stock starts 450 ms in.
+      const stock = screen.getByRole("button", { name: /draw a card/i });
+      expect(stock.style.animationDelay).toBe("-450ms");
+      expect(stock).toHaveClass("pile-prompt");
+      // A pile that glowed only when the solver said yes would be a hint.
+      const pile = screen.getByRole("button", { name: /take the pile/i });
+      expect(pile).not.toHaveClass("pile-prompt");
+      expect(pile.style.animationDelay).toBe("");
     } finally {
       now.mockRestore();
     }
   });
 
-  it("sets a pile's phase when it becomes clickable, not when it first appeared", () => {
+  it("sets the stock's phase when it becomes clickable, not when it first appeared", () => {
     const now = vi.spyOn(Date, "now").mockReturnValue(10_250);
     try {
       mount(fakeSocket().socket, update({ hints: { canDraw: false, phase: "play" } }));
       now.mockReturnValue(11_000);
-      act(() => useSession.getState().applyUpdate(update({ hints: { canTakePile: true } })));
+      act(() => useSession.getState().applyUpdate(update()));
       // 11 000 is 1 200 ms into the cycle: in step with a pulse started at any time.
-      expect(screen.getByRole("button", { name: /take the pile/i }).style.animationDelay).toBe(
-        "-1200ms",
-      );
       expect(screen.getByRole("button", { name: /draw a card/i }).style.animationDelay).toBe(
         "-1200ms",
       );
@@ -1615,7 +1710,7 @@ describe("the controls added from play-testing", () => {
     expect(useSession.getState().credentials?.roomId).toBe("ABC234");
   });
 
-  it("names each book under it: clean in gold, dirty in silver", () => {
+  it("names each book under it: clean in red, dirty in light ink", () => {
     const clubs = (rank: Rank, i: number): Card => ({ id: `${rank}c${i}`, rank, suit: "clubs" });
     const clean = [...Array.from({ length: 6 }, (_, i) => clubs("9", i)), card("9", "hearts")];
     const dirty = [...Array.from({ length: 6 }, (_, i) => clubs("K", i)), card("JOKER", null)];
@@ -1634,7 +1729,7 @@ describe("the controls added from play-testing", () => {
     const note = (name: RegExp): HTMLElement =>
       within(screen.getByLabelText(name)).getByText(/^7 cards/);
     expect(note(/clean book of 9s/)).toHaveTextContent("7 cards · clean · 35");
-    expect(note(/clean book of 9s/).className).toMatch(/text-gold-soft/);
+    expect(note(/clean book of 9s/).className).toMatch(/text-book-red/);
     expect(note(/dirty book of Ks/)).toHaveTextContent("7 cards · dirty · 110");
     expect(note(/dirty book of Ks/).className).toMatch(/text-ink-soft/);
   });
@@ -1698,8 +1793,8 @@ describe("the controls added from play-testing", () => {
       }),
     );
     expect(handCard("Three of spades, blocks the pile").className).not.toMatch(/opacity-60/);
-    // And the auto-add picks it up with the rest.
-    fireEvent.click(screen.getByRole("button", { name: /add 1 to my melds/i }));
+    // And its menu adds it to the book in one click.
+    choose("Three of spades, blocks the pile", /add to 3s meld/i);
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0].args[0]).toEqual({
       type: "playMelds",
@@ -1714,10 +1809,44 @@ describe("the controls added from play-testing", () => {
     expect(within(footer).getByRole("region", { name: /your hand/i })).toBeInTheDocument();
   });
 
-  it("says how many cards each opponent holds", () => {
+  it("shows each opponent's hand as backs with the count, and their foot beside it", () => {
     mount(fakeSocket().socket);
     const seat = screen.getByLabelText(/ben, 11 in hand, 14 in foot/i);
-    expect(seat).toHaveTextContent("11 in hand");
+    expect(seat.querySelector("[data-fan]")).toHaveAttribute("data-fan", "11");
+    expect(seat.querySelector("[data-held]")).toHaveTextContent("11");
+    const foot = seat.querySelector("[data-foot]")!;
+    expect(foot).toHaveAttribute("data-foot", "14");
+    expect(foot).toHaveTextContent("Foot");
+    expect(seat).toHaveTextContent("Waiting");
+    // Backs only: no card for anyone to read, and nothing a moving card could land
+    // on but the seat itself.
+    expect(within(seat).queryAllByRole("img")).toHaveLength(0);
+    expect(seat.querySelector("[data-motion]")).toBeNull();
+    expect(seat).toHaveAttribute("data-anchor", "seat-1");
+  });
+
+  it("keeps the count in view on the opponent's turn, beside their clock", () => {
+    mount(fakeSocket().socket, update({ hints: { seatToAct: 1 }, view: { currentSeat: 1 } }));
+    const seat = screen.getByLabelText(/ben, 11 in hand, 14 in foot, not down, to play/i);
+    expect(seat).toHaveTextContent(/Playing/);
+    expect(seat.querySelector("[data-held]")).toHaveTextContent("11");
+    expect(seat.querySelector("[data-foot]")).toHaveAttribute("data-foot", "14");
+  });
+
+  it("fans a big hand as a dealt hand's worth of backs, with the exact count beside it", () => {
+    mount(
+      fakeSocket().socket,
+      update({
+        view: {
+          opponents: [
+            { seat: 1, handCount: 22, footCount: 14, melds: [], isDown: false, inFoot: false },
+          ],
+        },
+      }),
+    );
+    const seat = screen.getByLabelText(/ben, 22 in hand/i);
+    expect(seat.querySelector("[data-fan]")).toHaveAttribute("data-fan", "14");
+    expect(seat.querySelector("[data-held]")).toHaveTextContent("22");
   });
 
   it("announces a go-out and a final lap loudly, and tells the player it is their last turn", () => {
@@ -2016,6 +2145,17 @@ describe("on a phone", () => {
     ),
   };
 
+  it("puts a compact face and the player's name on the hand's line in the footer", () => {
+    asPhone();
+    mount(fakeSocket().socket, update({ room: { grabbyPants: { seat: 0, streak: 3 } } }));
+    const footer = screen.getByRole("contentinfo");
+    const heading = within(
+      within(footer).getByRole("region", { name: "Your hand (Grabby Pants)" }),
+    ).getByRole("heading");
+    expect(heading.textContent).toMatch(/^Grabby Pants \(ana\) · hand · \d+ cards/);
+    expect(heading.querySelector("svg[data-avatar]")).toHaveAttribute("width", "20");
+  });
+
   it("shows each opponent as a chip, with their melds a tap away", () => {
     asPhone();
     mount(
@@ -2087,6 +2227,40 @@ describe("on a phone", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps an opponent's count and foot on their chip, on their turn too", () => {
+    asPhone();
+    mount(fakeSocket().socket, update({ hints: { seatToAct: 1 }, view: { currentSeat: 1 } }));
+    const chip = screen.getByRole("button", { name: "ben, 11 in hand, not down, to play" });
+    expect(chip).toHaveTextContent(/Playing/);
+    expect(chip.querySelector("[data-held]")).toHaveTextContent("11");
+    expect(chip.querySelector("[data-foot]")).toHaveAttribute("data-foot", "14");
+    expect(chip.closest("li")).toHaveAttribute("data-anchor", "seat-1");
+    // The sheet shows the hand in full as backs, with the foot beside it.
+    fireEvent.click(chip);
+    const sheet = screen.getByRole("dialog", { name: "ben's melds" });
+    expect(sheet.querySelector("[data-fan]")).toHaveAttribute("data-fan", "11");
+    expect(sheet.querySelector("[data-foot]")).toHaveTextContent("Foot");
+    expect(sheet.querySelector("[data-motion]")).toBeNull();
+  });
+
+  it("drops the foot from a chip once the opponent is playing from it", () => {
+    asPhone();
+    mount(
+      fakeSocket().socket,
+      update({
+        view: {
+          opponents: [
+            { seat: 1, handCount: 0, footCount: 9, melds: [], isDown: true, inFoot: true },
+          ],
+        },
+      }),
+    );
+    const chip = screen.getByRole("button", { name: /^ben, 9 in foot, playing from it/ });
+    expect(chip).toHaveTextContent("In the foot");
+    expect(chip.querySelector("[data-held]")).toHaveTextContent("9");
+    expect(chip.querySelector("[data-foot]")).toBeNull();
+  });
+
   it("shows the player's melds as chips that still aim a wild", () => {
     asPhone();
     const { socket } = fakeSocket();
@@ -2103,7 +2277,8 @@ describe("on a phone", () => {
     ).toMatch(/7 cards · clean/);
     fireEvent.click(screen.getByRole("button", { name: "Collapse" }));
     const chip = screen.getByRole("button", { name: "Select clean book of Ks, 7 cards" });
-    expect(chip.textContent).toBe("K ×7");
+    expect(chip.textContent).toBe("K7");
+    expect(chip.className).toMatch(/bg-suit-red/);
     expect(screen.getByRole("button", { name: "Expand" })).toHaveAttribute(
       "aria-expanded",
       "false",
@@ -2118,7 +2293,7 @@ describe("on a phone", () => {
     for (const name of ["Main menu", "React", "Scores so far"]) {
       expect(screen.getByRole("button", { name }).textContent).toBe("");
     }
-    expect(screen.getByText(/Tap the stock to draw/)).toBeInTheDocument();
+    expect(screen.getByText("Your turn.")).toBeInTheDocument();
   });
 });
 
@@ -2222,7 +2397,7 @@ describe("taking back this turn's melds", () => {
 
   it("marks what was played this turn as not yet final", () => {
     mount(fakeSocket().socket, played());
-    const meld = screen.getByRole("listitem", { name: "Meld of Ks, 4 cards" });
+    const meld = screen.getByRole("listitem", { name: "Meld of Ks, 4 cards, 1 wild" });
     expect(meld.textContent).toMatch(/this turn/);
   });
 
@@ -2314,6 +2489,8 @@ describe("sound", () => {
   /** An audio device that counts what it is asked to play. */
   function fakeAudio(): {
     oscillators: number;
+    /** When each oscillator and each noise was started, on the audio clock. */
+    starts: { kind: "tone" | "noise"; at: number }[];
     noises: number;
     silences: number;
     contexts: number;
@@ -2325,6 +2502,7 @@ describe("sound", () => {
   } {
     const counts = {
       oscillators: 0,
+      starts: [] as { kind: "tone" | "noise"; at: number }[],
       noises: 0,
       silences: 0,
       contexts: 0,
@@ -2384,14 +2562,22 @@ describe("sound", () => {
       createBufferSource = () => ({
         ...node(),
         buffer: null as { length: number } | null,
-        start() {
-          if (this.buffer && this.buffer.length > 1) counts.noises++;
-          else counts.silences++;
+        start(at = 0) {
+          if (this.buffer && this.buffer.length > 1) {
+            counts.noises++;
+            counts.starts.push({ kind: "noise", at });
+          } else counts.silences++;
         },
       });
       createOscillator = () => {
         counts.oscillators++;
-        return { ...node(), type: "", frequency: { value: 0 }, start() {}, stop() {} };
+        return {
+          ...node(),
+          type: "",
+          frequency: { value: 0 },
+          start: (at = 0) => void counts.starts.push({ kind: "tone", at }),
+          stop() {},
+        };
       };
     }
     Object.defineProperty(window, "AudioContext", { configurable: true, value: FakeContext });
@@ -2402,14 +2588,38 @@ describe("sound", () => {
 
   afterEach(() => window.localStorage.removeItem("hf.muted"));
 
-  it("chimes when the turn comes round, once the player has touched the page", () => {
+  it("dings when the turn comes round, once the player has touched the page", () => {
     const audio = fakeAudio();
     try {
       mount(fakeSocket().socket, update({ hints: { seatToAct: 1 }, view: { currentSeat: 1 } }));
       fireEvent.pointerUp(window);
       expect(audio.silences).toBe(1);
       act(() => useSession.getState().applyUpdate(update()));
-      expect(audio.oscillators).toBe(2);
+      // The ding: a bell's five partials, all struck at once, at once.
+      expect(audio.oscillators).toBe(5);
+      expect(new Set(audio.starts.map((s) => s.at))).toEqual(new Set([0.01]));
+    } finally {
+      audio.restore();
+    }
+  });
+
+  it("dings a quarter of a second after the discard that hands this player the turn", () => {
+    const audio = fakeAudio();
+    try {
+      mount(fakeSocket().socket, update({ hints: { seatToAct: 1 }, view: { currentSeat: 1 } }));
+      fireEvent.pointerUp(window);
+      act(() =>
+        useSession
+          .getState()
+          .applyUpdate(
+            update({ lastMove: { seq: 4, seat: 1, kind: "discard", card: card("4", "clubs") } }),
+          ),
+      );
+      const noise = audio.starts.filter((s) => s.kind === "noise");
+      const tones = audio.starts.filter((s) => s.kind === "tone");
+      expect(noise).toEqual([{ kind: "noise", at: 0.01 }]);
+      expect(tones).toHaveLength(5);
+      for (const t of tones) expect(t.at).toBeCloseTo(0.26, 6);
     } finally {
       audio.restore();
     }
@@ -2627,11 +2837,11 @@ describe("sound", () => {
         useSession.setState({ result: scored([[0, 10]], 0, { matchOver: false, roundNumber: 1 }) }),
       );
       expect(audio.oscillators).toBe(3);
-      // Clearing the result reopens this player's turn, which chimes.
+      // Clearing the result reopens this player's turn, which dings.
       act(() => useSession.setState({ result: null }));
-      expect(audio.oscillators).toBe(3 + 2);
+      expect(audio.oscillators).toBe(3 + 5);
       act(() => useSession.setState({ result: scored([[0, 10]], 0, { matchOver: true }) }));
-      expect(audio.oscillators).toBe(3 + 2 + 5);
+      expect(audio.oscillators).toBe(3 + 5 + 5);
     } finally {
       audio.restore();
     }
@@ -2668,11 +2878,13 @@ describe("Grabby Pants", () => {
   function fakeSpeech(options: { voices?: { name: string }[]; events?: boolean } = {}): {
     said: string[];
     voices: (string | undefined)[];
+    cancels: () => number;
     loadVoices: (names: string[]) => void;
     restore: () => void;
   } {
     const said: string[] = [];
     const voices: (string | undefined)[] = [];
+    let cancelled = 0;
     let available = options.voices ?? [];
     const listeners = new Set<() => void>();
     class Utterance {
@@ -2692,7 +2904,7 @@ describe("Grabby Pants", () => {
           said.push(u.text);
           voices.push(u.voice?.name);
         },
-        cancel: () => {},
+        cancel: () => void cancelled++,
         getVoices: () => available,
         ...(options.events && {
           addEventListener: (_: string, fn: () => void) => listeners.add(fn),
@@ -2703,6 +2915,7 @@ describe("Grabby Pants", () => {
     return {
       said,
       voices,
+      cancels: () => cancelled,
       loadVoices: (names) => {
         available = names.map((name) => ({ name }));
         for (const fn of [...listeners]) fn();
@@ -2730,6 +2943,46 @@ describe("Grabby Pants", () => {
       expect(seat.querySelector("svg path[fill='#2f5da8']")).not.toBeNull();
     } finally {
       speech.restore();
+    }
+  });
+
+  it("can be clicked away once it has popped in, which stops the voice", () => {
+    vi.useFakeTimers();
+    const speech = fakeSpeech();
+    try {
+      mount(fakeSocket().socket);
+      act(() => useSession.getState().applyRoom(roomInfo({ grabbyPants: { seat: 1, streak: 3 } })));
+      const panel = screen.getByRole("status", { name: "Grabby Pants" });
+      const overlay = panel.parentElement!;
+      // Through its entrance it lets clicks through to the table and ignores them.
+      expect(overlay).toHaveClass("pointer-events-none");
+      act(() => vi.advanceTimersByTime(799));
+      fireEvent.click(overlay);
+      fireEvent.keyDown(window, { key: "Escape" });
+      expect(screen.getByRole("status", { name: "Grabby Pants" })).toBeInTheDocument();
+      // 800ms, pinned: the pop and the settle, then a tap anywhere puts it away.
+      expect(CELEBRATION_DISMISS_AFTER_MS).toBe(800);
+      act(() => vi.advanceTimersByTime(1));
+      expect(overlay).not.toHaveClass("pointer-events-none");
+      const before = speech.cancels();
+      fireEvent.click(overlay);
+      expect(screen.queryByRole("status", { name: "Grabby Pants" })).toBeNull();
+      expect(speech.cancels()).toBe(before + 1);
+      // Its timer went with it: the next holder's announcement gets its own full time.
+      act(() => vi.advanceTimersByTime(1_000));
+      act(() =>
+        useSession.getState().applyRoom(roomInfo({ grabbyPants: { seat: 0, streak: 3, from: 1 } })),
+      );
+      act(() => vi.advanceTimersByTime(GRABBY_MS - 1));
+      expect(screen.getByRole("status", { name: "Grabby Pants" })).toHaveTextContent(
+        "ana takes Grabby Pants from ben",
+      );
+      // And Escape does the same as a click.
+      fireEvent.keyDown(window, { key: "Escape" });
+      expect(screen.queryByRole("status", { name: "Grabby Pants" })).toBeNull();
+    } finally {
+      speech.restore();
+      vi.useRealTimers();
     }
   });
 
@@ -2787,8 +3040,14 @@ describe("Grabby Pants", () => {
       act(() => useSession.getState().applyRoom(roomInfo({ grabbyPants: { seat: 0, streak: 3 } })));
       const hand = screen.getByRole("region", { name: "Your hand (Grabby Pants)" });
       const heading = within(hand).getByRole("heading");
-      expect(heading.textContent).toMatch(/^Your hand \(Grabby Pants\) · \d+ cards/);
+      // The title and its icon, the real name after it, as another player's box says it.
+      expect(heading.textContent).toMatch(/^Grabby Pants \(ana\) · hand · \d+ cards/);
       expect(heading.querySelector("svg path[fill='#2f5da8']")).not.toBeNull();
+      // Renamed but not re-faced: still the face drawn from ana's own name.
+      expect(heading.querySelector("[data-avatar]")).toHaveAttribute(
+        "data-avatar",
+        Object.values(defaultAvatar("ana")).join(" "),
+      );
     } finally {
       speech.restore();
     }
@@ -3006,6 +3265,35 @@ describe("quick reactions", () => {
     expect(within(picker).getByRole("button", { name: "Grimacing" })).toHaveTextContent("😬");
     fireEvent.click(within(picker).getByRole("button", { name: "Oof" }));
     expect(sent).toContainEqual({ event: "react", args: [{ id: "oof" }] });
+  });
+
+  it('offers "I Hate You" among the phrases', () => {
+    const { socket, sent } = fakeSocket();
+    mount(socket);
+    fireEvent.click(screen.getByRole("button", { name: "React" }));
+    const picker = screen.getByRole("group", { name: "Reactions" });
+    fireEvent.click(within(picker).getByRole("button", { name: "I Hate You" }));
+    expect(sent).toContainEqual({ event: "react", args: [{ id: "i-hate-you" }] });
+    heard(1, 1, "i-hate-you");
+    expect(screen.getByRole("status", { name: "ben: I Hate You" })).toHaveTextContent("I Hate You");
+  });
+
+  it("ignores a reaction this page does not know, as a tab loaded before a deploy hears one", () => {
+    mount(fakeSocket().socket);
+    // Sent by a newer server: an id added after this page loaded.
+    heard(1, 1, "brand-new" as ReactionId);
+    expect(useSession.getState().reactions).toEqual([]);
+    expect(screen.getByRole("button", { name: "React" })).toBeInTheDocument();
+    // The table goes on, and the next one it does know shows as usual.
+    heard(2, 1, "gg");
+    expect(screen.getByRole("status", { name: "ben: GG" })).toBeInTheDocument();
+  });
+
+  it("draws nothing for a reaction it cannot name", () => {
+    const { container } = render(
+      <ReactionBubble reaction={{ seq: 1, seat: 1, id: "brand-new" as ReactionId }} name="ben" />,
+    );
+    expect(container).toBeEmptyDOMElement();
   });
 
   it("shows my own reaction by my hand, and the latest one only", () => {
@@ -3446,6 +3734,197 @@ describe("hints", () => {
     expect(screen.queryByRole("button", { name: "Suggest a move" })).toBeNull();
     expect(screen.queryByText(/short of the 60/)).toBeNull();
   });
+
+  // A seat in its foot, down, with a clean book of 9s and four queens, holding a
+  // queen, a joker, a red three and a king; Ben has queens down too, and the
+  // server says the books to go out are in place. Every aid that once spoke up
+  // here is checked gone, and every mark of a rule or of the state is checked kept.
+  const nines = Array.from({ length: 7 }, (_, i) => ({
+    id: `n9-${i}`,
+    rank: "9" as Rank,
+    suit: (["clubs", "spades", "diamonds", "hearts"] as const)[i % 4] as Suit,
+  }));
+  const queens = [
+    card("Q", "clubs"),
+    card("Q", "hearts"),
+    card("Q", "diamonds"),
+    card("2", "clubs"),
+  ];
+  function inFootNearlyOut(over: Partial<PlayerView> = {}): ViewUpdate {
+    const base = update({
+      view: {
+        hand: [],
+        inFoot: true,
+        isDown: true,
+        foot: [card("Q", "spades"), card("JOKER", null), card("3", "hearts"), card("K", "spades")],
+        footCount: 4,
+        melds: [
+          { rank: "9", cards: nines },
+          { rank: "Q", cards: queens },
+        ],
+        phase: "play",
+        ...over,
+      },
+      hints: { phase: "play", canDraw: false, canGoOut: true },
+    });
+    return {
+      ...base,
+      view: {
+        ...base.view,
+        opponents: base.view.opponents.map((o, i) =>
+          i === 0 ? { ...o, isDown: true, melds: [{ rank: "Q", cards: queens }] } : o,
+        ),
+      },
+    };
+  }
+
+  it("say nothing in the foot about going out or how near a book is", () => {
+    mount(fakeSocket().socket, inFootNearlyOut());
+    expect(screen.queryByRole("group", { name: /to go out/i })).toBeNull();
+    expect(screen.queryByText(/to go out|go out/i)).toBeNull();
+    expect(screen.queryByText(/clean books|dirty books/i)).toBeNull();
+    expect(screen.queryByText(/need \w+ more card/i)).toBeNull();
+  });
+
+  it("offer no bulk add to the melds, though the one-card add stays on the card", async () => {
+    const { socket, sent } = fakeSocket();
+    mount(socket, inFootNearlyOut());
+    expect(screen.queryByRole("button", { name: /to my melds/i })).toBeNull();
+    choose("Queen of spades", /^add to qs meld$/i);
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0].args[0]).toEqual({
+      type: "playMelds",
+      melds: [{ rank: "Q", cardIds: ["Q-spades"] }],
+    });
+  });
+
+  it("never warn about a discard: a wild, a rank someone has down, or one that fits a meld", () => {
+    mount(fakeSocket().socket, inFootNearlyOut());
+    for (const name of ["Joker, wild", "Queen of spades"]) {
+      fireEvent.click(handCard(name));
+      const sheet = screen.getByRole("dialog");
+      expect(sheet.textContent).not.toMatch(/wild card|could|pile|anyway/i);
+      expect(within(sheet).getByRole("menuitem", { name: /^discard$/i })).toBeInTheDocument();
+      fireEvent.click(within(sheet).getByRole("menuitem", { name: "Cancel" }));
+    }
+  });
+
+  it("say only whose turn it is, never how to take it", () => {
+    for (const phase of ["draw", "play"] as const) {
+      cleanup();
+      mount(
+        fakeSocket().socket,
+        update({
+          view: { phase },
+          hints: { phase, canDraw: phase === "draw", canTakePile: true },
+        }),
+      );
+      const bar = screen.getByRole("region", { name: /your turn/i });
+      expect(within(bar).getByText("Your turn.")).toBeInTheDocument();
+      expect(screen.queryByText(/click|tap|stock to draw|to meld or discard/i)).toBeNull();
+    }
+    cleanup();
+    mount(fakeSocket().socket, update({ hints: { seatToAct: 1, canDraw: false } }));
+    expect(screen.getByRole("region", { name: /your turn/i })).toHaveTextContent(
+      "Waiting for ben.",
+    );
+    cleanup();
+    mount(
+      fakeSocket().socket,
+      update({
+        hints: { seatToAct: 1, canDraw: false },
+        clock: { deadlineAt: null, paused: true },
+      }),
+    );
+    expect(screen.getByRole("region", { name: /your turn/i })).toHaveTextContent(
+      "The table is paused.",
+    );
+  });
+
+  it("still say the rule that holds a turn: a debt to the pile, a clock run out", () => {
+    const owed = card("7", "clubs");
+    mount(
+      fakeSocket().socket,
+      update({
+        view: { hand: [owed, card("K", "spades")], phase: "play", pickedUp: [owed.id] },
+        hints: { phase: "play", canDraw: false },
+      }),
+    );
+    expect(screen.getByRole("region", { name: /your turn/i })).toHaveTextContent(
+      "Play a card from the pile before you can discard.",
+    );
+    cleanup();
+    mount(
+      fakeSocket().socket,
+      update({
+        view: { phase: "play" },
+        hints: { phase: "play", canDraw: false },
+        clock: { inDiscardGrace: true },
+      }),
+    );
+    expect(screen.getByRole("region", { name: /your turn/i })).toHaveTextContent(
+      "Time is up. Only a discard will be accepted.",
+    );
+  });
+
+  it("never light the pile up for being takeable", () => {
+    mount(fakeSocket().socket, update({ hints: { canTakePile: true } }));
+    const pile = screen.getByRole("button", { name: /take the pile/i });
+    expect(pile).not.toHaveClass("pile-prompt");
+    expect(pile.getAttribute("style")).toBeNull();
+  });
+
+  it("give no instructions in a lay-down being built, only what it is worth", () => {
+    mount(
+      fakeSocket().socket,
+      update({
+        view: {
+          hand: [card("K", "clubs"), card("K", "hearts"), card("K", "spades"), card("9", "clubs")],
+          phase: "play",
+        },
+        hints: { phase: "play", canDraw: false },
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^meld$/i }));
+    const panel = screen.getByLabelText(/lay-down being built/i);
+    expect(panel.textContent).not.toMatch(/click|tap|send wilds/i);
+    // The arithmetic and the engine's refusal reasons stay.
+    expect(screen.getByLabelText(/worth 0 of 60 needed/i)).toBeInTheDocument();
+    for (const name of ["King of clubs", "King of hearts", "King of spades"]) {
+      fireEvent.click(handCard(name));
+    }
+    expect(screen.getByLabelText(/worth 30 of 60 needed/i)).toBeInTheDocument();
+    expect(panel).toHaveTextContent("30 more to get down");
+    expect(screen.getByText(/below the round minimum of 60/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Play melds" })).toBeDisabled();
+  });
+
+  it("keep the marks of the rules and the state: melded ranks, dimmed red threes, the pile's debt, the last lap", () => {
+    mount(fakeSocket().socket, inFootNearlyOut());
+    const foot = screen.getByRole("region", { name: /your foot/i });
+    expect(within(foot).getByTitle(/you have a meld of Qs/i)).toBeInTheDocument();
+    expect(within(foot).queryByTitle(/meld of Ks/i)).toBeNull();
+    expect(handCard("Three of hearts, penalty").className).toMatch(/opacity-60/);
+
+    cleanup();
+    const owed = card("7", "clubs");
+    mount(
+      fakeSocket().socket,
+      update({
+        view: {
+          hand: [owed, card("K", "spades")],
+          phase: "play",
+          pickedUp: [owed.id],
+          wentOutSeat: 1,
+          finalLapRemaining: 1,
+        },
+        hints: { phase: "play", canDraw: false },
+      }),
+    );
+    expect(screen.getByText(/play at least one of the ringed cards/i)).toBeInTheDocument();
+    expect(screen.getByTitle(/taken from the pile/i)).toBeInTheDocument();
+    expect(screen.getByText("ben went out! This is your last turn.")).toBeInTheDocument();
+  });
 });
 
 describe("the rules at the table", () => {
@@ -3575,7 +4054,7 @@ describe("putting away the scores beside the table on a computer", () => {
     fireEvent.click(show);
     expect(screen.getByRole("button", { name: "Hide scores and moves" })).toBeInTheDocument();
     expect(contents).not.toHaveAttribute("inert");
-    expect(panel().className).toMatch(/w-\[260px\]/);
+    expect(panel().style.width).toBe("260px");
     expect(window.localStorage.getItem("hf.hideScores")).toBe("0");
   });
 
@@ -3623,6 +4102,255 @@ describe("putting away the scores beside the table on a computer", () => {
       mount(fakeSocket().socket, update());
       expect(screen.queryByRole("button", { name: /scores and moves/ })).toBeNull();
       expect(screen.getByRole("button", { name: "Scores so far" })).toBeInTheDocument();
+    } finally {
+      delete (window as { matchMedia?: unknown }).matchMedia;
+    }
+  });
+});
+
+describe("resizing the table's parts on a computer", () => {
+  afterEach(() => window.localStorage.clear());
+
+  const divider = (name: string) => screen.getByRole("separator", { name });
+  const footer = () => document.getElementById("table-footer")!;
+  const seats = () => document.getElementById("table-seats")!;
+  const side = () => screen.getByRole("complementary", { name: "Scores and moves" });
+  const kept = () => JSON.parse(window.localStorage.getItem("hf.tableLayout")!) as unknown;
+
+  it("offers a divider for the side panel, the hand and the other players, each a window splitter", () => {
+    mount(fakeSocket().socket);
+    const panel = divider("Resize scores and moves");
+    expect(panel).toHaveAttribute("aria-orientation", "vertical");
+    expect(panel).toHaveAttribute("aria-controls", "table-side");
+    expect(panel).toHaveAttribute("tabindex", "0");
+    // jsdom's window is 1024 wide: the felt keeps 440 of it.
+    expect(panel).toHaveAttribute("aria-valuenow", "260");
+    expect(panel).toHaveAttribute("aria-valuemin", "220");
+    expect(panel).toHaveAttribute("aria-valuemax", "516");
+    const hand = divider("Resize your hand");
+    expect(hand).toHaveAttribute("aria-orientation", "horizontal");
+    expect(hand).toHaveAttribute("aria-controls", "table-footer");
+    expect(hand).toHaveAttribute("aria-valuemin", "240");
+    expect(hand).toHaveAttribute("aria-valuemax", "348");
+    const players = divider("Resize the other players");
+    expect(players).toHaveAttribute("aria-orientation", "horizontal");
+    expect(players).toHaveAttribute("aria-controls", "table-seats");
+    expect(players).toHaveAttribute("aria-valuemin", "92");
+    // Nothing dragged yet: the table as it always was.
+    expect(footer().style.height).toBe("");
+    expect(seats().style.height).toBe("");
+    expect(side().style.width).toBe("260px");
+    expect(window.localStorage.getItem("hf.tableLayout")).toBeNull();
+  });
+
+  it("makes the hand taller with the arrow keys, keeps it, and restores it next time", () => {
+    mount(fakeSocket().socket);
+    const hand = divider("Resize your hand");
+    // jsdom lays nothing out, so the hand's natural height reads as 0: the first
+    // press starts from the smallest the hand may be.
+    fireEvent.keyDown(hand, { key: "ArrowUp" });
+    expect(footer().style.height).toBe("256px");
+    expect(hand).toHaveAttribute("aria-valuenow", "256");
+    fireEvent.keyDown(hand, { key: "ArrowUp", shiftKey: true });
+    expect(footer().style.height).toBe("320px");
+    fireEvent.keyDown(hand, { key: "ArrowDown" });
+    expect(footer().style.height).toBe("304px");
+    // Keys that are not for a horizontal line do nothing.
+    fireEvent.keyDown(hand, { key: "ArrowLeft" });
+    fireEvent.keyDown(hand, { key: "Enter" });
+    expect(footer().style.height).toBe("304px");
+    expect(kept()).toEqual({ sideWidth: 260, footerHeight: 304, seatsHeight: null });
+    // Never past the room the rest of the table needs.
+    fireEvent.keyDown(hand, { key: "ArrowUp", shiftKey: true });
+    expect(footer().style.height).toBe("348px");
+
+    cleanup();
+    mount(fakeSocket().socket);
+    expect(footer().style.height).toBe("348px");
+    expect(divider("Resize your hand")).toHaveAttribute("aria-valuenow", "348");
+  });
+
+  it("scrolls the hand inside the footer, under the buttons", () => {
+    mount(fakeSocket().socket);
+    const scroller = footer().querySelector("[data-hand-scroll]")!;
+    expect(scroller.className).toMatch(/\boverflow-y-auto\b/);
+    expect(scroller).toContainElement(screen.getByRole("region", { name: /Your hand/ }));
+    expect(scroller).not.toContainElement(screen.getByRole("region", { name: "Your turn" }));
+    // Scrolled, the hand still says whose it is: its heading stays at the top.
+    const heading = within(screen.getByRole("region", { name: /Your hand/ })).getByRole("heading");
+    expect(heading.className).toMatch(/\bsticky top-0\b/);
+  });
+
+  it("widens the side panel with the arrow keys, its contents with it", () => {
+    mount(fakeSocket().socket);
+    const panel = divider("Resize scores and moves");
+    // The panel is on the right: moving the line left widens it.
+    fireEvent.keyDown(panel, { key: "ArrowLeft", shiftKey: true });
+    expect(side().style.width).toBe("324px");
+    expect(document.getElementById("table-side-panel")!.style.width).toBe("324px");
+    fireEvent.keyDown(panel, { key: "ArrowRight" });
+    expect(side().style.width).toBe("308px");
+    // Never narrower than its minimum.
+    for (let i = 0; i < 10; i++) fireEvent.keyDown(panel, { key: "ArrowRight", shiftKey: true });
+    expect(side().style.width).toBe("220px");
+    // Keys that are not for a vertical line do nothing.
+    fireEvent.keyDown(panel, { key: "ArrowUp" });
+    expect(side().style.width).toBe("220px");
+    expect(kept()).toEqual({ sideWidth: 220, footerHeight: null, seatsHeight: null });
+  });
+
+  it("drags a divider with the pointer, keeping the size once it is let go", () => {
+    mount(fakeSocket().socket);
+    const panel = divider("Resize scores and moves");
+    fireEvent.pointerDown(panel, { button: 0, pointerId: 1, clientX: 700, clientY: 300 });
+    expect(document.body.dataset.resizing).toBe("vertical");
+    fireEvent.pointerMove(panel, { pointerId: 1, clientX: 600, clientY: 340 });
+    expect(side().style.width).toBe("360px");
+    // Another pointer neither moves nor lets go of it.
+    fireEvent.pointerMove(panel, { pointerId: 2, clientX: 0, clientY: 0 });
+    fireEvent.pointerUp(panel, { pointerId: 2 });
+    expect(side().style.width).toBe("360px");
+    expect(window.localStorage.getItem("hf.tableLayout")).toBeNull();
+    fireEvent.pointerMove(panel, { pointerId: 1, clientX: 650, clientY: 340 });
+    fireEvent.pointerUp(panel, { pointerId: 1 });
+    expect(side().style.width).toBe("310px");
+    expect(document.body.dataset.resizing).toBeUndefined();
+    expect(kept()).toEqual({ sideWidth: 310, footerHeight: null, seatsHeight: null });
+    // Let go: moving the pointer no longer resizes.
+    fireEvent.pointerMove(panel, { pointerId: 1, clientX: 100, clientY: 0 });
+    expect(side().style.width).toBe("310px");
+  });
+
+  it("ignores a press of any button but the main one", () => {
+    mount(fakeSocket().socket);
+    const panel = divider("Resize scores and moves");
+    fireEvent.pointerDown(panel, { button: 2, pointerId: 1, clientX: 700 });
+    fireEvent.pointerMove(panel, { pointerId: 1, clientX: 600 });
+    expect(side().style.width).toBe("260px");
+  });
+
+  it("makes the other players' row taller downward, and their boxes with it", () => {
+    mount(fakeSocket().socket);
+    const players = divider("Resize the other players");
+    const box = () => screen.getByRole("list", { name: "Other players" }).querySelector("li")!;
+    expect(box().style.maxHeight).toBe("256px");
+    fireEvent.pointerDown(players, { button: 0, pointerId: 1, clientX: 0, clientY: 200 });
+    fireEvent.pointerMove(players, { pointerId: 1, clientX: 0, clientY: 330 });
+    fireEvent.pointerUp(players, { pointerId: 1 });
+    // From 92 (jsdom's natural 0, clamped), 130 down.
+    expect(seats().style.height).toBe("222px");
+    // The box fills the row, inside the part's pixel of padding each side.
+    expect(box().style.maxHeight).toBe("220px");
+    fireEvent.keyDown(players, { key: "ArrowUp" });
+    expect(seats().style.height).toBe("206px");
+    expect(kept()).toEqual({ sideWidth: 260, footerHeight: null, seatsHeight: 206 });
+  });
+
+  it("never squeezes the other players' row below their held cards", () => {
+    window.localStorage.setItem(
+      "hf.tableLayout",
+      JSON.stringify({ sideWidth: 260, footerHeight: null, seatsHeight: 20 }),
+    );
+    mount(fakeSocket().socket);
+    expect(seats().style.height).toBe("92px");
+    fireEvent.keyDown(divider("Resize the other players"), { key: "ArrowUp" });
+    expect(seats().style.height).toBe("92px");
+  });
+
+  it("puts a part back to its natural size on Home or a double-click", () => {
+    window.localStorage.setItem(
+      "hf.tableLayout",
+      JSON.stringify({ sideWidth: 400, footerHeight: 300, seatsHeight: 200 }),
+    );
+    mount(fakeSocket().socket);
+    expect(footer().style.height).toBe("300px");
+    fireEvent.keyDown(divider("Resize your hand"), { key: "Home" });
+    expect(footer().style.height).toBe("");
+    expect(kept()).toEqual({ sideWidth: 400, footerHeight: null, seatsHeight: 200 });
+    fireEvent.doubleClick(divider("Resize scores and moves"));
+    expect(side().style.width).toBe("260px");
+    fireEvent.doubleClick(divider("Resize the other players"));
+    expect(seats().style.height).toBe("");
+    expect(kept()).toEqual({ sideWidth: 260, footerHeight: null, seatsHeight: null });
+  });
+
+  it("draws a kept size inside a smaller window, and gives it back in a larger one", () => {
+    window.localStorage.setItem(
+      "hf.tableLayout",
+      JSON.stringify({ sideWidth: 500, footerHeight: null, seatsHeight: null }),
+    );
+    const width = window.innerWidth;
+    try {
+      mount(fakeSocket().socket);
+      expect(side().style.width).toBe("500px");
+      act(() => {
+        Object.defineProperty(window, "innerWidth", { configurable: true, value: 900 });
+        window.dispatchEvent(new Event("resize"));
+      });
+      // 900 less the row's 68 less the felt's 440.
+      expect(side().style.width).toBe("392px");
+      act(() => {
+        Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
+        window.dispatchEvent(new Event("resize"));
+      });
+      expect(side().style.width).toBe("500px");
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
+    }
+  });
+
+  it("has no divider for a panel put away to its rail", () => {
+    window.localStorage.setItem("hf.hideScores", "1");
+    mount(fakeSocket().socket);
+    expect(screen.queryByRole("separator", { name: "Resize scores and moves" })).toBeNull();
+    expect(side().style.width).toBe("");
+    fireEvent.click(screen.getByRole("button", { name: "Show scores and moves" }));
+    expect(divider("Resize scores and moves")).toBeInTheDocument();
+  });
+
+  it("leaves the game alone", () => {
+    const { socket, sent } = fakeSocket();
+    mount(socket);
+    fireEvent.keyDown(divider("Resize your hand"), { key: "ArrowUp" });
+    fireEvent.keyDown(divider("Resize scores and moves"), { key: "ArrowLeft" });
+    expect(sent).toEqual([]);
+  });
+
+  it("works when the browser blocks storage, for as long as the page is open", () => {
+    const get = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    const set = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    try {
+      mount(fakeSocket().socket);
+      fireEvent.keyDown(divider("Resize your hand"), { key: "ArrowUp" });
+      expect(footer().style.height).toBe("256px");
+    } finally {
+      get.mockRestore();
+      set.mockRestore();
+    }
+  });
+
+  it("is not on a phone, whose layout is its own", () => {
+    window.localStorage.setItem(
+      "hf.tableLayout",
+      JSON.stringify({ sideWidth: 400, footerHeight: 300, seatsHeight: 200 }),
+    );
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: (query: string) => ({
+        matches: query === PHONE_QUERY,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }),
+    });
+    try {
+      mount(fakeSocket().socket);
+      expect(screen.queryByRole("separator")).toBeNull();
+      expect(footer().style.height).toBe("");
+      expect(footer().querySelector("[data-hand-scroll]")).toBeNull();
     } finally {
       delete (window as { matchMedia?: unknown }).matchMedia;
     }
