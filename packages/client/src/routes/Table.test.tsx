@@ -5,6 +5,7 @@ import {
   EAST_COAST,
   type Ack,
   type Card,
+  type ChatMessage,
   type LegalHints,
   type PlayerView,
   type Rank,
@@ -203,6 +204,8 @@ beforeEach(() => {
     result: null,
     notice: null,
     reactions: [],
+    chat: [],
+    chatHistoryThrough: 0,
     clock: createServerClock(),
   });
 });
@@ -3203,6 +3206,38 @@ describe("sound", () => {
     }
   });
 
+  it("blips for another player's chat, never for my own, and not once chat is muted", () => {
+    const audio = fakeAudio();
+    try {
+      mount(fakeSocket().socket, update({ hints: { seatToAct: 1 }, view: { currentSeat: 1 } }));
+      fireEvent.pointerUp(window);
+      const before = audio.oscillators;
+      const say = (seq: number, seat: number): void =>
+        act(() =>
+          useSession.getState().applyChat({
+            seq,
+            seat,
+            name: seat === 0 ? "ana" : "ben",
+            text: "hi",
+            at: seq,
+          }),
+        );
+      say(1, 1);
+      // The reaction blip: two quick notes.
+      expect(audio.oscillators).toBe(before + 2);
+      say(2, 0);
+      expect(audio.oscillators).toBe(before + 2);
+      fireEvent.click(screen.getByRole("tab", { name: "Chat, 1 unread" }));
+      fireEvent.click(screen.getByRole("checkbox", { name: "Mute chat" }));
+      say(3, 1);
+      expect(audio.oscillators).toBe(before + 2);
+    } finally {
+      audio.restore();
+      window.localStorage.removeItem("hf.muteChat");
+      window.localStorage.removeItem("hf.sideTab");
+    }
+  });
+
   it("stays silent when muted, and remembers the choice", () => {
     const audio = fakeAudio();
     try {
@@ -3711,6 +3746,258 @@ describe("quick reactions", () => {
     expect(picker.className).toMatch(/overflow-y-auto/);
     fireEvent.click(within(picker).getByRole("button", { name: "Good luck" }));
     expect(sent).toContainEqual({ event: "react", args: [{ id: "good-luck" }] });
+  });
+});
+
+describe("chat at the table", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    for (const key of ["hf.muteChat", "hf.sideTab", "hf.hideScores"])
+      window.localStorage.removeItem(key);
+    delete (window as { matchMedia?: unknown }).matchMedia;
+  });
+
+  const message = (seq: number, seat: number, text: string): ChatMessage => ({
+    seq,
+    seat,
+    name: seat === 0 ? "ana" : "ben",
+    text,
+    at: seq,
+  });
+  const said = (seq: number, seat: number, text: string): void =>
+    act(() => useSession.getState().applyChat(message(seq, seat, text)));
+  const chatTab = (name: string | RegExp = /^Chat/) => screen.getByRole("tab", { name });
+  const messages = () => screen.getByRole("list", { name: "Messages" });
+  const box = () => screen.getByRole("textbox", { name: "Message" });
+  /** Type a line and press Enter, as a player does, and let the ack settle. */
+  async function sendLine(text: string): Promise<void> {
+    fireEvent.change(box(), { target: { value: text } });
+    fireEvent.submit(box().closest("form")!);
+    await act(async () => {});
+  }
+  function onPhone(): void {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: (query: string) => ({
+        matches: query === PHONE_QUERY,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }),
+    });
+  }
+
+  it("puts Scores and Chat side by side beside the table, Scores first", () => {
+    mount(fakeSocket().socket);
+    expect(screen.getByRole("tab", { name: "Scores" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tabpanel")).toHaveTextContent("Scores so far");
+    fireEvent.click(chatTab());
+    expect(chatTab()).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tabpanel")).toContainElement(messages());
+    expect(messages()).toHaveTextContent("Nothing said yet. Say hello.");
+    // Kept on this device.
+    expect(window.localStorage.getItem("hf.sideTab")).toBe("chat");
+  });
+
+  it("sends a line on Enter, empties the box, and shows it once the table hears it", async () => {
+    const { socket, sent } = fakeSocket();
+    mount(socket);
+    fireEvent.click(chatTab());
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    await sendLine("  good luck  ");
+    expect(sent).toContainEqual({ event: "chat", args: [{ text: "good luck" }] });
+    expect(box()).toHaveValue("");
+    // Nothing is shown until the server says it was said.
+    expect(within(messages()).queryByText("good luck")).toBeNull();
+    said(10, 0, "good luck");
+    expect(within(messages()).getByText("good luck")).toBeInTheDocument();
+    expect(within(messages()).getByText("You")).toBeInTheDocument();
+    // My own line is no news to me, and I see it here rather than in a bubble.
+    expect(chatTab()).toHaveAccessibleName("Chat");
+    expect(screen.queryByRole("status", { name: "ana: good luck" })).toBeNull();
+  });
+
+  it("counts another player's messages as unread until the Chat tab is open", () => {
+    mount(fakeSocket().socket);
+    said(1, 1, "hello");
+    said(2, 1, "anyone?");
+    expect(chatTab()).toHaveAccessibleName("Chat, 2 unread");
+    expect(chatTab()).toHaveTextContent("2");
+    fireEvent.click(chatTab());
+    expect(chatTab()).toHaveAccessibleName("Chat");
+    expect(within(messages()).getByText("anyone?")).toBeInTheDocument();
+    // Read while it is open, too.
+    said(3, 1, "there you are");
+    expect(chatTab()).toHaveAccessibleName("Chat");
+    fireEvent.click(screen.getByRole("tab", { name: "Scores" }));
+    said(4, 1, "your turn");
+    expect(chatTab()).toHaveAccessibleName("Chat, 1 unread");
+  });
+
+  it("shows another player's message by their seat for a few seconds", () => {
+    vi.useFakeTimers();
+    mount(fakeSocket().socket);
+    said(1, 1, "nice one");
+    const seat = screen.getByLabelText(/^ben, /);
+    expect(within(seat).getByRole("status", { name: "ben: nice one" })).toHaveTextContent(
+      "nice one",
+    );
+    act(() => vi.advanceTimersByTime(REACTION_SHOW_MS));
+    expect(screen.queryByRole("status", { name: "ben: nice one" })).toBeNull();
+  });
+
+  it("shows whichever came last by a seat, a reaction or a line of chat", () => {
+    mount(fakeSocket().socket);
+    said(1, 1, "watch this");
+    act(() => useSession.getState().applyReaction({ seq: 1, seat: 1, id: "party" }));
+    expect(screen.getByRole("status", { name: "ben: Party" })).toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "ben: watch this" })).toBeNull();
+    said(2, 1, "told you");
+    expect(screen.getByRole("status", { name: "ben: told you" })).toBeInTheDocument();
+  });
+
+  it("neither pops up nor counts what was said before this page heard the table", () => {
+    useSession.getState().applyChat(message(1, 1, "said before"));
+    mount(fakeSocket().socket);
+    // The history arrives after the table is up, as it does on a reload.
+    act(() =>
+      useSession.getState().applyChatBacklog([message(1, 1, "said before"), message(2, 1, "and")]),
+    );
+    expect(chatTab()).toHaveAccessibleName("Chat");
+    expect(screen.queryByRole("status", { name: /^ben: / })).toBeNull();
+    fireEvent.click(chatTab());
+    expect(within(messages()).getByText("said before")).toBeInTheDocument();
+    expect(within(messages()).getByText("and")).toBeInTheDocument();
+  });
+
+  it("shows a refusal beside the box and keeps the text, until it is edited", async () => {
+    const { socket } = fakeSocket([
+      { ok: false, error: "a message can be at most 200 characters" },
+      { ok: false, error: "too many messages; wait a moment" },
+    ]);
+    mount(socket);
+    fireEvent.click(chatTab());
+    const long = "a".repeat(201);
+    await sendLine(long);
+    expect(screen.getByRole("alert")).toHaveTextContent("A message can be at most 200 characters.");
+    expect(box()).toHaveValue(long);
+    expect(box()).toHaveAttribute("aria-invalid", "true");
+    // Over the limit the count says so, before and after sending.
+    expect(screen.getByText("201 of 200")).toBeInTheDocument();
+    fireEvent.change(box(), { target: { value: "short" } });
+    expect(screen.queryByRole("alert")).toBeNull();
+    await sendLine("again");
+    expect(screen.getByRole("alert")).toHaveTextContent("Too many messages; wait a moment.");
+    // Never the table's own notice.
+    expect(useSession.getState().notice).toBeNull();
+  });
+
+  it("counts characters only near the limit", () => {
+    mount(fakeSocket().socket);
+    fireEvent.click(chatTab());
+    fireEvent.change(box(), { target: { value: "a".repeat(180) } });
+    expect(screen.queryByText(/ of 200$/)).toBeNull();
+    fireEvent.change(box(), { target: { value: "a".repeat(181) } });
+    expect(screen.getByText("181 of 200")).toBeInTheDocument();
+  });
+
+  it("draws a message as the text it is: no markup, no links", () => {
+    mount(fakeSocket().socket);
+    fireEvent.click(chatTab());
+    said(1, 1, "<b>hi</b> see https://example.com");
+    expect(within(messages()).getByText("<b>hi</b> see https://example.com")).toBeInTheDocument();
+    expect(within(messages()).queryByRole("link")).toBeNull();
+    expect(messages().querySelector("b")).toBeNull();
+  });
+
+  it("can mute chat on this device: others' messages, bubbles and count go, never my own", () => {
+    mount(fakeSocket().socket);
+    fireEvent.click(chatTab());
+    said(1, 1, "hello");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Mute chat" }));
+    expect(window.localStorage.getItem("hf.muteChat")).toBe("1");
+    expect(within(messages()).queryByText("hello")).toBeNull();
+    expect(messages()).toHaveTextContent("Other players' messages are hidden on this device.");
+    said(2, 0, "mine");
+    expect(within(messages()).getByText("mine")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Scores" }));
+    said(3, 1, "still here?");
+    expect(chatTab()).toHaveAccessibleName("Chat");
+    expect(screen.queryByRole("status", { name: "ben: still here?" })).toBeNull();
+  });
+
+  it("remembers the mute on this device", () => {
+    window.localStorage.setItem("hf.muteChat", "1");
+    mount(fakeSocket().socket);
+    said(1, 1, "hello");
+    expect(chatTab()).toHaveAccessibleName("Chat");
+  });
+
+  it("badges the rail while the panel is put away, and the badge opens the chat", () => {
+    window.localStorage.setItem("hf.hideScores", "1");
+    mount(fakeSocket().socket);
+    expect(screen.queryByRole("button", { name: /^Show chat/ })).toBeNull();
+    said(1, 1, "psst");
+    fireEvent.click(screen.getByRole("button", { name: "Show chat, 1 unread" }));
+    expect(screen.getByRole("button", { name: "Hide scores and moves" })).toBeInTheDocument();
+    expect(chatTab()).toHaveAttribute("aria-selected", "true");
+    expect(within(messages()).getByText("psst")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Show chat/ })).toBeNull();
+  });
+
+  it("counts as unread while the panel is put away, even with the Chat tab chosen", () => {
+    window.localStorage.setItem("hf.sideTab", "chat");
+    window.localStorage.setItem("hf.hideScores", "1");
+    mount(fakeSocket().socket);
+    said(1, 1, "are you there?");
+    expect(screen.getByRole("button", { name: "Show chat, 1 unread" })).toBeInTheDocument();
+  });
+
+  it("says 9+ past nine unread, as the count a glance needs", () => {
+    mount(fakeSocket().socket);
+    for (let seq = 1; seq <= 10; seq++) said(seq, 1, `line ${seq}`);
+    expect(chatTab()).toHaveAccessibleName("Chat, 10 unread");
+    expect(chatTab()).toHaveTextContent("Chat9+");
+  });
+
+  it("is not offered where everyone else is a computer", () => {
+    mount(
+      fakeSocket().socket,
+      update({
+        room: {
+          players: [
+            { seat: 0, name: "ana", connected: true },
+            { seat: 1, name: "Robo Rita", connected: true, bot: true },
+          ],
+        },
+      }),
+    );
+    expect(screen.queryByRole("tab", { name: /^Chat/ })).toBeNull();
+    expect(screen.getByRole("complementary", { name: "Scores and moves" })).toHaveTextContent(
+      "Scores so far",
+    );
+  });
+
+  it("opens from the header on a phone, with a dot for unread, in a sheet", async () => {
+    onPhone();
+    const { socket, sent } = fakeSocket();
+    mount(socket);
+    expect(screen.queryByRole("tab", { name: /^Chat/ })).toBeNull();
+    const button = () => screen.getByRole("button", { name: /^Chat/ });
+    expect(button()).toHaveAccessibleName("Chat");
+    expect(button().querySelector("[data-unread]")).toBeNull();
+    said(1, 1, "hi from ben");
+    expect(button()).toHaveAccessibleName("Chat, 1 unread");
+    expect(button().querySelector("[data-unread]")).not.toBeNull();
+    fireEvent.click(button());
+    const sheet = screen.getByRole("dialog", { name: "Chat" });
+    expect(within(sheet).getByText("hi from ben")).toBeInTheDocument();
+    expect(button()).toHaveAccessibleName("Chat");
+    await sendLine("hi ben");
+    expect(sent).toContainEqual({ event: "chat", args: [{ text: "hi ben" }] });
+    fireEvent.click(within(sheet).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog", { name: "Chat" })).toBeNull();
+    said(2, 1, "later");
+    expect(button()).toHaveAccessibleName("Chat, 1 unread");
   });
 });
 

@@ -15,7 +15,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { ClockState, OpponentView, Reaction, RoomInfo, RoomPlayerInfo } from "@hf/shared";
+import type { ClockState, OpponentView, RoomInfo, RoomPlayerInfo } from "@hf/shared";
 import { BackStack, CardFan } from "../cards/PlayingCard";
 import { Icon } from "../ui/icons";
 import { faceOf } from "../profile/avatarStore";
@@ -23,7 +23,7 @@ import { GrabbyIcon } from "./grabby";
 import { Melds } from "./Melds";
 import { booksOf, type MeldOrder } from "./meldView";
 import { PlayerFace } from "./PlayerFace";
-import { ReactionBubble } from "./reactions";
+import { ReactionBubble, type SeatSaying } from "./reactions";
 import { useRemaining } from "./TurnClock";
 
 export interface OpponentStripProps {
@@ -32,8 +32,8 @@ export interface OpponentStripProps {
   readonly seatToAct: number;
   readonly clock: ClockState;
   readonly order: MeldOrder;
-  /** A quick reaction to show by each seat that has one up. */
-  readonly reactions?: ReadonlyMap<number, Reaction>;
+  /** A quick reaction or a line of chat to show by each seat that has one up. */
+  readonly reactions?: ReadonlyMap<number, SeatSaying>;
   /** On the felt itself, which has its own padding, rather than above it. */
   readonly onFelt?: boolean;
 }

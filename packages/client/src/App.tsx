@@ -38,6 +38,8 @@ export function App({ socket }: AppProps): React.ReactElement {
   const applyResult = useSession((s) => s.applyResult);
   const reseat = useSession((s) => s.reseat);
   const applyReaction = useSession((s) => s.applyReaction);
+  const applyChat = useSession((s) => s.applyChat);
+  const applyChatBacklog = useSession((s) => s.applyChatBacklog);
   const seat = useSession((s) => s.seat);
   const leave = useSession((s) => s.leave);
   const setNotice = useSession((s) => s.setNotice);
@@ -54,8 +56,20 @@ export function App({ socket }: AppProps): React.ReactElement {
         applyResult,
         reseat,
         applyReaction,
+        applyChat,
+        applyChatBacklog,
       }),
-    [socket, setStatus, applyRoom, applyUpdate, applyResult, reseat, applyReaction],
+    [
+      socket,
+      setStatus,
+      applyRoom,
+      applyUpdate,
+      applyResult,
+      reseat,
+      applyReaction,
+      applyChat,
+      applyChatBacklog,
+    ],
   );
 
   useEffect(

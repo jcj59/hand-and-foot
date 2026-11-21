@@ -725,7 +725,8 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   seat's latest for `REACTION_SHOW_MS` (5s since P2, pinned as a literal; the bubble's CSS fade
   reads it through `--reaction-ms`, so the two cannot disagree; the phone sheet is capped at
   `70dvh` and scrolls) inside its seat box (the seat lists scroll, so a bubble outside the box
-  would be clipped) and by the player's own hand. Reactions already in the store
+  would be clipped; on a computer it sits inside the box's top, `inset`) and by the player's own
+  hand. Since PR 12b the hook is `useSeatBubbles`, shared with chat. Reactions already in the store
   when the table mounts are not replayed. "Mute other players' reactions" is per device
   (`hf.muteReactions`) and hides theirs and their blip sound, never your own. A watched table
   (`controls` null) has no picker. Emoji need a colour emoji font: real devices have one, headless
@@ -750,7 +751,34 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   DO request) and one written row per message. Tests: `room.chat.test.ts`, `protocol.test.ts`,
   `socket.integration.test.ts` "chat over the wire", `worker.test.ts` "chat at a table" (sleep and
   `webSockets: "close"` eviction, closing). Mutation-tested: 33/33 killed (shared, server, Worker).
-  The client (PR 12b) is not built yet.
+- **Chat at the table, client half (change list item 5, PR 12b).** Store (`session.ts`): `chat`
+  (last `KEPT_CHAT` 50, pinned; `applyChat` keeps seq order and drops a seq already held, so the
+  sender's echo and a history overlap are shown once; `applyChatBacklog` replaces the list) and
+  `chatHistoryThrough` (newest seq that came as history, only ever raised: history is never news,
+  so a reload neither bubbles nor counts it; a line said while disconnected arrives with the
+  history and is only listed). `seat()` on another table does **not** clear chat: the new table's
+  `chatBacklog` arrives before `createRoom`/`joinRoom` resolve (pinned by
+  `chat.integration.test.ts`), so the backlog replaces it; `leave()` and `Watch`'s cleanup clear
+  it. `attachSession` routes `chat`/`chatBacklog`. `actions.sendChat(socket, text)` sends
+  `normalizeChat(text)` and resolves null or the refusal string (never the table's notice);
+  `NOTHING_TO_SAY` without a round trip. `TableControls.chat`; `TableView` props `chat` and
+  `chatOldThrough` (Table and Watch pass them; a lesson or replay has none). Chat exists only when
+  `chat` is given and at least two seats are people (`chatOn`). `table/chat.tsx`: `ChatPanel`
+  (list `Messages`, input `Message`, Enter submits the form, Send, "n of 200" from 181, refusal as
+  `role="alert"` kept until the text is edited, "Mute chat" `hf.muteChat`, watchers get "Watching:
+  only the players at the table can chat."), pure `unreadCount`/`unreadBadge` ("9+")/`latestSeq`.
+  Computer: `SidePanel` gets tabs Scores and Chat (`hf.sideTab`, tab names "Chat, n unread"),
+  and on the rail "Show chat, n unread" opens the Chat tab; labels "Hide/Show scores and moves"
+  kept. Phone: header button "Chat" / "Chat, n unread" (dot `data-unread`) opens `Sheet` "Chat".
+  Read = Chat tab open and panel shown, or the sheet open; messages in the store when the table
+  mounts count as read. Bubbles: `useSeatBubbles` (replaces `useReactionBubbles`) merges each
+  seat's latest reaction and others' chat by arrival order; `ReactionBubble` takes a `SeatSaying`
+  (a chat line is one line, truncated, `data-chat`) and `inset` (computer seat boxes: inside the
+  box's top, since the seats part scrolls and clipped a bubble over its edge, reactions included).
+  Chat blips with the reaction sound unless chat is muted. Tests: `session.test.ts`,
+  `actions.test.ts`, `Table.test.tsx` "chat at the table" and "sound", `Watch.test.tsx`,
+  `chat.integration.test.ts` (real server: both ways, refusals and the budget, watcher, reconnect).
+  Harness: `CHAT=1`, mode `chat`, action `chat`.
 - **Bug reports, server half (change list item 31, PR 18a).** Shared `reports.ts`:
   `REPORTS_PATH` (`/api/reports`), `REPORT_TEXT_MAX` 2000, `MAX_REPORT_BYTES` 8 KB (UTF-8 JSON of
   the whole report), `ReportBody {text, context?}`, `BugReport {id, at, text, context}`, refusal

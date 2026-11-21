@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { EAST_COAST, type Ack, type RoomInfo, type ViewUpdate } from "@hf/shared";
 import { createServerClock } from "../serverTime";
@@ -98,6 +98,8 @@ beforeEach(() => {
     result: null,
     notice: null,
     reactions: [],
+    chat: [],
+    chatHistoryThrough: 0,
     clock: createServerClock(),
   });
 });
@@ -133,14 +135,46 @@ describe("watching a table", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("There is no table with that code");
   });
 
+  it("reads the chat along, but offers nothing to send with", () => {
+    mount(fakeSocket({ ok: true, data: room }).socket);
+    const people = {
+      ...room,
+      players: [room.players[0]!, { seat: 1, name: "ben", connected: true }],
+    };
+    const dealt = spectatorUpdate();
+    act(() => useSession.getState().applyUpdate({ ...dealt, room: { ...people, started: true } }));
+    act(() =>
+      useSession
+        .getState()
+        .applyChatBacklog([{ seq: 1, seat: 0, name: "ana", text: "welcome", at: 1 }]),
+    );
+    act(() =>
+      useSession.getState().applyChat({ seq: 2, seat: 1, name: "ben", text: "hi all", at: 2 }),
+    );
+    // Every message is someone else's to a watcher.
+    expect(screen.getByRole("status", { name: "ben: hi all" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Chat, 1 unread" }));
+    const list = screen.getByRole("list", { name: "Messages" });
+    expect(within(list).getByText("welcome")).toBeInTheDocument();
+    expect(within(list).getByText("hi all")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+    expect(
+      screen.getByText("Watching: only the players at the table can chat."),
+    ).toBeInTheDocument();
+  });
+
   it("lets go of the table when the watcher leaves the page, without touching a stored seat", async () => {
     const { socket, sent } = fakeSocket({ ok: true, data: room });
     useSession.setState({ credentials: { roomId: "OTHER2", seat: 0, token: "t" } });
     const { unmount } = mount(socket);
     act(() => useSession.getState().applyUpdate(spectatorUpdate()));
+    act(() =>
+      useSession.getState().applyChatBacklog([{ seq: 1, seat: 0, name: "ana", text: "x", at: 1 }]),
+    );
     unmount();
     await waitFor(() => expect(sent.map((s) => s.event)).toContain("leaveRoom"));
     expect(useSession.getState().update).toBeNull();
+    expect(useSession.getState().chat).toEqual([]);
     expect(useSession.getState().credentials).toEqual({ roomId: "OTHER2", seat: 0, token: "t" });
   });
 });
