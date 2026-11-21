@@ -92,7 +92,9 @@ export function Seats({
                   {info?.bot && <span className="text-ink/50"> · computer</span>}
                 </span>
                 <span className="mt-1 block">
-                  <BookMarkers books={booksOf(opponent.melds)} />
+                  <HeldCards opponent={opponent} cardHeight={HELD_CARD_HEIGHT}>
+                    <BookMarkers books={booksOf(opponent.melds)} />
+                  </HeldCards>
                 </span>
               </span>
               {opponent.melds.length > 0 && (
@@ -111,9 +113,6 @@ export function Seats({
                   {expanded ? "Collapse" : "Expand"}
                 </button>
               )}
-            </div>
-            <div className="shrink-0">
-              <HeldCards opponent={opponent} cardHeight={HELD_CARD_HEIGHT} />
             </div>
             <div className="min-h-0 overflow-y-auto">
               {opponent.melds.length === 0 ? (
@@ -136,7 +135,7 @@ export function Seats({
 }
 
 /** One back's height in a seat's fan: small enough that the melds keep most of the box. */
-const HELD_CARD_HEIGHT = 30;
+const HELD_CARD_HEIGHT = 24;
 
 function seatLabel(opponent: OpponentView, name: string, onTurn: boolean): string {
   const parts = [

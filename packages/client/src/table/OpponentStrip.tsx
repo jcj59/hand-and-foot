@@ -97,10 +97,13 @@ export function BookMarkers({
 export function HeldCards({
   opponent,
   cardHeight,
+  children,
 }: {
   readonly opponent: OpponentView;
   /** One back's height in pixels. */
   readonly cardHeight: number;
+  /** Shown in the same wrapping row, after the foot pile (the seat's book markers). */
+  readonly children?: React.ReactNode;
 }): React.ReactElement {
   const held = opponent.inFoot ? opponent.footCount : opponent.handCount;
   return (
@@ -122,6 +125,7 @@ export function HeldCards({
           <span className="text-[11px] text-ink/70">Foot</span>
         </span>
       )}
+      {children}
     </span>
   );
 }

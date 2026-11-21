@@ -799,7 +799,7 @@ export function TableView({
                 scrolling in its own part; the felt as a whole scrolls only when even
                 that is not enough. Before, the felt scrolled as one, and on a short
                 window the pile sat cut off at its bottom edge. */}
-            <div data-felt-part="seats" className={`${FELT_PART} min-h-14 shrink`}>
+            <div data-felt-part="seats" className={`${FELT_PART} min-h-[92px] shrink`}>
               <Seats
                 opponents={view.opponents}
                 room={room}
