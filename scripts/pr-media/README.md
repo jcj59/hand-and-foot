@@ -31,7 +31,8 @@ an animation) in its description, under `## Screenshots`.
    (`ARRANGE_BEFORE`, "Four of hearts"), sideways first, shooting `out-0.png` to `out-5.png` and
    `out-6.png` once it is let go, and logs `animationsAfterDrop`; `COMPACT_MELDS=1` starts with the
    player's own melds collapsed to chips; `PILE_WHY=1` puts the viewer in their
-   draw phase with the pile not takeable, and `TAKEABLE=1` in their draw phase with it takeable;
+   draw phase with the pile not takeable, and `TAKEABLE=1` in their draw phase with it takeable; `TOOK_PILE=1` puts them in round 1, not down,
+   just after taking the pile (its cards owed), and action `laydown` presses "Lay down for me";
    `FOOT=1` puts the viewer in their foot a dirty book short of going out, with a card of a melded
    rank, a wild and a red three, and `GO_OUT=1` has the server say the books to go out are in
    place. Modes stage a state
