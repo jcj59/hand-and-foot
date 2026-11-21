@@ -95,6 +95,23 @@ body,
   height: 100%;
 }
 
+/* While a divider is dragged (ui/Splitter.tsx): the parts follow the pointer
+   rather than easing after it, no text is selected on the way, and the resize
+   cursor stays put when the pointer leaves the thin handle. */
+body[data-resizing],
+body[data-resizing] * {
+  transition: none !important;
+  user-select: none;
+}
+body[data-resizing="vertical"],
+body[data-resizing="vertical"] * {
+  cursor: col-resize !important;
+}
+body[data-resizing="horizontal"],
+body[data-resizing="horizontal"] * {
+  cursor: row-resize !important;
+}
+
 /* The stock while the player can draw: a soft glow that breathes, on one rhythm
    (see pulse.ts, which puts it in phase), so the start of a turn is hard to miss.
    The discard pile never glows: lighting it only when it can be taken would say

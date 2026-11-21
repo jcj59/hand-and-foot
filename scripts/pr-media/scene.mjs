@@ -621,6 +621,11 @@ const run = async () => {
   // The computer's side panel put away, as a player who hid it left it.
   if (process.env.HIDE_SCORES)
     await page.evaluate(() => localStorage.setItem("hf.hideScores", "1"));
+  // The computer table's sizes as a player who dragged its dividers left them
+  // (JSON, as `hf.tableLayout` keeps them), and the app's menu folded to a rail.
+  if (process.env.LAYOUT)
+    await page.evaluate((json) => localStorage.setItem("hf.tableLayout", json), process.env.LAYOUT);
+  if (process.env.NAV_FOLDED) await page.evaluate(() => localStorage.setItem("hf.navFolded", "1"));
   // The player's own melds folded to chips, as a player who collapsed them left them.
   if (process.env.COMPACT_MELDS)
     await page.evaluate(() => localStorage.setItem("hf.compactMelds", "1"));
@@ -865,6 +870,26 @@ const run = async () => {
       .click({ position: { x: 8, y: 30 } });
   if (action === "hidescores")
     await page.getByRole("button", { name: /(Hide|Show) scores and moves/ }).click();
+  if (action === "drag") {
+    // Drag a divider ("Resize your hand" by default, DRAG_LABEL picks another) by
+    // DRAG_BY=dx,dy pixels in ten steps, shooting a frame before the drag, after
+    // every second step, and once the button is up (out-<n>.png).
+    const handle = page.getByRole("separator", {
+      name: process.env.DRAG_LABEL ?? "Resize your hand",
+    });
+    const box = await handle.boundingBox();
+    const [dx, dy] = (process.env.DRAG_BY ?? "0,-160").split(",").map(Number);
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
+    await page.mouse.move(x, y);
+    await page.screenshot({ path: out.replace(".png", "-0.png") });
+    await page.mouse.down();
+    for (let i = 1; i <= 10; i++) {
+      await page.mouse.move(x + (dx * i) / 10, y + (dy * i) / 10);
+      if (i % 2 === 0) await page.screenshot({ path: out.replace(".png", `-${i / 2}.png`) });
+    }
+    await page.mouse.up();
+  }
   if (action === "meld") {
     await page.getByRole("button", { name: /^Meld$/ }).click();
     await page.getByRole("button", { name: /Ten of hearts/i }).click({ position: { x: 8, y: 30 } });
