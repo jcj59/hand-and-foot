@@ -370,10 +370,12 @@ describe("collapsing the other seats on a computer", () => {
 
   it("shows each player's melds as chips, and their cards once expanded", () => {
     const kings = [
+      card("JOKER", null),
       card("K", "clubs"),
       card("K", "hearts"),
       card("K", "spades"),
       card("2", "clubs"),
+      card("K", "diamonds"),
     ];
     mount(
       fakeSocket().socket,
@@ -394,12 +396,66 @@ describe("collapsing the other seats on a computer", () => {
     );
     const seat = screen.getByLabelText(/ben, 11 in hand, 14 in foot, down/i);
     expect(seat.tagName).toBe("LI");
-    expect(seat).toHaveTextContent("K ×3 +★");
+    // Folded: the rank, every card in the meld, and each wild by its own rank.
+    const chip = within(seat).getByRole("listitem", { name: "Meld of Ks, 6 cards, 2 wild" });
+    expect(chip.textContent).toBe("K62JK");
+    expect([...chip.querySelectorAll("[data-wild]")].map((w) => w.textContent)).toEqual([
+      "2",
+      "JK",
+    ]);
     expect(within(seat).queryByRole("img", { name: "King of clubs" })).toBeNull();
     fireEvent.click(within(seat).getByRole("button", { name: "Expand ben's melds" }));
     expect(within(seat).getByRole("img", { name: "King of clubs" })).toBeInTheDocument();
-    // Its size and the points its cards are worth: 10 + 10 + 10 + 20.
-    expect(seat).toHaveTextContent("4 cards · 50");
+    // Its size and the points its cards are worth: four kings at 10, a two at 20, a joker at 50.
+    expect(seat).toHaveTextContent("6 cards · 110");
+    // The same name for the meld laid out as cards.
+    expect(
+      within(seat).getByRole("listitem", { name: "Meld of Ks, 6 cards, 2 wild" }),
+    ).toBeInTheDocument();
+  });
+
+  it("folds a clean book to red and a dirty one to black, with a marker of each color", () => {
+    const clubs = (rank: Rank, i: number): Card => ({ id: `${rank}c${i}`, rank, suit: "clubs" });
+    const clean = Array.from({ length: 7 }, (_, i) => clubs("9", i));
+    const dirty = [...Array.from({ length: 6 }, (_, i) => clubs("Q", i)), card("2", "hearts")];
+    mount(
+      fakeSocket().socket,
+      update({
+        view: {
+          opponents: [
+            {
+              seat: 1,
+              handCount: 4,
+              footCount: 14,
+              melds: [
+                { rank: "9", cards: clean },
+                { rank: "Q", cards: dirty },
+              ],
+              isDown: true,
+              inFoot: false,
+            },
+          ],
+        },
+      }),
+    );
+    const seat = screen.getByLabelText(/ben, 4 in hand/i);
+    const red = within(seat).getByRole("listitem", { name: "clean book of 9s, 7 cards" });
+    const black = within(seat).getByRole("listitem", {
+      name: "dirty book of Qs, 7 cards, 1 wild",
+    });
+    expect(red.textContent).toBe("97");
+    expect(red.firstElementChild!.className).toMatch(/bg-suit-red/);
+    expect(black.textContent).toBe("Q72");
+    expect(black.firstElementChild!.className).toMatch(/bg-suit-black/);
+    expect(
+      [...seat.querySelectorAll("[data-book]")].map((m) => [
+        m.getAttribute("data-book"),
+        /bg-suit-red/.test(m.className) ? "red" : /bg-suit-black/.test(m.className) ? "black" : "",
+      ]),
+    ).toEqual([
+      ["clean", "red"],
+      ["dirty", "black"],
+    ]);
   });
 });
 
@@ -1611,7 +1667,7 @@ describe("the controls added from play-testing", () => {
     expect(useSession.getState().credentials?.roomId).toBe("ABC234");
   });
 
-  it("names each book under it: clean in gold, dirty in silver", () => {
+  it("names each book under it: clean in red, dirty in light ink", () => {
     const clubs = (rank: Rank, i: number): Card => ({ id: `${rank}c${i}`, rank, suit: "clubs" });
     const clean = [...Array.from({ length: 6 }, (_, i) => clubs("9", i)), card("9", "hearts")];
     const dirty = [...Array.from({ length: 6 }, (_, i) => clubs("K", i)), card("JOKER", null)];
@@ -1630,7 +1686,7 @@ describe("the controls added from play-testing", () => {
     const note = (name: RegExp): HTMLElement =>
       within(screen.getByLabelText(name)).getByText(/^7 cards/);
     expect(note(/clean book of 9s/)).toHaveTextContent("7 cards · clean · 35");
-    expect(note(/clean book of 9s/).className).toMatch(/text-gold-soft/);
+    expect(note(/clean book of 9s/).className).toMatch(/text-book-red/);
     expect(note(/dirty book of Ks/)).toHaveTextContent("7 cards · dirty · 110");
     expect(note(/dirty book of Ks/).className).toMatch(/text-ink-soft/);
   });
@@ -2099,7 +2155,8 @@ describe("on a phone", () => {
     ).toMatch(/7 cards · clean/);
     fireEvent.click(screen.getByRole("button", { name: "Collapse" }));
     const chip = screen.getByRole("button", { name: "Select clean book of Ks, 7 cards" });
-    expect(chip.textContent).toBe("K ×7");
+    expect(chip.textContent).toBe("K7");
+    expect(chip.className).toMatch(/bg-suit-red/);
     expect(screen.getByRole("button", { name: "Expand" })).toHaveAttribute(
       "aria-expanded",
       "false",
@@ -2218,7 +2275,7 @@ describe("taking back this turn's melds", () => {
 
   it("marks what was played this turn as not yet final", () => {
     mount(fakeSocket().socket, played());
-    const meld = screen.getByRole("listitem", { name: "Meld of Ks, 4 cards" });
+    const meld = screen.getByRole("listitem", { name: "Meld of Ks, 4 cards, 1 wild" });
     expect(meld.textContent).toMatch(/this turn/);
   });
 
