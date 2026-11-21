@@ -7,8 +7,18 @@
  * Purely visual: what triggers one, and what is said or played with it, belongs
  * to whoever shows it. Reduced motion keeps the announcement and drops the
  * movement — the pop, and any confetti.
+ *
+ * Once its entrance has played it can be put away: a click or tap anywhere, or
+ * Escape, calls `onDismiss`. Until then it lets every click through to the table,
+ * so a tap meant for a card as it appears is not swallowed by it.
  */
-import type { CSSProperties, ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+
+/**
+ * How long a celebration's entrance plays before it can be put away: the pop and
+ * the settle, the first fifth of Grabby Pants' four seconds.
+ */
+export const CELEBRATION_DISMISS_AFTER_MS = 800;
 
 export interface CelebrationProps {
   /** The accessible name of the announcement: what it is about. */
@@ -17,6 +27,8 @@ export interface CelebrationProps {
   readonly ms: number;
   /** Confetti behind the panel. */
   readonly confetti?: boolean;
+  /** Put it away early: called on a click, a tap or Escape once the entrance has played. */
+  readonly onDismiss?: () => void;
   readonly children: ReactNode;
 }
 
@@ -24,10 +36,18 @@ export function Celebration({
   label,
   ms,
   confetti = false,
+  onDismiss,
   children,
 }: CelebrationProps): React.ReactElement {
+  const dismissible = useDismissible(onDismiss);
   return (
-    <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-[rgba(6,10,12,0.62)]">
+    <div
+      data-dismissible={dismissible ? "" : undefined}
+      onClick={dismissible ? onDismiss : undefined}
+      className={`fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-[rgba(6,10,12,0.62)] ${
+        dismissible ? "cursor-pointer" : "pointer-events-none"
+      }`}
+    >
       {confetti && <Confetti />}
       <div
         role="status"
@@ -44,6 +64,34 @@ export function Celebration({
       </div>
     </div>
   );
+}
+
+/**
+ * Whether the celebration can be put away yet: false through its entrance, then
+ * true, with Escape calling `onDismiss` from then on. Never, without one.
+ */
+function useDismissible(onDismiss: (() => void) | undefined): boolean {
+  const [ready, setReady] = useState(false);
+  const latest = useRef(onDismiss);
+  latest.current = onDismiss;
+  const wanted = onDismiss !== undefined;
+
+  useEffect(() => {
+    if (!wanted) return;
+    const timer = setTimeout(() => setReady(true), CELEBRATION_DISMISS_AFTER_MS);
+    return () => clearTimeout(timer);
+  }, [wanted]);
+
+  useEffect(() => {
+    if (!ready || !wanted) return;
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") latest.current?.();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [ready, wanted]);
+
+  return ready && wanted;
 }
 
 const CONFETTI_COLOURS = ["#F2C14E", "#4ADE9B", "#E9795B", "#8FB8E8", "#D6A6F0", "#F7F5EE"];

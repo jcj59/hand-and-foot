@@ -4,9 +4,11 @@
  *
  * A chip carries what a player glances at between turns: who, whether it is
  * their turn and how long they have, whether they dropped, how many cards they
- * hold and whether that is their foot, and a marker per book (gold for clean,
- * silver for dirty). Their melds in full are one tap away, in a sheet over the
- * table, sorted the same way as the player's own.
+ * hold (a mini back and the count, on their turn too) and whether their foot is
+ * still waiting (a mini stack) or in play, and a marker per book (a tiny card, red
+ * for clean and black for dirty). Their melds in full are one tap away, in a sheet
+ * over the table with their hand as a fan of backs and their foot beside it,
+ * sorted the same way as the player's own.
  *
  * Nothing here could leak: the server sends opponents as counts and melds, never
  * cards in hand.
@@ -14,6 +16,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ClockState, OpponentView, Reaction, RoomInfo, RoomPlayerInfo } from "@hf/shared";
+import { BackStack, CardFan } from "../cards/PlayingCard";
 import { Icon } from "../ui/icons";
 import { faceOf } from "../profile/avatarStore";
 import { GrabbyIcon } from "./grabby";
@@ -35,7 +38,12 @@ export interface OpponentStripProps {
   readonly onFelt?: boolean;
 }
 
-/** What a seat is doing, in the few words under its name. */
+/**
+ * What a seat is doing, in the few words under its name: "Playing · 0:41" on their
+ * turn, "Reconnecting" when they dropped, otherwise "In the foot" or "Waiting". How
+ * many cards they hold is not here but on the backs beside it (`HeldCards`), so
+ * their turn clock never covers the count.
+ */
 export function seatLine(
   opponent: OpponentView,
   info: RoomPlayerInfo | undefined,
@@ -44,15 +52,16 @@ export function seatLine(
 ): { readonly text: string; readonly tone: "turn" | "warn" | "plain" } {
   if (info && !info.bot && !info.connected) return { text: "Reconnecting", tone: "warn" };
   if (onTurn) return { text: remaining ? `Playing · ${remaining}` : "Playing", tone: "turn" };
-  return {
-    text: opponent.inFoot ? `Foot · ${opponent.footCount}` : `${opponent.handCount} in hand`,
-    tone: "plain",
-  };
+  return { text: opponent.inFoot ? "In the foot" : "Waiting", tone: "plain" };
 }
 
 export const LINE_COLOR = { turn: "text-gold", warn: "text-salmon", plain: "text-ink/70" } as const;
 
-/** One marker per book, as the chips and seat boxes show them. */
+/**
+ * One marker per book, as the chips and seat boxes show them: a tiny card, red
+ * for a clean book and black for a dirty one, the color of the book's top card.
+ * The black one carries a light outline, or it would vanish on the dark felt.
+ */
 export function BookMarkers({
   books,
 }: {
@@ -63,11 +72,85 @@ export function BookMarkers({
       {books.map((kind, i) => (
         <span
           key={i}
-          className={`h-[13px] w-2.5 rounded-[3px] ${
-            kind === "clean" ? "bg-gold shadow-[inset_0_0_0_1px_#FFE29A]" : "bg-ink-soft"
+          data-book={kind}
+          className={`h-[13px] w-2.5 rounded-[2px] ${
+            kind === "clean"
+              ? "bg-suit-red shadow-[inset_0_0_0_1px_rgba(255,255,255,0.35)]"
+              : "bg-suit-black shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)]"
           }`}
         />
       ))}
+    </span>
+  );
+}
+
+/**
+ * What a player holds, face down, as a seat box and the phone's sheet show it: a
+ * fan of backs with the exact count beside it, and while they have not picked up
+ * their foot, the foot itself as a small face-down pile labeled "Foot". In the foot
+ * the fan is the foot and the pile is gone.
+ *
+ * Decoration: the seat's own accessible name carries the same counts. Nothing here
+ * has a card to show, and nothing carries `data-motion`, so a drawn card still
+ * flies to the seat itself (`data-anchor`).
+ */
+export function HeldCards({
+  opponent,
+  cardHeight,
+  children,
+}: {
+  readonly opponent: OpponentView;
+  /** One back's height in pixels. */
+  readonly cardHeight: number;
+  /** Shown in the same wrapping row, after the foot pile (the seat's book markers). */
+  readonly children?: React.ReactNode;
+}): React.ReactElement {
+  const held = opponent.inFoot ? opponent.footCount : opponent.handCount;
+  return (
+    <span aria-hidden="true" className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <span className="flex items-center gap-1.5">
+        <CardFan count={held} height={cardHeight} />
+        <span data-held={held} className="font-display text-sm font-bold text-card">
+          {held}
+        </span>
+        {opponent.inFoot && <span className="text-[11px] text-ink/70">Foot</span>}
+      </span>
+      {!opponent.inFoot && (
+        <span data-foot={opponent.footCount} className="flex items-center gap-1">
+          <BackStack
+            count={opponent.footCount}
+            width={Math.round(cardHeight * 0.7)}
+            layers={FOOT_LAYERS}
+          />
+          <span className="text-[11px] text-ink/70">Foot</span>
+        </span>
+      )}
+      {children}
+    </span>
+  );
+}
+
+/** A foot waiting to be picked up is a whole hand's worth: drawn as a pile, not one card. */
+const FOOT_LAYERS = 3;
+
+/**
+ * The same, small enough for a phone's chip: a mini fan of backs with the count,
+ * then a mini stack for the foot while it is still waiting. In the foot the fan is
+ * the foot, and the line above says so.
+ */
+function HeldGlyphs({ opponent }: { readonly opponent: OpponentView }): React.ReactElement {
+  const held = opponent.inFoot ? opponent.footCount : opponent.handCount;
+  return (
+    <span aria-hidden="true" className="flex items-center gap-1 text-[11px] leading-tight">
+      <CardFan count={Math.min(held, 3)} height={13} />
+      <span data-held={held} className="font-semibold text-card">
+        {held}
+      </span>
+      {!opponent.inFoot && (
+        <span data-foot={opponent.footCount} className="ml-1">
+          <BackStack count={opponent.footCount} width={9} layers={2} />
+        </span>
+      )}
     </span>
   );
 }
@@ -150,7 +233,8 @@ export function OpponentStrip({
                   <span className={`block text-[11px] leading-tight ${LINE_COLOR[line.tone]}`}>
                     {line.text}
                   </span>
-                  <span className="mt-[3px] block">
+                  <span className="mt-[3px] flex flex-wrap items-center gap-x-2 gap-y-[3px]">
+                    <HeldGlyphs opponent={opponent} />
                     <BookMarkers books={books} />
                   </span>
                 </span>
@@ -196,6 +280,7 @@ export function OpponentStrip({
                   <Icon name="close" size={16} />
                 </button>
               </div>
+              <HeldCards opponent={shown} cardHeight={44} />
               {shown.melds.length === 0 ? (
                 <p className="m-0 text-sm text-ink/75">Not down yet.</p>
               ) : (
