@@ -82,8 +82,10 @@ import { StagingPanel } from "./StagingPanel";
 import {
   EMPTY_STAGING,
   focusGroup,
+  layDownForMe,
   previewLayDown,
   retainCards,
+  sameStaging,
   stageCard,
   stagedCount,
   stagedIds,
@@ -352,6 +354,20 @@ export function TableView({
   };
   const outOfPlay = (card: Card): boolean => isUnplayable(card, playContext);
   const building = canMeld && (melding || stagedCount(staging) > 0);
+  // Taking the pile before getting down asks for a lay-down the server has already
+  // found exists; the player may have it staged for them, to change and play. The
+  // one aid at a real table, asked for by name: nothing else is suggested.
+  const laidOutForMe =
+    // No card owed, no offer: the search must play an owed card and then finds none.
+    canMeld && !view.isDown
+      ? layDownForMe({
+          zone,
+          pickedUp: view.pickedUp,
+          config: room.config,
+          roundNumber: view.roundNumber,
+          inFoot: view.inFoot,
+        })
+      : null;
 
   /**
    * Take back this turn's melds, and put the same cards straight back into the
@@ -641,6 +657,20 @@ export function TableView({
               }
             >
               {building ? "Stop melding" : "Meld"}
+            </button>
+          )}
+          {laidOutForMe && !sameStaging(laidOutForMe, staging) && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                closeMenu();
+                setStaging(laidOutForMe);
+                setMelding(true);
+              }}
+              className={`${ACTION} border border-white/20 text-ink hover:bg-white/5`}
+            >
+              Lay down for me
             </button>
           )}
           {building && (

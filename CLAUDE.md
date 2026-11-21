@@ -1024,7 +1024,20 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   whatever `hints.canTakePile` says; an illegal take is refused with the engine's reason as a
   notice. Kept: the melded-rank underline, the points bar and refusal reasons, the pile-debt ring
   and banner, dimmed red threes, the last-lap banner, the stock's glow, the one-card "Add to Ks
-  meld". `Table.test.tsx` "hints" pins each gone and each kept.
+  meld". `Table.test.tsx` "hints" pins each gone and each kept. **One exception, by name (same
+  change list, item 19): "Lay down for me"**, in the action bar only when `canMeld`, the player is not
+  down and `layDownForMe` finds a plan (with nothing in `pickedUp` it never does). `layDownForMe` (`table/staging.ts`) runs
+  `greedyLayDown(zone, [], new Set(pickedUp), config, { minimum, inFoot })`, the search that let
+  the server allow the take, and returns `stagingFrom(plays, zone)` (each play staged as a player
+  would: its rank focused, then its cards through `stageCard`, so wilds land on their group and red
+  threes stay out), or null when the plan misses a pile card or the minimum, and then there is no
+  button. Pressing it stages (opens the builder, cards lifted and ringed in place; the hand's own
+  order is untouched), never plays; while its own lay-down is what is staged (`sameStaging`) the button
+  steps aside, and comes back to reset it once the player changes it. No glow, no banner. Tests: `staging.test.ts`, `Table.test.tsx`
+  "lay down for me", and `laydown.integration.test.tsx`, which renders the real `Table` against a
+  real server (a node-environment test with its own `JSDOM`, DOM globals only, so Node's `Event`
+  stays for the socket; `jsdom.d.ts` types the bit it uses) and plays take, Lay down for me, Play
+  melds. Harness: `TOOK_PILE=1`, action `laydown`.
 
 - **Redesign shell (redesign PR 0).** Theme tokens live in `client/src/index.css` (charcoal
   surfaces, green accent, gold); Inter, Space Grotesk and JetBrains Mono are self-hosted variable

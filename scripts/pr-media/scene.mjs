@@ -128,6 +128,17 @@ if (process.env.FOOT) {
   view.melds = view.melds.slice(0, 3);
   view.playedThisTurn = [];
 }
+if (process.env.TOOK_PILE) {
+  // Round 1, not down yet, just after taking the pile: its cards are in the hand
+  // and owed, nothing is melded, and nothing has been played this turn.
+  view.roundNumber = 1;
+  view.isDown = false;
+  view.melds = [];
+  view.playedThisTurn = [];
+  view.hand = [...view.hand, ...view.discard];
+  view.pickedUp = view.discard.map((x) => x.id);
+  view.discard = [];
+}
 if (process.env.TWO_DISCARDS) view.discard = [c("3", "hearts", 40), c("3", "diamonds", 41)];
 if (process.env.PILE) {
   const ranks = ["5", "9", "Q", "4", "8", "J", "6", "10", "A"];
@@ -854,6 +865,7 @@ const run = async () => {
     await page.screenshot({ path: out.replace(".png", "-6.png") });
     console.log(JSON.stringify({ animationsAfterDrop: moving }));
   }
+  if (action === "laydown") await page.getByRole("button", { name: "Lay down for me" }).click();
   if (action === "meld") {
     await page.getByRole("button", { name: /^Meld$/ }).click();
     await page.getByRole("button", { name: /Ten of hearts/i }).click({ position: { x: 8, y: 30 } });

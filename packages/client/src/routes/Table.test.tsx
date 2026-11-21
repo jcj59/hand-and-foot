@@ -1200,6 +1200,150 @@ describe("the take-pile obligation", () => {
   });
 });
 
+describe("lay down for me", () => {
+  // Took the pile, a king, while not down: two kings and three aces in hand make a
+  // lay-down of 75, past round 1's 60.
+  const owed = card("K", "clubs");
+  const hand = [
+    card("9", "clubs"),
+    card("K", "hearts"),
+    card("A", "hearts"),
+    card("K", "spades"),
+    card("A", "spades"),
+    card("A", "diamonds"),
+    owed,
+  ];
+  function tookThePile(over: { view?: Partial<PlayerView>; hints?: Partial<LegalHints> } = {}) {
+    return update({
+      view: { hand, phase: "play", pickedUp: [owed.id], ...over.view },
+      hints: { phase: "play", canDraw: false, ...over.hints },
+    });
+  }
+  const button = (): HTMLElement | null =>
+    screen.queryByRole("button", { name: "Lay down for me" });
+  const region = (): HTMLElement => screen.getByRole("region", { name: /^your hand$/i });
+  const shown = (): string[] =>
+    [...region().querySelectorAll("[data-card-id]")].map((el) => el.getAttribute("aria-label")!);
+  const kingsAndAces = [
+    "King of hearts",
+    "King of spades",
+    "King of clubs",
+    "Ace of hearts",
+    "Ace of spades",
+    "Ace of diamonds",
+  ];
+
+  it("is offered after taking the pile before getting down", () => {
+    mount(fakeSocket().socket, tookThePile());
+    expect(button()).toBeInTheDocument();
+  });
+
+  it("stages a lay-down that would be accepted, and plays nothing by itself", async () => {
+    const { socket, sent } = fakeSocket();
+    mount(socket, tookThePile());
+    fireEvent.click(button()!);
+    expect(sent).toHaveLength(0);
+    const panel = screen.getByLabelText(/lay-down being built/i);
+    expect(screen.getByLabelText(/worth 75 of 60 needed/i)).toBeInTheDocument();
+    for (const name of kingsAndAces) {
+      expect(handCard(name)).toHaveAttribute("aria-pressed", "true");
+    }
+    expect(handCard("Nine of clubs")).toHaveAttribute("aria-pressed", "false");
+    expect(within(panel).queryByText(/below the round minimum/i)).toBeNull();
+    const play = screen.getByRole("button", { name: "Play melds" });
+    expect(play).not.toBeDisabled();
+    fireEvent.click(play);
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0].args[0]).toEqual({
+      type: "playMelds",
+      melds: [
+        { rank: "A", cardIds: ["A-diamonds", "A-hearts", "A-spades"] },
+        { rank: "K", cardIds: ["K-clubs", "K-hearts", "K-spades"] },
+      ],
+    });
+  });
+
+  it("leaves the lay-down the player's to change", () => {
+    mount(fakeSocket().socket, tookThePile());
+    fireEvent.click(button()!);
+    // Its lay-down staged, there is nothing more for it to do until that changes.
+    expect(button()).toBeNull();
+    fireEvent.click(handCard("Ace of spades"));
+    expect(handCard("Ace of spades")).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByLabelText(/worth 60 of 60 needed/i)).toBeInTheDocument();
+    // Pressed again, it puts its own lay-down back.
+    fireEvent.click(button()!);
+    expect(handCard("Ace of spades")).toHaveAttribute("aria-pressed", "true");
+    expect(button()).toBeNull();
+    // Every card taken back out, the builder stays open, as it does after Meld.
+    for (const name of kingsAndAces) fireEvent.click(handCard(name));
+    expect(screen.getByLabelText(/lay-down being built/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Stop melding" })).toBeInTheDocument();
+  });
+
+  it("closes a card's open menu", () => {
+    mount(fakeSocket().socket, tookThePile());
+    fireEvent.click(handCard("Nine of clubs"));
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    fireEvent.click(button()!);
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("keeps the cards where the player arranged them", () => {
+    mount(fakeSocket().socket, tookThePile());
+    const nine = region().querySelector<HTMLElement>('[data-card-id][aria-label="Nine of clubs"]')!;
+    nine.focus();
+    fireEvent.keyDown(nine, { key: "ArrowRight", altKey: true });
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowRight", altKey: true });
+    const arranged = shown();
+    expect(arranged.indexOf("Nine of clubs")).toBe(2);
+    fireEvent.click(button()!);
+    expect(shown()).toEqual(arranged);
+  });
+
+  it("is not offered once the pile is settled, to a player down, or out of the play phase", () => {
+    mount(fakeSocket().socket, tookThePile({ view: { pickedUp: [] } }));
+    expect(button()).toBeNull();
+    cleanup();
+    mount(fakeSocket().socket, tookThePile({ view: { isDown: true } }));
+    expect(button()).toBeNull();
+    cleanup();
+    mount(fakeSocket().socket, tookThePile({ view: { phase: "draw" }, hints: { phase: "draw" } }));
+    expect(button()).toBeNull();
+    cleanup();
+    mount(fakeSocket().socket, tookThePile({ hints: { seatToAct: 1 } }));
+    expect(button()).toBeNull();
+    cleanup();
+    mount(fakeSocket().socket, update({ ...tookThePile(), clock: { inDiscardGrace: true } }));
+    expect(button()).toBeNull();
+  });
+
+  it("is not offered when the search finds no lay-down", () => {
+    // The pile's nine has no partner: no lay-down plays it.
+    const nine = card("9", "hearts");
+    mount(
+      fakeSocket().socket,
+      tookThePile({ view: { hand: [...hand.slice(1), nine], pickedUp: [nine.id] } }),
+    );
+    expect(button()).toBeNull();
+  });
+
+  it("asks for the round's own minimum", () => {
+    // 75 clears round 1's 60, not round 2's 90.
+    mount(fakeSocket().socket, tookThePile({ view: { roundNumber: 2 } }));
+    expect(button()).toBeNull();
+  });
+
+  it("brings back no hint: no glow, no new words", () => {
+    mount(fakeSocket().socket, tookThePile());
+    expect(button()!.className).not.toMatch(/pulse|prompt|glow|animate/);
+    expect(button()!.getAttribute("style")).toBeNull();
+    expect(screen.getAllByRole("status").map((el) => el.textContent)).toEqual([
+      "You took the pile. Play at least one of the ringed cards before discarding.",
+    ]);
+  });
+});
+
 describe("discarding", () => {
   function readyToDiscard(over: Partial<PlayerView> = {}): ViewUpdate {
     return update({

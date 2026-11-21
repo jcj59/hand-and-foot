@@ -977,6 +977,19 @@ ring and banner for a card owed to the pile, the dimmed red threes, the last-lap
 glow while a draw is open, and the one-card "Add to Ks meld" in a card's menu, which is an action,
 not a suggestion.
 
+One aid came back by name, at the family's request: "Lay down for me", for a player who took the
+pile before getting down. Taking it is the one moment the game asks for a lay-down it has already
+decided exists, since the server allowed the take only because its lay-down search found one over
+the hand and the pile. Pressing the button runs that same search (`greedyLayDown`, with the cards
+taken from the pile as the ones it must play and the round's minimum to reach) over the same cards,
+now in the hand, and stages what it finds in the lay-down builder rather than playing it. The cards
+are lifted and ringed where they lie, in the order the player arranged them, so they see which
+cards it needs, can add or take any back, and still press Play melds themselves (the button steps
+aside while its own lay-down is the one staged, and comes back to put it back). It is offered only
+in that state (the play phase, a card owed to the pile, not yet down), it carries no glow and no
+words beyond its name, and if the search ever came up short it would not be offered at all rather
+than stage a lay-down certain to be refused. Anywhere else the line above still holds.
+
 ### How to play, for this table
 
 The rules page is written from a table's own rules rather than as a general description of the
