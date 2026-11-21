@@ -8,11 +8,13 @@
  * bar holds React, Sound, How to play and the menu.
  *
  * The menu is where a table's rarer choices live: pausing it, turn notifications,
- * and going back to the main screen, which keeps the seat (the main screen offers
+ * reporting a bug, and going back to the main screen, which keeps the seat (the main screen offers
  * the way back, and the clock keeps running meanwhile).
  */
 import { useState } from "react";
 import type { ClockState, ReactionId } from "@hf/shared";
+import type { TableReport } from "../report/context";
+import { ReportSheet } from "../report/ReportSheet";
 import { Sheet } from "../ui/Sheet";
 import { Icon } from "../ui/icons";
 import { usePhone } from "../usePhone";
@@ -42,6 +44,8 @@ export interface TableHeaderProps {
   readonly busy: boolean;
   readonly onRules: () => void;
   readonly onMainMenu: () => void;
+  /** The table's details for a bug report, read as the report sheet opens. */
+  readonly report: () => TableReport;
   /** The scores and latest moves, for the phone's sheet (titled by it). */
   readonly scores: (titled: boolean) => React.ReactNode;
 }
@@ -60,11 +64,13 @@ export function TableHeader({
   busy,
   onRules,
   onMainMenu,
+  report,
   scores,
 }: TableHeaderProps): React.ReactElement {
   const phone = usePhone();
   const [menuOpen, setMenuOpen] = useState(false);
   const [scoresOpen, setScoresOpen] = useState(false);
+  const [reporting, setReporting] = useState<TableReport | null>(null);
 
   const soundLabel = sound.muted
     ? "Turn sound on"
@@ -193,6 +199,17 @@ export function TableHeader({
           type="button"
           onClick={() => {
             setMenuOpen(false);
+            setReporting(report());
+          }}
+          className={item}
+        >
+          <Icon name="bug" size={18} className="text-muted" />
+          Report a bug
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setMenuOpen(false);
             onMainMenu();
           }}
           className={item}
@@ -207,6 +224,9 @@ export function TableHeader({
         )}
       </div>
     </Sheet>
+  );
+  const reportSheet = reporting && (
+    <ReportSheet table={reporting} onClose={() => setReporting(null)} />
   );
 
   if (phone) {
@@ -229,6 +249,7 @@ export function TableHeader({
           <Icon name="trophy" size={18} />
         </button>
         {menu}
+        {reportSheet}
         {scoresOpen && (
           <Sheet id="scores" title="Scores so far" onClose={() => setScoresOpen(false)}>
             {scores(true)}
@@ -252,6 +273,7 @@ export function TableHeader({
       </button>
       {menuButton}
       {menu}
+      {reportSheet}
     </header>
   );
 }

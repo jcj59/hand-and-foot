@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 // From vitest rather than vite: the `test` block below is vitest's, and vite's own
@@ -17,8 +18,22 @@ import { defineConfig } from "vitest/config";
  */
 const apiTarget = process.env.HF_API_TARGET ?? "http://localhost:3000";
 
+/**
+ * Which commit the page was built from, so a bug report says which code it was
+ * running: the git short sha, or "unknown" where there is no git to ask.
+ */
+function buildId(): string {
+  try {
+    const sha = execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] });
+    return sha.toString().trim() || "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  define: { __BUILD_ID__: JSON.stringify(buildId()) },
   server: { port: 5173, proxy: { "/api": { target: apiTarget, ws: true } } },
   test: {
     // Components are asserted through the real DOM. The pure modules — the

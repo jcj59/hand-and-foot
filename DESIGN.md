@@ -1041,6 +1041,20 @@ host with no token set does not offer the route at all; a small script fetches t
 them as Markdown, which a person or an agent can work through. The Node server keeps reports in
 memory and writes each one to its log, which is where the operator of that host reads them.
 
+The client offers "Report a bug" in the table's menu and on Profile. A player rarely knows what
+broke, so the report carries what the page knows: the commit the page was built from, the time, the
+page, the browser and screen, the profile, the last twenty errors the page raised (kept in memory
+from the moment it loads, never sent on their own), and at a table its code, the seat, the round
+and phase, and the last twenty moves this seat was shown. The sheet lists all of it in words, and
+the exact JSON is a tap away, so nothing goes that the player could not have read first; the table's
+part can be left out with one checkbox. Of cards it carries only counts: how many the player holds
+and where, never which, and nothing at all of other players' hands or melds. The moves are the ones
+the server already cut for this seat, so another player's drawn card is not among them, and the
+player's own drawn card is dropped too, since it is a card in their hand. That part is
+built field by field from an allowlist rather than by copying the view, so a field added to the view
+later does not start travelling in reports unnoticed. When a report would pass the size cap, the
+oldest errors go first, then the oldest moves, then the oldest move lines.
+
 ## Visual design
 
 The client was redesigned in November 2026, screen by screen, against a set of mockups drawn for

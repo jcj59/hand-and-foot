@@ -49,6 +49,7 @@ import type { MeldOrder } from "./meldView";
 import { moveLine, withMove } from "./moveLine";
 import { ScoresPanel } from "./ScoresPanel";
 import { TableHeader } from "./TableHeader";
+import { useMoveRecords } from "../report/useMoveRecords";
 import { useCardMotion } from "./cardMotion";
 import {
   GRABBY_NAME,
@@ -229,6 +230,7 @@ export function TableView({
       )
     : null;
   const lastSeq = lastMove?.seq ?? null;
+  const moveRecords = useMoveRecords(update.room.roomId, lastMove);
   useEffect(() => {
     if (lastSeq !== null && lastLine !== null)
       setMoves((list) => withMove(list, lastSeq, lastLine));
@@ -530,6 +532,12 @@ export function TableView({
       busy={busy}
       onRules={() => setRulesOpen(true)}
       onMainMenu={onMainMenu}
+      report={() => ({
+        update,
+        moveLines: moves.map((move) => move.text),
+        lastMoves: moveRecords(),
+        roundOver: result !== null,
+      })}
       scores={scores}
     />
   );

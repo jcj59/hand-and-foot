@@ -706,6 +706,24 @@ const run = async () => {
       ],
     );
     await page.goto(`${base}/history`);
+  } else if (action === "profile" || action === "profile-report") {
+    // Profile, signed in as "jack" (with its Report a bug sheet open, below, for
+    // `profile-report`).
+    await page.route("**/api/users", (route) =>
+      route.fulfill({ json: { ok: true, data: { username: "jack" } } }),
+    );
+    await page.route("**/api/users/matches", (route) =>
+      route.fulfill({ json: { ok: false, error: "none here" } }),
+    );
+    await page.evaluate(() => {
+      localStorage.setItem(
+        "hf.identity",
+        JSON.stringify({ userId: "u7Kq2xWm9PzR4tLc", secret: "s".repeat(32) }),
+      );
+      localStorage.setItem("hf.account", "jack");
+      localStorage.setItem("hf.name", "Jack");
+    });
+    await page.goto(`${base}/profile`);
   } else if (action !== "home")
     await page.goto(`${base}/${process.env.WATCHING ? "watch" : "room"}/HFDEMO`);
   else await page.goto(base);
@@ -720,6 +738,27 @@ const run = async () => {
       .getByRole("button", { name: new RegExp(`^${process.env.PERSON}`) })
       .click();
   if (action === "menu") await page.getByRole("button", { name: "Main menu" }).click();
+  if (action === "report" || action === "profile-report") {
+    // The bug report sheet, from the table's menu or from Profile, with a few
+    // words written; `REPORT_SEND=1` sends it (answered by a mock) for the thanks.
+    if (action === "report") await page.getByRole("button", { name: "Main menu" }).click();
+    await page
+      .getByRole("button", { name: /^Report a bug/ })
+      .first()
+      .click();
+    await page
+      .getByRole("textbox", { name: /what went wrong/i })
+      .fill("I took the pile with two queens and my hand did not get the cards.");
+    if (process.env.REPORT_SEND) {
+      await page.route("**/api/reports", (route) =>
+        route.fulfill({ json: { ok: true, data: { id: 7 } } }),
+      );
+      await page.getByRole("button", { name: "Send report" }).click();
+    }
+    // The foot of the sheet (Send), where a phone has to scroll to.
+    if (process.env.REPORT_SCROLL)
+      await page.getByRole("dialog").evaluate((sheet) => sheet.scrollTo(0, sheet.scrollHeight));
+  }
   if (action === "scores") await page.getByRole("button", { name: "Scores so far" }).click();
   if (action === "expand") await page.getByRole("button", { name: /^Expand Cyrus/ }).click();
   if (action === "picker") await page.getByRole("button", { name: "React" }).click();
