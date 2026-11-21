@@ -322,6 +322,23 @@ const run = async () => {
         );
         const now = Date.now();
         ws.send(JSON.stringify({ event: "room", payload: room }));
+        // CHAT=1: the table's history, a few lines from earlier, the viewer's among them.
+        if (process.env.CHAT) {
+          const said = (seq, seat, text) => ({
+            seq: now - 60_000 + seq,
+            seat,
+            name: names[seat],
+            text,
+            at: now - 60_000 + seq,
+          });
+          const history = [
+            said(1, 1, "Good luck everyone!"),
+            said(2, 0, "You too. Don't take the pile on me again, Ana."),
+            said(3, 2, "No promises from me either"),
+            said(4, 3, "Who dealt this hand? I have four threes"),
+          ];
+          ws.send(JSON.stringify({ event: "chatBacklog", payload: history }));
+        }
         const mine = mode !== "theirs" && mode !== "oppdraw" && mode !== "grabby";
         const takeable = !!process.env.TAKEABLE;
         const pileWhy =
@@ -590,6 +607,17 @@ const run = async () => {
             setTimeout(() => ws.send(JSON.stringify({ event: "reaction", payload })), 700);
           }
         }
+        if (mode === "chat") {
+          // A line from Ana as it is said: the bubble by her seat, and one unread.
+          const payload = {
+            seq: now + 1,
+            seat: 1,
+            name: names[1],
+            text: "Nice one! I was hoping for that queen.",
+            at: now + 1,
+          };
+          setTimeout(() => ws.send(JSON.stringify({ event: "chat", payload })), 700);
+        }
         if (mode === "oppdraw") {
           later(700, { ...base, lastMove: { seq: 6, seat: 1, kind: "takePile", count: 3 } });
         }
@@ -840,6 +868,12 @@ const run = async () => {
   if (action === "expand")
     await page.getByRole("button", { name: new RegExp(`^Expand ${seatName}`) }).click();
   if (action === "picker") await page.getByRole("button", { name: "React" }).click();
+  // The chat: the side panel's tab on a computer, the header's button on a phone.
+  if (action === "chat") {
+    const tab = page.getByRole("tab", { name: /^Chat/ });
+    if (await tab.count()) await tab.click();
+    else await page.getByRole("button", { name: /^Chat/ }).click();
+  }
   if (action === "rules") {
     // On a phone the rules are an item in the table's menu.
     const button = page.getByRole("button", { name: "How to play" });
@@ -951,6 +985,7 @@ const run = async () => {
     oppdraw: "took the pile",
     grabby: "is Grabby Pants",
     react: "Nice!",
+    chat: "Nice one!",
   }[mode];
   if (waitText) {
     await page.getByText(waitText).first().waitFor();

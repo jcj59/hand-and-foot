@@ -215,6 +215,10 @@ export function react(socket: HfClientSocket, id: ReactionId): Promise<Ack<undef
   return ask((ack) => socket.emit("react", { id }, ack));
 }
 
+export function chat(socket: HfClientSocket, text: string): Promise<Ack<undefined>> {
+  return ask((ack) => socket.emit("chat", { text }, ack));
+}
+
 export function saveForLater(socket: HfClientSocket): Promise<Ack<undefined>> {
   return ask((ack) => socket.emit("saveForLater", ack));
 }

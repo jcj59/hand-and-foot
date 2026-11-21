@@ -37,8 +37,8 @@ an animation) in its description, under `## Screenshots`.
    rank, a wild and a red three, and `GO_OUT=1` has the server say the books to go out are in
    place. Modes stage a state
    (`mine`, `theirs`) or a change to capture mid-animation (`draw`, `discard`,
-   `oppdraw`, `grabby`, `react` — quick reactions arriving from two opponents and
-   the viewer — and `stale` — a finished round at one table, then a fresh
+   `oppdraw`, `grabby`, `react` (quick reactions arriving from two opponents and
+   the viewer), `chat` (a line from Ana arriving: her bubble and one unread) and `stale` (a finished round at one table, then a fresh
    deal at another), with `FRAMES=40,120,300` giving the milliseconds after the
    change to capture, and `CLICK_AT=500,1000` the milliseconds at which to click the middle of
    the window (a frame and a click at the same time: the frame first). `BIG_MELDS=1` adds enough melds that the middle scrolls;
@@ -56,7 +56,9 @@ an animation) in its description, under `## Screenshots`.
    the awards), and with
    `REPLAY_JSON=<path to a recorded ReplayMatch>` action `watchback` opens the replay from it and
    lets it play for `PLAY_FOR` ms (4000); with `LEFT=1`, Ana has left the match after round 1 (and Dee,
-   seat 4, is not at the table, so the host is offered to carry on without her). `BOTS=1` makes Ben and Dee
+   seat 4, is not at the table, so the host is offered to carry on without her). `CHAT=1` sends the table's chat history (four
+   lines, the viewer's among them) on sitting down or watching, and action `chat` opens the chat
+   (the side panel's tab on a computer, the header's Chat button on a phone). `BOTS=1` makes Ben and Dee
    computer players ("Robo Rita", "Robo Ray"); `LOBBY=1` renders the waiting room instead of the
    table (`LOBBY_GUEST=1`: as a guest, Ana hosting). `WATCHING=1` renders the table as a spectator sees it, at `/watch/HFDEMO`. Action `home` renders the home screen
    instead of the table, with `SAVED_LIST=1` seeding two saved games. Action `history` renders

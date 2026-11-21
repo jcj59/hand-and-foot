@@ -29,6 +29,7 @@ import {
   SPECTATOR_SEAT,
   type Action,
   type Card,
+  type ChatMessage,
   type MeldPlay,
   type Rank,
   type Reaction,
@@ -62,12 +63,16 @@ import {
   withGrabbyName,
 } from "./grabby";
 import { MarvaCelebration, useMarvaCelebration } from "./marva";
+import { ReactionBubble, readMuteReactions, useSeatBubbles, writeMuteReactions } from "./reactions";
 import {
-  ReactionBubble,
-  readMuteReactions,
-  useReactionBubbles,
-  writeMuteReactions,
-} from "./reactions";
+  ChatPanel,
+  latestSeq,
+  readMuteChat,
+  unreadBadge,
+  unreadCount,
+  writeMuteChat,
+} from "./chat";
+import { Sheet } from "../ui/Sheet";
 import { useMoveNews } from "./moveNews";
 import { useTableSounds } from "./sounds";
 import { useTurnAttention } from "./turnAttention";
@@ -101,6 +106,7 @@ import {
  * clicked and it shows the watched seat's view as that seat would see it.
  */
 const NO_REACTIONS: readonly Reaction[] = [];
+const NO_CHAT: readonly ChatMessage[] = [];
 
 export interface TableControls {
   /** Submit a move; resolves whether it was accepted. */
@@ -111,6 +117,8 @@ export interface TableControls {
   saveForLater(): Promise<unknown>;
   /** Send a quick reaction to everyone at the table. */
   react(id: ReactionId): void;
+  /** Say something to the table; resolves with the refusal, or null once it went. */
+  chat(text: string): Promise<string | null>;
   leave(): void;
   playAgain(): void;
   /** Deal the same table again at once, as the host, once the match is over. */
@@ -144,6 +152,13 @@ export interface TableViewProps {
   readonly heading?: string;
   /** Quick reactions heard at the table, most recent last. */
   readonly reactions?: readonly Reaction[];
+  /**
+   * What has been said at a live table, oldest first. Absent where nobody can talk
+   * (a lesson, a replay): then there is no chat at all.
+   */
+  readonly chat?: readonly ChatMessage[];
+  /** The newest message that came as the table's history, and so is old news. */
+  readonly chatOldThrough?: number;
   /** Replaces the table's own header: the replay player brings its own title and way back. */
   readonly header?: React.ReactNode;
   /** Shown under the header, above everything else: a lesson's coach on a phone. */
@@ -173,6 +188,8 @@ export function TableView({
   quiet = false,
   heading,
   reactions = NO_REACTIONS,
+  chat,
+  chatOldThrough = 0,
   header: ownHeader,
   belowHeader,
   aside,
@@ -221,6 +238,11 @@ export function TableView({
   // On a computer the scores and latest moves can be put away to give the table
   // the room; the choice is remembered on this device.
   const [scoresHidden, setScoresHidden] = useState(() => readFlag(HIDE_SCORES_KEY));
+  // Which of the side panel's tabs is open, Scores or Chat, kept on this device.
+  const [sideTab, setSideTab] = useState<SideTab>(() =>
+    readChoice<SideTab>(SIDE_TAB_KEY, ["scores", "chat"], "scores"),
+  );
+  const [chatSheetOpen, setChatSheetOpen] = useState(false);
   // On a computer the player can also drag the dividers between the felt and the
   // side panel, the felt and the hand, and the other players and the piles.
   const layout = useTableLayout();
@@ -269,9 +291,53 @@ export function TableView({
   );
   const grabbyNews = useGrabbyAnnouncement(realRoom, muted, quiet);
   const [muteReactions, setMuteReactions] = useState(readMuteReactions);
-  const bubbles = useReactionBubbles(reactions, update.view.seat, muteReactions, (r) => {
-    if (r.seat !== update.view.seat) playSound("reaction");
+  // Chat, at a live table with somebody to talk to: a practice game against
+  // computers has no one, and neither has anyone watching it.
+  const chatOn = chat !== undefined && latestRoom.players.filter((p) => !p.bot).length >= 2;
+  const messages = chatOn ? chat : NO_CHAT;
+  const oldThrough = chatOldThrough;
+  const [muteChat, setMuteChat] = useState(readMuteChat);
+  const bubbles = useSeatBubbles({
+    reactions,
+    chat: messages,
+    chatOldThrough: oldThrough,
+    mySeat: update.view.seat,
+    muteReactions,
+    muteChat,
+    onReaction: (r) => {
+      if (r.seat !== update.view.seat) playSound("reaction");
+    },
+    onChat: () => playSound("reaction"),
   });
+  // Read is what has been on screen: the Chat tab open beside the table, or the
+  // phone's chat sheet. What was already said when the table opened is not news.
+  const tab: SideTab = chatOn ? sideTab : "scores";
+  const reading = chatOn && (phone ? chatSheetOpen : !aside && !scoresHidden && tab === "chat");
+  const newest = latestSeq(messages);
+  const [readThrough, setReadThrough] = useState(newest);
+  useEffect(() => {
+    if (reading) setReadThrough((through) => Math.max(through, newest));
+  }, [reading, newest]);
+  const unread = unreadCount(messages, {
+    readThrough: reading ? newest : readThrough,
+    oldThrough,
+    mySeat: update.view.seat,
+    muted: muteChat,
+  });
+  const chatPanel = (sheet: boolean): React.ReactElement => (
+    <ChatPanel
+      messages={messages}
+      mySeat={update.view.seat}
+      room={latestRoom}
+      muted={muteChat}
+      onMutedChange={(on) => {
+        setMuteChat(on);
+        writeMuteChat(on);
+      }}
+      onSend={controls ? controls.chat : null}
+      sheet={sheet}
+    />
+  );
   // Real names: the celebration is about the player, not their title.
   const marvaNews = useMarvaCelebration(
     update.lastMove,
@@ -511,6 +577,8 @@ export function TableView({
       // The header's clock is the player's own; another player's runs on their seat.
       clock={!result && controls && (myTurn || clock.paused) ? clock : null}
       onReact={controls ? controls.react : null}
+      onChat={chatOn ? () => setChatSheetOpen(true) : null}
+      chatUnread={unread}
       muteReactions={muteReactions}
       onMuteReactions={(on) => {
         setMuteReactions(on);
@@ -970,6 +1038,19 @@ export function TableView({
                 setScoresHidden(hidden);
                 writeFlag(HIDE_SCORES_KEY, hidden);
               }}
+              tabs={
+                chatOn
+                  ? {
+                      tab,
+                      onTab: (next) => {
+                        setSideTab(next);
+                        writeChoice(SIDE_TAB_KEY, next);
+                      },
+                      unread,
+                      chat: chatPanel(false),
+                    }
+                  : null
+              }
             >
               {scores(false)}
             </SidePanel>
@@ -1016,6 +1097,11 @@ export function TableView({
         </footer>
       )}
 
+      {phone && chatOn && chatSheetOpen && (
+        <Sheet id="chat" title="Chat" onClose={() => setChatSheetOpen(false)}>
+          {chatPanel(true)}
+        </Sheet>
+      )}
       {rulesOpen && <RulesDialog config={room.config} onClose={() => setRulesOpen(false)} />}
       {grabbyNews.shown && (
         <GrabbyAnnouncement headline={grabbyNews.shown} onDismiss={grabbyNews.dismiss} />
@@ -1072,26 +1158,68 @@ export function TableView({
 
 const COMPACT_MELDS_KEY = "hf.compactMelds";
 const HIDE_SCORES_KEY = "hf.hideScores";
+const SIDE_TAB_KEY = "hf.sideTab";
+
+/** The side panel's two tabs, where a table has chat. */
+type SideTab = "scores" | "chat";
 
 /**
- * The panel beside the table on a computer, with the scores and latest moves,
- * which the player can put away to a narrow rail and bring back. It slides
- * rather than jumps (unless the device asks for less motion), and the table,
- * which takes whatever width is left, grows into the room. Put away, its
- * contents are inert, so neither a screen reader nor the tab key finds them.
+ * The panel beside the table on a computer, with the scores and latest moves and,
+ * at a table with chat, a Chat tab beside them, which the player can put away to
+ * a narrow rail and bring back. It slides rather than jumps (unless the device
+ * asks for less motion), and the table, which takes whatever width is left, grows
+ * into the room. Put away, its contents are inert, so neither a screen reader nor
+ * the tab key finds them; the rail still says when there are messages to read,
+ * and that badge opens the chat.
  */
 function SidePanel({
   width,
   hidden,
   onHidden,
+  tabs,
   children,
 }: {
   /** Its width while shown, as the player has dragged it. */
   readonly width: number;
   readonly hidden: boolean;
   readonly onHidden: (hidden: boolean) => void;
+  /** Scores and Chat as tabs; null where there is no chat, and the scores are all. */
+  readonly tabs: {
+    readonly tab: SideTab;
+    readonly onTab: (tab: SideTab) => void;
+    readonly unread: number;
+    readonly chat: React.ReactNode;
+  } | null;
   readonly children: React.ReactNode;
 }): React.ReactElement {
+  const tabButton = (id: SideTab, label: string): React.ReactElement => {
+    const on = tabs?.tab === id;
+    const count = id === "chat" ? (tabs?.unread ?? 0) : 0;
+    return (
+      <button
+        type="button"
+        role="tab"
+        id={`table-side-tab-${id}`}
+        aria-selected={on}
+        aria-controls={`table-side-${id}`}
+        aria-label={count > 0 ? `${label}, ${count} unread` : label}
+        onClick={() => tabs?.onTab(id)}
+        className={`inline-flex min-h-8 items-center gap-1.5 rounded-[10px] px-3 text-[13px] font-semibold ${
+          on ? "bg-selected text-ink" : "text-quiet hover:text-ink-soft"
+        }`}
+      >
+        {label}
+        {count > 0 && (
+          <span
+            aria-hidden="true"
+            className="min-w-[18px] rounded-full bg-accent px-1 text-center text-[11px] leading-[18px] font-bold text-accent-ink tabular-nums"
+          >
+            {unreadBadge(count)}
+          </span>
+        )}
+      </button>
+    );
+  };
   return (
     <aside
       id="table-side"
@@ -1113,15 +1241,54 @@ function SidePanel({
       >
         <Icon name={hidden ? "panelClose" : "panelOpen"} size={18} />
       </button>
+      {hidden && tabs && tabs.unread > 0 && (
+        <button
+          type="button"
+          aria-label={`Show chat, ${tabs.unread} unread`}
+          title="Show chat"
+          onClick={() => {
+            tabs.onTab("chat");
+            onHidden(false);
+          }}
+          className="absolute top-9 right-0 z-10 grid w-8 place-items-center gap-0.5 rounded-lg py-1 text-muted hover:bg-white/8 hover:text-ink"
+        >
+          <Icon name="chat" size={18} />
+          <span className="min-w-[18px] rounded-full bg-accent px-1 text-center text-[11px] leading-[18px] font-bold text-accent-ink tabular-nums">
+            {unreadBadge(tabs.unread)}
+          </span>
+        </button>
+      )}
       <div
         id="table-side-panel"
         inert={hidden}
         style={{ width }}
-        className={`h-full overflow-y-auto transition-opacity duration-200 motion-reduce:transition-none ${
-          hidden ? "opacity-0" : "opacity-100"
-        }`}
+        className={`h-full transition-opacity duration-200 motion-reduce:transition-none ${
+          tabs ? "flex flex-col gap-3" : "overflow-y-auto"
+        } ${hidden ? "opacity-0" : "opacity-100"}`}
       >
-        {children}
+        {tabs ? (
+          <>
+            {/* Clear of the hide button, which sits over the row's right end. */}
+            <div
+              role="tablist"
+              aria-label="Beside the table"
+              className="mr-10 flex shrink-0 gap-1 self-start rounded-xl bg-page p-1"
+            >
+              {tabButton("scores", "Scores")}
+              {tabButton("chat", "Chat")}
+            </div>
+            <div
+              role="tabpanel"
+              id={`table-side-${tabs.tab}`}
+              aria-labelledby={`table-side-tab-${tabs.tab}`}
+              className={`min-h-0 flex-1 ${tabs.tab === "chat" ? "flex flex-col" : "overflow-y-auto"}`}
+            >
+              {tabs.tab === "chat" ? tabs.chat : children}
+            </div>
+          </>
+        ) : (
+          children
+        )}
       </div>
     </aside>
   );

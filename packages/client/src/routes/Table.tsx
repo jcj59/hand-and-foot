@@ -14,6 +14,7 @@ import {
   readyForNextRound,
   rematch,
   saveTableForLater,
+  sendChat,
   sendReaction,
   stageDraft,
 } from "../actions";
@@ -38,6 +39,8 @@ export function Table({ socket }: TableProps): React.ReactElement {
   const latestRoom = useSession((s) => s.room);
   const leave = useSession((s) => s.leave);
   const reactions = useSession((s) => s.reactions);
+  const chat = useSession((s) => s.chat);
+  const chatOldThrough = useSession((s) => s.chatHistoryThrough);
   const navigate = useNavigate();
 
   // Stable while the socket and store are, since the table re-sends its draft
@@ -63,6 +66,7 @@ export function Table({ socket }: TableProps): React.ReactElement {
         }),
       removePlayer: (seat) => void carryOnWithout(socket, seat, sink),
       react: (id) => void sendReaction(socket, id),
+      chat: (text) => sendChat(socket, text),
       // Only a player with an identity can be shown a match: the server asks for it.
       ...(loadIdentity()
         ? {
@@ -91,6 +95,8 @@ export function Table({ socket }: TableProps): React.ReactElement {
       controls={controls}
       onMainMenu={() => navigate("/")}
       reactions={reactions}
+      chat={chat}
+      chatOldThrough={chatOldThrough}
     />
   );
 }

@@ -11,7 +11,7 @@
  * refused request as a value. A rejection is put on the store as a notice for the
  * interface to surface, and the caller learns whether it worked.
  */
-import { CARRIED_ON_WITHOUT_YOU, REPORTS_PATH } from "@hf/shared";
+import { CARRIED_ON_WITHOUT_YOU, REPORTS_PATH, normalizeChat } from "@hf/shared";
 import type {
   Ack,
   ReportBody,
@@ -269,6 +269,26 @@ export async function pauseTable(
 export async function sendReaction(socket: HfClientSocket, id: ReactionId): Promise<boolean> {
   return (await wire.react(socket, id)).ok;
 }
+
+/**
+ * Say something to the table. Unlike a move's, a refusal here (too long, too many
+ * too quickly, no longer seated) is not the table's notice: it belongs beside the
+ * box it was typed in, so it is returned for the chat to show, and the text is
+ * left for the player to shorten or send again. Returns null once it went.
+ *
+ * Only what `normalizeChat` leaves is sent, so a message of nothing but spaces
+ * never costs a round trip. Its length is the server's to judge: an over-long
+ * message is refused, never cut, so the player sees what would be lost.
+ */
+export async function sendChat(socket: HfClientSocket, text: string): Promise<string | null> {
+  const said = normalizeChat(text);
+  if (said === null) return NOTHING_TO_SAY;
+  const result = await wire.chat(socket, said);
+  return result.ok ? null : result.error;
+}
+
+/** Why a message of nothing but spaces was not sent, worded as the server does. */
+export const NOTHING_TO_SAY = "there is nothing to send";
 
 /**
  * Keep this family table for a week, to be picked up again later. The server
