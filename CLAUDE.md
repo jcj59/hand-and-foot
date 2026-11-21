@@ -760,7 +760,7 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   room, seat or "watching", round, phase, seat to play, round over, paused, players, the player's
   own **counts only** as `yourCards`, stock and pile sizes, the side panel's move lines, and the
   last `MOVE_RECORDS_KEPT` 20 `lastMove` records as this seat was sent them, copied field by
-  field), `withRecord` (each move once, newest 20), `fitReport` (text trimmed; drops the oldest
+  field, a draw's card dropped since it is the player's own hand card), `withRecord` (each move once, newest 20), `fitReport` (text trimmed; drops the oldest
   error, then the oldest move record, then the oldest line, until `{at, text, context}` fits
   `MAX_REPORT_BYTES`; a report that cannot fit goes as it is for the server to refuse).
   `report/useMoveRecords.ts` keeps the records in a ref in `TableView` (reset when the room

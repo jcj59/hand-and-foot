@@ -1049,7 +1049,8 @@ and phase, and the last twenty moves this seat was shown. The sheet lists all of
 the exact JSON is a tap away, so nothing goes that the player could not have read first; the table's
 part can be left out with one checkbox. Of cards it carries only counts: how many the player holds
 and where, never which, and nothing at all of other players' hands or melds. The moves are the ones
-the server already cut for this seat, so another player's drawn card is not among them. That part is
+the server already cut for this seat, so another player's drawn card is not among them, and the
+player's own drawn card is dropped too, since it is a card in their hand. That part is
 built field by field from an allowlist rather than by copying the view, so a field added to the view
 later does not start travelling in reports unnoticed. When a report would pass the size cap, the
 oldest errors go first, then the oldest moves.
