@@ -163,10 +163,16 @@ if (process.env.BIG_OPP) {
     ),
   };
 }
+// BIG_HAND=1: Ben has taken a big pile and holds more cards than a seat's fan draws.
+if (process.env.BIG_HAND) view.opponents[1] = { ...view.opponents[1], handCount: 22 };
+// PLAYERS=<n>: only the first n seats are at the table (2 to 6).
+const seats = Math.min(names.length, Math.max(2, Number(process.env.PLAYERS ?? names.length)));
+view.opponents = view.opponents.filter((o) => o.seat < seats);
+view.scoresSoFar = view.scoresSoFar.slice(0, seats);
 const grabbyMe = process.env.GRABBY_ME ? { grabbyPants: { seat: 0, streak: 3 } } : {};
 const room = {
   roomId: "HFDEMO",
-  players: names.map((name, seat) => ({ seat, name, connected: seat !== 4 })),
+  players: names.slice(0, seats).map((name, seat) => ({ seat, name, connected: seat !== 4 })),
   hostSeat: 0,
   ...grabbyMe,
   started: true,

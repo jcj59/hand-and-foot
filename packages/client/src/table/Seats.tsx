@@ -1,8 +1,10 @@
 /**
  * The other players on a computer: a box each across the top of the felt, with
- * who they are, what they are doing ("Playing · 0:41", "Foot · 9", "Reconnecting"),
- * a marker per book, and their melds as chips (rank, size and wilds: `K 6 [2][JK]`),
- * which Expand opens into the cards themselves.
+ * who they are, what they are doing ("Playing · 0:41", "In the foot", "Reconnecting"),
+ * a marker per book, what they hold as card backs (a fan with the count beside it,
+ * and their foot as a pile while they have not picked it up), and their melds as
+ * chips (rank, size and wilds: `K 6 [2][JK]`), which Expand opens into the cards
+ * themselves. The backs never scroll: only the melds do, inside the box's height.
  *
  * Counts rather than cards, because counts are all the server sends: every hidden
  * zone is reduced to a number before it leaves, which is the anti-cheat boundary.
@@ -17,7 +19,7 @@ import { faceOf } from "../profile/avatarStore";
 import { GRABBY_NAME, GrabbyIcon } from "./grabby";
 import { Melds } from "./Melds";
 import { booksOf, type MeldOrder } from "./meldView";
-import { BookMarkers, LINE_COLOR, seatLine } from "./OpponentStrip";
+import { BookMarkers, HeldCards, LINE_COLOR, seatLine } from "./OpponentStrip";
 import { PlayerFace } from "./PlayerFace";
 import { ReactionBubble } from "./reactions";
 import { useRemaining } from "./TurnClock";
@@ -110,6 +112,9 @@ export function Seats({
                 </button>
               )}
             </div>
+            <div className="shrink-0">
+              <HeldCards opponent={opponent} cardHeight={HELD_CARD_HEIGHT} />
+            </div>
             <div className="min-h-0 overflow-y-auto">
               {opponent.melds.length === 0 ? (
                 <p className="m-0 text-xs text-ink/60">Not down yet</p>
@@ -129,6 +134,9 @@ export function Seats({
     </ul>
   );
 }
+
+/** One back's height in a seat's fan: small enough that the melds keep most of the box. */
+const HELD_CARD_HEIGHT = 30;
 
 function seatLabel(opponent: OpponentView, name: string, onTurn: boolean): string {
   const parts = [

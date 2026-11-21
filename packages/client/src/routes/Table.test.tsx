@@ -500,8 +500,12 @@ describe("the other seats", () => {
         },
       }),
     );
-    expect(screen.getByLabelText(/playing from the foot/i)).toBeInTheDocument();
-    expect(screen.getByText("Foot · 9")).toBeInTheDocument();
+    const seat = screen.getByLabelText(/playing from the foot/i);
+    expect(seat).toHaveTextContent("In the foot");
+    // The fan is the foot now, and the face-down foot beside it is gone.
+    expect(seat.querySelector("[data-fan]")).toHaveAttribute("data-fan", "9");
+    expect(seat.querySelector("[data-held]")).toHaveTextContent("9");
+    expect(seat.querySelector("[data-foot]")).toBeNull();
   });
 
   it("falls back to a seat number for a player the room does not name", () => {
@@ -1766,10 +1770,44 @@ describe("the controls added from play-testing", () => {
     expect(within(footer).getByRole("region", { name: /your hand/i })).toBeInTheDocument();
   });
 
-  it("says how many cards each opponent holds", () => {
+  it("shows each opponent's hand as backs with the count, and their foot beside it", () => {
     mount(fakeSocket().socket);
     const seat = screen.getByLabelText(/ben, 11 in hand, 14 in foot/i);
-    expect(seat).toHaveTextContent("11 in hand");
+    expect(seat.querySelector("[data-fan]")).toHaveAttribute("data-fan", "11");
+    expect(seat.querySelector("[data-held]")).toHaveTextContent("11");
+    const foot = seat.querySelector("[data-foot]")!;
+    expect(foot).toHaveAttribute("data-foot", "14");
+    expect(foot).toHaveTextContent("Foot");
+    expect(seat).toHaveTextContent("Waiting");
+    // Backs only: no card for anyone to read, and nothing a moving card could land
+    // on but the seat itself.
+    expect(within(seat).queryAllByRole("img")).toHaveLength(0);
+    expect(seat.querySelector("[data-motion]")).toBeNull();
+    expect(seat).toHaveAttribute("data-anchor", "seat-1");
+  });
+
+  it("keeps the count in view on the opponent's turn, beside their clock", () => {
+    mount(fakeSocket().socket, update({ hints: { seatToAct: 1 }, view: { currentSeat: 1 } }));
+    const seat = screen.getByLabelText(/ben, 11 in hand, 14 in foot, not down, to play/i);
+    expect(seat).toHaveTextContent(/Playing/);
+    expect(seat.querySelector("[data-held]")).toHaveTextContent("11");
+    expect(seat.querySelector("[data-foot]")).toHaveAttribute("data-foot", "14");
+  });
+
+  it("fans a big hand as a dealt hand's worth of backs, with the exact count beside it", () => {
+    mount(
+      fakeSocket().socket,
+      update({
+        view: {
+          opponents: [
+            { seat: 1, handCount: 22, footCount: 14, melds: [], isDown: false, inFoot: false },
+          ],
+        },
+      }),
+    );
+    const seat = screen.getByLabelText(/ben, 22 in hand/i);
+    expect(seat.querySelector("[data-fan]")).toHaveAttribute("data-fan", "14");
+    expect(seat.querySelector("[data-held]")).toHaveTextContent("22");
   });
 
   it("announces a go-out and a final lap loudly, and tells the player it is their last turn", () => {
@@ -2137,6 +2175,40 @@ describe("on a phone", () => {
     expect(
       screen.getByRole("button", { name: "ben, 11 in hand, not down, to play" }),
     ).toBeInTheDocument();
+  });
+
+  it("keeps an opponent's count and foot on their chip, on their turn too", () => {
+    asPhone();
+    mount(fakeSocket().socket, update({ hints: { seatToAct: 1 }, view: { currentSeat: 1 } }));
+    const chip = screen.getByRole("button", { name: "ben, 11 in hand, not down, to play" });
+    expect(chip).toHaveTextContent(/Playing/);
+    expect(chip.querySelector("[data-held]")).toHaveTextContent("11");
+    expect(chip.querySelector("[data-foot]")).toHaveAttribute("data-foot", "14");
+    expect(chip.closest("li")).toHaveAttribute("data-anchor", "seat-1");
+    // The sheet shows the hand in full as backs, with the foot beside it.
+    fireEvent.click(chip);
+    const sheet = screen.getByRole("dialog", { name: "ben's melds" });
+    expect(sheet.querySelector("[data-fan]")).toHaveAttribute("data-fan", "11");
+    expect(sheet.querySelector("[data-foot]")).toHaveTextContent("Foot");
+    expect(sheet.querySelector("[data-motion]")).toBeNull();
+  });
+
+  it("drops the foot from a chip once the opponent is playing from it", () => {
+    asPhone();
+    mount(
+      fakeSocket().socket,
+      update({
+        view: {
+          opponents: [
+            { seat: 1, handCount: 0, footCount: 9, melds: [], isDown: true, inFoot: true },
+          ],
+        },
+      }),
+    );
+    const chip = screen.getByRole("button", { name: /^ben, 9 in foot, playing from it/ });
+    expect(chip).toHaveTextContent("In the foot");
+    expect(chip.querySelector("[data-held]")).toHaveTextContent("9");
+    expect(chip.querySelector("[data-foot]")).toBeNull();
   });
 
   it("shows the player's melds as chips that still aim a wild", () => {
