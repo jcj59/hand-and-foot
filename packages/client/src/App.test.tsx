@@ -491,6 +491,8 @@ describe("listener lifecycle", () => {
     expect(socket.removed.sort()).toEqual(
       // `connect` twice: once for the connection status, once to reclaim the seat.
       [
+        "chat",
+        "chatBacklog",
         "connect",
         "connect",
         "disconnect",
@@ -585,16 +587,19 @@ describe("a game saved for later", () => {
         ],
       }),
     );
-    expect(screen.getByRole("heading", { name: "Saved game" })).toBeTruthy();
-    expect(screen.getByText("Back at the table (1/2)")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Resume without ben" }));
+    // The resume settles over a few promise turns after its ack, so the waiting room
+    // can come up a moment after these events land: wait for it rather than
+    // asserting at once, which failed now and then under a loaded machine.
+    expect(await screen.findByRole("heading", { name: "Saved game" })).toBeTruthy();
+    expect(await screen.findByText("Back at the table (1/2)")).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: "Resume without ben" }));
     await waitFor(() =>
       expect(socket.sent.at(-1)).toEqual({ event: "setPaused", args: [{ paused: false }] }),
     );
     // Picked back up: the table again, and nothing left to resume from the home screen.
     socket.fire("view", now(roomInfo({ started: true })));
+    expect(await screen.findByRole("button", { name: "Main menu" })).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Saved game" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Main menu" })).toBeTruthy();
     expect(loadSavedGames()).toEqual([]);
   });
 

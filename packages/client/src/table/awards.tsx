@@ -6,9 +6,10 @@
  * opened on already over, nor on a replay's silent jump — as the other
  * celebrations are.
  */
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { awards, type Award, type RoundEnded } from "@hf/shared";
 import { Celebration } from "./Celebration";
+import type { Shown } from "./grabby";
 
 /** How long the awards stay up. */
 export const AWARDS_MS = 6_000;
@@ -27,7 +28,7 @@ export function winnersOf(award: Award, nameOf: (seat: number) => string): strin
   return `${who} (${award.what})`;
 }
 
-export function useAwardsCelebration(result: RoundEnded | null, quiet: boolean): Award[] | null {
+export function useAwardsCelebration(result: RoundEnded | null, quiet: boolean): Shown<Award[]> {
   const [shown, setShown] = useState<Award[] | null>(null);
   // The result the page opened on is not news.
   const seen = useRef(result?.matchOver ?? false);
@@ -49,18 +50,22 @@ export function useAwardsCelebration(result: RoundEnded | null, quiet: boolean):
     const timer = setTimeout(() => setShown(null), AWARDS_MS);
     return () => clearTimeout(timer);
   }, [shown]);
-  return shown;
+  // Nothing is said with the awards, so putting them away early is just that.
+  const dismiss = useCallback(() => setShown(null), []);
+  return { shown, dismiss };
 }
 
 export function AwardsCelebration({
   shown,
   nameOf,
+  onDismiss,
 }: {
   readonly shown: readonly Award[];
   readonly nameOf: (seat: number) => string;
+  readonly onDismiss?: () => void;
 }): React.ReactElement {
   return (
-    <Celebration label="Awards" ms={AWARDS_MS} confetti>
+    <Celebration label="Awards" ms={AWARDS_MS} confetti onDismiss={onDismiss}>
       <p className="m-0 font-display text-[34px] font-bold tracking-[-0.02em] text-gold-soft">
         Awards
       </p>

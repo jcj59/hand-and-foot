@@ -15,18 +15,21 @@
  * clock runs out the server plays it rather than it being lost.
  *
  * Clicking a card opens a menu of what it can do right now — meld it, discard it,
- * take it back — rather than one click meaning different things by mode. A discard
- * that looks like a mistake (a wild, a rank another player has down and could take
- * the pile with, or a card the player could lay off on a meld they already have) is
- * warned about in the menu itself, whose button then reads "Discard anyway".
+ * take it back — rather than one click meaning different things by mode.
+ *
+ * A real table gives no advice: nothing says which move is wise, whether the pile
+ * could be taken, or how near a book or going out is. What it says is the state
+ * (whose turn, a debt to the pile, the last lap) and, when a move is refused, the
+ * engine's own reason for refusing it.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   isBlackThree,
   isWild,
   SPECTATOR_SEAT,
   type Action,
   type Card,
+  type ChatMessage,
   type MeldPlay,
   type Rank,
   type Reaction,
@@ -40,16 +43,16 @@ import { faceOf } from "../profile/avatarStore";
 import { CountPill, DiscardPile, FaceDownPile } from "../cards/PlayingCard";
 import { usePhone } from "../usePhone";
 import { Hand } from "./Hand";
-import { pulseStyle } from "./pulse";
+import { PlayerFace } from "./PlayerFace";
 import { CardMenu } from "./CardMenu";
 import { Icon } from "../ui/icons";
-import { discardWarning } from "./discardWarning";
 import { MeldsPanel } from "./MeldsPanel";
 import type { MeldOrder } from "./meldView";
 import { moveLine, withMove } from "./moveLine";
 import { ScoresPanel } from "./ScoresPanel";
 import { TableHeader } from "./TableHeader";
 import { useCardMotion } from "./cardMotion";
+import { useHandOrder } from "./handArrangement";
 import {
   GRABBY_NAME,
   GrabbyAnnouncement,
@@ -59,12 +62,16 @@ import {
   withGrabbyName,
 } from "./grabby";
 import { MarvaCelebration, useMarvaCelebration } from "./marva";
+import { ReactionBubble, readMuteReactions, useSeatBubbles, writeMuteReactions } from "./reactions";
 import {
-  ReactionBubble,
-  readMuteReactions,
-  useReactionBubbles,
-  writeMuteReactions,
-} from "./reactions";
+  ChatPanel,
+  latestSeq,
+  readMuteChat,
+  unreadBadge,
+  unreadCount,
+  writeMuteChat,
+} from "./chat";
+import { Sheet } from "../ui/Sheet";
 import { useMoveNews } from "./moveNews";
 import { useTableSounds } from "./sounds";
 import { useTurnAttention } from "./turnAttention";
@@ -73,13 +80,17 @@ import { RulesDialog } from "../rules/HowToPlay";
 import { AwardsCelebration, useAwardsCelebration } from "./awards";
 import { OpponentStrip } from "./OpponentStrip";
 import { Seats } from "./Seats";
+import { Splitter } from "../ui/Splitter";
+import { useTableLayout } from "./useTableLayout";
 import { RoundResult } from "./RoundResult";
 import { StagingPanel } from "./StagingPanel";
 import {
   EMPTY_STAGING,
   focusGroup,
+  layDownForMe,
   previewLayDown,
   retainCards,
+  sameStaging,
   stageCard,
   stagedCount,
   stagedIds,
@@ -94,6 +105,7 @@ import {
  * clicked and it shows the watched seat's view as that seat would see it.
  */
 const NO_REACTIONS: readonly Reaction[] = [];
+const NO_CHAT: readonly ChatMessage[] = [];
 
 export interface TableControls {
   /** Submit a move; resolves whether it was accepted. */
@@ -104,6 +116,8 @@ export interface TableControls {
   saveForLater(): Promise<unknown>;
   /** Send a quick reaction to everyone at the table. */
   react(id: ReactionId): void;
+  /** Say something to the table; resolves with the refusal, or null once it went. */
+  chat(text: string): Promise<string | null>;
   leave(): void;
   playAgain(): void;
   /** Deal the same table again at once, as the host, once the match is over. */
@@ -132,6 +146,13 @@ export interface TableViewProps {
   readonly heading?: string;
   /** Quick reactions heard at the table, most recent last. */
   readonly reactions?: readonly Reaction[];
+  /**
+   * What has been said at a live table, oldest first. Absent where nobody can talk
+   * (a lesson, a replay): then there is no chat at all.
+   */
+  readonly chat?: readonly ChatMessage[];
+  /** The newest message that came as the table's history, and so is old news. */
+  readonly chatOldThrough?: number;
   /** Replaces the table's own header: the replay player brings its own title and way back. */
   readonly header?: React.ReactNode;
   /** Shown under the header, above everything else: a lesson's coach on a phone. */
@@ -161,6 +182,8 @@ export function TableView({
   quiet = false,
   heading,
   reactions = NO_REACTIONS,
+  chat,
+  chatOldThrough = 0,
   header: ownHeader,
   belowHeader,
   aside,
@@ -192,12 +215,6 @@ export function TableView({
     if (draftOpen) controls?.stageDraft(toMeldPlays(staging));
   }, [draftOpen, staging, controls]);
 
-  // The discard pile's glow starts when it becomes takeable, so its phase is set
-  // then, to agree with the stock's and the labels'. Worked out before the early
-  // return below, as a hook has to be.
-  const takeable = turnOpen && update.hints.canTakePile && !busy;
-  const pilePulse = useMemo(() => (takeable ? pulseStyle() : undefined), [takeable]);
-
   // Other players' discards and pickups announced, and this player's draw marked.
   // Real names, for saying who took the Grabby Pants title from whom.
   const realRoom = latestRoom;
@@ -215,6 +232,16 @@ export function TableView({
   // On a computer the scores and latest moves can be put away to give the table
   // the room; the choice is remembered on this device.
   const [scoresHidden, setScoresHidden] = useState(() => readFlag(HIDE_SCORES_KEY));
+  // Which of the side panel's tabs is open, Scores or Chat, kept on this device.
+  const [sideTab, setSideTab] = useState<SideTab>(() =>
+    readChoice<SideTab>(SIDE_TAB_KEY, ["scores", "chat"], "scores"),
+  );
+  const [chatSheetOpen, setChatSheetOpen] = useState(false);
+  // On a computer the player can also drag the dividers between the felt and the
+  // side panel, the felt and the hand, and the other players and the piles.
+  const layout = useTableLayout();
+  const seatsRef = useRef<HTMLDivElement>(null);
+  const footerRef = useRef<HTMLElement>(null);
   // The last few moves, for the side panel and the phone's scores sheet: kept
   // from the moves this page has seen, each once.
   const [moves, setMoves] = useState<readonly { readonly seq: number; readonly text: string }[]>(
@@ -255,13 +282,57 @@ export function TableView({
     heading ?? `Table ${latestRoom.roomId}`,
     muted,
   );
-  const grabbyHeadline = useGrabbyAnnouncement(realRoom, muted, quiet);
+  const grabbyNews = useGrabbyAnnouncement(realRoom, muted, quiet);
   const [muteReactions, setMuteReactions] = useState(readMuteReactions);
-  const bubbles = useReactionBubbles(reactions, update.view.seat, muteReactions, (r) => {
-    if (r.seat !== update.view.seat) playSound("reaction");
+  // Chat, at a live table with somebody to talk to: a practice game against
+  // computers has no one, and neither has anyone watching it.
+  const chatOn = chat !== undefined && latestRoom.players.filter((p) => !p.bot).length >= 2;
+  const messages = chatOn ? chat : NO_CHAT;
+  const oldThrough = chatOldThrough;
+  const [muteChat, setMuteChat] = useState(readMuteChat);
+  const bubbles = useSeatBubbles({
+    reactions,
+    chat: messages,
+    chatOldThrough: oldThrough,
+    mySeat: update.view.seat,
+    muteReactions,
+    muteChat,
+    onReaction: (r) => {
+      if (r.seat !== update.view.seat) playSound("reaction");
+    },
+    onChat: () => playSound("reaction"),
   });
+  // Read is what has been on screen: the Chat tab open beside the table, or the
+  // phone's chat sheet. What was already said when the table opened is not news.
+  const tab: SideTab = chatOn ? sideTab : "scores";
+  const reading = chatOn && (phone ? chatSheetOpen : !aside && !scoresHidden && tab === "chat");
+  const newest = latestSeq(messages);
+  const [readThrough, setReadThrough] = useState(newest);
+  useEffect(() => {
+    if (reading) setReadThrough((through) => Math.max(through, newest));
+  }, [reading, newest]);
+  const unread = unreadCount(messages, {
+    readThrough: reading ? newest : readThrough,
+    oldThrough,
+    mySeat: update.view.seat,
+    muted: muteChat,
+  });
+  const chatPanel = (sheet: boolean): React.ReactElement => (
+    <ChatPanel
+      messages={messages}
+      mySeat={update.view.seat}
+      room={latestRoom}
+      muted={muteChat}
+      onMutedChange={(on) => {
+        setMuteChat(on);
+        writeMuteChat(on);
+      }}
+      onSend={controls ? controls.chat : null}
+      sheet={sheet}
+    />
+  );
   // Real names: the celebration is about the player, not their title.
-  const marva = useMarvaCelebration(
+  const marvaNews = useMarvaCelebration(
     update.lastMove,
     (s) => realRoom.players.find((p) => p.seat === s)?.name ?? `Seat ${s}`,
     muted,
@@ -286,10 +357,22 @@ export function TableView({
   // The foot is revealed only once picked up; before that the server sends a count
   // and no cards, so there is nothing to show but a back.
   const zone = view.inFoot ? (view.foot ?? []) : view.hand;
+  // The player's own arrangement of these cards; a hand watched or replayed has none.
+  const [handOrder, setHandOrder] = useHandOrder(
+    controls && !onFelt && view.seat !== SPECTATOR_SEAT
+      ? {
+          roomId: latestRoom.roomId,
+          seat: view.seat,
+          round: view.roundNumber,
+          zone: view.inFoot ? "foot" : "hand",
+        }
+      : null,
+    zone,
+  );
   const owed = new Set(view.pickedUp);
   const obligationOpen = view.pickedUp.length > 0;
   const nameOf = (s: number): string => room.players.find((p) => p.seat === s)?.name ?? `Seat ${s}`;
-  const awardsShown = useAwardsCelebration(result, quiet);
+  const awardsNews = useAwardsCelebration(result, quiet);
   // Watching, the seat on view is someone's rather than the viewer's own — by their
   // own name, since the Grabby Pants badge already says who holds the title.
   // Watching the table without a seat: nobody's hand is ours to show.
@@ -337,19 +420,20 @@ export function TableView({
   };
   const outOfPlay = (card: Card): boolean => isUnplayable(card, playContext);
   const building = canMeld && (melding || stagedCount(staging) > 0);
-
-  /**
-   * Cards that can go straight onto a meld already down: naturals of a melded rank,
-   * never wilds — where a wild goes is a choice, and this is the button for not
-   * having to make choices.
-   */
-  const layOffs = (() => {
-    if (!canMeld || !view.isDown) return [];
-    const fits = zone.filter(
-      (card) => canLayOff(card, meldRanks, playContext) && !staged.has(card.id),
-    );
-    return fits;
-  })();
+  // Taking the pile before getting down asks for a lay-down the server has already
+  // found exists; the player may have it staged for them, to change and play. The
+  // one aid at a real table, asked for by name: nothing else is suggested.
+  const laidOutForMe =
+    // No card owed, no offer: the search must play an owed card and then finds none.
+    canMeld && !view.isDown
+      ? layDownForMe({
+          zone,
+          pickedUp: view.pickedUp,
+          config: room.config,
+          roundNumber: view.roundNumber,
+          inFoot: view.inFoot,
+        })
+      : null;
 
   /**
    * Take back this turn's melds, and put the same cards straight back into the
@@ -368,15 +452,6 @@ export function TableView({
       closeMenu();
       setStaging(restaged);
       setMelding(true);
-    });
-  }
-
-  function layOffAll(): void {
-    const byRank = new Map<Rank, string[]>();
-    for (const card of layOffs) byRank.set(card.rank, [...(byRank.get(card.rank) ?? []), card.id]);
-    void send({
-      type: "playMelds",
-      melds: [...byRank].map(([rank, cardIds]) => ({ rank, cardIds })),
     });
   }
 
@@ -417,16 +492,6 @@ export function TableView({
     });
   }
 
-  /** Why throwing this card away is probably a mistake, if it is. */
-  function warningFor(card: Card): string | null {
-    return discardWarning(card, {
-      canLayOff: canLayOff(card, meldRanks, playContext),
-      others: view.opponents
-        .filter((o) => o.isDown)
-        .map((o) => ({ name: nameOf(o.seat), ranks: new Set(o.melds.map((m) => m.rank)) })),
-    });
-  }
-
   const chosen = zone.find((card) => card.id === chosenId) ?? null;
   const menu = chosen && (
     <CardMenu
@@ -445,7 +510,6 @@ export function TableView({
       // Discarding would silently throw the staged lay-down away, so the melds have
       // to be played or taken back first.
       discardBlocked={stagedCount(staging) > 0}
-      warning={warningFor(chosen)}
       busy={busy}
       onMeld={() => meld(chosen)}
       onLayOff={() => {
@@ -464,9 +528,11 @@ export function TableView({
   );
 
   const canDraw = myTurn && hints.canDraw && !busy;
-  // Whether the pile can be taken is decided by a solver over the whole state, so
-  // this is the server's answer, not a guess made here.
-  const canTake = myTurn && hints.canTakePile && !busy;
+  // The pile can be tried whenever a draw can: whether it may be taken is the
+  // engine's to say, and it says why when it refuses. Asking the server first
+  // (`hints.canTakePile`) and lighting the pile up only when the answer was yes
+  // would tell the player what the solver found, which a real table does not.
+  const canTake = canDraw && view.discard.length > 0;
 
   const lastLap = view.finalLapRemaining !== null && view.wentOutSeat !== null;
 
@@ -504,6 +570,8 @@ export function TableView({
       // The header's clock is the player's own; another player's runs on their seat.
       clock={!result && controls && (myTurn || clock.paused) ? clock : null}
       onReact={controls ? controls.react : null}
+      onChat={chatOn ? () => setChatSheetOpen(true) : null}
+      chatUnread={unread}
       muteReactions={muteReactions}
       onMuteReactions={(on) => {
         setMuteReactions(on);
@@ -566,8 +634,7 @@ export function TableView({
             type="button"
             aria-label={`Take the pile (${view.discard.length} cards)`}
             onClick={() => void send({ type: "takePile" })}
-            style={pilePulse}
-            className="pile-prompt rounded-xl p-1 transition hover:bg-white/5"
+            className="rounded-xl p-1 transition hover:bg-white/5"
           >
             <DiscardPile cards={view.discard} size={pileSize} />
           </button>
@@ -612,7 +679,6 @@ export function TableView({
           ? "Nothing down yet."
           : `Nothing down yet. ${controls ? "You need" : `${watched} needs`} ${minimum} to get down this round.`
       }
-      inFoot={view.inFoot}
       // Clicking a meld on the table aims the next cards at it: the only way to
       // add a wild to a meld already down.
       onSelect={canMeld ? (rank) => setStaging((current) => focusGroup(current, rank)) : undefined}
@@ -639,11 +705,6 @@ export function TableView({
           You took the pile. Play at least one of the ringed cards before discarding.
         </p>
       )}
-      {hints.canGoOut && myTurn && (
-        <p role="status" className={`${BANNER} border-accent/45 bg-accent/12 text-[#C9F5DF]`}>
-          You have the books to go out. Shed your last card to end the round.
-        </p>
-      )}
     </>
   );
 
@@ -664,6 +725,20 @@ export function TableView({
               }
             >
               {building ? "Stop melding" : "Meld"}
+            </button>
+          )}
+          {laidOutForMe && !sameStaging(laidOutForMe, staging) && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                closeMenu();
+                setStaging(laidOutForMe);
+                setMelding(true);
+              }}
+              className={`${ACTION} border border-white/20 text-ink hover:bg-white/5`}
+            >
+              Lay down for me
             </button>
           )}
           {building && (
@@ -692,16 +767,6 @@ export function TableView({
               Take back melds
             </button>
           )}
-          {layOffs.length > 0 && !building && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={layOffAll}
-              className={`${ACTION} border border-accent/60 bg-accent/8 text-[#BDF5DA]`}
-            >
-              Add {layOffs.length} to my melds
-            </button>
-          )}
         </>
       )}
       {!phone && <span className="text-sm text-nav-ink">{guidanceLine()}</span>}
@@ -724,6 +789,21 @@ export function TableView({
       newId={drawnId}
       fan="medium"
     />
+  );
+
+  // Whose cards the footer holds, by face and name, as the other players' boxes say
+  // theirs: the title's holder keeps the icon and the title, their name after it.
+  const owner = (
+    <>
+      <PlayerFace player={me} size={phone ? 20 : 28} />
+      {grabby && <GrabbyIcon className={phone ? "h-4 w-4 shrink-0" : "h-5 w-5 shrink-0"} />}
+      <span className="truncate">{grabby ? GRABBY_NAME : watched}</span>
+      {grabby && <span className="font-normal whitespace-nowrap text-ink/60"> ({watched})</span>}
+      <span className="font-normal whitespace-nowrap text-muted">
+        {" "}
+        · {view.inFoot ? "foot" : "hand"}
+      </span>
+    </>
   );
 
   const hand = spectating ? (
@@ -752,9 +832,11 @@ export function TableView({
           menu={menu}
           onDismiss={closeMenu}
           title={`${whose} ${view.inFoot ? "foot" : "hand"}${grabby ? ` (${GRABBY_NAME})` : ""}`}
-          badge={grabby && <GrabbyIcon className="h-5 w-5" />}
+          owner={owner}
           rows={phone}
           newId={drawnId}
+          order={handOrder}
+          onArrange={controls ? setHandOrder : undefined}
         />
       </div>
       {/* The foot waits beside the hand it will replace. */}
@@ -836,7 +918,7 @@ export function TableView({
           </section>
         </>
       ) : (
-        <div className="flex min-h-0 flex-1 gap-5 px-6 py-4">
+        <div className="flex min-h-0 flex-1 px-6 py-4">
           <section
             aria-label="Table"
             className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto rounded-[26px] p-[26px] ${
@@ -853,7 +935,13 @@ export function TableView({
                 scrolling in its own part; the felt as a whole scrolls only when even
                 that is not enough. Before, the felt scrolled as one, and on a short
                 window the pile sat cut off at its bottom edge. */}
-            <div data-felt-part="seats" className={`${FELT_PART} min-h-14 shrink`}>
+            <div
+              ref={seatsRef}
+              id="table-seats"
+              data-felt-part="seats"
+              className={`${FELT_PART} min-h-[92px] shrink`}
+              style={{ height: layout.drawn.seatsHeight ?? undefined }}
+            >
               <Seats
                 opponents={view.opponents}
                 room={room}
@@ -863,8 +951,21 @@ export function TableView({
                 clock={clock}
                 order={meldOrder}
                 reactions={bubbles}
+                boxHeight={
+                  layout.drawn.seatsHeight === null ? undefined : layout.drawn.seatsHeight - 2
+                }
               />
             </div>
+            {/* Sits in the felt's gap rather than adding to it. */}
+            <Splitter
+              orientation="horizontal"
+              label="Resize the other players"
+              controls="table-seats"
+              grows={1}
+              measure={() => seatsRef.current?.getBoundingClientRect().height ?? 0}
+              className={onFelt ? "-my-3 h-3" : "-my-4 h-4"}
+              {...layout.seats}
+            />
             {banners}
             <div className="flex shrink-0 flex-col items-center gap-2.5 py-1.5">
               {piles}
@@ -885,17 +986,47 @@ export function TableView({
               </div>
             )}
           </section>
+          {(aside || !scoresHidden) && (
+            <Splitter
+              orientation="vertical"
+              label="Resize scores and moves"
+              controls="table-side"
+              grows={-1}
+              measure={() => layout.drawn.sideWidth}
+              className="w-5"
+              {...layout.side}
+            />
+          )}
           {aside ? (
-            <aside aria-label="Scores and moves" className="w-[260px] shrink-0 overflow-y-auto">
+            <aside
+              id="table-side"
+              aria-label="Scores and moves"
+              className="shrink-0 overflow-y-auto"
+              style={{ width: layout.drawn.sideWidth }}
+            >
               {aside(scores(false))}
             </aside>
           ) : (
             <SidePanel
+              width={layout.drawn.sideWidth}
               hidden={scoresHidden}
               onHidden={(hidden) => {
                 setScoresHidden(hidden);
                 writeFlag(HIDE_SCORES_KEY, hidden);
               }}
+              tabs={
+                chatOn
+                  ? {
+                      tab,
+                      onTab: (next) => {
+                        setSideTab(next);
+                        writeChoice(SIDE_TAB_KEY, next);
+                      },
+                      unread,
+                      chat: chatPanel(false),
+                    }
+                  : null
+              }
             >
               {scores(false)}
             </SidePanel>
@@ -903,24 +1034,62 @@ export function TableView({
         </div>
       )}
 
+      {!onFelt && !phone && (
+        // Over the row's bottom padding and the footer's top edge, so it adds no height.
+        <Splitter
+          orientation="horizontal"
+          label="Resize your hand"
+          controls="table-footer"
+          grows={-1}
+          measure={() => footerRef.current?.getBoundingClientRect().height ?? 0}
+          className="-mt-2 h-4 -mb-2"
+          {...layout.footer}
+        />
+      )}
       {!onFelt && (
         <footer
-          className={`mt-2 flex shrink-0 flex-col border-t border-white/7 bg-nav ${
+          ref={footerRef}
+          id="table-footer"
+          className={`flex shrink-0 flex-col border-t border-white/7 bg-nav ${
             phone
-              ? "max-h-[46dvh] gap-2 overflow-y-auto px-3 pt-2.5 pb-[calc(1.1rem+env(safe-area-inset-bottom,0px))]"
-              : "gap-2.5 px-6 pt-3.5 pb-5"
+              ? "mt-2 max-h-[46dvh] gap-2 overflow-y-auto px-3 pt-2.5 pb-[calc(1.1rem+env(safe-area-inset-bottom,0px))]"
+              : "mt-2 gap-2.5 px-6 pt-2.5 pb-5"
           }`}
+          style={phone ? undefined : { height: layout.drawn.footerHeight ?? undefined }}
         >
           {alert}
           {actionBar}
-          {hand}
+          {phone ? (
+            hand
+          ) : (
+            // Shorter than its rows, the hand scrolls here, under the buttons. Its
+            // padding (the footer's gap, taken back by the margin, and four pixels
+            // the footer's own top padding gives up) keeps a reaction bubble above
+            // the hand inside it, and the footer as tall as it always was.
+            <div data-hand-scroll className="-mt-2.5 min-h-0 flex-1 overflow-y-auto pt-3.5">
+              {hand}
+            </div>
+          )}
         </footer>
       )}
 
+      {phone && chatOn && chatSheetOpen && (
+        <Sheet id="chat" title="Chat" onClose={() => setChatSheetOpen(false)}>
+          {chatPanel(true)}
+        </Sheet>
+      )}
       {rulesOpen && <RulesDialog config={room.config} onClose={() => setRulesOpen(false)} />}
-      {grabbyHeadline && <GrabbyAnnouncement headline={grabbyHeadline} />}
-      {marva && <MarvaCelebration news={marva} />}
-      {awardsShown && <AwardsCelebration shown={awardsShown} nameOf={nameOf} />}
+      {grabbyNews.shown && (
+        <GrabbyAnnouncement headline={grabbyNews.shown} onDismiss={grabbyNews.dismiss} />
+      )}
+      {marvaNews.shown && <MarvaCelebration news={marvaNews.shown} onDismiss={marvaNews.dismiss} />}
+      {awardsNews.shown && (
+        <AwardsCelebration
+          shown={awardsNews.shown}
+          nameOf={nameOf}
+          onDismiss={awardsNews.dismiss}
+        />
+      )}
 
       {result && (
         <RoundResult
@@ -944,54 +1113,95 @@ export function TableView({
     </main>
   );
 
-  /** One line saying what the table is waiting for, in the order the rules impose. */
+  /**
+   * One line saying where the table stands: whose turn it is, and on the player's
+   * own turn the rule that is holding them, if any. It never says what to do next.
+   */
   function guidanceLine(): string {
     if (!controls) return `${nameOf(hints.seatToAct)} to play.`;
     if (!myTurn) {
       if (clock.paused) return "The table is paused.";
       return `Waiting for ${nameOf(hints.seatToAct)}.`;
     }
-    return guidance();
-  }
-
-  function guidance(): string {
-    const click = phone ? "Tap" : "Click";
-    if (hints.phase === "draw") return `${click} the stock to draw, or the pile to take it.`;
-    if (building) return `${click} cards to add them, or a meld to aim wilds at it.`;
-    if (stagedCount(staging) > 0) return "Play or take back your melds, then discard.";
     if (obligationOpen) return "Play a card from the pile before you can discard.";
     if (clock.inDiscardGrace) return "Time is up. Only a discard will be accepted.";
-    if (zone.length === 0) return "No cards left; your turn ends itself.";
-    return `${click} a card to meld or discard it.`;
+    return "Your turn.";
   }
 }
 
 const COMPACT_MELDS_KEY = "hf.compactMelds";
 const HIDE_SCORES_KEY = "hf.hideScores";
+const SIDE_TAB_KEY = "hf.sideTab";
+
+/** The side panel's two tabs, where a table has chat. */
+type SideTab = "scores" | "chat";
 
 /**
- * The panel beside the table on a computer, with the scores and latest moves,
- * which the player can put away to a narrow rail and bring back. It slides
- * rather than jumps (unless the device asks for less motion), and the table,
- * which takes whatever width is left, grows into the room. Put away, its
- * contents are inert, so neither a screen reader nor the tab key finds them.
+ * The panel beside the table on a computer, with the scores and latest moves and,
+ * at a table with chat, a Chat tab beside them, which the player can put away to
+ * a narrow rail and bring back. It slides rather than jumps (unless the device
+ * asks for less motion), and the table, which takes whatever width is left, grows
+ * into the room. Put away, its contents are inert, so neither a screen reader nor
+ * the tab key finds them; the rail still says when there are messages to read,
+ * and that badge opens the chat.
  */
 function SidePanel({
+  width,
   hidden,
   onHidden,
+  tabs,
   children,
 }: {
+  /** Its width while shown, as the player has dragged it. */
+  readonly width: number;
   readonly hidden: boolean;
   readonly onHidden: (hidden: boolean) => void;
+  /** Scores and Chat as tabs; null where there is no chat, and the scores are all. */
+  readonly tabs: {
+    readonly tab: SideTab;
+    readonly onTab: (tab: SideTab) => void;
+    readonly unread: number;
+    readonly chat: React.ReactNode;
+  } | null;
   readonly children: React.ReactNode;
 }): React.ReactElement {
+  const tabButton = (id: SideTab, label: string): React.ReactElement => {
+    const on = tabs?.tab === id;
+    const count = id === "chat" ? (tabs?.unread ?? 0) : 0;
+    return (
+      <button
+        type="button"
+        role="tab"
+        id={`table-side-tab-${id}`}
+        aria-selected={on}
+        aria-controls={`table-side-${id}`}
+        aria-label={count > 0 ? `${label}, ${count} unread` : label}
+        onClick={() => tabs?.onTab(id)}
+        className={`inline-flex min-h-8 items-center gap-1.5 rounded-[10px] px-3 text-[13px] font-semibold ${
+          on ? "bg-selected text-ink" : "text-quiet hover:text-ink-soft"
+        }`}
+      >
+        {label}
+        {count > 0 && (
+          <span
+            aria-hidden="true"
+            className="min-w-[18px] rounded-full bg-accent px-1 text-center text-[11px] leading-[18px] font-bold text-accent-ink tabular-nums"
+          >
+            {unreadBadge(count)}
+          </span>
+        )}
+      </button>
+    );
+  };
   return (
     <aside
+      id="table-side"
       aria-label="Scores and moves"
       data-hidden={hidden ? "" : undefined}
       className={`relative shrink-0 overflow-hidden transition-[width] duration-200 ease-out motion-reduce:transition-none ${
-        hidden ? "w-9" : "w-[260px]"
+        hidden ? "ml-5 w-9" : ""
       }`}
+      style={hidden ? undefined : { width }}
     >
       <button
         type="button"
@@ -1004,14 +1214,54 @@ function SidePanel({
       >
         <Icon name={hidden ? "panelClose" : "panelOpen"} size={18} />
       </button>
+      {hidden && tabs && tabs.unread > 0 && (
+        <button
+          type="button"
+          aria-label={`Show chat, ${tabs.unread} unread`}
+          title="Show chat"
+          onClick={() => {
+            tabs.onTab("chat");
+            onHidden(false);
+          }}
+          className="absolute top-9 right-0 z-10 grid w-8 place-items-center gap-0.5 rounded-lg py-1 text-muted hover:bg-white/8 hover:text-ink"
+        >
+          <Icon name="chat" size={18} />
+          <span className="min-w-[18px] rounded-full bg-accent px-1 text-center text-[11px] leading-[18px] font-bold text-accent-ink tabular-nums">
+            {unreadBadge(tabs.unread)}
+          </span>
+        </button>
+      )}
       <div
         id="table-side-panel"
         inert={hidden}
-        className={`h-full w-[260px] overflow-y-auto transition-opacity duration-200 motion-reduce:transition-none ${
-          hidden ? "opacity-0" : "opacity-100"
-        }`}
+        style={{ width }}
+        className={`h-full transition-opacity duration-200 motion-reduce:transition-none ${
+          tabs ? "flex flex-col gap-3" : "overflow-y-auto"
+        } ${hidden ? "opacity-0" : "opacity-100"}`}
       >
-        {children}
+        {tabs ? (
+          <>
+            {/* Clear of the hide button, which sits over the row's right end. */}
+            <div
+              role="tablist"
+              aria-label="Beside the table"
+              className="mr-10 flex shrink-0 gap-1 self-start rounded-xl bg-page p-1"
+            >
+              {tabButton("scores", "Scores")}
+              {tabButton("chat", "Chat")}
+            </div>
+            <div
+              role="tabpanel"
+              id={`table-side-${tabs.tab}`}
+              aria-labelledby={`table-side-tab-${tabs.tab}`}
+              className={`min-h-0 flex-1 ${tabs.tab === "chat" ? "flex flex-col" : "overflow-y-auto"}`}
+            >
+              {tabs.tab === "chat" ? tabs.chat : children}
+            </div>
+          </>
+        ) : (
+          children
+        )}
       </div>
     </aside>
   );
@@ -1064,7 +1314,7 @@ const FELT_CENTER = "radial-gradient(ellipse at 50% 35%, #2C6B53, #1A4535 70%, #
  */
 const FELT_PART = "-m-px flex flex-col overflow-y-auto p-px";
 
-/** A message on the felt: the last lap, a debt to the pile, the books to go out. */
+/** A message on the felt: the last lap, a debt to the pile. */
 const BANNER = "m-0 rounded-2xl border px-3 py-2.5 text-center text-[13px] leading-snug";
 
 /** The buttons by the hand, as the design sizes them. */

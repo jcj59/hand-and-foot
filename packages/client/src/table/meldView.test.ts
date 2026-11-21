@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { EAST_COAST, type Card, type Meld, type Rank, type Suit } from "@hf/shared";
-import { booksOf, goOutProgress, meldChip, meldNote, sortMelds } from "./meldView";
+import { booksOf, meldChip, meldLabel, meldNote, sortMelds } from "./meldView";
 import { cardShort, moveLine, withMove, MOVES_KEPT } from "./moveLine";
-import { discardWarning, nameList, rankPlural } from "./discardWarning";
 
 let next = 0;
 function card(rank: Rank, suit: Suit | null = "hearts"): Card {
@@ -65,60 +64,48 @@ describe("what a meld says", () => {
     expect(meldNote(meld("8", 3), rich).text).toBe("3 cards · 21");
   });
 
-  it("folds to a chip with its naturals counted and its wilds starred", () => {
-    expect(meldChip(meld("7", 3))).toBe("7 ×3");
-    expect(meldChip(meld("K", 4, 1))).toBe("K ×4 +★");
-    expect(meldChip(meld("J", 3, 2))).toBe("J ×3 +★2");
+  it("folds to a chip with its whole size and each wild by its own rank", () => {
+    expect(meldChip(meld("7", 3))).toEqual({ rank: "7", count: 3, tone: "open", wilds: [] });
+    // Six cards in all, not the four naturals; the wilds as what they are.
+    const kings: Meld = {
+      rank: "K",
+      cards: [card("JOKER", null), card("K"), card("K"), card("2", "spades"), card("K"), card("K")],
+    };
+    expect(meldChip(kings)).toEqual({ rank: "K", count: 6, tone: "open", wilds: ["2", "JK"] });
+    // Twos before jokers, whatever order they were laid in, as a fan draws them.
+    const jacks: Meld = {
+      rank: "J",
+      cards: [card("JOKER", null), card("J"), card("2", "spades"), card("J"), card("JOKER", null)],
+    };
+    expect(meldChip(jacks).wilds).toEqual(["2", "JK", "JK"]);
+    const twos: Meld = {
+      rank: "8",
+      cards: [card("2", "clubs"), card("8"), card("2", "hearts"), card("8"), card("8")],
+    };
+    expect(meldChip(twos).wilds).toEqual(["2", "2"]);
+  });
+
+  it("colors a folded book by its kind", () => {
+    expect(meldChip(meld("9", 7))).toEqual({ rank: "9", count: 7, tone: "clean", wilds: [] });
+    expect(meldChip(meld("Q", 6, 2))).toEqual({
+      rank: "Q",
+      count: 8,
+      tone: "dirty",
+      wilds: ["2", "2"],
+    });
+  });
+
+  it("names a meld by its rank, size and wilds", () => {
+    expect(meldLabel(meld("K", 4, 2))).toBe("Meld of Ks, 6 cards, 2 wild");
+    expect(meldLabel(meld("K", 3, 1))).toBe("Meld of Ks, 4 cards, 1 wild");
+    expect(meldLabel(meld("8", 3))).toBe("Meld of 8s, 3 cards");
+    expect(meldLabel(meld("A", 1))).toBe("Meld of As, 1 card");
+    expect(meldLabel(meld("9", 7))).toBe("clean book of 9s, 7 cards");
+    expect(meldLabel(meld("Q", 5, 2))).toBe("dirty book of Qs, 7 cards, 2 wild");
   });
 
   it("lists only finished books, as clean or dirty", () => {
     expect(booksOf([meld("8", 4), meld("9", 7), meld("Q", 5, 2)])).toEqual(["clean", "dirty"]);
-  });
-});
-
-describe("the go-out tracker", () => {
-  it("counts clean and dirty books against what the table needs", () => {
-    const progress = goOutProgress([meld("9", 7), meld("Q", 5, 2), meld("8", 5, 1)], {
-      ...EAST_COAST,
-      goOutCleanBooks: 1,
-      goOutDirtyBooks: 2,
-    });
-    expect(progress.goals).toEqual([
-      { label: "Clean books", have: 1, need: 1, done: true },
-      { label: "Dirty books", have: 1, need: 2, done: false },
-    ]);
-    expect(progress.nearest).toBe("Your 8s need one more card");
-  });
-
-  it("names the unfinished meld closest to a book", () => {
-    const progress = goOutProgress([meld("5", 3), meld("6", 4)], {
-      ...EAST_COAST,
-      goOutCleanBooks: 2,
-      goOutDirtyBooks: 0,
-    });
-    expect(progress.nearest).toBe("Your 6s need three more cards");
-    // A table that asks for no dirty book has no goal for it.
-    expect(progress.goals.map((g) => g.label)).toEqual(["Clean books"]);
-  });
-
-  it("says nothing more once every book is there", () => {
-    const progress = goOutProgress([meld("9", 7), meld("6", 4)], {
-      ...EAST_COAST,
-      goOutCleanBooks: 1,
-      goOutDirtyBooks: 0,
-    });
-    expect(progress.goals.every((g) => g.done)).toBe(true);
-    expect(progress.nearest).toBeNull();
-  });
-
-  it("asks for a dirty book with a clean one", () => {
-    // Clean books do not stand in for dirty ones, as the engine counts them.
-    const progress = goOutProgress([meld("9", 7), meld("10", 7)], {
-      ...EAST_COAST,
-      goOutCleanBooks: 1,
-      goOutDirtyBooks: 1,
-    });
-    expect(progress.goals[1]).toEqual({ label: "Dirty books", have: 0, need: 1, done: false });
   });
 });
 
@@ -153,42 +140,5 @@ describe("the latest move in a line", () => {
     expect(list).toEqual([{ seq: 1, text: "a" }]);
     list = withMove(withMove(withMove(list, 2, "b"), 3, "c"), 4, "d");
     expect(list.map((m) => m.text)).toEqual(["b", "c", "d"]);
-  });
-});
-
-describe("a discard that looks like a mistake", () => {
-  const none = { canLayOff: false, others: [] };
-  it("warns about a wild first", () => {
-    expect(discardWarning(card("2"), { ...none, canLayOff: true })).toMatch(/wild card/);
-    expect(discardWarning(card("JOKER", null), none)).toMatch(/wild card/);
-  });
-
-  it("names whoever could take the pile with it", () => {
-    const others = [
-      { name: "Kate", ranks: new Set<Rank>(["K"]) },
-      { name: "Mom", ranks: new Set<Rank>(["K", "8"]) },
-      { name: "Ben", ranks: new Set<Rank>(["4"]) },
-    ];
-    expect(discardWarning(card("8"), { canLayOff: true, others })).toBe(
-      "Mom has 8s down and could take the pile with this.",
-    );
-    expect(discardWarning(card("K"), { canLayOff: false, others })).toBe(
-      "Kate and Mom have kings down and could take the pile with this.",
-    );
-  });
-
-  it("then a card that could go on the player's own meld", () => {
-    expect(discardWarning(card("9"), { ...none, canLayOff: true })).toBe(
-      "You have 9s down; it could go on them.",
-    );
-    expect(discardWarning(card("9"), none)).toBeNull();
-  });
-
-  it("says ranks and names as they are said aloud", () => {
-    expect(rankPlural("A")).toBe("aces");
-    expect(rankPlural("10")).toBe("10s");
-    expect(nameList([])).toBe("");
-    expect(nameList(["Kate"])).toBe("Kate");
-    expect(nameList(["Kate", "Mom", "Ben"])).toBe("Kate, Mom and Ben");
   });
 });

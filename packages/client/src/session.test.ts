@@ -1,10 +1,18 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { EAST_COAST, type RoomInfo, type RoundEnded, type ViewUpdate } from "@hf/shared";
+import {
+  EAST_COAST,
+  type ChatMessage,
+  type ReactionId,
+  type RoomInfo,
+  type RoundEnded,
+  type ViewUpdate,
+} from "@hf/shared";
 import { clearCredentials, loadCredentials } from "./credentials";
 import { loadHistory } from "./historyCache";
 import type { Post } from "./identity";
 import { createServerClock } from "./serverTime";
 import {
+  KEPT_CHAT,
   KEPT_REACTIONS,
   attachSession,
   useSession,
@@ -91,6 +99,8 @@ beforeEach(() => {
     result: null,
     notice: null,
     reactions: [],
+    chat: [],
+    chatHistoryThrough: 0,
     clock: createServerClock(),
   });
 });
@@ -279,6 +289,8 @@ describe("attachSession", () => {
       applyResult: () => calls.push("result"),
       reseat: (seat) => calls.push(`seat:${seat}`),
       applyReaction: (r) => calls.push(`reaction:${r.id}`),
+      applyChat: (m) => calls.push(`chat:${m.text}`),
+      applyChatBacklog: (ms) => calls.push(`backlog:${ms.length}`),
     };
   }
 
@@ -293,6 +305,8 @@ describe("attachSession", () => {
     socket.fire("roundEnded", { scores: [] });
     socket.fire("seat", 3);
     socket.fire("reaction", { seq: 1, seat: 1, id: "nice" });
+    socket.fire("chat", { seq: 2, seat: 1, name: "ben", text: "hi", at: 2 });
+    socket.fire("chatBacklog", [{ seq: 2, seat: 1, name: "ben", text: "hi", at: 2 }]);
     socket.fire("disconnect");
 
     expect(target.calls).toEqual([
@@ -302,6 +316,8 @@ describe("attachSession", () => {
       "result",
       "seat:3",
       "reaction:nice",
+      "chat:hi",
+      "backlog:1",
       "status:disconnected",
     ]);
   });
@@ -313,7 +329,17 @@ describe("attachSession", () => {
     const detach = attachSession(socket, sink());
     detach();
     expect(socket.removed.sort()).toEqual(
-      ["connect", "disconnect", "reaction", "room", "roundEnded", "seat", "view"].sort(),
+      [
+        "chat",
+        "chatBacklog",
+        "connect",
+        "disconnect",
+        "reaction",
+        "room",
+        "roundEnded",
+        "seat",
+        "view",
+      ].sort(),
     );
   });
 
@@ -330,19 +356,14 @@ describe("attachSession", () => {
     // End to end through the actual zustand store rather than a spy, so the
     // wiring and the reducers are checked together at least once.
     const socket = fakeSocket();
-    const { setStatus, applyRoom, applyUpdate, applyResult, reseat, applyReaction } =
-      useSession.getState();
-    attachSession(socket, {
-      setStatus,
-      applyRoom,
-      applyUpdate,
-      applyResult,
-      reseat,
-      applyReaction,
-    });
+    attachSession(socket, useSession.getState());
 
     socket.fire("connect");
     socket.fire("view", viewUpdate());
+    socket.fire("chatBacklog", [{ seq: 4, seat: 1, name: "ben", text: "hi", at: 4 }]);
+    socket.fire("chat", { seq: 5, seat: 0, name: "ana", text: "hello", at: 5 });
+    expect(useSession.getState().chat.map((m) => m.text)).toEqual(["hi", "hello"]);
+    expect(useSession.getState().chatHistoryThrough).toBe(4);
     expect(useSession.getState().status).toBe("connected");
     expect(useSession.getState().update?.hints.canDraw).toBe(true);
     expect(useSession.getState().room?.started).toBe(true);
@@ -360,6 +381,66 @@ describe("attachSession", () => {
     applyReaction({ seq: 1, seat: 0, id: "nice" });
     useSession.getState().leave();
     expect(useSession.getState().reactions).toEqual([]);
+  });
+
+  const said = (seq: number, text = `m${seq}`, seat = 1): ChatMessage => ({
+    seq,
+    seat,
+    name: seat === 0 ? "ana" : "ben",
+    text,
+    at: seq,
+  });
+
+  it("keeps what is said in order, once each, and only the last few", () => {
+    const { applyChat } = useSession.getState();
+    applyChat(said(2));
+    applyChat(said(1));
+    // The sender hears their own message back, and a history can repeat one.
+    applyChat(said(2, "again"));
+    expect(useSession.getState().chat.map((m) => m.text)).toEqual(["m1", "m2"]);
+    for (let seq = 3; seq <= KEPT_CHAT + 5; seq++) applyChat(said(seq));
+    const kept = useSession.getState().chat;
+    expect(kept).toHaveLength(KEPT_CHAT);
+    expect(kept[0]!.seq).toBe(6);
+    expect(kept.at(-1)!.seq).toBe(KEPT_CHAT + 5);
+    // As many as the server keeps, so a reload shows what was on screen.
+    expect(KEPT_CHAT).toBe(50);
+  });
+
+  it("takes a history in place of what it held, marking all of it old news", () => {
+    const { applyChat, applyChatBacklog } = useSession.getState();
+    applyChat(said(1));
+    applyChatBacklog([said(5), said(3)]);
+    expect(useSession.getState().chat.map((m) => m.seq)).toEqual([3, 5]);
+    expect(useSession.getState().chatHistoryThrough).toBe(5);
+    applyChatBacklog([said(3), said(5), said(8)]);
+    expect(useSession.getState().chat.map((m) => m.seq)).toEqual([3, 5, 8]);
+    expect(useSession.getState().chatHistoryThrough).toBe(8);
+    // An empty one (a new table's) never moves the mark back.
+    applyChatBacklog([]);
+    expect(useSession.getState().chat).toEqual([]);
+    expect(useSession.getState().chatHistoryThrough).toBe(8);
+  });
+
+  it("keeps a new table's history through taking the seat there, and forgets it on leaving", () => {
+    const { applyChatBacklog } = useSession.getState();
+    useSession.getState().seat({ roomId: "ONE234", seat: 0, token: "t" });
+    // The new table's history arrives before the request for its seat answers.
+    applyChatBacklog([said(7)]);
+    useSession.getState().seat({ roomId: "OTHER2", seat: 0, token: "t" });
+    expect(useSession.getState().chat.map((m) => m.seq)).toEqual([7]);
+    expect(useSession.getState().reactions).toEqual([]);
+    useSession.getState().leave();
+    expect(useSession.getState().chat).toEqual([]);
+    expect(useSession.getState().chatHistoryThrough).toBe(0);
+  });
+
+  it("leaves out a reaction whose id this page does not know", () => {
+    const { applyReaction } = useSession.getState();
+    applyReaction({ seq: 1, seat: 0, id: "brand-new" as ReactionId });
+    expect(useSession.getState().reactions).toEqual([]);
+    applyReaction({ seq: 2, seat: 0, id: "i-hate-you" });
+    expect(useSession.getState().reactions.map((r) => r.id)).toEqual(["i-hate-you"]);
   });
 
   it("does not apply anything on its own", () => {

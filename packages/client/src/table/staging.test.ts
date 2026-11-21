@@ -1,14 +1,18 @@
 import { describe, it, expect } from "vitest";
 import { EAST_COAST, WEST_COAST, type Card, type Rank, type Suit } from "@hf/shared";
+import { greedyLayDown } from "@hf/engine";
 import {
   EMPTY_STAGING,
   focusGroup,
+  layDownForMe,
   previewLayDown,
   retainCards,
+  sameStaging,
   settlesObligation,
   stageCard,
   stagedCount,
   stagedIds,
+  stagingFrom,
   toMeldPlays,
   unstageCard,
   type PreviewParams,
@@ -537,5 +541,183 @@ describe("the defensive red-three guard in a group", () => {
     const result = preview({ staging, zone: [three], isDown: true });
     expect(result.groups[0].problem).toBe("red threes can never be melded");
     expect(result.ok).toBe(false);
+  });
+});
+
+describe("stagingFrom", () => {
+  it("stages each play as a group, in order, focused on the last", () => {
+    const kings = cards("K", 3);
+    const aces = cards("A", 3);
+    const plays = [
+      { rank: "K" as const, cardIds: kings.map((c) => c.id) },
+      { rank: "A" as const, cardIds: aces.map((c) => c.id) },
+    ];
+    const staging = stagingFrom(plays, [...aces, ...kings]);
+    expect(staging).toEqual({ groups: plays, focusedRank: "A" });
+    expect(toMeldPlays(staging)).toEqual(plays);
+  });
+
+  it("puts a wild on the group it was planned for, wherever it is listed", () => {
+    const joker = card("JOKER", null);
+    const two = card("2");
+    const queens = cards("Q", 2);
+    const kings = cards("K", 3);
+    const plays = [
+      { rank: "Q" as const, cardIds: [joker.id, ...queens.map((c) => c.id)] },
+      { rank: "K" as const, cardIds: [...kings.map((c) => c.id), two.id] },
+    ];
+    const staging = stagingFrom(plays, [two, ...kings, joker, ...queens]);
+    expect(staging.groups).toEqual(plays);
+  });
+
+  it("skips cards no longer in the zone and drops a play left empty", () => {
+    const kings = cards("K", 3);
+    const gone = cards("A", 3);
+    const staging = stagingFrom(
+      [
+        { rank: "K", cardIds: kings.map((c) => c.id) },
+        { rank: "A", cardIds: gone.map((c) => c.id) },
+      ],
+      kings,
+    );
+    expect(staging).toEqual({
+      groups: [{ rank: "K", cardIds: kings.map((c) => c.id) }],
+      focusedRank: "K",
+    });
+  });
+
+  it("applies the rules a card clicked by hand meets: a red three stays out", () => {
+    const fours = cards("4", 3);
+    const three = card("3", "hearts");
+    const staging = stagingFrom(
+      [{ rank: "4", cardIds: [...fours.map((c) => c.id), three.id] }],
+      [...fours, three],
+    );
+    expect(stagedIds(staging).has(three.id)).toBe(false);
+    expect(stagedCount(staging)).toBe(3);
+  });
+
+  it("is empty for no plays", () => {
+    expect(stagingFrom([], cards("K", 3))).toEqual(EMPTY_STAGING);
+  });
+});
+
+describe("layDownForMe", () => {
+  /** A hand that took the pile with a king on top: two kings, three aces, a spare. */
+  function tookKing(): { zone: Card[]; owed: Card } {
+    const owed = card("K", "clubs");
+    return { owed, zone: [...cards("K", 2, "hearts"), ...cards("A", 3), card("9"), owed] };
+  }
+
+  it("stages the search's lay-down, settling the pile and clearing the minimum", () => {
+    const { zone, owed } = tookKing();
+    const staging = layDownForMe({
+      zone,
+      pickedUp: [owed.id],
+      config: EAST_COAST,
+      roundNumber: 1,
+      inFoot: false,
+    })!;
+    const plan = greedyLayDown(zone, [], new Set([owed.id]), EAST_COAST, {
+      minimum: 60,
+      inFoot: false,
+    });
+    expect(toMeldPlays(staging)).toEqual(plan.plays);
+    expect(stagedIds(staging).has(owed.id)).toBe(true);
+    expect(settlesObligation(staging, [owed.id])).toBe(true);
+    const result = preview({ staging, zone });
+    expect(result.value).toBe(75);
+    expect(result.ok).toBe(true);
+  });
+
+  it("spends a wild where the search needs one, on its group", () => {
+    const owed = card("K", "clubs");
+    const joker = card("JOKER", null);
+    const zone = [card("K", "hearts"), joker, ...cards("A", 3), owed];
+    const staging = layDownForMe({
+      zone,
+      pickedUp: [owed.id],
+      config: EAST_COAST,
+      roundNumber: 1,
+      inFoot: false,
+    })!;
+    expect(staging.groups.find((g) => g.rank === "K")!.cardIds).toContain(joker.id);
+    expect(preview({ staging, zone }).ok).toBe(true);
+  });
+
+  it("spends a wild to reach the minimum, where it adds the most", () => {
+    // The kings alone are 30, short of 60: the joker makes the queens a meld, 100.
+    const owed = card("K", "clubs");
+    const joker = card("JOKER", null);
+    const queens = cards("Q", 2, "hearts");
+    const zone = [...cards("K", 2, "hearts"), owed, ...queens, joker];
+    const staging = layDownForMe({
+      zone,
+      pickedUp: [owed.id],
+      config: EAST_COAST,
+      roundNumber: 1,
+      inFoot: false,
+    })!;
+    expect(staging.groups.find((g) => g.rank === "Q")!.cardIds).toEqual([
+      ...queens.map((c) => c.id),
+      joker.id,
+    ]);
+    expect(preview({ staging, zone }).value).toBe(100);
+  });
+
+  it("offers nothing when no card from the pile can be played", () => {
+    const owed = card("9", "hearts");
+    const zone = [...cards("K", 3), ...cards("A", 3), owed];
+    expect(
+      layDownForMe({
+        zone,
+        pickedUp: [owed.id],
+        config: EAST_COAST,
+        roundNumber: 1,
+        inFoot: false,
+      }),
+    ).toBeNull();
+  });
+
+  it("offers nothing short of the round's minimum", () => {
+    // Three kings, 30: enough in a round of 30, not in one of 31.
+    const owed = card("K", "clubs");
+    const zone = [...cards("K", 2, "hearts"), card("9"), owed];
+    const config = { ...EAST_COAST, layDownMinimums: [30, 31, 0, 0] };
+    const args = { zone, pickedUp: [owed.id], config, inFoot: false };
+    expect(layDownForMe({ ...args, roundNumber: 1 })).not.toBeNull();
+    expect(layDownForMe({ ...args, roundNumber: 2 })).toBeNull();
+    // A round the table has no minimum for asks for none.
+    expect(
+      layDownForMe({ ...args, config: { ...config, layDownMinimums: [31] }, roundNumber: 2 }),
+    ).not.toBeNull();
+  });
+
+  it("melds black threes only from the foot", () => {
+    const owed = card("3", "spades");
+    const zone = [...cards("3", 6, "clubs"), owed];
+    const args = { zone, pickedUp: [owed.id], config: EAST_COAST, roundNumber: 1 };
+    const staging = layDownForMe({
+      ...args,
+      config: { ...EAST_COAST, layDownMinimums: [0] },
+      inFoot: true,
+    });
+    expect(stagedCount(staging!)).toBe(7);
+    expect(
+      layDownForMe({ ...args, config: { ...EAST_COAST, layDownMinimums: [0] }, inFoot: false }),
+    ).toBeNull();
+  });
+});
+
+describe("sameStaging", () => {
+  it("is true for the same cards in the same groups and order, whatever the focus", () => {
+    const kings = cards("K", 3);
+    const aces = cards("A", 3);
+    const staging = stageAll([...kings, ...aces]);
+    expect(sameStaging(staging, focusGroup(stageAll([...kings, ...aces]), "K"))).toBe(true);
+    expect(sameStaging(staging, stageAll([...aces, ...kings]))).toBe(false);
+    expect(sameStaging(staging, unstageCard(staging, aces[0].id))).toBe(false);
+    // An empty group adds nothing to what would be played.
+    expect(sameStaging(staging, focusGroup(staging, "Q"))).toBe(true);
   });
 });

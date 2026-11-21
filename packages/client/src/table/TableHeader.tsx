@@ -2,8 +2,8 @@
  * The bar over the table: which round it is and what it takes to get down, the
  * turn clock, and the table's few controls.
  *
- * On a phone it holds the menu, the clock, React and the scores (a trophy that
- * opens them in a sheet); sound and the rules move into the menu, where there is
+ * On a phone it holds the menu, the clock, React, Chat (with a dot while there are
+ * messages to read) and the scores (a trophy that opens them in a sheet); sound and the rules move into the menu, where there is
  * room to say what they do. On a computer the scores sit beside the table, so the
  * bar holds React, Sound, How to play and the menu.
  *
@@ -28,6 +28,13 @@ export interface TableHeaderProps {
   readonly clock: ClockState | null;
   /** Null when watching: no reactions, no pausing. */
   readonly onReact: ((id: ReactionId) => void) | null;
+  /**
+   * Open the chat, on a phone (a computer's is beside the table). Null where the
+   * table has none.
+   */
+  readonly onChat: (() => void) | null;
+  /** Other players' messages not yet read. */
+  readonly chatUnread: number;
   readonly muteReactions: boolean;
   readonly onMuteReactions: (muted: boolean) => void;
   readonly sound: {
@@ -51,6 +58,8 @@ export function TableHeader({
   sub,
   clock,
   onReact,
+  onChat,
+  chatUnread,
   muteReactions,
   onMuteReactions,
   sound,
@@ -219,6 +228,23 @@ export function TableHeader({
         </div>
         {clock && <TurnClock clock={clock} compact />}
         {react}
+        {onChat && (
+          <button
+            type="button"
+            aria-label={chatUnread > 0 ? `Chat, ${chatUnread} unread` : "Chat"}
+            onClick={onChat}
+            className={`${ICON_BUTTON} relative`}
+          >
+            <Icon name="chat" size={18} />
+            {chatUnread > 0 && (
+              <span
+                aria-hidden="true"
+                data-unread
+                className="absolute -top-1 -right-1 size-2.5 rounded-full border-2 border-page bg-accent"
+              />
+            )}
+          </button>
+        )}
         <button
           type="button"
           aria-label="Scores so far"

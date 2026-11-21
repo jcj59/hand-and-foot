@@ -35,6 +35,10 @@ export interface PlayingCardProps {
    * instead, so a ring drawn around the card moves with it.
    */
   readonly lift?: boolean;
+  /** A plain card that can still be focused: one in the player's hand, out of turn. */
+  readonly focusable?: boolean;
+  /** Keys that act on the card where it is shown, announced as `aria-keyshortcuts`. */
+  readonly keyShortcuts?: string;
 }
 
 const DIMENSIONS: Readonly<Record<CardSize, { readonly w: number; readonly h: number }>> = {
@@ -216,6 +220,8 @@ export function PlayingCard({
   disabled = false,
   dimmed = isDeadWeight(card),
   lift = true,
+  focusable = false,
+  keyShortcuts,
 }: PlayingCardProps): React.ReactElement {
   const { w, h } = DIMENSIONS[size];
   const label = cardLabel(card);
@@ -247,6 +253,8 @@ export function PlayingCard({
         aria-label={label}
         className={dimmed ? "opacity-60" : undefined}
         data-card-id={card.id}
+        tabIndex={focusable ? 0 : undefined}
+        aria-keyshortcuts={keyShortcuts}
       >
         {face}
       </span>
@@ -260,6 +268,7 @@ export function PlayingCard({
       aria-pressed={selected}
       disabled={disabled}
       data-card-id={card.id}
+      aria-keyshortcuts={keyShortcuts}
       onClick={() => onSelect(card)}
       className={`rounded transition-transform duration-150 ease-out ${selected && lift ? "-translate-y-3" : ""} ${
         dimmed ? "opacity-60" : ""
@@ -621,15 +630,100 @@ export function CountPill({
   );
 }
 
-/** A face-down pile drawn as a stack, deeper the more it holds. */
-function Stack({
+/** The most backs another player's hand is fanned as; the exact count is written beside it. */
+export const FAN_BACKS_MAX = 14;
+
+/**
+ * How many backs another player's hand is drawn as: one per card, up to
+ * `FAN_BACKS_MAX`, the size of a dealt hand, so a hand swollen by the pile stays
+ * the width of a seat. Past that only the number beside it grows.
+ */
+export function fanBacks(count: number): number {
+  return Math.max(0, Math.min(FAN_BACKS_MAX, count));
+}
+
+/** How far each back in a fan sits from the one before it, in card units. */
+const FAN_STEP = 13;
+/** How many degrees each back turns from the one before it. */
+const FAN_TILT = 2.5;
+
+/**
+ * Another player's hand, face down: a small overlapped fan with a back for each
+ * card (up to `FAN_BACKS_MAX`), each turned about its own bottom edge so the hand
+ * opens like one held. Only the front card carries the emblem.
+ *
+ * It draws a count and nothing else: the server never sends another player's
+ * cards, and these backs carry no ids, so a card in motion never lands on one.
+ * `height` is one card's height in pixels.
+ */
+export function CardFan({
+  count,
+  height,
+}: {
+  readonly count: number;
+  readonly height: number;
+}): React.ReactElement | null {
+  const n = fanBacks(count);
+  if (n === 0) return null;
+  const cards = Array.from({ length: n }, (_, i) => ({
+    x: i * FAN_STEP,
+    angle: (i - (n - 1) / 2) * FAN_TILT,
+  }));
+  // The box around every turned card, so no corner is cut off.
+  const corners = cards.flatMap(({ x, angle }) => {
+    const r = (angle * Math.PI) / 180;
+    return [
+      [0, 0],
+      [56, 0],
+      [0, 80],
+      [56, 80],
+    ].map(([cx, cy]) => {
+      const dx = cx! - 28;
+      const dy = cy! - 80;
+      return [
+        x + 28 + dx * Math.cos(r) - dy * Math.sin(r),
+        80 + dx * Math.sin(r) + dy * Math.cos(r),
+      ];
+    });
+  });
+  const minX = Math.floor(Math.min(...corners.map((c) => c[0]!)));
+  const maxX = Math.ceil(Math.max(...corners.map((c) => c[0]!)));
+  const minY = Math.floor(Math.min(...corners.map((c) => c[1]!)));
+  const maxY = Math.ceil(Math.max(...corners.map((c) => c[1]!)));
+  const scale = height / 80;
+  return (
+    <svg
+      width={(maxX - minX) * scale}
+      height={(maxY - minY) * scale}
+      viewBox={`${minX} ${minY} ${maxX - minX} ${maxY - minY}`}
+      aria-hidden="true"
+      data-fan={n}
+      className="block shrink-0"
+    >
+      <FaceDefs />
+      {cards.map(({ x, angle }, i) => (
+        <g key={i} transform={`rotate(${angle} ${x + 28} 80)`}>
+          <Back x={x} y={0} emblem={i === n - 1} />
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+/**
+ * A face-down pile drawn as a stack, deeper the more it holds; `width` is a card's,
+ * in pixels. `layers` draws it at a fixed depth instead (up to `STOCK_LAYERS_MAX`).
+ */
+export function BackStack({
   count,
   width,
+  layers: depth,
 }: {
   readonly count: number;
   readonly width: number;
+  readonly layers?: number;
 }): React.ReactElement {
-  const layers = stockLayers(count);
+  const layers = depth === undefined ? stockLayers(count) : Math.min(depth, STOCK_LAYERS_MAX);
   const offset = 2;
   const pad = offset * (STOCK_LAYERS_MAX - 1);
   return (
@@ -695,7 +789,7 @@ export function FaceDownPile({
   const pulse = useMemo(() => (clickable ? pulseStyle() : undefined), [clickable]);
   const body = (
     <>
-      <Stack count={count} width={w} />
+      <BackStack count={count} width={w} />
       {pill ? (
         <CountPill label={pill} count={count} />
       ) : (

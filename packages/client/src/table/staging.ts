@@ -28,7 +28,14 @@ import {
   type Rank,
   type RulesConfig,
 } from "@hf/shared";
-import { cardValue, classifyBook, isFinishedBook, naturalRank, validateMeld } from "@hf/engine";
+import {
+  cardValue,
+  classifyBook,
+  greedyLayDown,
+  isFinishedBook,
+  naturalRank,
+  validateMeld,
+} from "@hf/engine";
 
 export interface StagedGroup {
   readonly rank: Rank;
@@ -129,6 +136,64 @@ export function retainCards(staging: Staging, zone: readonly Card[]): Staging {
   const missing = [...stagedIds(staging)].filter((id) => !present.has(id));
   if (missing.length === 0) return staging;
   return missing.reduce(unstageCard, staging);
+}
+
+/**
+ * A lay-down worked out elsewhere, as a staging the player can go on changing.
+ *
+ * Each play is staged the way a player would stage it: its rank focused, then its
+ * cards one by one, so a wild lands on the group it was planned for and the same
+ * rules apply as to a card clicked by hand (a red three is still refused). Ids no
+ * longer in the zone are skipped, and the focus ends on the last group staged, as
+ * it would after building it by hand.
+ */
+export function stagingFrom(plays: readonly MeldPlay[], zone: readonly Card[]): Staging {
+  const byId = new Map(zone.map((card) => [card.id, card]));
+  let staging = EMPTY_STAGING;
+  for (const play of plays) {
+    staging = focusGroup(staging, play.rank);
+    for (const id of play.cardIds) {
+      const card = byId.get(id);
+      if (card) staging = stageCard(staging, card);
+    }
+  }
+  const groups = staging.groups.filter((group) => group.cardIds.length > 0);
+  return { groups, focusedRank: groups.at(-1)?.rank ?? null };
+}
+
+export interface LayDownForMeParams {
+  /** The player's active zone, the pile's cards already in it. */
+  readonly zone: readonly Card[];
+  /** The cards taken from the pile, one of which the lay-down must play. */
+  readonly pickedUp: readonly string[];
+  readonly config: RulesConfig;
+  readonly roundNumber: number;
+  readonly inFoot: boolean;
+}
+
+/**
+ * "Lay down for me": a first lay-down that settles the pile, staged for the player
+ * to look over, change and play. Null when there is none to offer.
+ *
+ * Offered only to a player who took the pile before getting down, the one place
+ * the game asks for a lay-down it has already decided exists: the server let the
+ * pile be taken because `greedyLayDown` found one over the hand plus the pile.
+ * Running that same search over the same cards here finds it again, so the plan
+ * is one the reducer accepts. Null means the search came up short (it should not),
+ * and then nothing is offered rather than a lay-down certain to be refused. With
+ * nothing owed to the pile it is null too, since no plan can play an owed card.
+ */
+export function layDownForMe(params: LayDownForMeParams): Staging | null {
+  const { zone, pickedUp, config, roundNumber, inFoot } = params;
+  const minimum = config.layDownMinimums[roundNumber - 1] ?? 0;
+  const plan = greedyLayDown(zone, [], new Set(pickedUp), config, { minimum, inFoot });
+  if (!plan.usesRequired || plan.value < minimum) return null;
+  return stagingFrom(plan.plays, zone);
+}
+
+/** Whether two stagings hold the same cards in the same groups, in the same order. */
+export function sameStaging(a: Staging, b: Staging): boolean {
+  return JSON.stringify(toMeldPlays(a)) === JSON.stringify(toMeldPlays(b));
 }
 
 /** What crosses the wire. Empty groups are dropped: the engine rejects them. */

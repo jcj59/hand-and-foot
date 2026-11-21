@@ -21,6 +21,8 @@ export const ICONS = {
   forward: "M9 6l6 6-6 6",
   panelOpen: "M4 4h16v16H4zM15 4v16M9 9l3 3-3 3",
   panelClose: "M4 4h16v16H4zM15 4v16M11 9l-3 3 3 3",
+  navFold: "M4 4h16v16H4zM9 4v16M16 9l-3 3 3 3",
+  navUnfold: "M4 4h16v16H4zM9 4v16M13 9l3 3-3 3",
   trophy: "M8 4h8v5a4 4 0 0 1-8 0zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8 21h8M10 17h4",
   play: "M7 4v16l13-8z",
   help: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17.5h.01",
@@ -58,6 +60,7 @@ export const ICONS = {
   getDown: "M12 4v12M7 11l5 5 5-5M4 20h16",
   heart: "M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.5-7 10-7 10z",
   move: "M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3",
+  chat: "M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-9l-5 4v-4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM8 9h8M8 12.5h5",
 } as const;
 
 export type IconName = keyof typeof ICONS;

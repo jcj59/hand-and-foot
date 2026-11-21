@@ -309,6 +309,8 @@ function LessonTable({ lesson }: { readonly lesson: Lesson }): React.ReactElemen
       pause: async () => undefined,
       saveForLater: async () => undefined,
       react: () => undefined,
+      // A lesson has no chat (no `chat` prop), so nothing ever calls this.
+      chat: async () => null,
       leave: () => navigate("/learn"),
       playAgain: () => undefined,
       rematch: () => undefined,
