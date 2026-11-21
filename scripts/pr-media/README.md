@@ -37,6 +37,8 @@ an animation) in its description, under `## Screenshots`.
    cards on the discard pile, `PILE=<n>` puts n; mode `takepile` has the viewer take the pile;
    `BIG_OPP=1` gives an opponent enough melds to fill its box (clean and dirty books, and open
    melds holding a two, a joker, both, or no wild);
+   `PLAYERS=<n>` seats only the first n players (2 to 6; Jack, Ana, Ben, Cyrus, Dee, Eleanor);
+   `BIG_HAND=1` gives Ben 22 cards, more than a seat's fan of backs draws;
    `BLACK_BOOK=1` puts the viewer in their foot beside a book of black threes, holding a red
    three and a black one. `PAUSED=1` has Ana pause the table, `SAVED=1` has her save it for later
    (three players back; the viewer hosts unless `SAVED_GUEST=1`), and `ROUND_OVER=1` opens the
