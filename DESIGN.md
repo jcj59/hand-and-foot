@@ -1107,7 +1107,9 @@ few dozen single-path stroke icons kept as data rather than an icon library.
 on a computer, with the player's face and name at its foot, and a tab bar along the bottom of a
 phone. Learn is in the sidebar only; a phone has room for four tabs, and Home's Learn tile is the way
 in there. The table, a lesson, a replay and a watched game are places a player goes to and comes
-back from, so they leave the frame and take the whole screen, each with its own way out.
+back from, so they leave the frame and take the whole screen, each with its own way out. The
+sidebar folds to a rail of icons (remembered per device) for a player who wants the page's room;
+each icon keeps its page's name as a tooltip and for a screen reader.
 
 **Cards.** Cards are drawn as SVG on a warm white face with real text for rank and suit, so they
 scale to any size with no image assets and a screen reader can name each one. A wild is a little
@@ -1161,6 +1163,19 @@ the card beneath. The piles are what every player watches, so now they never shr
 the melds below give way first, then the other players above, each scrolling in its own part
 down to a minimum (the melds' heading, a strip of the players' names), and only past that does
 the felt scroll as a whole. A window tall enough for everything looks exactly as before.
+
+**A table the player arranges.** No one division of a computer's screen suits every window and
+every player: a laptop wants the felt, a big monitor has room for a wide scores panel, and someone
+holding twenty cards wants to see them all. So on a computer the dividers between the felt and the
+side panel, the felt and the hand, and the other players and the piles can be dragged, or moved
+with the arrow keys (they are ARIA window splitters), and Home or a double-click puts one back.
+Until a divider is moved, its part keeps its natural size: the hand as tall as its rows, the
+players as tall as their boxes, so the default table is the one there was before. A hand made
+shorter than its rows scrolls under the buttons; the players' row never goes below the height of a
+box's header, so the backs and the count stay in view and only the melds scroll; the side panel
+never squeezes the felt below a usable width. The sizes are kept per device and drawn inside the
+window as it is now, so a window made smaller squeezes the parts and a larger one gives the
+player's sizes back. A phone's layout is its own and has no dividers.
 
 ## Testing
 

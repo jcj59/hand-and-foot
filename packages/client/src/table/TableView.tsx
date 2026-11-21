@@ -73,6 +73,8 @@ import { RulesDialog } from "../rules/HowToPlay";
 import { AwardsCelebration, useAwardsCelebration } from "./awards";
 import { OpponentStrip } from "./OpponentStrip";
 import { Seats } from "./Seats";
+import { Splitter } from "../ui/Splitter";
+import { useTableLayout } from "./useTableLayout";
 import { RoundResult } from "./RoundResult";
 import { StagingPanel } from "./StagingPanel";
 import {
@@ -209,6 +211,11 @@ export function TableView({
   // On a computer the scores and latest moves can be put away to give the table
   // the room; the choice is remembered on this device.
   const [scoresHidden, setScoresHidden] = useState(() => readFlag(HIDE_SCORES_KEY));
+  // On a computer the player can also drag the dividers between the felt and the
+  // side panel, the felt and the hand, and the other players and the piles.
+  const layout = useTableLayout();
+  const seatsRef = useRef<HTMLDivElement>(null);
+  const footerRef = useRef<HTMLElement>(null);
   // The last few moves, for the side panel and the phone's scores sheet: kept
   // from the moves this page has seen, each once.
   const [moves, setMoves] = useState<readonly { readonly seq: number; readonly text: string }[]>(
@@ -782,7 +789,7 @@ export function TableView({
           </section>
         </>
       ) : (
-        <div className="flex min-h-0 flex-1 gap-5 px-6 py-4">
+        <div className="flex min-h-0 flex-1 px-6 py-4">
           <section
             aria-label="Table"
             className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto rounded-[26px] p-[26px] ${
@@ -799,7 +806,13 @@ export function TableView({
                 scrolling in its own part; the felt as a whole scrolls only when even
                 that is not enough. Before, the felt scrolled as one, and on a short
                 window the pile sat cut off at its bottom edge. */}
-            <div data-felt-part="seats" className={`${FELT_PART} min-h-[92px] shrink`}>
+            <div
+              ref={seatsRef}
+              id="table-seats"
+              data-felt-part="seats"
+              className={`${FELT_PART} min-h-[92px] shrink`}
+              style={{ height: layout.drawn.seatsHeight ?? undefined }}
+            >
               <Seats
                 opponents={view.opponents}
                 room={room}
@@ -809,8 +822,21 @@ export function TableView({
                 clock={clock}
                 order={meldOrder}
                 reactions={bubbles}
+                boxHeight={
+                  layout.drawn.seatsHeight === null ? undefined : layout.drawn.seatsHeight - 2
+                }
               />
             </div>
+            {/* Sits in the felt's gap rather than adding to it. */}
+            <Splitter
+              orientation="horizontal"
+              label="Resize the other players"
+              controls="table-seats"
+              grows={1}
+              measure={() => seatsRef.current?.getBoundingClientRect().height ?? 0}
+              className={onFelt ? "-my-3 h-3" : "-my-4 h-4"}
+              {...layout.seats}
+            />
             {banners}
             <div className="flex shrink-0 flex-col items-center gap-2.5 py-1.5">
               {piles}
@@ -831,12 +857,29 @@ export function TableView({
               </div>
             )}
           </section>
+          {(aside || !scoresHidden) && (
+            <Splitter
+              orientation="vertical"
+              label="Resize scores and moves"
+              controls="table-side"
+              grows={-1}
+              measure={() => layout.drawn.sideWidth}
+              className="w-5"
+              {...layout.side}
+            />
+          )}
           {aside ? (
-            <aside aria-label="Scores and moves" className="w-[260px] shrink-0 overflow-y-auto">
+            <aside
+              id="table-side"
+              aria-label="Scores and moves"
+              className="shrink-0 overflow-y-auto"
+              style={{ width: layout.drawn.sideWidth }}
+            >
               {aside(scores(false))}
             </aside>
           ) : (
             <SidePanel
+              width={layout.drawn.sideWidth}
               hidden={scoresHidden}
               onHidden={(hidden) => {
                 setScoresHidden(hidden);
@@ -849,17 +892,42 @@ export function TableView({
         </div>
       )}
 
+      {!onFelt && !phone && (
+        // Over the row's bottom padding and the footer's top edge, so it adds no height.
+        <Splitter
+          orientation="horizontal"
+          label="Resize your hand"
+          controls="table-footer"
+          grows={-1}
+          measure={() => footerRef.current?.getBoundingClientRect().height ?? 0}
+          className="-mt-2 h-4 -mb-2"
+          {...layout.footer}
+        />
+      )}
       {!onFelt && (
         <footer
-          className={`mt-2 flex shrink-0 flex-col border-t border-white/7 bg-nav ${
+          ref={footerRef}
+          id="table-footer"
+          className={`flex shrink-0 flex-col border-t border-white/7 bg-nav ${
             phone
-              ? "max-h-[46dvh] gap-2 overflow-y-auto px-3 pt-2.5 pb-[calc(1.1rem+env(safe-area-inset-bottom,0px))]"
-              : "gap-2.5 px-6 pt-3.5 pb-5"
+              ? "mt-2 max-h-[46dvh] gap-2 overflow-y-auto px-3 pt-2.5 pb-[calc(1.1rem+env(safe-area-inset-bottom,0px))]"
+              : "mt-2 gap-2.5 px-6 pt-2.5 pb-5"
           }`}
+          style={phone ? undefined : { height: layout.drawn.footerHeight ?? undefined }}
         >
           {alert}
           {actionBar}
-          {hand}
+          {phone ? (
+            hand
+          ) : (
+            // Shorter than its rows, the hand scrolls here, under the buttons. Its
+            // padding (the footer's gap, taken back by the margin, and four pixels
+            // the footer's own top padding gives up) keeps a reaction bubble above
+            // the hand inside it, and the footer as tall as it always was.
+            <div data-hand-scroll className="-mt-2.5 min-h-0 flex-1 overflow-y-auto pt-3.5">
+              {hand}
+            </div>
+          )}
         </footer>
       )}
 
@@ -925,21 +993,26 @@ const HIDE_SCORES_KEY = "hf.hideScores";
  * contents are inert, so neither a screen reader nor the tab key finds them.
  */
 function SidePanel({
+  width,
   hidden,
   onHidden,
   children,
 }: {
+  /** Its width while shown, as the player has dragged it. */
+  readonly width: number;
   readonly hidden: boolean;
   readonly onHidden: (hidden: boolean) => void;
   readonly children: React.ReactNode;
 }): React.ReactElement {
   return (
     <aside
+      id="table-side"
       aria-label="Scores and moves"
       data-hidden={hidden ? "" : undefined}
       className={`relative shrink-0 overflow-hidden transition-[width] duration-200 ease-out motion-reduce:transition-none ${
-        hidden ? "w-9" : "w-[260px]"
+        hidden ? "ml-5 w-9" : ""
       }`}
+      style={hidden ? undefined : { width }}
     >
       <button
         type="button"
@@ -955,7 +1028,8 @@ function SidePanel({
       <div
         id="table-side-panel"
         inert={hidden}
-        className={`h-full w-[260px] overflow-y-auto transition-opacity duration-200 motion-reduce:transition-none ${
+        style={{ width }}
+        className={`h-full overflow-y-auto transition-opacity duration-200 motion-reduce:transition-none ${
           hidden ? "opacity-0" : "opacity-100"
         }`}
       >

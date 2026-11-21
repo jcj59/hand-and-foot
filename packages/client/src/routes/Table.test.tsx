@@ -3997,7 +3997,7 @@ describe("putting away the scores beside the table on a computer", () => {
     fireEvent.click(show);
     expect(screen.getByRole("button", { name: "Hide scores and moves" })).toBeInTheDocument();
     expect(contents).not.toHaveAttribute("inert");
-    expect(panel().className).toMatch(/w-\[260px\]/);
+    expect(panel().style.width).toBe("260px");
     expect(window.localStorage.getItem("hf.hideScores")).toBe("0");
   });
 
@@ -4045,6 +4045,252 @@ describe("putting away the scores beside the table on a computer", () => {
       mount(fakeSocket().socket, update());
       expect(screen.queryByRole("button", { name: /scores and moves/ })).toBeNull();
       expect(screen.getByRole("button", { name: "Scores so far" })).toBeInTheDocument();
+    } finally {
+      delete (window as { matchMedia?: unknown }).matchMedia;
+    }
+  });
+});
+
+describe("resizing the table's parts on a computer", () => {
+  afterEach(() => window.localStorage.clear());
+
+  const divider = (name: string) => screen.getByRole("separator", { name });
+  const footer = () => document.getElementById("table-footer")!;
+  const seats = () => document.getElementById("table-seats")!;
+  const side = () => screen.getByRole("complementary", { name: "Scores and moves" });
+  const kept = () => JSON.parse(window.localStorage.getItem("hf.tableLayout")!) as unknown;
+
+  it("offers a divider for the side panel, the hand and the other players, each a window splitter", () => {
+    mount(fakeSocket().socket);
+    const panel = divider("Resize scores and moves");
+    expect(panel).toHaveAttribute("aria-orientation", "vertical");
+    expect(panel).toHaveAttribute("aria-controls", "table-side");
+    expect(panel).toHaveAttribute("tabindex", "0");
+    // jsdom's window is 1024 wide: the felt keeps 440 of it.
+    expect(panel).toHaveAttribute("aria-valuenow", "260");
+    expect(panel).toHaveAttribute("aria-valuemin", "220");
+    expect(panel).toHaveAttribute("aria-valuemax", "516");
+    const hand = divider("Resize your hand");
+    expect(hand).toHaveAttribute("aria-orientation", "horizontal");
+    expect(hand).toHaveAttribute("aria-controls", "table-footer");
+    expect(hand).toHaveAttribute("aria-valuemin", "240");
+    expect(hand).toHaveAttribute("aria-valuemax", "348");
+    const players = divider("Resize the other players");
+    expect(players).toHaveAttribute("aria-orientation", "horizontal");
+    expect(players).toHaveAttribute("aria-controls", "table-seats");
+    expect(players).toHaveAttribute("aria-valuemin", "92");
+    // Nothing dragged yet: the table as it always was.
+    expect(footer().style.height).toBe("");
+    expect(seats().style.height).toBe("");
+    expect(side().style.width).toBe("260px");
+    expect(window.localStorage.getItem("hf.tableLayout")).toBeNull();
+  });
+
+  it("makes the hand taller with the arrow keys, keeps it, and restores it next time", () => {
+    mount(fakeSocket().socket);
+    const hand = divider("Resize your hand");
+    // jsdom lays nothing out, so the hand's natural height reads as 0: the first
+    // press starts from the smallest the hand may be.
+    fireEvent.keyDown(hand, { key: "ArrowUp" });
+    expect(footer().style.height).toBe("256px");
+    expect(hand).toHaveAttribute("aria-valuenow", "256");
+    fireEvent.keyDown(hand, { key: "ArrowUp", shiftKey: true });
+    expect(footer().style.height).toBe("320px");
+    fireEvent.keyDown(hand, { key: "ArrowDown" });
+    expect(footer().style.height).toBe("304px");
+    // Keys that are not for a horizontal line do nothing.
+    fireEvent.keyDown(hand, { key: "ArrowLeft" });
+    fireEvent.keyDown(hand, { key: "Enter" });
+    expect(footer().style.height).toBe("304px");
+    expect(kept()).toEqual({ sideWidth: 260, footerHeight: 304, seatsHeight: null });
+    // Never past the room the rest of the table needs.
+    fireEvent.keyDown(hand, { key: "ArrowUp", shiftKey: true });
+    expect(footer().style.height).toBe("348px");
+
+    cleanup();
+    mount(fakeSocket().socket);
+    expect(footer().style.height).toBe("348px");
+    expect(divider("Resize your hand")).toHaveAttribute("aria-valuenow", "348");
+  });
+
+  it("scrolls the hand inside the footer, under the buttons", () => {
+    mount(fakeSocket().socket);
+    const scroller = footer().querySelector("[data-hand-scroll]")!;
+    expect(scroller.className).toMatch(/\boverflow-y-auto\b/);
+    expect(scroller).toContainElement(screen.getByRole("region", { name: /Your hand/ }));
+    expect(scroller).not.toContainElement(screen.getByRole("region", { name: "Your turn" }));
+  });
+
+  it("widens the side panel with the arrow keys, its contents with it", () => {
+    mount(fakeSocket().socket);
+    const panel = divider("Resize scores and moves");
+    // The panel is on the right: moving the line left widens it.
+    fireEvent.keyDown(panel, { key: "ArrowLeft", shiftKey: true });
+    expect(side().style.width).toBe("324px");
+    expect(document.getElementById("table-side-panel")!.style.width).toBe("324px");
+    fireEvent.keyDown(panel, { key: "ArrowRight" });
+    expect(side().style.width).toBe("308px");
+    // Never narrower than its minimum.
+    for (let i = 0; i < 10; i++) fireEvent.keyDown(panel, { key: "ArrowRight", shiftKey: true });
+    expect(side().style.width).toBe("220px");
+    // Keys that are not for a vertical line do nothing.
+    fireEvent.keyDown(panel, { key: "ArrowUp" });
+    expect(side().style.width).toBe("220px");
+    expect(kept()).toEqual({ sideWidth: 220, footerHeight: null, seatsHeight: null });
+  });
+
+  it("drags a divider with the pointer, keeping the size once it is let go", () => {
+    mount(fakeSocket().socket);
+    const panel = divider("Resize scores and moves");
+    fireEvent.pointerDown(panel, { button: 0, pointerId: 1, clientX: 700, clientY: 300 });
+    expect(document.body.dataset.resizing).toBe("vertical");
+    fireEvent.pointerMove(panel, { pointerId: 1, clientX: 600, clientY: 340 });
+    expect(side().style.width).toBe("360px");
+    // Another pointer neither moves nor lets go of it.
+    fireEvent.pointerMove(panel, { pointerId: 2, clientX: 0, clientY: 0 });
+    fireEvent.pointerUp(panel, { pointerId: 2 });
+    expect(side().style.width).toBe("360px");
+    expect(window.localStorage.getItem("hf.tableLayout")).toBeNull();
+    fireEvent.pointerMove(panel, { pointerId: 1, clientX: 650, clientY: 340 });
+    fireEvent.pointerUp(panel, { pointerId: 1 });
+    expect(side().style.width).toBe("310px");
+    expect(document.body.dataset.resizing).toBeUndefined();
+    expect(kept()).toEqual({ sideWidth: 310, footerHeight: null, seatsHeight: null });
+    // Let go: moving the pointer no longer resizes.
+    fireEvent.pointerMove(panel, { pointerId: 1, clientX: 100, clientY: 0 });
+    expect(side().style.width).toBe("310px");
+  });
+
+  it("ignores a press of any button but the main one", () => {
+    mount(fakeSocket().socket);
+    const panel = divider("Resize scores and moves");
+    fireEvent.pointerDown(panel, { button: 2, pointerId: 1, clientX: 700 });
+    fireEvent.pointerMove(panel, { pointerId: 1, clientX: 600 });
+    expect(side().style.width).toBe("260px");
+  });
+
+  it("makes the other players' row taller downward, and their boxes with it", () => {
+    mount(fakeSocket().socket);
+    const players = divider("Resize the other players");
+    const box = () => screen.getByRole("list", { name: "Other players" }).querySelector("li")!;
+    expect(box().style.maxHeight).toBe("256px");
+    fireEvent.pointerDown(players, { button: 0, pointerId: 1, clientX: 0, clientY: 200 });
+    fireEvent.pointerMove(players, { pointerId: 1, clientX: 0, clientY: 330 });
+    fireEvent.pointerUp(players, { pointerId: 1 });
+    // From 92 (jsdom's natural 0, clamped), 130 down.
+    expect(seats().style.height).toBe("222px");
+    // The box fills the row, inside the part's pixel of padding each side.
+    expect(box().style.maxHeight).toBe("220px");
+    fireEvent.keyDown(players, { key: "ArrowUp" });
+    expect(seats().style.height).toBe("206px");
+    expect(kept()).toEqual({ sideWidth: 260, footerHeight: null, seatsHeight: 206 });
+  });
+
+  it("never squeezes the other players' row below their held cards", () => {
+    window.localStorage.setItem(
+      "hf.tableLayout",
+      JSON.stringify({ sideWidth: 260, footerHeight: null, seatsHeight: 20 }),
+    );
+    mount(fakeSocket().socket);
+    expect(seats().style.height).toBe("92px");
+    fireEvent.keyDown(divider("Resize the other players"), { key: "ArrowUp" });
+    expect(seats().style.height).toBe("92px");
+  });
+
+  it("puts a part back to its natural size on Home or a double-click", () => {
+    window.localStorage.setItem(
+      "hf.tableLayout",
+      JSON.stringify({ sideWidth: 400, footerHeight: 300, seatsHeight: 200 }),
+    );
+    mount(fakeSocket().socket);
+    expect(footer().style.height).toBe("300px");
+    fireEvent.keyDown(divider("Resize your hand"), { key: "Home" });
+    expect(footer().style.height).toBe("");
+    expect(kept()).toEqual({ sideWidth: 400, footerHeight: null, seatsHeight: 200 });
+    fireEvent.doubleClick(divider("Resize scores and moves"));
+    expect(side().style.width).toBe("260px");
+    fireEvent.doubleClick(divider("Resize the other players"));
+    expect(seats().style.height).toBe("");
+    expect(kept()).toEqual({ sideWidth: 260, footerHeight: null, seatsHeight: null });
+  });
+
+  it("draws a kept size inside a smaller window, and gives it back in a larger one", () => {
+    window.localStorage.setItem(
+      "hf.tableLayout",
+      JSON.stringify({ sideWidth: 500, footerHeight: null, seatsHeight: null }),
+    );
+    const width = window.innerWidth;
+    try {
+      mount(fakeSocket().socket);
+      expect(side().style.width).toBe("500px");
+      act(() => {
+        Object.defineProperty(window, "innerWidth", { configurable: true, value: 900 });
+        window.dispatchEvent(new Event("resize"));
+      });
+      // 900 less the row's 68 less the felt's 440.
+      expect(side().style.width).toBe("392px");
+      act(() => {
+        Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
+        window.dispatchEvent(new Event("resize"));
+      });
+      expect(side().style.width).toBe("500px");
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
+    }
+  });
+
+  it("has no divider for a panel put away to its rail", () => {
+    window.localStorage.setItem("hf.hideScores", "1");
+    mount(fakeSocket().socket);
+    expect(screen.queryByRole("separator", { name: "Resize scores and moves" })).toBeNull();
+    expect(side().style.width).toBe("");
+    fireEvent.click(screen.getByRole("button", { name: "Show scores and moves" }));
+    expect(divider("Resize scores and moves")).toBeInTheDocument();
+  });
+
+  it("leaves the game alone", () => {
+    const { socket, sent } = fakeSocket();
+    mount(socket);
+    fireEvent.keyDown(divider("Resize your hand"), { key: "ArrowUp" });
+    fireEvent.keyDown(divider("Resize scores and moves"), { key: "ArrowLeft" });
+    expect(sent).toEqual([]);
+  });
+
+  it("works when the browser blocks storage, for as long as the page is open", () => {
+    const get = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    const set = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    try {
+      mount(fakeSocket().socket);
+      fireEvent.keyDown(divider("Resize your hand"), { key: "ArrowUp" });
+      expect(footer().style.height).toBe("256px");
+    } finally {
+      get.mockRestore();
+      set.mockRestore();
+    }
+  });
+
+  it("is not on a phone, whose layout is its own", () => {
+    window.localStorage.setItem(
+      "hf.tableLayout",
+      JSON.stringify({ sideWidth: 400, footerHeight: 300, seatsHeight: 200 }),
+    );
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: (query: string) => ({
+        matches: query === PHONE_QUERY,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }),
+    });
+    try {
+      mount(fakeSocket().socket);
+      expect(screen.queryByRole("separator")).toBeNull();
+      expect(footer().style.height).toBe("");
+      expect(footer().querySelector("[data-hand-scroll]")).toBeNull();
     } finally {
       delete (window as { matchMedia?: unknown }).matchMedia;
     }

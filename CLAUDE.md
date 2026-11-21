@@ -1096,7 +1096,22 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   the piles, the latest move as a pill (`moveLine`; the side panel keeps the last
   `MOVES_KEPT` 3 via `withMove`, and on a live or watched table can be put away to a rail,
   "Hide scores and moves", per device `hf.hideScores`, `SidePanel` in `TableView.tsx`; a
-  lesson or player's `aside` keeps it fixed), banners (last lap, pile debt), the
+  lesson or player's `aside` keeps it fixed). **Resizable parts (2026-11-19 change list, items 1
+  to 3):** on a computer three `ui/Splitter.tsx` dividers (ARIA window splitters: pointer capture,
+  arrows move 16px, Shift 64, Home or double-click resets; no library) size the side panel
+  (`#table-side`, also a lesson's or player's `aside`; none while folded to the rail), the footer
+  (`#table-footer`; the hand scrolls in `[data-hand-scroll]` under the buttons) and the seats part
+  (`#table-seats`; `Seats` `boxHeight` lets the boxes fill it, else `BOX_MAX_HEIGHT` 256). Sizes are
+  `table/layout.ts` (pure: `TableLayout {sideWidth, footerHeight, seatsHeight}`, `null` = natural
+  size, so the default table is unchanged; `clampLayout` against the window: side 220 to 520 and
+  the felt keeps 440, footer from 240 (one row of cards) up to the window less 420, seats from 92
+  (`SEATS_MIN`, the box header with the backs and count, the PR 6 budget) up to the window less
+  420; `readLayout`/`writeLayout` per device `hf.tableLayout`, field by field) through
+  `useTableLayout` (keeps on drag end or key press, follows window resizes). A drag sets
+  `body[data-resizing]` (no transitions or text selection, `index.css`). The app's sidebar
+  (`AppShell`) folds to a 72px icon rail, "Fold the menu"/"Show the menu", per device
+  `hf.navFolded`. Phone untouched. Harness: `LAYOUT=<json>`, `NAV_FOLDED=1`, action `drag`
+  (`DRAG_LABEL`, `DRAG_BY=dx,dy`, frames `out-0..5.png`). Banners (last lap, pile debt), the
   `StagingPanel` (points bar, gold ring where wilds go, scrolls itself into view) and
   `MeldsPanel` (sort Rank/Newest, per device `hf.meldOrder`; Collapse `hf.compactMelds`). `Melds` fans small cards with a note
   (`meldView`: `sortMelds`, `meldNote`, `meldChip`, `booksOf`); the note is the pre-redesign

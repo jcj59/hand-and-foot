@@ -34,6 +34,11 @@ export interface SeatsProps {
   readonly order: MeldOrder;
   /** A quick reaction to show by each seat that has one up. */
   readonly reactions?: ReadonlyMap<number, Reaction>;
+  /**
+   * The tallest a box may be, once the player has dragged the players' row to a
+   * height; without it a box stops at `BOX_MAX_HEIGHT`. Its melds scroll inside.
+   */
+  readonly boxHeight?: number;
 }
 
 export function Seats({
@@ -44,6 +49,7 @@ export function Seats({
   clock,
   order,
   reactions,
+  boxHeight = BOX_MAX_HEIGHT,
 }: SeatsProps): React.ReactElement {
   const [open, setOpen] = useState<ReadonlySet<number>>(new Set());
   const remaining = useRemaining(clock);
@@ -66,7 +72,8 @@ export function Seats({
             data-anchor={`seat-${opponent.seat}`}
             data-zone="seat"
             aria-label={seatLabel(opponent, name, onTurn)}
-            className={`relative flex max-h-64 min-w-0 flex-col gap-2.5 rounded-2xl border bg-black/26 p-3 ${
+            style={{ maxHeight: boxHeight }}
+            className={`relative flex min-w-0 flex-col gap-2.5 rounded-2xl border bg-black/26 p-3 ${
               onTurn ? "border-gold ring-1 ring-gold" : "border-transparent"
             } ${line.tone === "warn" ? "opacity-55" : ""}`}
           >
@@ -133,6 +140,9 @@ export function Seats({
     </ul>
   );
 }
+
+/** A box's height when the player has not sized the row: room for a few rows of chips. */
+export const BOX_MAX_HEIGHT = 256;
 
 /** One back's height in a seat's fan: small enough that the melds keep most of the box. */
 const HELD_CARD_HEIGHT = 24;
