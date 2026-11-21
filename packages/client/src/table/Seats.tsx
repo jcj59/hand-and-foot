@@ -122,6 +122,9 @@ export function Seats({
                 </button>
               )}
             </div>
+            <div className="shrink-0">
+              <HeldCards opponent={opponent} cardHeight={HELD_CARD_HEIGHT} />
+            </div>
             <div className="min-h-0 overflow-y-auto">
               {opponent.melds.length === 0 ? (
                 <p className="m-0 text-xs text-ink/60">Not down yet</p>
