@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   EAST_COAST,
-  MAX_REPORT_BYTES,
+  jsonBytes,
+  MAX_REPORT_BODY_BYTES,
+  REMOVED,
   SPECTATOR_SEAT,
+  TRUNCATED,
   type Card,
   type LastMove,
   type PlayerView,
@@ -12,9 +15,6 @@ import {
 } from "@hf/shared";
 import { parseReport } from "@hf/server";
 import {
-  attachmentRows,
-  fitReport,
-  jsonBytes,
   MOVE_RECORDS_KEPT,
   reportBody,
   reportContext,
@@ -24,6 +24,12 @@ import {
   type TableReport,
 } from "./context";
 import { ERROR_MESSAGE_MAX, ERROR_STACK_MAX, type ClientError } from "./errors";
+
+/** Secrets as this browser holds them: a seat token, an identity secret, a saved game's token. */
+const SEAT_TOKEN = "Qx7bLm2Np9Rt4Vw8Yz1Cd5Fg";
+const IDENTITY_SECRET = "s3Kr1tAbCdEfGhIjKlMnOpQrStUvWxYz0123456789_";
+const SAVED_TOKEN = "Sv2Hk8Jm4Pq6Rs0Tu3Wx5Za";
+const USER_ID = "ana-identity-0000000001";
 
 const card = (rank: Rank, suit: Suit | null, deck = 0): Card => ({
   id: `${rank}-${suit}-${deck}`,
@@ -112,6 +118,7 @@ function table(overrides: Partial<TableReport> = {}): TableReport {
     moveLines: ["ben drew a card", "ben discarded the 8♥"],
     lastMoves: [move(1), move(2, { kind: "discard", card: PILE[1]! })],
     roundOver: false,
+    screen: { staging: { groups: [], focusedRank: null }, chosenId: null, busy: false },
     ...overrides,
   };
 }
@@ -123,109 +130,110 @@ const error = (at: number, size = 10): ClientError => ({
   stack: "s".repeat(Math.min(size, ERROR_STACK_MAX)),
 });
 
+/** A page as this browser would read it at a table, secrets and all. */
 function page(overrides: Partial<PageFacts> = {}): PageFacts {
   return {
     build: "abc1234",
     at: Date.UTC(2026, 10, 20, 15, 30),
-    path: "/room/ABC234",
-    userAgent: "Mozilla/5.0 (Test)",
+    serverOffsetMs: 120,
+    route: { path: "/room/ABC234", search: "", hash: "", state: { idx: 2, key: "k1" } },
+    device: { reducedMotion: false, colorScheme: "dark", language: "en-US", online: true },
     width: 390,
     height: 844,
     pixelRatio: 3,
     phone: true,
-    userId: "u".repeat(20),
+    userAgent: "Mozilla/5.0 (Test)",
+    userId: USER_ID,
     username: "ana",
+    name: "Ana",
+    avatar: null,
     errors: [],
+    frames: [
+      {
+        at: 1,
+        direction: "sent",
+        frame: {
+          id: 1,
+          event: "resumeSeat",
+          payload: { roomId: "ABC234", seat: 0, token: REMOVED },
+        },
+      },
+      { at: 2, direction: "received", frame: { ack: 1, result: { ok: true, data: { seat: 0 } } } },
+    ],
+    console: [
+      { at: 3, level: "log", message: `reclaiming seat with ${SEAT_TOKEN}` },
+      { at: 4, level: "warn", message: "slow frame" },
+    ],
+    notices: [{ at: 5, text: "it is not your turn" }],
+    session: {
+      status: "connected",
+      credentials: { roomId: "ABC234", seat: 0, token: SEAT_TOKEN },
+      notice: null,
+    },
+    storage: {
+      local: {
+        "hf.identity": { userId: USER_ID, secret: IDENTITY_SECRET },
+        "hf.seat": { roomId: "ABC234", seat: 0, token: SEAT_TOKEN },
+        "hf.savedGames": [{ roomId: "XYZ789", seat: 1, token: SAVED_TOKEN, names: ["ana"] }],
+        "hf.muted": true,
+        "hf.account": "ana",
+      },
+      session: { "hf.seat": { roomId: "ABC234", seat: 0, token: SEAT_TOKEN } },
+    },
+    secrets: [IDENTITY_SECRET, SEAT_TOKEN, SAVED_TOKEN],
     ...overrides,
   };
 }
 
-/** Every card id in a JSON text. */
-function idsIn(json: string): string[] {
-  const all = [...HAND, ...FOOT, ...MINE[0]!.cards, ...THEIRS[0]!.cards, ...PILE].map((c) => c.id);
-  return all.filter((id) => json.includes(id));
+/** The body the sheet would send, as JSON. */
+function sent(p = page(), t: TableReport | null = table(), text = "it froze"): string {
+  return JSON.stringify(reportBody(text, reportContext(p, t), p.secrets));
 }
 
-describe("the table's details", () => {
-  it("carries the room, seat, round, phase and the player's own counts", () => {
-    expect(tableDetails(table())).toEqual({
-      room: "ABC234",
-      seat: 0,
-      round: 2,
-      rounds: 4,
-      phase: "play",
-      seatToPlay: 1,
+describe("what a report carries at a table", () => {
+  it("the whole update, the room, the player's own cards with their ids, the hints and the screen", () => {
+    const details = tableDetails(table());
+    const u = update();
+    expect(details).toEqual({
+      room: u.room,
+      update: u,
+      own: {
+        hand: HAND,
+        footCount: 2,
+        inFoot: true,
+        isDown: true,
+        melds: MINE,
+        pickedUp: [HAND[0]!.id],
+      },
+      hints: u.hints,
+      screen: table().screen,
       roundOver: false,
-      paused: false,
-      players: 2,
-      yourCards: { hand: 3, foot: 2, inFoot: true, down: true, melds: 1, owedToPile: 1 },
-      stock: 40,
-      pile: 2,
       moveLines: ["ben drew a card", "ben discarded the 8♥"],
-      lastMoves: [
-        { seq: 1, seat: 1, kind: "draw" },
-        { seq: 2, seat: 1, kind: "discard", card: PILE[1] },
-      ],
+      lastMoves: table().lastMoves,
     });
   });
 
-  it("never carries a card of anyone's but those in the moves this seat was shown", () => {
-    // The opponent's melds, the player's own hand, foot and melds, and the pile
-    // are all in the view; only the discarded card the moves name may be sent.
-    const json = JSON.stringify(reportContext(page(), table()));
-    expect(idsIn(json)).toEqual([PILE[1]!.id]);
-    for (const c of THEIRS[0]!.cards) expect(json).not.toContain(c.id);
-    // No meld of anyone's travels at all, and no opponent's counts either.
-    expect(json).not.toMatch(/opponents|"melds":\[/);
-    expect(json).not.toContain("handCount");
+  it("every card in the view, other players' melds included, by id", () => {
+    const json = sent();
+    for (const c of [...HAND, ...FOOT, ...MINE[0]!.cards, ...THEIRS[0]!.cards, ...PILE]) {
+      expect(json).toContain(c.id);
+    }
   });
 
-  it("copies a move field by field, so nothing else riding on it is sent", () => {
-    const sneaky = { ...move(3, { kind: "meld", count: 3, marva: true }), extra: HAND } as LastMove;
-    const details = tableDetails(table({ lastMoves: [sneaky] }));
-    expect(details.lastMoves).toEqual([{ seq: 3, seat: 1, kind: "meld", count: 3, marva: true }]);
-    expect(idsIn(JSON.stringify(details))).toEqual([]);
+  it("the card of a draw, which the server sent this seat", () => {
+    const drew = move(6, { seat: 0, kind: "draw", card: HAND[0]! });
+    const details = tableDetails(table({ lastMoves: [drew] }));
+    expect(details.lastMoves).toEqual([drew]);
   });
 
-  it("copies a move's card by its id, rank and suit only", () => {
-    const card = { ...PILE[1]!, extra: HAND } as Card;
-    const details = tableDetails(table({ lastMoves: [move(5, { kind: "discard", card })] }));
-    expect(details.lastMoves).toEqual([{ seq: 5, seat: 1, kind: "discard", card: PILE[1] }]);
-    expect(idsIn(JSON.stringify(details))).toEqual([PILE[1]!.id]);
-  });
-
-  it("leaves out the card of a draw, which is a card in the player's own hand", () => {
-    const details = tableDetails(
-      table({ lastMoves: [move(6, { seat: 0, kind: "draw", card: HAND[0]! })] }),
-    );
-    expect(details.lastMoves).toEqual([{ seq: 6, seat: 0, kind: "draw" }]);
-    expect(idsIn(JSON.stringify(details))).toEqual([]);
-  });
-
-  it("keeps a move's count of 0", () => {
-    expect(
-      tableDetails(table({ lastMoves: [move(4, { kind: "takePile", count: 0 })] })).lastMoves,
-    ).toEqual([{ seq: 4, seat: 1, kind: "takePile", count: 0 }]);
-  });
-
-  it("carries no cards of the player's own for someone watching", () => {
+  it("no cards of the player's own for someone watching", () => {
     const details = tableDetails(
       table({ update: update({ seat: SPECTATOR_SEAT, hand: [], foot: null }) }),
     );
-    expect(details.seat).toBe("watching");
-    expect(details).not.toHaveProperty("yourCards");
-  });
-
-  it("says when the round is over and the table paused", () => {
-    const details = tableDetails(table({ roundOver: true, update: update({}, true) }));
-    expect(details.roundOver).toBe(true);
-    expect(details.paused).toBe(true);
-  });
-
-  it("carries only the last 20 moves", () => {
-    const many = Array.from({ length: 25 }, (_, i) => move(i + 1));
-    const details = tableDetails(table({ lastMoves: many }));
-    expect(details.lastMoves.map((m) => m.seq)).toEqual(many.slice(5).map((m) => m.seq));
+    expect(details).not.toHaveProperty("own");
+    expect(
+      reportContext(page(), table({ update: update({ seat: SPECTATOR_SEAT }) })).summary.seat,
+    ).toBe("watching");
   });
 });
 
@@ -237,13 +245,13 @@ describe("keeping the latest moves", () => {
     expect(list.map((m) => m.seq)).toEqual([1, 2]);
   });
 
-  it("keeps the newest 20, dropping the oldest", () => {
-    expect(MOVE_RECORDS_KEPT).toBe(20);
+  it("keeps the newest 200, dropping the oldest", () => {
+    expect(MOVE_RECORDS_KEPT).toBe(200);
     let list: LastMove[] = [];
-    for (let seq = 1; seq <= 21; seq++) list = withRecord(list, move(seq));
-    expect(list).toHaveLength(20);
+    for (let seq = 1; seq <= 201; seq++) list = withRecord(list, move(seq));
+    expect(list).toHaveLength(200);
     expect(list[0]!.seq).toBe(2);
-    expect(list[19]!.seq).toBe(21);
+    expect(list[199]!.seq).toBe(201);
   });
 
   it("never changes the list it was given", () => {
@@ -255,176 +263,217 @@ describe("keeping the latest moves", () => {
 });
 
 describe("the whole context", () => {
-  it("carries the page, the player and the errors", () => {
-    const errors = [error(1)];
-    expect(reportContext(page({ errors }), null)).toEqual({
+  it("starts with a summary a developer reads first", () => {
+    expect(reportContext(page(), table()).summary).toEqual({
       build: "abc1234",
       time: "2026-11-20T15:30:00.000Z",
       path: "/room/ABC234",
-      userAgent: "Mozilla/5.0 (Test)",
-      viewport: "390x844 @3x",
       layout: "phone",
-      userId: "u".repeat(20),
-      username: "ana",
-      errors,
+      viewport: "390x844 @3x",
+      browser: "Mozilla/5.0 (Test)",
+      user: `@ana ${USER_ID}`,
+      room: "ABC234",
+      seat: 0,
+      round: "2 of 4",
+      phase: "play",
+      seatToPlay: 1,
     });
+    const over = reportContext(
+      page({ phone: false, userId: null, username: null }),
+      table({ roundOver: true }),
+    );
+    expect(over.summary).toMatchObject({ layout: "computer", phase: "round over" });
+    expect(over.summary).not.toHaveProperty("user");
+    expect(reportContext(page(), null).summary).not.toHaveProperty("room");
   });
 
-  it("leaves out who the player is when the browser has no identity, and says a computer", () => {
-    const context = reportContext(page({ userId: null, username: null, phone: false }), null);
-    expect(context).not.toHaveProperty("userId");
-    expect(context).not.toHaveProperty("username");
-    expect(context.layout).toBe("computer");
-  });
-
-  it("carries the table only when given one", () => {
-    expect(reportContext(page(), table()).table?.room).toBe("ABC234");
-    expect(reportContext(page(), null)).not.toHaveProperty("table");
+  it("carries the page, the device, the profile, the logs, the session and the storage", () => {
+    const p = page({ errors: [error(1)] });
+    const context = reportContext(p, table());
+    expect(context.page).toEqual({
+      build: "abc1234",
+      at: p.at,
+      serverOffsetMs: 120,
+      route: p.route,
+      viewport: { width: 390, height: 844, pixelRatio: 3 },
+      layout: "phone",
+      userAgent: "Mozilla/5.0 (Test)",
+      reducedMotion: false,
+      colorScheme: "dark",
+      language: "en-US",
+      online: true,
+    });
+    expect(context.user).toEqual({ userId: USER_ID, username: "ana", name: "Ana", avatar: null });
+    expect(context.logs).toEqual({
+      frames: p.frames,
+      console: p.console,
+      errors: [error(1)],
+      notices: p.notices,
+    });
+    expect(context.storage).toBe(p.storage);
+    // At a table the session's update is the table's, carried once.
+    expect(context.session.update).toBe("the same as table.update");
+    expect(reportContext(p, null).session).toBe(p.session);
+    expect(reportContext(p, null)).not.toHaveProperty("table");
   });
 });
 
-describe("fitting the server's size limit", () => {
-  it("sends a small report whole, its text trimmed", () => {
-    const context = reportContext(page({ errors: [error(1)] }), table());
-    expect(fitReport("  it froze \n", context)).toEqual({ text: "it froze", context });
+describe("what a report never carries", () => {
+  it("a seat token, an identity secret or a saved game's token, anywhere", () => {
+    const json = sent();
+    for (const secret of [SEAT_TOKEN, IDENTITY_SECRET, SAVED_TOKEN])
+      expect(json).not.toContain(secret);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- reading JSON back to check it
+    const body = JSON.parse(json) as { context: Record<string, any> };
+    expect(body.context.storage.local["hf.identity"]).toEqual({ userId: USER_ID, secret: REMOVED });
+    expect(body.context.storage.local["hf.seat"].token).toBe(REMOVED);
+    expect(body.context.storage.session["hf.seat"].token).toBe(REMOVED);
+    expect(body.context.storage.local["hf.savedGames"][0]).toMatchObject({
+      roomId: "XYZ789",
+      token: REMOVED,
+    });
+    expect(body.context.session.credentials).toEqual({ roomId: "ABC234", seat: 0, token: REMOVED });
+    // A token quoted in a console line is cut out of it too.
+    expect(body.context.logs.console[0].message).toBe(`reclaiming seat with ${REMOVED}`);
+    // What is not a secret stays.
+    expect(body.context.storage.local["hf.muted"]).toBe(true);
+    expect(body.context.user.userId).toBe(USER_ID);
   });
 
-  it("measures with the widest arrival time the server can stamp", () => {
-    const context = reportContext(page({ errors: [error(1), error(2)] }), table());
-    const room = MAX_REPORT_BYTES - jsonBytes({ at: 9_999_999_999_999, text: "", context });
-    expect(fitReport("a".repeat(room), context).context.errors).toHaveLength(2);
-    expect(fitReport("a".repeat(room + 1), context).context.errors).toHaveLength(1);
+  it("a secret the page knows even where no key names it", () => {
+    const p = page({
+      storage: { local: {}, session: {} },
+      session: {},
+      console: [{ at: 1, level: "error", message: `failed ${IDENTITY_SECRET}` }],
+    });
+    expect(sent(p)).not.toContain(IDENTITY_SECRET);
+    expect(sent({ ...p, secrets: [] })).toContain(IDENTITY_SECRET);
   });
 
-  it("drops the oldest errors first, then the oldest moves, then the move lines", () => {
-    const errors = Array.from({ length: 20 }, (_, i) => error(i + 1, 280));
-    const lastMoves = Array.from({ length: 20 }, (_, i) =>
-      move(i + 1, { kind: "discard", card: PILE[0]! }),
-    );
-    const context = reportContext(page({ errors }), table({ lastMoves }));
-    expect(jsonBytes(context)).toBeGreaterThan(MAX_REPORT_BYTES);
+  it("a password or an auth header in a frame", () => {
+    const p = page({
+      frames: [
+        {
+          at: 1,
+          direction: "sent",
+          frame: { payload: { password: "hunter2hunter2", currentPassword: "x" } },
+        },
+        { at: 2, direction: "sent", frame: { headers: { Authorization: "Bearer 1234567890" } } },
+      ],
+    });
+    const json = sent(p);
+    expect(json).not.toContain("hunter2hunter2");
+    expect(json).not.toContain("Bearer 1234567890");
+  });
+});
 
-    const fitted = fitReport("x".repeat(500), context).context;
-    expect(fitted.errors.length).toBeGreaterThan(0);
-    expect(fitted.errors.length).toBeLessThan(20);
-    // The newest are the ones kept.
-    expect(fitted.errors.at(-1)).toEqual(errors.at(-1));
-    expect(fitted.table?.lastMoves).toHaveLength(20);
-
-    // Longer text leaves no room for errors, then cuts into the moves, newest kept.
-    // (A control character is six bytes of JSON.)
-    const tight = fitReport("\u0001".repeat(1_100), context).context;
-    expect(tight.errors).toEqual([]);
-    expect(tight.table!.lastMoves.length).toBeLessThan(20);
-    expect(tight.table!.lastMoves.at(-1)!.seq).toBe(20);
-    expect(tight.table!.moveLines).toHaveLength(2);
+describe("the body sent", () => {
+  it("names the table, trims the text, and sends a small report whole", () => {
+    const body = reportBody("  it froze \n", reportContext(page(), table()), page().secrets);
+    expect(body.text).toBe("it froze");
+    expect(body.room).toBe("ABC234");
+    expect(body.context).not.toHaveProperty("truncated");
+    expect(reportBody("x", reportContext(page(), null))).not.toHaveProperty("room");
   });
 
-  it("drops the move lines last, the oldest first", () => {
-    const lines = Array.from({ length: 40 }, (_, i) => `line ${i} ${"y".repeat(150)}`);
-    const context = reportContext(page(), table({ moveLines: lines, lastMoves: [move(1)] }));
-    const fitted = fitReport("z".repeat(1500), context).context;
-    expect(fitted.table!.lastMoves).toEqual([]);
-    expect(fitted.table!.moveLines.length).toBeLessThan(40);
-    expect(fitted.table!.moveLines.at(-1)).toBe(lines.at(-1));
+  it("fits 256 KB by cutting the largest logs first, newest kept, and says what it cut", () => {
+    const frames = Array.from({ length: 200 }, (_, i) => ({
+      at: i,
+      direction: "received" as const,
+      frame: { event: "view", payload: update(), pad: "p".repeat(2_000) },
+    }));
+    const context = reportContext(page({ frames }), table());
+    expect(jsonBytes(context)).toBeGreaterThan(MAX_REPORT_BODY_BYTES);
+    const body = reportBody("it froze", context, page().secrets);
+    const fitted = body.context as unknown as {
+      logs: { frames: typeof frames; console: unknown[] };
+      table: { update: unknown };
+      truncated: { section: string; kept?: number; of?: number }[];
+    };
+    expect(fitted.logs.frames.length).toBeLessThan(200);
+    expect(fitted.logs.frames.at(-1)!.at).toBe(199);
+    expect(fitted.logs.console).toHaveLength(2);
+    expect(fitted.table.update).toEqual(update());
+    expect(fitted.truncated).toEqual([
+      {
+        section: "logs.frames",
+        bytes: expect.any(Number),
+        kept: fitted.logs.frames.length,
+        of: 200,
+      },
+    ]);
+    expect(parseReport(body, 9_999_999_999_999).ok).toBe(true);
   });
 
   it("keeps every fitted report within what the server accepts", () => {
     const errors = Array.from({ length: 20 }, (_, i) => error(i + 1, 2_000));
-    const lastMoves = Array.from({ length: 20 }, (_, i) =>
-      move(i + 1, { kind: "discard", card: PILE[0]! }),
-    );
-    const context = reportContext(
-      page({ userAgent: "U".repeat(400), errors }),
-      table({ lastMoves }),
-    );
+    const frames = Array.from({ length: 200 }, (_, i) => ({
+      at: i,
+      direction: "sent" as const,
+      frame: { pad: "€".repeat(3_000) },
+    }));
+    const history = {
+      matches: Array.from({ length: 300 }, (_, i) => ({ i, pad: "h".repeat(500) })),
+    };
+    const p = page({
+      userAgent: "U".repeat(400),
+      errors,
+      frames,
+      storage: { local: { "hf.history:x": history }, session: { "hf.history:x": history } },
+    });
     for (const text of ["short", "w".repeat(2_000), "🙂".repeat(1_000), "é".repeat(2_000)]) {
-      const body = reportBody(fitReport(text, context));
-      const parsed = parseReport(body, 9_999_999_999_999);
-      expect(parsed.ok).toBe(true);
+      const body = reportBody(text, reportContext(p, table()), p.secrets);
+      expect(parseReport(body, 9_999_999_999_999).ok).toBe(true);
     }
   });
 
-  it("sends a report that cannot fit as it is, for the server to refuse", () => {
-    const context = reportContext(page(), table());
-    const body = fitReport("\u0001".repeat(2_000), context);
-    expect(body.context.table?.moveLines).toEqual([]);
-    expect(parseReport(reportBody(body), 0)).toEqual({
-      ok: false,
-      error: "that report has too much attached",
+  it("measures the text too, to the byte, and cuts inside the browser's storage", () => {
+    const history = Array.from({ length: 6_000 }, (_, i) => ({ i, pad: "h".repeat(40) }));
+    const p = page({
+      storage: { local: { "hf.history:x": history, "hf.muted": true }, session: {} },
     });
-  });
-});
-
-describe("the list of what is sent", () => {
-  it("says everything at a table in words", () => {
-    const context = reportContext(page({ errors: [error(1), error(2)] }), table());
-    expect(attachmentRows(context)).toEqual([
-      { label: "Version", value: "abc1234" },
-      { label: "Time", value: "2026-11-20T15:30:00.000Z" },
-      { label: "Page", value: "/room/ABC234" },
-      { label: "Browser", value: "Mozilla/5.0 (Test)" },
-      { label: "Screen", value: "390x844 @3x, phone layout" },
-      { label: "Profile", value: `@ana, id ${"u".repeat(20)}` },
-      { label: "Table", value: "ABC234, seat 0, round 2 of 4, play phase" },
-      { label: "Your cards", value: "how many only: 3 cards in hand, 2 in the foot, 1 meld" },
-      { label: "Piles", value: "stock 40, pile 2" },
-      { label: "Moves", value: "the last 2 moves, as you were shown them" },
-      { label: "Errors", value: "the last 2 errors on this page" },
-    ]);
+    // A control character is six bytes of JSON: 12 KB of text the fitting must leave room for.
+    const body = reportBody("\u0001".repeat(2_000), reportContext(p, table()), p.secrets);
+    expect(parseReport(body, 9_999_999_999_999).ok).toBe(true);
+    const local = (body.context as unknown as { storage: { local: Record<string, unknown> } })
+      .storage.local;
+    expect(local["hf.muted"]).toBe(true);
+    expect((local["hf.history:x"] as unknown[]).length).toBeLessThan(6_000);
   });
 
-  it("says when a round is over, a table paused, or the player is watching", () => {
-    const over = reportContext(page(), table({ roundOver: true, update: update({}, true) }));
-    expect(attachmentRows(over).find((r) => r.label === "Table")?.value).toBe(
-      "ABC234, seat 0, round 2 of 4, round over, paused",
-    );
-    const watching = reportContext(
-      page(),
-      table({ update: update({ seat: SPECTATOR_SEAT }), lastMoves: [move(1)] }),
-    );
-    const rows = attachmentRows(watching);
-    expect(rows.find((r) => r.label === "Table")?.value).toBe(
-      "ABC234, watching, round 2 of 4, play phase",
-    );
-    expect(rows.find((r) => r.label === "Your cards")).toBeUndefined();
-    expect(rows.find((r) => r.label === "Moves")?.value).toBe(
-      "the last 1 move, as you were shown them",
-    );
+  it("keeps the table's update while cutting the logs is enough, even when it is the largest", () => {
+    const big = update({
+      discard: Array.from({ length: 4_000 }, (_, i) => card("5", "hearts", i)),
+    });
+    const frames = Array.from({ length: 3_000 }, (_, i) => ({
+      at: i,
+      direction: "received" as const,
+      frame: { pad: "f".repeat(80) },
+    }));
+    const p = page({ frames });
+    const body = reportBody("x", reportContext(p, table({ update: big })), p.secrets);
+    const fitted = body.context as unknown as {
+      table: { update: unknown };
+      logs: { frames: unknown[] };
+    };
+    expect(fitted.table.update).toEqual(big);
+    expect(fitted.logs.frames.length).toBeLessThan(3_000);
+    expect(parseReport(body, 9_999_999_999_999).ok).toBe(true);
   });
 
-  it("says one card and many melds rightly", () => {
-    const context = reportContext(
-      page(),
-      table({ update: update({ hand: [HAND[0]!], melds: [...MINE, ...MINE] }) }),
-    );
-    expect(attachmentRows(context).find((r) => r.label === "Your cards")?.value).toBe(
-      "how many only: 1 card in hand, 2 in the foot, 2 melds",
-    );
-  });
-
-  it("says away from a table only the page, the profile and the errors", () => {
-    const rows = attachmentRows(reportContext(page({ username: null, errors: [error(1)] }), null));
-    expect(rows.map((r) => r.label)).toEqual([
-      "Version",
-      "Time",
-      "Page",
-      "Browser",
-      "Screen",
-      "Profile",
-      "Errors",
-    ]);
-    expect(rows.find((r) => r.label === "Profile")?.value).toBe(`id ${"u".repeat(20)}`);
-    expect(rows.at(-1)?.value).toBe("the last 1 error on this page");
-  });
-
-  it("names a signed-in player with no identity id, and none at all when there is neither", () => {
-    expect(
-      attachmentRows(reportContext(page({ userId: null }), null)).find((r) => r.label === "Profile")
-        ?.value,
-    ).toBe("@ana");
-    const rows = attachmentRows(reportContext(page({ userId: null, username: null }), null));
-    expect(rows.find((r) => r.label === "Profile")).toBeUndefined();
-    expect(rows.at(-1)?.value).toBe("none on this page");
+  it("cuts the table's update only after everything else", () => {
+    const huge = update({
+      discard: Array.from({ length: 8_000 }, (_, i) => card("5", "hearts", i)),
+    });
+    const body = reportBody("x", reportContext(page(), table({ update: huge })), page().secrets);
+    const fitted = body.context as unknown as {
+      table: { update: unknown; room: unknown };
+      summary: unknown;
+      truncated: { section: string }[];
+    };
+    expect(fitted.table.update).toBe(TRUNCATED);
+    expect(fitted.truncated.at(-1)!.section).toBe("table.update");
+    expect(fitted.summary).toEqual(reportContext(page(), table({ update: huge })).summary);
+    expect(parseReport(body, 9_999_999_999_999).ok).toBe(true);
   });
 });

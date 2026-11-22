@@ -26,10 +26,12 @@ import {
   Room,
   systemClock,
   TableChannel,
+  tableForReport,
   type RoomDeps,
   type RoomPlayer,
   type RoomResult,
   type SeatProfile,
+  type TableForReport,
 } from "@hf/server/core";
 import {
   PING,
@@ -220,6 +222,17 @@ export class TableObject extends DurableObject<Env> {
       return { ok: false, error: "the next game has already started without you" };
     }
     return this.sit(name, profile);
+  }
+
+  /**
+   * Everything this table knows, for a bug report that names it (asked by the
+   * reports object, one Durable Object request): the record, every move, the
+   * whole game and the chat, with the seat tokens beside it so the report can be
+   * cleared of them. Null when no table is open under this code.
+   */
+  async reportRecord(): Promise<TableForReport | null> {
+    const room = this.channel?.room;
+    return room ? tableForReport(room) : null;
   }
 
   // ------------------------------------------------------------------ socket ---

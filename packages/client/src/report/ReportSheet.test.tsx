@@ -1,6 +1,9 @@
 /**
  * Reporting a bug, as a player does it: from Profile, and from the table's menu
- * at a live table, through to what is posted and what the sheet says back.
+ * at a live table, through to what is posted and what the sheet says back. The
+ * browser holds real secrets here (an identity, a seat, a saved game), read by
+ * the sheet from storage and the store as it would be in a browser, and none of
+ * them may be in what is posted.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -18,7 +21,9 @@ import {
   type ViewUpdate,
 } from "@hf/shared";
 import { REPORT_NOT_SENT } from "../actions";
+import { CREDENTIALS_KEY } from "../credentials";
 import { ACCOUNT_KEY, IDENTITY_KEY, type Post } from "../identity";
+import { SAVED_GAMES_KEY } from "../savedGames";
 import { ProfilePage } from "../pages/ProfilePage";
 import { Table } from "../routes/Table";
 import { createServerClock } from "../serverTime";
@@ -26,6 +31,18 @@ import { useSession } from "../session";
 import type { HfClientSocket } from "../socket";
 import { PHONE_QUERY } from "../usePhone";
 import { forgetErrors, noteError } from "./errors";
+import { forgetRecords, noteConsole, noteFrame, noteNotice } from "./recorder";
+import { PAGE_DISCLOSURE, TABLE_DISCLOSURE } from "./ReportSheet";
+
+const SECRET = "Sk3y".repeat(10);
+const SEAT_TOKEN = "Tq9mZ2xP7wL4vK8nB3cR";
+const SAVED_TOKEN = "Wv5hJ1sD6fG0aY2uE9iO";
+
+/** Every secret the page holds, none of which may leave it. */
+function expectNoSecrets(body: unknown): void {
+  const json = JSON.stringify(body);
+  for (const secret of [SECRET, SEAT_TOKEN, SAVED_TOKEN]) expect(json).not.toContain(secret);
+}
 
 /** A server that records each report and answers with the next queued answer. */
 function fakeServer(answers: (Ack<unknown> | Error)[] = []): Post & { reports: ReportBody[] } {
@@ -52,11 +69,38 @@ function phone(): void {
 
 beforeEach(() => {
   forgetErrors();
+  forgetRecords();
   window.localStorage.setItem(
     IDENTITY_KEY,
-    JSON.stringify({ userId: "u".repeat(20), secret: "s".repeat(40) }),
+    JSON.stringify({ userId: "u".repeat(20), secret: SECRET }),
   );
   window.localStorage.setItem(ACCOUNT_KEY, "ana");
+  window.localStorage.setItem("hf.muted", "true");
+  window.localStorage.setItem(
+    SAVED_GAMES_KEY,
+    JSON.stringify([
+      {
+        roomId: "XYZ789",
+        seat: 1,
+        token: SAVED_TOKEN,
+        savedUntil: Date.now() + 1e6,
+        names: ["ana"],
+        round: 1,
+      },
+    ]),
+  );
+  window.localStorage.setItem("not.ours", "kept out");
+  // What the page has been doing: a seat claimed over the socket, a console line
+  // that quoted the token, a refusal shown.
+  noteFrame("sent", {
+    id: 1,
+    event: "resumeSeat",
+    payload: { roomId: "ABC234", seat: 0, token: SEAT_TOKEN },
+  });
+  noteFrame("received", { ack: 1, result: { ok: true, data: { seat: 0 } } });
+  noteConsole("log", ["claimed", SEAT_TOKEN]);
+  noteConsole("warn", ["slow"]);
+  noteNotice("it is not your turn");
 });
 
 afterEach(() => {
@@ -93,14 +137,12 @@ describe("from Profile", () => {
     profile(server);
     fireEvent.click(screen.getByRole("button", { name: "Report a bug" }));
 
-    // The hint, and the list of what goes, in words; no table away from one.
+    // The hint, and one line saying what goes; no list, no checkbox, no JSON.
     expect(within(sheet()).getByText(/what you were doing/i)).toBeInTheDocument();
-    const list = within(sheet()).getByRole("region", { name: "Sent with your report" });
-    expect(within(list).getByText("Version")).toBeInTheDocument();
-    expect(within(list).getByText(`@ana, id ${"u".repeat(20)}`)).toBeInTheDocument();
-    expect(within(list).getByText("the last 1 error on this page")).toBeInTheDocument();
-    expect(within(list).queryByText("Table")).toBeNull();
+    expect(within(sheet()).getByText(PAGE_DISCLOSURE)).toBeInTheDocument();
+    expect(within(sheet()).queryByRole("region")).toBeNull();
     expect(within(sheet()).queryByRole("checkbox")).toBeNull();
+    expect(within(sheet()).queryByText(/exactly what is sent/i)).toBeNull();
 
     // Nothing to send until something is written.
     expect(within(sheet()).getByRole("button", { name: "Send report" })).toBeDisabled();
@@ -115,30 +157,46 @@ describe("from Profile", () => {
     const [report] = server.reports;
     expect(report!.text).toBe("The scores did not add up");
     expect(report!.context).toMatchObject({
-      build: expect.any(String),
-      path: "/",
-      layout: "computer",
-      userId: "u".repeat(20),
-      username: "ana",
-      errors: [{ at: 1, message: "TypeError: x is undefined" }],
+      summary: {
+        build: expect.any(String),
+        path: "/",
+        layout: "computer",
+        user: `@ana ${"u".repeat(20)}`,
+      },
+      page: { route: { path: "/" }, layout: "computer", viewport: expect.any(Object) },
+      user: { userId: "u".repeat(20), username: "ana" },
+      logs: {
+        errors: [{ at: 1, message: "TypeError: x is undefined" }],
+        frames: [
+          {
+            direction: "sent",
+            frame: { event: "resumeSeat", payload: { roomId: "ABC234", token: "[removed]" } },
+          },
+          { direction: "received" },
+        ],
+        console: [
+          { level: "log", message: "claimed [removed]" },
+          { level: "warn", message: "slow" },
+        ],
+        notices: [{ text: "it is not your turn" }],
+      },
+      storage: {
+        local: {
+          "hf.identity": { userId: "u".repeat(20), secret: "[removed]" },
+          "hf.account": "ana",
+          "hf.muted": true,
+          "hf.savedGames": [{ roomId: "XYZ789", token: "[removed]" }],
+        },
+      },
+      session: { status: expect.any(String) },
     });
+    expect(report!.context!.storage).not.toHaveProperty(["local", "not.ours"]);
     expect(report!.context).not.toHaveProperty("table");
-    // The secret never goes.
-    expect(JSON.stringify(report)).not.toContain("s".repeat(40));
+    expect(report).not.toHaveProperty("room");
+    expectNoSecrets(report);
 
     fireEvent.click(within(sheet()).getByRole("button", { name: "Done" }));
     expect(screen.queryByRole("dialog")).toBeNull();
-  });
-
-  it("shows, folded, exactly the JSON it sends", async () => {
-    const server = fakeServer();
-    profile(server);
-    fireEvent.click(screen.getByRole("button", { name: "Report a bug" }));
-    write("It froze");
-    const shown = JSON.parse(within(sheet()).getByLabelText("What is sent").textContent!);
-    send();
-    await waitFor(() => expect(server.reports).toHaveLength(1));
-    expect(server.reports[0]!.context).toEqual(shown);
   });
 
   it("is a row in the settings on a phone", async () => {
@@ -149,7 +207,7 @@ describe("from Profile", () => {
     write("The menu would not open");
     send();
     await waitFor(() => expect(server.reports).toHaveLength(1));
-    expect(server.reports[0]!.context).toMatchObject({ layout: "phone" });
+    expect(server.reports[0]!.context).toMatchObject({ summary: { layout: "phone" } });
   });
 
   it("shows a refusal, keeps the words, and lets the player send again", async () => {
@@ -303,9 +361,17 @@ function stubFetch(): ReportBody[] {
 }
 
 function atTable(): void {
+  window.localStorage.setItem(
+    CREDENTIALS_KEY,
+    JSON.stringify({ roomId: "ABC234", seat: 0, token: SEAT_TOKEN }),
+  );
+  window.sessionStorage.setItem(
+    CREDENTIALS_KEY,
+    JSON.stringify({ roomId: "ABC234", seat: 0, token: SEAT_TOKEN }),
+  );
   useSession.setState({
     status: "connected",
-    credentials: { roomId: "ABC234", seat: 0, token: "t0" },
+    credentials: { roomId: "ABC234", seat: 0, token: SEAT_TOKEN },
     room: null,
     update: null,
     result: null,
@@ -338,57 +404,47 @@ function openFromMenu(): void {
 }
 
 describe("from the table's menu", () => {
-  it("sends the table's details and the player's own counts, never a card of anyone's", async () => {
+  it("sends the whole table as this seat saw it, every card and the drawn one included, but no secret", async () => {
     const reports = stubFetch();
     atTable();
     openFromMenu();
-    const list = within(sheet()).getByRole("region", { name: "Sent with your report" });
-    expect(within(list).getByText("ABC234, seat 0, round 2 of 4, play phase")).toBeInTheDocument();
-    expect(
-      within(list).getByText("how many only: 3 cards in hand, 11 in the foot, 1 meld"),
-    ).toBeInTheDocument();
+    expect(within(sheet()).getByText(TABLE_DISCLOSURE)).toBeInTheDocument();
+    expect(within(sheet()).queryByRole("checkbox")).toBeNull();
     write("Ben's discard went to the wrong place");
     send();
     await waitFor(() => expect(reports).toHaveLength(1));
 
-    const json = JSON.stringify(reports[0]);
-    // Of every card on the table, only the one the moves named (a public discard) is sent, not the player's own draw.
-    expect(EVERY_CARD.filter((c) => json.includes(c.id)).map((c) => c.id)).toEqual([PILE[1]!.id]);
-    for (const c of THEIRS[0]!.cards) expect(json).not.toContain(c.id);
-    expect(reports[0]!.context).toMatchObject({
-      path: "/",
+    const [report] = reports;
+    const json = JSON.stringify(report);
+    // Every card on the table, the player's own draw too.
+    for (const c of EVERY_CARD.filter((c) => !FOOT.includes(c))) expect(json).toContain(c.id);
+    expect(report!.room).toBe("ABC234");
+    expect(report!.context).toMatchObject({
+      summary: { room: "ABC234", seat: 0, round: "2 of 4", phase: "play", seatToPlay: 1 },
       table: {
-        room: "ABC234",
-        seat: 0,
-        round: 2,
-        phase: "play",
-        yourCards: { hand: 3, foot: 11, melds: 1 },
+        room: { roomId: "ABC234" },
+        update: { view: { hand: HAND, melds: MINE, opponents: [{ melds: THEIRS }] } },
+        own: { hand: HAND, footCount: 11, melds: MINE },
+        hints: { seatToAct: 1 },
+        screen: { staging: { groups: [] }, chosenId: null, busy: false, watching: false },
         moveLines: ["ben took the pile (3 cards)", "ben discarded the 8♥", "You drew a card"],
         lastMoves: [
           { seq: 7, seat: 1, kind: "takePile", count: 3 },
           { seq: 8, seat: 1, kind: "discard", card: PILE[1] },
-          { seq: 9, seat: 0, kind: "draw" },
+          { seq: 9, seat: 0, kind: "draw", card: HAND[0] },
         ],
       },
+      session: {
+        credentials: { roomId: "ABC234", seat: 0, token: "[removed]" },
+        update: "the same as table.update",
+      },
+      storage: {
+        local: { "hf.seat": { roomId: "ABC234", token: "[removed]" } },
+        session: { "hf.seat": { roomId: "ABC234", token: "[removed]" } },
+      },
     });
+    expectNoSecrets(report);
     await waitFor(() => expect(within(sheet()).getByRole("status")).toHaveTextContent(/thanks/i));
-  });
-
-  it("leaves the table out when the player asks", async () => {
-    const reports = stubFetch();
-    atTable();
-    openFromMenu();
-    fireEvent.click(within(sheet()).getByRole("checkbox", { name: /leave out this table/i }));
-    expect(
-      within(within(sheet()).getByRole("region", { name: "Sent with your report" })).queryByText(
-        "Table",
-      ),
-    ).toBeNull();
-    write("Something odd");
-    send();
-    await waitFor(() => expect(reports).toHaveLength(1));
-    expect(reports[0]!.context).not.toHaveProperty("table");
-    expect(JSON.stringify(reports[0])).not.toContain('ABC234"');
   });
 
   it("is in the menu on a phone too", () => {

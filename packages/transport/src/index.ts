@@ -79,7 +79,16 @@ export interface TransportOptions {
   /** Injected for tests; the global by default. */
   readonly WebSocket?: SocketConstructor;
   readonly fetch?: typeof fetch;
+  /**
+   * Told of every frame sent and received over the table socket, as an object
+   * (keep-alives aside), so a bug report can carry the recent traffic. Whatever
+   * it does, and whatever it throws, the connection carries on.
+   */
+  readonly onFrame?: (direction: FrameDirection, frame: ClientFrame | ServerFrame) => void;
 }
+
+/** Which way a frame went, from this end. */
+export type FrameDirection = "sent" | "received";
 
 /**
  * A connection to the game server at `baseUrl` — an `http(s)://` origin, or the
@@ -99,6 +108,7 @@ export class TableSocket {
   private readonly keepAliveMs: number;
   private readonly WebSocketImpl: SocketConstructor;
   private readonly fetchImpl: typeof fetch;
+  private readonly onFrame: TransportOptions["onFrame"];
   private nextId = 1;
   /** The table this client is at, if any. */
   private roomId: string | null = null;
@@ -121,6 +131,7 @@ export class TableSocket {
     this.WebSocketImpl =
       options.WebSocket ?? (globalThis.WebSocket as unknown as SocketConstructor);
     this.fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
+    this.onFrame = options.onFrame;
     // As Socket.io did: say "connected" once, after whoever built this has had the
     // chance to listen for it. A listener attached later still misses it, so it
     // should read `connected` when it attaches (as `attachSession` does).
@@ -264,6 +275,7 @@ export class TableSocket {
     }
     const id = this.nextId++;
     const frame: ClientFrame = payload === undefined ? { id, event } : { id, event, payload };
+    this.tell("sent", frame);
     return new Promise((resolve) => {
       this.pending.set(id, resolve);
       const text = JSON.stringify(frame);
@@ -373,6 +385,7 @@ export class TableSocket {
     } catch {
       return;
     }
+    this.tell("received", frame);
     if (isAckFrame(frame)) {
       const resolve = this.pending.get(frame.ack);
       this.pending.delete(frame.ack);
@@ -380,6 +393,14 @@ export class TableSocket {
       return;
     }
     this.fire(frame.event, frame.payload);
+  }
+
+  private tell(direction: FrameDirection, frame: ClientFrame | ServerFrame): void {
+    try {
+      this.onFrame?.(direction, frame);
+    } catch {
+      // Only a recorder: it must never cost a move.
+    }
   }
 
   private fire(event: string, payload?: unknown): void {

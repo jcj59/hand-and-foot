@@ -9,6 +9,7 @@ import {
   bearerMatches,
   changePassword,
   claimUsername,
+  parseAfter,
   parseReport,
   parseSince,
   signIn,
@@ -27,6 +28,8 @@ import {
   parseUsername,
   PASSWORD_PATH,
   parseRoomPath,
+  MAX_REPORT_BODY_BYTES,
+  REPORT_TOO_LARGE,
   REPORTS_PATH,
   resolveRules,
   ROOMS_PATH,
@@ -57,6 +60,11 @@ export { ReportsObject } from "./reports";
 
 /** The largest request body read, well above any real one. */
 const MAX_BODY_BYTES = 16 * 1024;
+/**
+ * A bug report's: twice what one may be, so one a little over is refused for
+ * its size by `parseReport` rather than as unreadable.
+ */
+const MAX_REPORT_REQUEST_BYTES = 2 * MAX_REPORT_BODY_BYTES;
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -85,9 +93,12 @@ function throttled(limiter: RateLimiter, key: string, error: string): Response |
 }
 
 /** The request body as a JSON object, or null if it is not one or is too large. */
-async function readJson(request: Request): Promise<Record<string, unknown> | null> {
+async function readJson(
+  request: Request,
+  limit = MAX_BODY_BYTES,
+): Promise<Record<string, unknown> | null> {
   const text = await request.text();
-  if (text.length > MAX_BODY_BYTES) return null;
+  if (text.length > limit) return null;
   try {
     const parsed: unknown = JSON.parse(text || "{}");
     return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
@@ -178,7 +189,7 @@ export default {
     }
 
     if (pathname === REPORTS_PATH && request.method === "POST") {
-      const body = await readJson(request);
+      const body = await readJson(request, MAX_REPORT_REQUEST_BYTES);
       if (!body) return json({ ok: false, error: "that request was not JSON" }, 400);
       // Checked first, so a report that would be refused costs nothing and counts
       // against nobody; then counted, before the object is addressed.
@@ -188,7 +199,10 @@ export default {
       const key = reportKey(request.headers.get("cf-connecting-ip"), context.userId);
       const refused = throttled(reports, key, TOO_MANY_REPORTS);
       if (refused) return refused;
+      // One Durable Object request, and one more inside it when the report names a
+      // table, whose record the reports object asks for and attaches.
       const id = await env.REPORTS.getByName(REPORTS_OBJECT).add(report.data);
+      if (id === null) return json({ ok: false, error: REPORT_TOO_LARGE });
       return json({ ok: true, data: { id } });
     }
 
@@ -198,8 +212,13 @@ export default {
       if (!bearerMatches(request.headers.get("authorization"), env.REPORTS_TOKEN)) {
         return json({ ok: false, error: "that is not the reports token" }, 401);
       }
-      const since = parseSince(new URL(request.url).searchParams.get("since"));
-      return json({ ok: true, data: await env.REPORTS.getByName(REPORTS_OBJECT).since(since) });
+      const query = new URL(request.url).searchParams;
+      const since = parseSince(query.get("since"));
+      const after = parseAfter(query.get("after"));
+      return json({
+        ok: true,
+        data: await env.REPORTS.getByName(REPORTS_OBJECT).since(since, after),
+      });
     }
 
     if (pathname === ROOMS_PATH && request.method === "POST") {

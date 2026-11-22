@@ -223,6 +223,41 @@ describe("at the table", () => {
     expect(once.mock.calls).toEqual([[{ r: 1 }]]);
   });
 
+  it("tells a recorder of every frame each way, keep-alives aside, and carries on if it throws", async () => {
+    const told: [string, unknown][] = [];
+    let fail = false;
+    const socket = connect("http://game.example", {
+      WebSocket: FakeSocket,
+      fetch: fakeFetch({ ok: true, data: seat }),
+      onFrame: (direction, frame) => {
+        told.push([direction, frame]);
+        if (fail) throw new Error("recorder broke");
+      },
+    });
+    const resumed = emit(socket, "resumeSeat", seat);
+    const ws = FakeSocket.all[0]!;
+    ws.accept();
+    ws.reply(ws.last().id, { ok: true, data: seat });
+    await resumed;
+    ws.push("view", { n: 1 });
+    ws.onmessage?.({ data: PONG });
+    ws.onmessage?.({ data: "not json" });
+    expect(told).toEqual([
+      ["sent", { id: 1, event: "resumeSeat", payload: seat }],
+      ["received", { ack: 1, result: { ok: true, data: seat } }],
+      ["received", { event: "view", payload: { n: 1 } }],
+    ]);
+    fail = true;
+    const views = vi.fn();
+    socket.on("view", views);
+    const answer = emit(socket, "startGame");
+    ws.reply(ws.last().id, { ok: true, data: undefined });
+    ws.push("view", { n: 2 });
+    expect(await answer).toEqual({ ok: true, data: undefined });
+    expect(views).toHaveBeenCalledWith({ n: 2 });
+    socket.close();
+  });
+
   it("ignores a frame that is not JSON, and a reply nobody is waiting for", async () => {
     const { ws } = await seated();
     ws.onmessage?.({ data: "not json" });

@@ -197,6 +197,16 @@ export function useAudioBlocked(): boolean {
   );
 }
 
+/**
+ * Where the page's sound stands, for a bug report: the context's state
+ * (`running`, `suspended`, `interrupted`, `closed`), `none` before one is made,
+ * or `unsupported` without Web Audio.
+ */
+export function audioState(): string {
+  if (ctor() === null) return "unsupported";
+  return state.ctx ? `${state.ctx.state}${state.stuck ? " (stuck)" : ""}` : "none";
+}
+
 /** Forget the context and every listener: for tests, which each want a fresh page. */
 export function resetAudioForTests(): void {
   for (const undo of state.teardown.splice(0)) undo();

@@ -751,57 +751,85 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   `socket.integration.test.ts` "chat over the wire", `worker.test.ts` "chat at a table" (sleep and
   `webSockets: "close"` eviction, closing). Mutation-tested: 33/33 killed (shared, server, Worker).
   The client (PR 12b) is not built yet.
-- **Bug reports, server half (change list item 31, PR 18a).** Shared `reports.ts`:
-  `REPORTS_PATH` (`/api/reports`), `REPORT_TEXT_MAX` 2000, `MAX_REPORT_BYTES` 8 KB (UTF-8 JSON of
-  the whole report), `ReportBody {text, context?}`, `BugReport {id, at, text, context}`, refusal
-  strings. Server `reports.ts` (host-agnostic): `parseReport(body, now): Ack<ReportDraft>` (text
-  trimmed and required, context a plain object or absent), `REPORTS_KEPT` 500, `ReportStore` /
-  `InMemoryReportStore`, `parseSince`, `bearerMatches` (constant time), `reportsMarkdown`; all
-  limits pinned as literals. Node: `POST /api/reports` into `ServerOptions.reports` (memory) plus
-  one `console.log` line per report; no GET. Worker: `ReportsObject` (`REPORTS` binding, migration
-  tag `v4`, one object named `REPORTS_OBJECT`; key `report:<12-digit id>`, `next` counter, deletes
-  `id - 500` on each add), `POST /api/reports` validates, then `limits.ts` `REPORT_LIMIT` 5 per
+- **Bug reports, server half (change list item 31, PR 18a; full context since the follow-up to
+  #84).** Shared `reports.ts`: `REPORTS_PATH` (`/api/reports`), `REPORT_TEXT_MAX` 2000,
+  `MAX_REPORT_BODY_BYTES` 256 KB (what a client may send, `{at, text, context}` as UTF-8 JSON),
+  `MAX_REPORT_BYTES` 512 KB (a kept report with the table attached; a Durable Object value may be
+  2 MB), `ReportBody {text, room?, context?}`, `BugReport {id, at, text, context, table?,
+  truncated?}`, `ReportTable` (`{code, attached: true, record}` or `{code, attached: false,
+  reason}`), `ReportTableRecord` (code, uid, config, seed, firstSeat, seats without tokens and with
+  `connected`/`host`, pause/saved fields, `nextRoundReady`/`wentOn` as seats, every
+  `LoggedAction`, the full `GameState`, chat), `ReportsPage {reports, more}`, `jsonBytes`,
+  **`scrubSecrets(value, known?)`** (values under `SECRET_KEY` /token|secret|password|passwd|
+  authorization|cookie/i become `REMOVED`, then those values and `known` ones of 8+ characters
+  are cut out of every other string and key), `secretsIn`, and **`fitToBytes(value, max, plan)`**
+  (largest section first; a list drops its oldest entries until no larger than the next section or
+  the whole fits; anything else becomes `TRUNCATED`; `plan.last` cut after everything, a list there
+  keeping its start; the cuts listed as `truncated` at the root). Server `reports.ts`:
+  `parseReport` (text, context object, body cap, context scrubbed, `room` via `reportRoomCode`, a
+  well-formed code or null), `tableForReport(room)` (`{record, tokens}`), `reportEntry(draft,
+  table, tokens)` (scrubs the room's tokens from the whole report, fits to 512 KB with the table's
+  `actions`, `state`, `players`, `config` cut last in that order; null if it cannot fit),
+  `NO_TABLE`/`TABLE_UNREACHABLE`, `REPORTS_KEPT` 200, `REPORTS_PER_READ` 16, `ReportStore.since(at,
+  after?)`, `parseSince`/`parseAfter`, `bearerMatches`, `reportMarkdown`/`reportsMarkdown`
+  (summary list first, each section in a `<details>` block with its size), `reportReplay(report)`
+  (an engine `GameLog`: config, `{seed, playerCount, firstSeat}`, actions, names); limits pinned as
+  literals. Node: `POST /api/reports` (body read up to twice the cap) attaches the table from
+  `manager.get(code)` and logs one line (id, bytes, table, text); no GET. Worker: `ReportsObject`
+  (`REPORTS` binding, migration tag `v4`, one object `REPORTS_OBJECT`; key `report:<12-digit id>`,
+  `next` counter, deletes `id - 200` on each add). `add(draft)` asks
+  `TABLES.getByName(code).reportRecord()` (a `TableObject` RPC) when the draft names a table,
+  **fail soft** (a missing table or a thrown call is kept as `attached: false` with the reason),
+  fits in the object (its CPU allowance, not the free-plan Worker's), answers the id or null
+  (`REPORT_TOO_LARGE`). `POST /api/reports` validates, then `limits.ts` `REPORT_LIMIT` 5 per
   `REPORT_WINDOW_MS` 1h keyed by `reportKey` (`cf-connecting-ip`, else a well-formed
-  `context.userId`, else `anonymous`) before the object is addressed, 429 `TOO_MANY_REPORTS`.
-  **Cost: one DO request per accepted report, none for a refused one; one per pull.** `GET
-  /api/reports?since=<ms>` needs `Authorization: Bearer <REPORTS_TOKEN>`; 404 while the secret is
-  unset, 401 for a wrong token. **Set the secret:** `pnpm --filter @hf/worker exec wrangler secret
-  put REPORTS_TOKEN` (paste a long random value, e.g. from `openssl rand -hex 32`, and keep it).
-  **Pull:** `REPORTS_TOKEN=<token> pnpm reports:pull --url https://<host> [--since 2026-11-20]`
-  (`scripts/reports/pull.ts`, typechecked by the root `typecheck`; `HF_REPORTS_URL` instead of
-  `--url`). Locally: `wrangler dev --var REPORTS_TOKEN:<token>`. Worker tests set the token through
+  `context.userId`, else `anonymous`) before any object is addressed, 429 `TOO_MANY_REPORTS`.
+  **Cost: two DO requests for a report naming a table (the reports object and the table's), one
+  otherwise, none for a refused one; one per page of 16 read.** `GET
+  /api/reports?since=<ms>&after=<id>` answers a `ReportsPage` and needs `Authorization: Bearer
+  <REPORTS_TOKEN>`; 404 while the secret is unset, 401 for a wrong token. **Set the secret:** `pnpm
+  --filter @hf/worker exec wrangler secret put REPORTS_TOKEN` (paste a long random value, e.g.
+  from `openssl rand -hex 32`, and keep it). **Pull:** `REPORTS_TOKEN=<token> pnpm reports:pull
+  --url https://<host> [--since 2026-11-20]` prints Markdown; `--out <dir>` writes
+  `report-<id>.md`, `.json` and `.replay.json`; `--replay <id> [--out file]` prints that report's
+  `GameLog`, which `buildTimeline`/`replay` play in a test, or paste it at the scenario viewer's
+  `/scenarios/report` (dev only). (`scripts/reports/pull.ts`, typechecked by the root `typecheck`,
+  tested end to end in `server/src/reports.pull.test.ts`; `HF_REPORTS_URL` instead of `--url`.)
+  Locally: `wrangler dev --var REPORTS_TOKEN:<token>`. Worker tests set the token through
   `miniflare.bindings` in `vitest.config.ts`, and test the unset case by calling the handler with
-  another `env`. Tests: `server/src/reports.test.ts`, `worker/test/reports.test.ts`.
-- **Bug reports, client half (change list item 31, PR 18b).** "Report a bug" is in the table menu
-  (`TableHeader`, beside "Go to the main menu"; watchers too) and on Profile (a settings row on a
-  phone, a Help card on a computer). `report/ReportSheet.tsx`: a required text box with a "what
-  were you doing" hint, "Sent with your report" (the attachment in words, `attachmentRows`), at a
-  table a "Leave out this table's details" checkbox, and "Show exactly what is sent" (the JSON
-  that goes, folded); sent once through `actions.sendReport(post, body)` (never throws: the
-  server's refusal, or `REPORT_NOT_SENT` when there was no answer), thanks or the refusal shown in
-  the sheet. The attachment is read as the sheet opens. `report/context.ts` (pure): `PageFacts`
-  (build, time, path, user agent, viewport, phone or computer, `userId` when the browser has an
-  identity, `username` when signed in, errors), `tableDetails` (an **allowlist, field by field**:
-  room, seat or "watching", round, phase, seat to play, round over, paused, players, the player's
-  own **counts only** as `yourCards`, stock and pile sizes, the side panel's move lines, and the
-  last `MOVE_RECORDS_KEPT` 20 `lastMove` records as this seat was sent them, copied field by
-  field, a draw's card dropped since it is the player's own hand card), `withRecord` (each move once, newest 20), `fitReport` (text trimmed; drops the oldest
-  error, then the oldest move record, then the oldest line, until `{at, text, context}` fits
-  `MAX_REPORT_BYTES`; a report that cannot fit goes as it is for the server to refuse).
-  `report/useMoveRecords.ts` keeps the records in a ref in `TableView` (reset when the room
-  changes); `TableHeader` takes `report: () => TableReport`. `report/errors.ts` (pure ring buffer):
-  `keepLast`, `ERRORS_KEPT` 20, messages cut to `ERROR_MESSAGE_MAX` 300 and stacks to
-  `ERROR_STACK_MAX` 600 (all pinned), `installErrorLog(window)` listens to `error` and
-  `unhandledrejection` and is called first thing in `main.tsx`. **Build id:** `vite.config.ts`
-  defines `__BUILD_ID__` as `git rev-parse --short HEAD` ("unknown" without git; declared in
-  `vite-env.d.ts`). Tests: `report/context.test.ts` (no card of anyone's but those the moves
-  name; every fitted report passes the real `parseReport`), `report/errors.test.ts`,
-  `report/ReportSheet.test.tsx` (Profile and the real table route through the page's `fetch`),
-  `report.integration.test.ts` (a real Node server). Harness actions `report`, `profile-report`,
-  `profile` (`REPORT_SEND=1`, `REPORT_SCROLL=1`). Mutation-tested: 50/50 killed over
-  `errors.ts`, `context.ts`, `sendReport` and the sheet's two guards (three only after tests were
-  added: an empty stack left as an `undefined` key, a move's card copied whole, and measuring
-  with an arrival time of 0).
+  another `env`. Tests: shared `reports.test.ts`, `server/src/reports.test.ts`,
+  `worker/test/reports.test.ts` (a real table attached with no token anywhere, a gone table, a
+  table whose RPC throws, cap, paging).
+- **Bug reports, client half (change list item 31, PR 18b; full context since the follow-up).**
+  "Report a bug" is in the table menu (`TableHeader`, beside "Go to the main menu"; watchers too)
+  and on Profile (a settings row on a phone, a Help card on a computer). `report/ReportSheet.tsx`:
+  a required text box with a "what were you doing" hint and one disclosure line
+  (`TABLE_DISCLOSURE` at a table, `PAGE_DISCLOSURE` elsewhere); no list, no checkbox, no JSON
+  view (the user's decision: everything goes, the player need not see it). Sent once through
+  `actions.sendReport(post, body)` (never throws). The facts are read as the sheet opens
+  (`report/page.ts` `pageFacts`: build, route and history state, viewport, device facts, profile,
+  logs, session store without functions, `storageDump` of every `hf.*` key in both stores, JSON
+  parsed, and the known secrets), and cleared and fitted as it sends. `report/context.ts`:
+  `TableReport {update, moveLines, lastMoves, roundOver, screen}` (`screen` is `TableView`'s own
+  state: staging, chosen card, melding, busy, meld order, folded panels), `tableDetails` (room,
+  the whole update, `own` hand/foot/melds with ids, hints, screen, lines, moves with a draw's
+  card), `reportContext(page, table)` (`summary` first, then `page`, `user`, `table`, `logs`,
+  `session`, `storage`), `reportBody(text, context, secrets)` (scrubs, names `room`, fits to 256 KB
+  with `table.update` and `summary` last). `MOVE_RECORDS_KEPT` 200. `report/recorder.ts`: rings
+  of `FRAMES_KEPT` 200 socket frames (scrubbed as kept; the secrets they carried remembered apart
+  for the report's search), `CONSOLE_KEPT` 200 console lines of every level (`CONSOLE_LINE_MAX`
+  2000), `NOTICES_KEPT` 50; `installConsoleLog(console)`, `installNoticeLog(useSession)` and
+  `installErrorLog(window)` run first in `main.tsx`, and the socket is made with
+  `connect(url, {onFrame: noteFrame})` (`@hf/transport`'s `onFrame` option, which never lets a
+  recorder's throw reach the connection). `report/errors.ts` unchanged (`ERRORS_KEPT` 20).
+  `table/audio.ts` `audioState()`. **Build id:** `vite.config.ts` defines `__BUILD_ID__` as `git
+  rev-parse --short HEAD`. Tests: `report/context.test.ts` (every card is carried; no seat token,
+  identity secret, saved game token, password or auth header anywhere), `report/recorder.test.ts`,
+  `report/ReportSheet.test.tsx` (real storage and store holding secrets), `report.integration
+  .test.ts` (a real Node server: a dealt table, the reporting seat's real frames recorded, the
+  kept report has the record, replays to the table's state, and holds no secret). Mutation-tested
+  over scrubbing, fitting, the caps, the attachment and the recorder (see the PR). Harness actions
+  `report`, `profile-report`, `profile` (`REPORT_SEND=1`, `REPORT_SCROLL=1`).
 - **Scenario library and autoplay viewer (roadmap item 1).** Three layers, kept apart on purpose:
   - **Engine, `playback.ts`:** `buildTimeline(GameLog)` takes any `{ config, setup: {seed,
     playerCount} | {state}, actions, names?, moments? }` — a scenario, a golden game, a recorded

@@ -505,6 +505,17 @@ export function TableView({
         moveLines: moves.map((move) => move.text),
         lastMoves: moveRecords(),
         roundOver: result !== null,
+        screen: {
+          staging,
+          chosenId,
+          melding,
+          busy,
+          meldOrder,
+          compactMelds,
+          scoresHidden,
+          muteReactions,
+          watching: controls === null,
+        },
       })}
       scores={scores}
     />
