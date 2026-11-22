@@ -124,6 +124,8 @@ describe("watching a table", () => {
     expect(screen.queryByRole("region", { name: /melds$/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /react/i })).toBeNull();
     expect(screen.getByText(/· 1 watching$/)).toBeInTheDocument();
+    // Whose turn it is, and nothing about how to take it.
+    expect(screen.getByRole("region", { name: /your turn/i })).toHaveTextContent(/^ana to play\.$/);
   });
 
   it("says so when there is no table at that code", async () => {
