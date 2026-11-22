@@ -779,6 +779,16 @@ const run = async () => {
     await page.getByRole("button", { name: /Ten of hearts/i }).click({ position: { x: 8, y: 30 } });
     await page.getByRole("button", { name: /Ten of clubs/i }).click({ position: { x: 8, y: 30 } });
   }
+  if (action === "wildbook") {
+    // A wild aimed at a finished book: the dirty 9s, or the clean Ks with `BOOK=K`.
+    await page.getByRole("button", { name: /^Meld$/ }).click();
+    const rank = process.env.BOOK ?? "9";
+    await page
+      .getByRole("button", { name: new RegExp(`^Select .*book of ${rank}s,`) })
+      .first()
+      .click();
+    await page.getByRole("button", { name: /Two of hearts/i }).click({ position: { x: 8, y: 30 } });
+  }
   const waitText = {
     draw: "16 cards",
     discard: `Discard (${view.discard.length + 1})`,

@@ -10,7 +10,7 @@ import {
   type RulesConfig,
   type Suit,
 } from "@hf/shared";
-import { MAX_PILE_RED_THREES, heuristicAction } from "./policy";
+import { MAX_PILE_RED_THREES, PROSPECT_GUARD_SIZE, heuristicAction } from "./policy";
 import { applyAction } from "./reducer";
 import { project } from "./view";
 
@@ -365,17 +365,46 @@ describe("heuristicAction — once down", () => {
     });
   });
 
-  it("keeps a wild in the foot when every meld down is a finished book", () => {
+  it("keeps a wild in the foot when every meld down is a clean book", () => {
     const wild = card("2");
     const state = table(
       seat({
         isDown: true,
         inFoot: true,
-        melds: [meld("K", 7), meld("Q", 8), meld("5", 6, 1), meld("6", 6, 1)],
+        melds: [meld("K", 7), meld("Q", 8)],
         foot: [wild, card("9"), card("4")],
       }),
     );
-    // Clean or dirty, no book takes it; it is held rather than thrown away.
+    // A clean book takes no wild; it is held rather than thrown away.
+    expectDiscardKeeping(state, wild);
+  });
+
+  it("from the foot, puts a spare wild on a dirty book already down when nothing else takes it", () => {
+    const wild = card("2");
+    const state = table(
+      seat({
+        isDown: true,
+        inFoot: true,
+        melds: [meld("K", 7), meld("Q", 8), meld("6", 6, 1), meld("5", 6, 1)],
+        foot: [wild, card("9"), card("4")],
+      }),
+    );
+    // Both dirty books take it within the ratio; the rank breaks the tie.
+    expect(choose(state)).toEqual({
+      type: "playMelds",
+      melds: [{ rank: "5", cardIds: [wild.id] }],
+    });
+  });
+
+  it("from the hand, keeps a wild rather than put it on a dirty book", () => {
+    const wild = card("2");
+    const state = table(
+      seat({
+        isDown: true,
+        melds: [meld("K", 7), meld("5", 6, 1)],
+        hand: [wild, card("9"), card("4")],
+      }),
+    );
     expectDiscardKeeping(state, wild);
   });
 
@@ -469,12 +498,79 @@ describe("heuristicAction: a wild is played, not thrown away", () => {
       seat({
         isDown: true,
         inFoot: true,
-        melds: [meld("A", 5, 3), meld("7", 5, 3), meld("4", 5), meld("5", 4, 3)],
+        // The dirty books are at the wild ratio, so they take no more.
+        melds: [meld("A", 4, 3), meld("7", 4, 3), meld("4", 5), meld("5", 4, 3)],
         foot: [wild],
       }),
     );
     const { action } = step(state);
     expect(action).toEqual({ type: "discard", cardId: wild.id });
+  });
+
+  it("guards the clean prospect from its fourth card, a size pinned at 4", () => {
+    expect(PROSPECT_GUARD_SIZE).toBe(4);
+    const wild = card("2");
+    const state = table(
+      seat({ isDown: true, inFoot: true, melds: [meld("4", 4), meld("5", 4, 3)], foot: [wild] }),
+    );
+    expect(choose(state)).toEqual({ type: "discard", cardId: wild.id });
+  });
+
+  it("from the foot, still keeps a spare wild off a clean prospect of three", () => {
+    // Only the last resort may dirty a small prospect; spending the foot there
+    // too made rounds that never end more common.
+    const wild = card("2");
+    const state = table(
+      seat({
+        isDown: true,
+        inFoot: true,
+        melds: [meld("4", 3), meld("5", 4, 3)],
+        foot: [wild, card("9"), card("8")],
+      }),
+    );
+    expectDiscardKeeping(state, wild);
+  });
+
+  it("dirties a clean prospect of three rather than throw its last wild", () => {
+    // Three cards is far from a book: a wild there beats a wild on the pile.
+    const wild = card("2");
+    const state = table(
+      seat({ isDown: true, inFoot: true, melds: [meld("4", 3), meld("5", 4, 3)], foot: [wild] }),
+    );
+    expect(choose(state)).toEqual({
+      type: "playMelds",
+      melds: [{ rank: "4", cardIds: [wild.id] }],
+    });
+  });
+
+  it("puts its last wilds on an unfinished meld before a dirty book", () => {
+    const wild = card("2");
+    const state = table(
+      seat({
+        isDown: true,
+        melds: [meld("K", 7), meld("A", 6, 1), meld("Q", 3, 1)],
+        hand: [wild],
+      }),
+    );
+    expect(choose(state)).toEqual({
+      type: "playMelds",
+      melds: [{ rank: "Q", cardIds: [wild.id] }],
+    });
+  });
+
+  it("puts its last wild on a dirty book when no unfinished meld takes it", () => {
+    const wild = card("2");
+    const state = table(
+      seat({
+        isDown: true,
+        melds: [meld("K", 7), meld("A", 6, 1), meld("Q", 2, 1)],
+        hand: [wild],
+      }),
+    );
+    expect(choose(state)).toEqual({
+      type: "playMelds",
+      melds: [{ rank: "A", cardIds: [wild.id] }],
+    });
   });
 
   it("plays it on the clean meld once the clean books going out needs are down", () => {
@@ -541,14 +637,21 @@ describe("heuristicAction: a wild is played, not thrown away", () => {
     expect(choose(after)).toEqual({ type: "discard", cardId: two.id });
   });
 
-  it("discards a wild only when no meld will take it: every meld a finished book", () => {
-    // Arena seed 11, round 4.
+  it("discards a wild only when no meld will take it: every meld a clean book", () => {
+    const wild = card("2");
+    const state = table(seat({ isDown: true, melds: [meld("5", 7), meld("6", 8)], hand: [wild] }));
+    const { action } = step(state);
+    expect(action).toEqual({ type: "discard", cardId: wild.id });
+  });
+
+  it("plays its last wild on a dirty book rather than discard it", () => {
+    // Arena seed 11, round 4: thrown while finished books took no wild at all.
     const wild = card("2");
     const state = table(
       seat({ isDown: true, melds: [meld("5", 7), meld("6", 6, 1)], hand: [wild] }),
     );
     const { action } = step(state);
-    expect(action).toEqual({ type: "discard", cardId: wild.id });
+    expect(action).toEqual({ type: "playMelds", melds: [{ rank: "6", cardIds: [wild.id] }] });
   });
 
   it("discards a wild only when no meld will take it: the ratio is full", () => {

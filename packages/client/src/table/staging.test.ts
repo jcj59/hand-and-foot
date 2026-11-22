@@ -283,7 +283,7 @@ describe("whether it would be accepted", () => {
     expect(west.groups[0].problem).toBeNull();
   });
 
-  it("refuses a wild aimed at a finished book, as the reducer does", () => {
+  it("refuses a wild aimed at a clean book, as the reducer does", () => {
     const book = cards("K", 7);
     const wild = card("2");
     const result = preview({
@@ -296,7 +296,7 @@ describe("whether it would be accepted", () => {
     expect(result.ok).toBe(false);
   });
 
-  it("refuses a natural and a wild together on a finished book", () => {
+  it("refuses a natural and a wild together on a clean book", () => {
     const book = cards("K", 7);
     const king = card("K", "hearts");
     const wild = card("2");
@@ -307,6 +307,37 @@ describe("whether it would be accepted", () => {
       isDown: true,
     });
     expect(result.groups[0].problem).toBe("a finished book cannot take a wild card");
+  });
+
+  it("lets a wild join a dirty book within the ratio, as the reducer does", () => {
+    const book = [...cards("K", 6), card("2", "hearts")];
+    const wild = card("JOKER");
+    const result = preview({
+      staging: stageCard(focusGroup(EMPTY_STAGING, "K"), wild),
+      zone: [wild, card("9")],
+      melds: [{ rank: "K", cards: book }],
+      isDown: true,
+    });
+    expect(result.groups[0].problem).toBeNull();
+    expect(result.ok).toBe(true);
+  });
+
+  it("refuses a wild past the ratio on a dirty book with the ratio's own reason", () => {
+    // Four kings and three twos: a dirty book at the East Coast limit.
+    const book = [
+      ...cards("K", 4),
+      card("2", "hearts"),
+      card("2", "spades"),
+      card("2", "diamonds"),
+    ];
+    const wild = card("JOKER");
+    const result = preview({
+      staging: stageCard(focusGroup(EMPTY_STAGING, "K"), wild),
+      zone: [wild, card("9")],
+      melds: [{ rank: "K", cards: book }],
+      isDown: true,
+    });
+    expect(result.groups[0].problem).toBe("naturals must outnumber wilds (East Coast)");
   });
 
   it("lets a wild complete a book, and a natural join one", () => {

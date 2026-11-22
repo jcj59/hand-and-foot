@@ -43,7 +43,7 @@ describe("how to play, from a table's own rules", () => {
     expect(text(custom, "objective")).toContain("over 3 rounds");
   });
 
-  it("states the wild ratio the table plays, and that a finished book takes no wild", () => {
+  it("states the wild ratio the table plays, and that only a clean book refuses a wild", () => {
     expect(text(EAST_COAST, "wilds")).toContain(
       "A meld must have more naturals than wilds. Three naturals carry at most two wilds.",
     );
@@ -53,8 +53,12 @@ describe("how to play, from a table's own rules", () => {
     );
     expect(text(WEST_COAST, "wilds")).not.toContain("more naturals than wilds");
     for (const config of [EAST_COAST, WEST_COAST]) {
-      expect(text(config, "wilds")).toContain("once it is a book no wild can be added to it");
-      expect(text(config, "melds")).toContain("you can add more naturals to it, but never a wild");
+      expect(text(config, "wilds")).toContain(
+        "a clean book never takes a wild: one would make it dirty",
+      );
+      expect(text(config, "melds")).toContain(
+        "A dirty book can take more wilds too, within the wild ratio, but a clean book never takes one.",
+      );
       expect(howToPlay(config).some((s) => s.coasts)).toBe(false);
     }
   });
@@ -131,7 +135,7 @@ describe("the rules away from a table", () => {
     ]);
     const words = wilds.paragraphs.join(" ");
     expect(words).toBe(
-      "Twos and jokers are wild and can stand in for any rank in a meld. A meld can never be made of wilds alone. A wild can help a meld become a book, but once it is a book no wild can be added to it.",
+      "Twos and jokers are wild and can stand in for any rank in a meld. A meld can never be made of wilds alone. A wild can help a meld become a book, and a dirty book can take more, but a clean book never takes a wild: one would make it dirty.",
     );
     expect(generalRules().filter((s) => s.coasts)).toHaveLength(1);
   });

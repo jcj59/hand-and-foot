@@ -30,8 +30,17 @@ export type BookKind = "clean" | "dirty" | "incomplete";
  */
 export function classifyBook(meld: Meld): BookKind {
   if (meld.cards.length < 7) return "incomplete";
-  if (meld.cards.every((c) => isBlackThree(c))) return "dirty";
-  return countWilds(meld.cards) === 0 ? "clean" : "dirty";
+  return isCleanBook(meld.cards) ? "clean" : "dirty";
+}
+
+/**
+ * Whether these cards are a clean book: seven or more, none of them wild, and not
+ * a book of black threes (which is dirty by definition). A clean book is the one
+ * meld closed to wild cards, since a wild would dirty it: a dirty book may take
+ * more, within the wild ratio, and an unfinished meld always may.
+ */
+export function isCleanBook(cards: readonly Card[]): boolean {
+  return cards.length >= 7 && countWilds(cards) === 0 && !cards.every((c) => isBlackThree(c));
 }
 
 /** The summed card value of a meld. */

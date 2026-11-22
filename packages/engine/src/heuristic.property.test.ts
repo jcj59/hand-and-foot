@@ -14,6 +14,7 @@ import { type Policy, defaultPolicy, heuristicPolicy, playMatch } from "./arena"
 import { activeCards } from "./core";
 import { canTakePile } from "./feasibility";
 import { isFinishedBook, validateMeld } from "./meld";
+import { isCleanBook } from "./scoring";
 import { MAX_PILE_RED_THREES } from "./policy";
 import { prng, shuffle } from "./rng";
 
@@ -69,19 +70,20 @@ function checked(seed: number): Policy {
     if (action?.type === "discard") {
       const { melds } = state.players[seat];
       const thrown = activeCards(state.players[seat]).find((c) => c.id === action.cardId)!;
-      // A wild is thrown only when no unfinished meld of the seat's would take
-      // it, but for the clean meld nearest a book while a clean book is owed.
+      // A wild is thrown only when no meld of the seat's would take it (a clean
+      // book never does), but for the clean meld nearest a book, once it has
+      // four cards, while a clean book is owed.
       if (isWild(thrown.rank)) {
-        const unfinished = melds.filter((m) => !isFinishedBook(m.cards));
         const clean = (m: Meld) => !m.cards.some((c) => isWild(c.rank));
         const owed =
-          melds.filter((m) => isFinishedBook(m.cards) && clean(m)).length <
-          state.config.goOutCleanBooks;
+          melds.filter((m) => isCleanBook(m.cards)).length < state.config.goOutCleanBooks;
+        const unfinished = melds.filter((m) => !isFinishedBook(m.cards));
         const prospect = Math.max(0, ...unfinished.filter(clean).map((m) => m.cards.length));
-        const open = unfinished.filter(
+        const open = melds.filter(
           (m) =>
+            !isCleanBook(m.cards) &&
             validateMeld([...m.cards, thrown], state.config).valid &&
-            !(owed && clean(m) && m.cards.length === prospect),
+            !(owed && clean(m) && m.cards.length === prospect && prospect >= 4),
         );
         expect(open.map((m) => m.rank)).toEqual([]);
       }

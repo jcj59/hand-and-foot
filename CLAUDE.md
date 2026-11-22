@@ -802,21 +802,38 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   cannot see and checks the move does not change (a peeking mutant was confirmed caught).
   Deterministic, no rng. Wilds: never on a clean book or on the clean meld nearest a book while a
   clean book is still owed; spent from the hand only to complete a book; from the foot also onto a
-  *spare* clean book (more clean books than going out needs, too few dirty), then the unfinished
-  meld nearest seven, then a dirty book (since the finished-book rule below, only a book the same
-  play completes: no wild ever goes on a book already down). The spare-clean rule exists because without it a seat
+  *spare* clean book this play completes (more clean books than going out needs, too few dirty),
+  then the unfinished meld nearest seven, then a dirty book (since the dirty-book rule below, one
+  already down too). The spare-clean rule exists because without it a seat
   melded seven clean books, ran out of cards for a dirty one, and drew and discarded threes forever.
   **A wild is played, not thrown (2026-11-20, change list item 20):** `discardFrom` picks a wild only
   when the zone is all wilds; then `rescueWilds` plays every wild it can (highest value first, id
-  tie-break) onto unfinished melds within the ratio, nearest seven first, rank tie-break, never a
-  finished book and never the guarded clean prospect (`guardedProspect`, shared with `placeWilds`).
-  A wild is discarded only when no other meld takes one. Counted over 300 arena matches: 1,879 wild
-  discards before, 526 after (409 of them the guarded case). Letting the guarded meld take a wild
-  too cut them to 155 but made stalled rounds over four times as common (102 vs 23 in 10,000
-  matches), so the guard stays. `heuristic.property.test.ts` asserts no wild is thrown while a meld
-  other than the guarded one would take it. `defaultAction` is unchanged. Mutation: 16 mutants, 15
-  killed, 1 equivalent (`break` vs `continue` when a wild finds no meld: every wild counts alike
-  against the ratio, so none of the rest would either).
+  tie-break) within the ratio: onto unfinished melds, nearest seven first, then onto dirty books,
+  rank tie-break; never a clean book and never the guarded clean prospect (`guardedProspect`,
+  shared with `placeWilds`). A wild is discarded only when no other meld takes one.
+  **The rescue guards the prospect only from `PROSPECT_GUARD_SIZE` (4, pinned) cards**
+  (2026-11-21, with the dirty-book rule); `placeWilds` passes 0 and guards it at any size.
+  Measured with the scratch scripts of item 20 (wild discards: 300 heuristic-only matches at 2 to
+  4 seats; stalls: matches that never end, over 40,000 = 8 batches of 1,500 level pairs and 1,000
+  self-play matches at 2 and 3 seats, East Coast):
+
+  | Policy | Wild discards East / West | Stalls (per 40,000) |
+  | --- | --- | --- |
+  | #77 (finished books closed, guard always) | 526 / 288 | 116 |
+  | dirty books open, guard always | 259 / 67 | 109 |
+  | rescue guard from 4 cards (shipped) | 210 / 55 | 127 |
+  | rescue guard from 5 | 136 / 38 | 170 |
+  | rescue guard from 6 (20,000 matches) | 88 / 29 | 95 per 20,000 |
+  | no rescue guard (20,000) | 49 / 9 | 99 per 20,000 |
+  | both guards from 4 | 206 / 54 | 148 |
+  | both from 5 / 6 / never (20,000) | 92 / 52 / 44 East | 126 / 304 / 1,503 per 20,000 |
+
+  So 4, in the rescue only, is the one that cut wild discards without stalls rising beyond noise.
+  Before item 20 the count was 1,879. `heuristic.property.test.ts` asserts no wild is thrown while
+  a meld other than the guarded one would take it. `defaultAction` is unchanged. Mutation (item
+  20): 16 mutants, 15 killed, 1 equivalent (`break` vs `continue` when a wild finds no meld: every
+  wild counts alike against the ratio, so none of the rest would either); the dirty-book rule and
+  the threshold added 19, all killed.
   `arena.ts` has `playMatch(policies, config, seed, roundActionLimit)` (a seat per policy,
   `nextRound` dealt as the table would, **throws** on a refused or missing move, calls a round
   stalled after `ROUND_ACTION_LIMIT` 5,000 actions), `winners`, and
@@ -824,10 +841,11 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   `arena.test.ts`, `heuristic.property.test.ts` (~650 random matches at 2–6 seats on both presets,
   plus mixed tables, plus 300 fixed-seed matches asserting >99% of rounds end, all by going out).
   Mutation: 68 mutants over the heuristic, `discardFrom` and the arena, 67 killed, 1 equivalent
-  (table above). Measured (`pnpm bot:measure`, 500 matches per row, East Coast, as of item 20):
-  beats `defaultAction` in 98.9% / 96.4% / 87.7% of 2- / 3- / 4-player matches; against itself the
-  seats split about evenly; every round of bot-only play ends but 2 in some 6,000. Levels: Hard
-  beats Standard 58.0%, Standard beats Easy 95.2%, Hard beats Easy 90.8%. Tuning was done head to
+  (table above). Measured (`pnpm bot:measure`, 500 matches per row, East Coast, as of the
+  dirty-book rule): beats `defaultAction` in 99.0% / 96.8% / 88.3% of 2- / 3- / 4-player matches
+  (West 99.0 / 96.9 / 88.5); against itself the seats split about evenly; every round of bot-only
+  play ends but 1 in some 6,000. Levels: Hard beats Standard 58.8%, Standard beats Easy 94.8%,
+  Hard beats Easy 90.3%. Tuning was done head to
   head (two copies, seats swapped): a red-three limit of 2 beat 1, 3 and 4; the clean-book guard is
   worth about ten points of win rate; spending wilds from the hand too, and avoiding discards an
   opponent's meld could use, made no measurable difference, so neither is in.
@@ -1335,19 +1353,23 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   smaller table from the next deal; the seat keeps its number, its scores stay on the board marked
   as having left, and it does not count for the win. A competitive match keeps the leaver in,
   played for by the default. Don't renumber seats to close the gap — see DESIGN.md.
-- **A finished book takes no wild (redesign plan's rules fix, 2026-11-10).** Once a meld has
-  seven cards its kind is settled: `applyPlayMelds` refuses any wild onto a meld that was a
-  book before the play ("a finished book cannot take a wild card"), clean or dirty, black
-  threes included; naturals still go on, and a play that completes a book may use wilds within
-  the ratio. `isFinishedBook`/`BOOK_SIZE` in `meld.ts`; `plan.ts`'s `accepts` (so
-  `greedyLayDown`, `canTakePile` and the pile's own wild) and the heuristic's `placeWilds`
-  (`closed` ranks) never put a wild on one; the client's `previewLayDown` gives the same reason.
-  The heuristic's spare-clean-book tactic now applies only to a book its own play completes.
-  Measured (`pnpm bot:measure`, 500 per row, East Coast, same seeds): heuristic vs default
-  98.9 / 96.4 / 87.5% at 2 / 3 / 4 seats (before 99.5 / 97.2 / 88.0); self-play rounds ended
-  5,997 of 5,998 (before 5,994 of 5,996). West Coast moves the same way. Tests in
-  `reducer.bookwild.test.ts` (play and take-pile) and `staging.test.ts`; mutation: 12/12 killed
-  over the guards in `playMelds.ts`, `meld.ts`, `plan.ts`, `policy.ts` and `staging.ts`.
+- **A wild may go on a dirty book, never on a clean one (2026-11-21, the user's rule; replaces
+  #64's "a finished book takes no wild").** `applyPlayMelds` refuses any wild onto a meld that was
+  a **clean** book before the play ("a finished book cannot take a wild card", the text kept from
+  #64), because a wild would dirty it and turn its 500 into 300. A dirty book may take more wilds,
+  within the wild ratio (`validateMeld` refuses one past it with the ratio's own reason), since its
+  kind cannot change. A book of black threes is dirty by definition, so it takes them too.
+  Naturals go on any book, and a play that completes a book may use wilds within the ratio. #64
+  closed every book; the user asked for dirty books to stay open, as the family plays. The
+  predicate is `isCleanBook(cards)` in `scoring.ts` (`classifyBook` is built on it, so the two
+  cannot disagree); `isFinishedBook`/`BOOK_SIZE` stay in `meld.ts` for size only. Every place #64
+  touched follows it: `plan.ts`'s `accepts` (so `greedyLayDown`, `canTakePile` and the pile's own
+  wild), the heuristic's `placeWilds` (`closed` = clean books down) and `rescueWilds`, the
+  client's `previewLayDown`, the rules page and the wilds lesson's outro. It only loosens, so every
+  stored log and golden replay still plays as recorded. Tests in `reducer.bookwild.test.ts` (play
+  and take-pile, ratio refusal, black threes), `staging.test.ts`, `reducer.heuristic.test.ts`;
+  mutation: 19/19 killed over the guards in `playMelds.ts`, `scoring.ts`, `plan.ts`, `policy.ts`
+  and `staging.ts`.
 - **Shedding every card is not going out.** A player may legally play or discard their last foot card
   without the go-out books; they keep no cards, the round continues, and they draw one card per turn
   until the books are complete. So `player.hand.length + player.foot.length === 0` does **not** mean

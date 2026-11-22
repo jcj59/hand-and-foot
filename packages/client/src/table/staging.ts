@@ -28,7 +28,7 @@ import {
   type Rank,
   type RulesConfig,
 } from "@hf/shared";
-import { cardValue, classifyBook, isFinishedBook, naturalRank, validateMeld } from "@hf/engine";
+import { cardValue, classifyBook, isCleanBook, naturalRank, validateMeld } from "@hf/engine";
 
 export interface StagedGroup {
   readonly rank: Rank;
@@ -256,7 +256,7 @@ function groupProblem(
 ): string | null {
   if (staged.length === 0) return null;
   if (staged.some(isRedThree)) return "red threes can never be melded";
-  if (isFinishedBook(before) && staged.some((card) => isWild(card.rank))) {
+  if (isCleanBook(before) && staged.some((card) => isWild(card.rank))) {
     return "a finished book cannot take a wild card";
   }
   if (combined.some(isBlackThree)) {
