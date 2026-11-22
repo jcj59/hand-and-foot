@@ -214,6 +214,7 @@ export function OpponentStrip({
                   reaction={reactions.get(opponent.seat)!}
                   name={nameOf(opponent.seat)}
                   avatar={info && faceOf(info)}
+                  at="chip"
                 />
               )}
               <button

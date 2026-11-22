@@ -17,12 +17,19 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { LastMove, RoundEnded } from "@hf/shared";
+import { PICKER_EMOTES, isReactionId } from "@hf/shared";
 import { installAudio, onAudioContext, useAudioBlocked, withAudio } from "./audio";
+import { isEmote, type EmoteId } from "./emotes";
 
 /** A recorded card sound, one per kind of move; see `public/sounds`. */
 export type CardSound = "draw" | "discard" | "meld" | "take-back";
+/** An emote's own recorded sound (a laugh, a sob, a party horn); see `public/sounds`. */
+export type EmoteSound = `emote-${EmoteId}`;
+/** Anything played from a recording rather than synthesized. */
+export type Recorded = CardSound | EmoteSound;
 /** `pile` is the draw's recording played lower and slower: a draw, but more of it. */
-export type Sound = CardSound | "pile" | "turn" | "round" | "match" | "airhorn" | "reaction";
+export type Sound =
+  CardSound | EmoteSound | "pile" | "turn" | "round" | "match" | "airhorn" | "reaction";
 
 /** Which recording marks each move. One sound per move, however many cards it moves. */
 const CARD_SOUND: Readonly<Record<LastMove["kind"], Sound>> = {
@@ -34,6 +41,12 @@ const CARD_SOUND: Readonly<Record<LastMove["kind"], Sound>> = {
 };
 
 const CARD_SOUNDS: readonly CardSound[] = ["draw", "discard", "meld", "take-back"];
+
+/** Every recording and the file it is in, beside the page. */
+const RECORDINGS: readonly (readonly [Recorded, string])[] = [
+  ...CARD_SOUNDS.map((name) => [name, `/sounds/${name}.wav`] as const),
+  ...PICKER_EMOTES.map((id) => [`emote-${id}`, `/sounds/emote-${id}.mp3`] as const),
+];
 
 /** What the table looked like at one moment, as far as sound is concerned. */
 export interface Moment {
@@ -69,6 +82,43 @@ export function soundsFor(before: Moment, now: Moment): Cue[] {
     cues.push({ sound: "turn", delayMs: cues.length > 0 ? TURN_AFTER_CARD_MS : 0 });
   }
   return cues;
+}
+
+/**
+ * How many emote sounds may play over each other. A table of six all laughing at
+ * once would be a din, so past this an emote is still shown but not heard.
+ */
+export const EMOTE_SOUNDS_AT_ONCE = 2;
+/** How long an emote's sound plays, at most: every recording is cut to this. */
+export const EMOTE_SOUND_MS = 1_800;
+
+/** What a reaction arriving sounds like, and which emote sounds are playing after it. */
+export interface ReactionCue {
+  readonly sound: Sound | null;
+  /** When each emote sound still playing ends, in `now`'s milliseconds. */
+  readonly playing: readonly number[];
+}
+
+/**
+ * The one sound a reaction makes as it is shown: an emote's own sound (the
+ * sender's too, as the game answers a button), a phrase's soft blip (others'
+ * only: you know what you just said), nothing for an id this page cannot name.
+ * At most `EMOTE_SOUNDS_AT_ONCE` emote sounds overlap; `playing` holds when each
+ * playing one ends. A muted reaction never gets here: it is not shown.
+ */
+export function reactionSound(
+  id: string,
+  own: boolean,
+  now: number,
+  playing: readonly number[],
+): ReactionCue {
+  const still = playing.filter((end) => end > now);
+  if (isEmote(id)) {
+    if (still.length >= EMOTE_SOUNDS_AT_ONCE) return { sound: null, playing: still };
+    return { sound: `emote-${id}`, playing: [...still, now + EMOTE_SOUND_MS] };
+  }
+  if (own || !isReactionId(id)) return { sound: null, playing: still };
+  return { sound: "reaction", playing: still };
 }
 
 const MUTE_KEY = "hf.muted";
@@ -109,16 +159,16 @@ function flick(ctx: AudioContext, at: number, gain: number): void {
 }
 
 /**
- * Fetch and decode the card recordings, served beside the page. A recording that
- * cannot be had — offline, or a browser that will not decode it — leaves the
- * synthesized flick in its place.
+ * Fetch and decode the recordings, served beside the page. A recording that
+ * cannot be had (offline, or a browser that will not decode it) leaves a
+ * synthesized stand-in in its place: the flick for a card, the blip for an emote.
  */
-async function loadRecordings(ctx: AudioContext, into: Map<CardSound, AudioBuffer>): Promise<void> {
+async function loadRecordings(ctx: AudioContext, into: Map<Recorded, AudioBuffer>): Promise<void> {
   await Promise.all(
-    CARD_SOUNDS.map(async (name) => {
+    RECORDINGS.map(async ([name, file]) => {
       if (into.has(name)) return;
       try {
-        const response = await fetch(`/sounds/${name}.wav`);
+        const response = await fetch(file);
         if (!response.ok) return;
         into.set(name, await ctx.decodeAudioData(await response.arrayBuffer()));
       } catch {
@@ -148,21 +198,39 @@ function note(
   osc.stop(at + duration + 0.05);
 }
 
+/**
+ * The emotes' level: the recordings are evened out to one loudness, which sits a
+ * little under the card sounds, so a laugh does not drown the table.
+ */
+const EMOTE_GAIN = 0.55;
+
 /** Play one sound, now or `delay` seconds from now (scheduled on the audio clock, not a timer). */
 export function play(
   ctx: AudioContext,
   sound: Sound,
-  recordings: ReadonlyMap<CardSound, AudioBuffer>,
+  recordings: ReadonlyMap<Recorded, AudioBuffer>,
   delay = 0,
 ): void {
   const t = ctx.currentTime + 0.01 + delay;
-  switch (sound) {
+  if (sound.startsWith("emote-")) {
+    const recording = recordings.get(sound as EmoteSound);
+    // Not loaded yet, or not to be had: the reaction's blip stands in.
+    if (!recording) return play(ctx, "reaction", recordings, delay);
+    const source = ctx.createBufferSource();
+    source.buffer = recording;
+    const level = ctx.createGain();
+    level.gain.value = EMOTE_GAIN;
+    source.connect(level).connect(ctx.destination);
+    source.start(t);
+    return;
+  }
+  switch (sound as Exclude<Sound, EmoteSound>) {
     case "draw":
     case "discard":
     case "meld":
     case "take-back":
     case "pile": {
-      const recording = recordings.get(sound === "pile" ? "draw" : sound);
+      const recording = recordings.get(sound === "pile" ? "draw" : (sound as CardSound));
       // Until the recordings have loaded — a moment after the first tap — a
       // synthesized flick stands in.
       if (!recording) return flick(ctx, t, 0.5);
@@ -293,7 +361,7 @@ function airHorn(ctx: AudioContext, at: number): void {
  * The card recordings, decoded once for the page. A buffer is not tied to the
  * context that decoded it, so a replacement context plays the same ones.
  */
-const recordings = new Map<CardSound, AudioBuffer>();
+const recordings = new Map<Recorded, AudioBuffer>();
 
 /**
  * Play the table's sounds as it changes. Returns whether sound is muted and a

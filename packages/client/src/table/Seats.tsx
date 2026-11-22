@@ -82,7 +82,7 @@ export function Seats({
                 reaction={reactions.get(opponent.seat)!}
                 name={name}
                 avatar={info && faceOf(info)}
-                inset
+                at="box"
               />
             )}
             <div className="flex items-center gap-2.5">

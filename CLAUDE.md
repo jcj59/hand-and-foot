@@ -710,8 +710,7 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   name. **Per device, not on the identity** (like `hf.rules`): storing it on the identity needed a
   users migration and a transfer that carries it, which waits for accounts (item 15).
 - **Quick reactions (roadmap item 3).** A fixed list, `REACTIONS` in `@hf/shared/protocol.ts`
-  (twelve emoji, fourteen phrases since P2 and item 23; **only ever add** — an id may be in flight to an older
-  client — pinned in `protocol.test.ts`, along with a cap of 30; the picker tells a phrase from an
+  (**only ever add**: an id may be in flight to an older client; pinned in `protocol.test.ts`; the picker tells a phrase from an
   emoji by `text === label`, so a phrase's label must be its text); only an id crosses the wire
   (`isReactionId` is the server's check), so there is nothing to moderate. `react {id}` →
   `Room.react` (seat valid, id valid, and a per-seat token bucket in `server/src/reactions.ts`: burst `REACTION_BURST` 3, one more per
@@ -731,6 +730,27 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   (`hf.muteReactions`) and hides theirs and their blip sound, never your own. A watched table
   (`controls` null) has no picker. Emoji need a colour emoji font: real devices have one, headless
   Chromium does not (see `scripts/pr-media/README.md`, `EMOJI_FONT`).
+  **Emotes and the picker (2026-11, Clash-style).** The picker offers `PICKER_EMOTES` (8: laugh,
+  cry, angry, thumbs-up, wow, party, grimace, cool, labels Laughing ... Smug) and `PICKER_PHRASES`
+  (14, the user's order), both in `protocol.ts` and pinned in `protocol.test.ts` with the whole
+  `REACTIONS` id list (34 ids; cap 40). Old ids stay valid and are still drawn (an emoji bubble or
+  a phrase) when an older page sends them. New phrase ids: `good-game`, `thanks`, `hewf`,
+  `wow-phrase`, `bruh`, `marva`, `you-stink`, `crud`; `i-hate-you` kept its id, text now "I hate
+  you!". An emote is the sender's own avatar with an expression: `table/emotes.ts` (pure: `EMOTES`,
+  `isEmote`, `emoteLook(avatar, id, still)` keeps their shades/glasses unless the emote brings
+  sunglasses, and a moustache/beard), `table/EmoteFace.tsx` (SVG over `Avatar.tsx`'s exported
+  parts; `AVATAR_PARTS` untouched; `data-still` stills the picker's pictures), CSS `.emote-*` in
+  `index.css` (reduced motion: no animation, static expression). `ReactionBubble` takes `at`
+  (`box`/`chip`/`hand`, replacing `inset`); an emote renders a marker span with the status in the
+  seat and the face portalled to `body` (`fixed`, placed every frame from the marker, hidden while
+  the marker is scrolled out of a clipping ancestor), so neither a chip nor a short seat box clips
+  it. `EMOTE_SHOW_MS` 3000 (pinned, `--emote-ms`), phrases keep `REACTION_SHOW_MS`; `shownFor(id)`.
+  Sound: `reactionSound(id, own, now, playing)` in `sounds.ts` is the one decision (emote: its
+  recording `emote-<id>`, own too; at most `EMOTE_SOUNDS_AT_ONCE` 2 overlapping for
+  `EMOTE_SOUND_MS` 1800 each; another player's phrase or old emoji: the blip; own phrase or unknown
+  id: none). Recordings `public/sounds/emote-*.mp3` (Mixkit, attribution in `LICENSE.txt`), loaded
+  with the card sounds, the blip standing in until loaded, gain `EMOTE_GAIN`. Harness: `EMOTE=<id>`
+  with mode `react` (Cyrus and the viewer), `REDUCED_MOTION=1`.
 - **Chat at the table, server half (change list item 5, PR 12a).** Shared: `CHAT_MAX_LENGTH` 200
   (code points, `chatLength`), `normalizeChat(value)` (whitespace to single spaces, control
   characters and bidi overrides/isolates stripped, trimmed; null when not text or empty, which is

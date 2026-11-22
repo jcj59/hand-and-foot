@@ -9,3 +9,17 @@ The card sounds in this directory are from "Casino Audio" (1.1) by Kenney
   take-back.wav  <- card-slide-2.ogg
 
   (Taking the pile plays draw.wav lower and slower.)
+
+The emote sounds (emote-*.mp3) are from Mixkit (https://mixkit.co/free-sound-effects/),
+under the Mixkit Sound Effects Free License (https://mixkit.co/license/#sfxFree). Trimmed
+of silence, cut to at most 1.8 seconds with a short fade, evened out to -16 LUFS and
+converted to mono 44.1 kHz MP3.
+
+  emote-laugh.mp3      <- #2882 "Cartoon laugh voice"
+  emote-cry.mp3        <- #474  "Lost kid sobbing"
+  emote-angry.mp3      <- #1968 "Small monster growl"
+  emote-thumbs-up.mp3  <- #2358 "Long pop"
+  emote-wow.mp3        <- #967  "Cartoon surprise gasp"
+  emote-party.mp3      <- #530  "Happy party horn sound"
+  emote-grimace.mp3    <- #395  "Cartoon falling whistle"
+  emote-cool.mp3       <- #3108 "Crystal chime"

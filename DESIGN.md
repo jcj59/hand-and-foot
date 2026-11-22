@@ -319,10 +319,30 @@ reactions without affecting anyone else.
 
 The list only ever grows. An id can be in flight to a client loaded before a change, so removing
 or renaming one would break a table mid-game, while adding one costs an older client nothing worse
-than a reaction it cannot name. It is kept short enough to find one at a glance — a couple of dozen
-— and a reaction stays up for five seconds, long enough to be read by someone who looked away when
-it arrived. A reaction the page cannot name is simply not shown: a tab opened before a new phrase
-was added drops it when it arrives rather than draw an empty bubble or fail.
+than a reaction it cannot name. A reaction the page cannot name is simply not shown: a tab opened
+before a new phrase was added drops it when it arrives rather than draw an empty bubble or fail.
+
+What the picker offers is a separate, ordered list (`PICKER_EMOTES`, `PICKER_PHRASES`): the wire
+list keeps every id ever sent, and an entry the picker drops is still drawn when an older page
+sends it. Since November 2026 the picker holds the user's eight emotes and fourteen phrases.
+**Emotes are the sender's own face**, as Clash Royale's are its characters: the avatar drawn large
+with an expression (eyes, mouth, and extras such as tears, a sweat drop, sunglasses or confetti)
+over the parts the player chose, keeping what they wear (shades, glasses, a beard), moved by one
+CSS animation and stilled by reduced motion, each with its own short sound. Drawing the
+expression over the face, rather than adding parts, leaves the avatar's own part list alone, and
+an emote then looks like the person who sent it, which an emoji cannot. The emotes took over the
+old emoji ids they replace (`laugh`, `cry`, `party` and the rest), so an older page shows its
+emoji for the same feeling. A face is too big for a phone's chip and the seat lists scroll, so an
+emote is drawn in a layer over the page, following a marker in the seat. It is up for three
+seconds, a phrase for five: a big face is read at a glance and covers what is under it.
+
+The emote sounds are short recordings (Mixkit's free sound effects: a cartoon laugh, a sob, a
+growl, a pop, a gasp, a party horn, a slide whistle and a chime), cut to under two seconds and
+evened out in loudness. Recorded rather than synthesized like the turn's ding, because a laugh or
+a sob synthesized sounds like neither. Every reaction makes one sound, decided by one pure
+function: an emote its own (the sender hears theirs too, as the game answering the tap), another
+player's phrase the soft blip, and at most two emote sounds overlap, so a table all laughing at
+once is not a din; the face still shows.
 
 ### Chat at the table
 

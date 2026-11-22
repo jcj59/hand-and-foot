@@ -38,7 +38,7 @@ an animation) in its description, under `## Screenshots`.
    place. Modes stage a state
    (`mine`, `theirs`) or a change to capture mid-animation (`draw`, `discard`,
    `oppdraw`, `grabby`, `react` (quick reactions arriving from two opponents and
-   the viewer), `chat` (a line from Ana arriving: her bubble and one unread) and `stale` (a finished round at one table, then a fresh
+   the viewer; with `EMOTE=<id>`, that one emote from Cyrus and from the viewer), `chat` (a line from Ana arriving: her bubble and one unread) and `stale` (a finished round at one table, then a fresh
    deal at another), with `FRAMES=40,120,300` giving the milliseconds after the
    change to capture, and `CLICK_AT=500,1000` the milliseconds at which to click the middle of
    the window (a frame and a click at the same time: the frame first). `BIG_MELDS=1` adds enough melds that the middle scrolls;
@@ -69,7 +69,8 @@ an animation) in its description, under `## Screenshots`.
    Action `report` opens the table menu's Report a bug sheet with a few
    words written, and `profile-report` the same sheet from Profile (signed in as "jack");
    `REPORT_SEND=1` sends it to a mock for the thanks, and `REPORT_SCROLL=1` scrolls the sheet
-   to its foot. Action `profile` is Profile alone, signed in. `FULL_PAGE=1` shoots the whole page rather than the window.
+   to its foot. Action `profile` is Profile alone, signed in. `FULL_PAGE=1` shoots the whole page rather than the window, and
+   `REDUCED_MOTION=1` renders as a player who asked for reduced motion.
    On this machine Chromium needs nss/nspr/alsa from the `pwlibs` conda env. Emoji (the quick
    reactions) draw as boxes without a colour emoji font: set `EMOJI_FONT=<path to
    NotoColorEmoji.ttf>` and the page loads it for emoji only (as a face of the page's own font
