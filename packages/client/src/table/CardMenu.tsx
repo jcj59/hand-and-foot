@@ -1,8 +1,12 @@
 /**
  * What one card can do right now: meld it (or add it straight to a meld already
  * down), take it back out of a lay-down, discard it. Offered by name rather than
- * one click meaning different things by mode. A discard is never second-guessed:
- * a real table does not warn that a card would help someone else.
+ * one click meaning different things by mode.
+ *
+ * Discarding a card that fits one of the player's own melds says so above the
+ * buttons, and the button reads "Discard anyway": the player sees it before
+ * choosing, not after. Nothing is said about what a discard would give anyone
+ * else.
  */
 import { isWild, type Card, type Rank } from "@hf/shared";
 import { cardLabel } from "../cards/cardText";
@@ -16,6 +20,8 @@ export interface CardMenuProps {
   readonly wildTarget: Rank | null;
   readonly canDiscard: boolean;
   readonly discardBlocked: boolean;
+  /** That this card fits one of the player's own melds, if it does. */
+  readonly warning: string | null;
   readonly busy: boolean;
   readonly onMeld: () => void;
   readonly onLayOff: () => void;
@@ -38,6 +44,7 @@ export function CardMenu({
   wildTarget,
   canDiscard,
   discardBlocked,
+  warning,
   busy,
   onMeld,
   onLayOff,
@@ -48,43 +55,54 @@ export function CardMenu({
   const wild = isWild(card.rank);
   const discarding = canDiscard && !staged;
   return (
-    <div role="menu" aria-label="Card actions" className="flex flex-col gap-2 md:gap-1.5">
-      {staged ? (
-        <button type="button" role="menuitem" onClick={onUnstage} className={MINT}>
-          Take back
-        </button>
-      ) : layOffTo ? (
-        <button type="button" role="menuitem" disabled={busy} onClick={onLayOff} className={MINT}>
-          Add to {layOffTo}s meld
-        </button>
-      ) : (
-        canMeld && (
+    <div className="flex flex-col gap-2.5">
+      {discarding && warning && (
+        <p className="m-0 rounded-xl border border-gold/40 bg-gold/10 px-3 py-2.5 text-[13px] leading-[1.45] text-[#F7E3B0] md:text-xs">
+          {warning}
+        </p>
+      )}
+      <div role="menu" aria-label="Card actions" className="flex flex-col gap-2 md:gap-1.5">
+        {staged ? (
+          <button type="button" role="menuitem" onClick={onUnstage} className={MINT}>
+            Take back
+          </button>
+        ) : layOffTo ? (
+          <button type="button" role="menuitem" disabled={busy} onClick={onLayOff} className={MINT}>
+            Add to {layOffTo}s meld
+          </button>
+        ) : (
+          canMeld && (
+            <button
+              type="button"
+              role="menuitem"
+              disabled={wild && wildTarget === null}
+              onClick={onMeld}
+              className={MINT}
+            >
+              {wild
+                ? wildTarget
+                  ? `Add to ${wildTarget}s`
+                  : "Select a meld for it first"
+                : "Meld"}
+            </button>
+          )
+        )}
+        {discarding && (
           <button
             type="button"
             role="menuitem"
-            disabled={wild && wildTarget === null}
-            onClick={onMeld}
-            className={MINT}
+            disabled={busy || discardBlocked}
+            title={discardBlocked ? "play or take back your staged melds first" : undefined}
+            onClick={onDiscard}
+            className={DANGER}
           >
-            {wild ? (wildTarget ? `Add to ${wildTarget}s` : "Select a meld for it first") : "Meld"}
+            {warning ? "Discard anyway" : "Discard"}
           </button>
-        )
-      )}
-      {discarding && (
-        <button
-          type="button"
-          role="menuitem"
-          disabled={busy || discardBlocked}
-          title={discardBlocked ? "play or take back your staged melds first" : undefined}
-          onClick={onDiscard}
-          className={DANGER}
-        >
-          Discard
+        )}
+        <button type="button" role="menuitem" onClick={onCancel} className={GHOST}>
+          Cancel
         </button>
-      )}
-      <button type="button" role="menuitem" onClick={onCancel} className={GHOST}>
-        Cancel
-      </button>
+      </div>
     </div>
   );
 }
