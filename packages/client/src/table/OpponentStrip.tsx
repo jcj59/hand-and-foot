@@ -23,7 +23,7 @@ import { GrabbyIcon } from "./grabby";
 import { Melds } from "./Melds";
 import { booksOf, type MeldOrder } from "./meldView";
 import { PlayerFace } from "./PlayerFace";
-import { ReactionBubble, type SeatSaying } from "./reactions";
+import { ReactionBubble, sayingKey, type SeatSaying } from "./reactions";
 import { useRemaining } from "./TurnClock";
 
 export interface OpponentStripProps {
@@ -211,6 +211,7 @@ export function OpponentStrip({
             >
               {reactions?.get(opponent.seat) && (
                 <ReactionBubble
+                  key={sayingKey(reactions.get(opponent.seat)!)}
                   reaction={reactions.get(opponent.seat)!}
                   name={nameOf(opponent.seat)}
                   avatar={info && faceOf(info)}

@@ -72,6 +72,11 @@ export function isChat(saying: SeatSaying): saying is ChatMessage {
   return "text" in saying;
 }
 
+/** A bubble's identity, so a new saying from a seat remounts it and replays its animation. */
+export function sayingKey(saying: SeatSaying): string {
+  return `${isChat(saying) ? "chat" : "reaction"}-${saying.seq}`;
+}
+
 /** What is up by one seat, and when it arrived, so the latest of two kinds wins. */
 interface Up<T> {
   readonly item: T;

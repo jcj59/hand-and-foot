@@ -64,7 +64,13 @@ import {
   withGrabbyName,
 } from "./grabby";
 import { MarvaCelebration, useMarvaCelebration } from "./marva";
-import { ReactionBubble, readMuteReactions, useSeatBubbles, writeMuteReactions } from "./reactions";
+import {
+  ReactionBubble,
+  readMuteReactions,
+  sayingKey,
+  useSeatBubbles,
+  writeMuteReactions,
+} from "./reactions";
 import {
   ChatPanel,
   latestSeq,
@@ -851,6 +857,7 @@ export function TableView({
       <div className="relative min-w-0 flex-1">
         {bubbles.get(view.seat) && (
           <ReactionBubble
+            key={sayingKey(bubbles.get(view.seat)!)}
             reaction={bubbles.get(view.seat)!}
             name={watched}
             avatar={me && faceOf(me)}
