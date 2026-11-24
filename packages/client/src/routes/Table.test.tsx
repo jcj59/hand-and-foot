@@ -1424,6 +1424,25 @@ describe("arranging your own cards", () => {
     expect(screen.getByRole("dialog", { name: /actions for/i })).toBeInTheDocument();
   });
 
+  it("leaves the card menu's own presses and keys to the menu, not the card's drag", () => {
+    mount(fakeSocket().socket, update({ view: { hand: three }, hints: { phase: "play" } }));
+    fireEvent.click(handCard("King of clubs"));
+    const menu = screen.getByRole("dialog", { name: /actions for/i });
+    const item = within(menu).getAllByRole("menuitem")[0]!;
+    const clicked = vi.fn();
+    item.addEventListener("click", clicked);
+    fireEvent.pointerDown(item, { button: 0, pointerId: 1, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(item, { pointerId: 1, clientX: 120, clientY: 100 });
+    expect(document.body.querySelector("[data-dragging]")).toBeNull();
+    fireEvent.pointerUp(item, { pointerId: 1, clientX: 120, clientY: 100 });
+    fireEvent.click(item);
+    expect(clicked).toHaveBeenCalledTimes(1);
+    item.focus();
+    fireEvent.keyDown(item, { key: "ArrowRight", altKey: true });
+    expect(shown()).toEqual(["Four of hearts", "King of clubs", "Ace of spades"]);
+    expect(window.sessionStorage.getItem("hf.handOrder:ABC234:0")).toBeNull();
+  });
+
   it("drags with the main button only", () => {
     mount(fakeSocket().socket, update({ view: { hand: three }, hints: { phase: "play" } }));
     const king = handCard("King of clubs");

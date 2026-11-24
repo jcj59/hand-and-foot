@@ -192,6 +192,10 @@ export function Hand({
     return drop !== null && drop.index !== from && drop.index !== from + 1;
   }
 
+  function ownEvent(event: React.SyntheticEvent<HTMLElement>): boolean {
+    return event.currentTarget.contains(event.target as Node);
+  }
+
   function onPointerDown(event: React.PointerEvent<HTMLElement>, card: Card): void {
     if (!arrangeable || event.button !== 0) return;
     const at = event.currentTarget.getBoundingClientRect();
@@ -284,15 +288,17 @@ export function Hand({
           arrangeable ? "touch-pan-y select-none" : ""
         } ${held ? "opacity-40" : ""}`}
         style={fan && position > 0 ? { marginLeft: fanOverlap } : undefined}
-        onPointerDown={arrangeable ? (event) => onPointerDown(event, card) : undefined}
-        onPointerMove={arrangeable ? onPointerMove : undefined}
-        onPointerUp={arrangeable ? onPointerUp : undefined}
+        onPointerDown={
+          arrangeable ? (event) => ownEvent(event) && onPointerDown(event, card) : undefined
+        }
+        onPointerMove={arrangeable ? (event) => ownEvent(event) && onPointerMove(event) : undefined}
+        onPointerUp={arrangeable ? (event) => ownEvent(event) && onPointerUp(event) : undefined}
         onPointerCancel={arrangeable ? onPointerCancel : undefined}
-        onKeyDown={arrangeable ? (event) => onKeyDown(event, card) : undefined}
+        onKeyDown={arrangeable ? (event) => ownEvent(event) && onKeyDown(event, card) : undefined}
         onClickCapture={
           arrangeable
             ? (event) => {
-                if (!swallowClick.current) return;
+                if (!ownEvent(event) || !swallowClick.current) return;
                 swallowClick.current = false;
                 event.preventDefault();
                 event.stopPropagation();
