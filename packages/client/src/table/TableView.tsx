@@ -42,6 +42,7 @@ import { faceOf } from "../profile/avatarStore";
 import { CountPill, DiscardPile, FaceDownPile } from "../cards/PlayingCard";
 import { usePhone } from "../usePhone";
 import { Hand } from "./Hand";
+import { PlayerFace } from "./PlayerFace";
 import { CardMenu } from "./CardMenu";
 import { Icon } from "../ui/icons";
 import { MeldsPanel } from "./MeldsPanel";
@@ -703,6 +704,21 @@ export function TableView({
     />
   );
 
+  // Whose cards the footer holds, by face and name, as the other players' boxes say
+  // theirs: the title's holder keeps the icon and the title, their name after it.
+  const owner = (
+    <>
+      <PlayerFace player={me} size={phone ? 20 : 28} />
+      {grabby && <GrabbyIcon className={phone ? "h-4 w-4 shrink-0" : "h-5 w-5 shrink-0"} />}
+      <span className="truncate">{grabby ? GRABBY_NAME : watched}</span>
+      {grabby && <span className="font-normal whitespace-nowrap text-ink/60"> ({watched})</span>}
+      <span className="font-normal whitespace-nowrap text-muted">
+        {" "}
+        · {view.inFoot ? "foot" : "hand"}
+      </span>
+    </>
+  );
+
   const hand = spectating ? (
     <p className="m-0 text-sm text-muted">
       Watching. Every player&rsquo;s cards stay hidden; only what is on the table is shown.
@@ -729,7 +745,7 @@ export function TableView({
           menu={menu}
           onDismiss={closeMenu}
           title={`${whose} ${view.inFoot ? "foot" : "hand"}${grabby ? ` (${GRABBY_NAME})` : ""}`}
-          badge={grabby && <GrabbyIcon className="h-5 w-5" />}
+          owner={owner}
           rows={phone}
           newId={drawnId}
         />

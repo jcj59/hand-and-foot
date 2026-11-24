@@ -40,9 +40,14 @@ export interface HandProps {
   readonly menu: React.ReactNode;
   /** Closes the menu; on a phone, a tap anywhere outside its sheet. */
   readonly onDismiss?: () => void;
+  /** The region's name, such as "Your hand"; also its heading unless `owner` is given. */
   readonly title: string;
-  /** Shown beside the title, such as the Grabby Pants icon for its holder. */
-  readonly badge?: React.ReactNode;
+  /**
+   * Whose cards these are, drawn in the heading in place of the title: at the table,
+   * the holder's face and name and whether this is their hand or foot. The count
+   * follows it as it follows the title.
+   */
+  readonly owner?: React.ReactNode;
   /** The card just drawn, marked so it is obvious what arrived. */
   readonly newId?: string | null;
   /**
@@ -59,6 +64,13 @@ export interface HandProps {
   readonly fan?: "medium" | "normal";
 }
 
+/**
+ * Sticky, so a hand scrolled inside a short footer still says whose it is. Its own
+ * background covers the cards scrolling under it.
+ */
+const HEADING =
+  "sticky top-0 z-[5] m-0 flex min-w-0 items-center gap-1 bg-nav text-xs font-semibold text-nav-ink md:text-[13px]";
+
 export function Hand({
   cards,
   interactive,
@@ -71,7 +83,7 @@ export function Hand({
   menu,
   onDismiss,
   title,
-  badge,
+  owner,
   newId = null,
   rows = false,
   fan,
@@ -84,10 +96,7 @@ export function Hand({
   if (cards.length === 0) {
     return (
       <section className="flex flex-col gap-2" aria-label={title} data-zone="hand">
-        <h2 className="m-0 flex items-center gap-1 text-xs font-semibold text-nav-ink md:text-[13px]">
-          {badge}
-          {title}
-        </h2>
+        <h2 className={HEADING}>{owner ?? title}</h2>
         <p className="m-0 text-sm text-muted">
           No cards. You still take a turn: draw, and play from the pile if it fits.
         </p>
@@ -122,7 +131,8 @@ export function Hand({
         {/* A ring rather than a change of the card's own face: the obligation is
             about where the card came from, not what it is. */}
         {fresh && (
-          <span className="absolute -top-2.5 left-1/2 z-10 -translate-x-1/2 rounded bg-blue px-1 text-[10px] font-bold text-[#0B2340]">
+          // Under the sticky heading (z-5) when the hand scrolls beneath it.
+          <span className="absolute -top-2.5 left-1/2 z-[4] -translate-x-1/2 rounded bg-blue px-1 text-[10px] font-bold text-[#0B2340]">
             NEW
           </span>
         )}
@@ -162,18 +172,11 @@ export function Hand({
 
   return (
     <section className="flex flex-col gap-2" aria-label={title} data-zone="hand">
-      <h2
-        className={
-          fan
-            ? "sr-only"
-            : "m-0 flex items-center gap-1 text-xs font-semibold text-nav-ink md:text-[13px]"
-        }
-      >
-        {badge}
-        {title}
+      <h2 className={fan ? "sr-only" : HEADING}>
+        {owner ?? title}
         {/* Wilds are a resource to plan a lay-down around rather than a rank to
             collect, so the count is worth stating beside the title. */}
-        <span className="font-normal text-muted">
+        <span className="font-normal whitespace-nowrap text-muted">
           {" "}
           · {cards.length} card{cards.length === 1 ? "" : "s"}
           {wildCount > 0 && `, ${wildCount} wild`}

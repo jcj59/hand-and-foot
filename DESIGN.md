@@ -1242,6 +1242,15 @@ never squeezes the felt below a usable width. The sizes are kept per device and 
 window as it is now, so a window made smaller squeezes the parts and a larger one gives the
 player's sizes back. A phone's layout is its own and has no dividers.
 
+**Your own name at the table.** Everyone else at the table is a face and a name, but the player's
+own hand was headed "Your hand", so nothing on the screen said who they were or showed the picture
+they chose. The hand's heading is now the player's face and name, then "hand" or "foot" and the
+count ("Jack · hand · 14 cards"), compact on a phone, in the footer line where their reactions
+already appear. The Grabby Pants holder reads as the other players' boxes read: the icon, the
+title, and their name after it in parentheses. A watched seat shows the watched player's name. The
+heading stays at the top of the hand when a short footer scrolls it, so the name row is always in
+view.
+
 ## Testing
 
 The rules engine is the component where correctness matters most, and it receives the majority of
