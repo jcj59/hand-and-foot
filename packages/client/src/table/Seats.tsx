@@ -1,8 +1,8 @@
 /**
  * The other players on a computer: a box each across the top of the felt, with
  * who they are, what they are doing ("Playing · 0:41", "Foot · 9", "Reconnecting"),
- * a marker per book, and their melds as chips ("K ×4 +★"), which Expand opens
- * into the cards themselves.
+ * a marker per book, and their melds as chips (rank, size and wilds: `K 6 [2][JK]`),
+ * which Expand opens into the cards themselves.
  *
  * Counts rather than cards, because counts are all the server sends: every hidden
  * zone is reduced to a number before it leaves, which is the anti-cheat boundary.

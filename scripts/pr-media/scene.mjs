@@ -138,7 +138,16 @@ if (process.env.PILE) {
   );
 }
 if (process.env.BIG_OPP) {
-  // An opponent with a table full of melds, as tall as a seat gets.
+  // An opponent with a table full of melds, as tall as a seat gets: clean and dirty
+  // books, and open melds with a two, a joker, both, or no wild at all.
+  const wilds = (i) =>
+    [
+      [],
+      [c("2", "spades", 100 + i)],
+      [],
+      [c("JOKER", null, 100 + i)],
+      [c("2", "hearts", 100 + i), c("JOKER", null, 110 + i)],
+    ][i % 5];
   view.opponents[0] = {
     ...view.opponents[0],
     melds: ["J", "Q", "4", "7", "A", "K", "9", "8", "5"].map((r, i) =>
@@ -149,6 +158,7 @@ if (process.env.BIG_OPP) {
             c(r, "clubs", 70 + i),
             c(r, "spades", 80 + i),
             c(r, "diamonds", 90 + i),
+            ...wilds(i),
           ]),
     ),
   };
@@ -605,6 +615,9 @@ const run = async () => {
   // The computer's side panel put away, as a player who hid it left it.
   if (process.env.HIDE_SCORES)
     await page.evaluate(() => localStorage.setItem("hf.hideScores", "1"));
+  // The player's own melds folded to chips, as a player who collapsed them left them.
+  if (process.env.COMPACT_MELDS)
+    await page.evaluate(() => localStorage.setItem("hf.compactMelds", "1"));
   if (process.env.SAVED_LIST) {
     // Two games this device saved for later, for the home screen.
     const day = 24 * 60 * 60_000;
@@ -801,7 +814,9 @@ const run = async () => {
       await page.getByRole("dialog").evaluate((sheet) => sheet.scrollTo(0, sheet.scrollHeight));
   }
   if (action === "scores") await page.getByRole("button", { name: "Scores so far" }).click();
-  if (action === "expand") await page.getByRole("button", { name: /^Expand Cyrus/ }).click();
+  const seatName = process.env.SEAT ?? "Cyrus";
+  if (action === "expand")
+    await page.getByRole("button", { name: new RegExp(`^Expand ${seatName}`) }).click();
   if (action === "picker") await page.getByRole("button", { name: "React" }).click();
   if (action === "rules") {
     // On a phone the rules are an item in the table's menu.
@@ -817,7 +832,8 @@ const run = async () => {
     await page.getByRole("combobox", { name: "Watch" }).waitFor();
     await page.waitForTimeout(Number(process.env.PLAY_FOR ?? 4000));
   }
-  if (action === "chip") await page.getByRole("button", { name: /^Cyrus/ }).click();
+  if (action === "chip")
+    await page.getByRole("button", { name: new RegExp(`^${seatName}`) }).click();
   if (action === "expandrows") {
     // Open the scoreboard rows of Cyrus (foot never reached) and Ana (a red three).
     const board = page.getByRole("dialog", { name: "Round result" });

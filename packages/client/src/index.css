@@ -54,6 +54,8 @@
   --color-card: #f7f5ee;
   --color-suit-red: #c2353a;
   --color-suit-black: #15181b;
+  /* A clean book's red as text on the felt, where the cards' own red is too dark to read. */
+  --color-book-red: #ff7b80;
 
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Space Grotesk", "Inter", ui-sans-serif, system-ui, sans-serif;
