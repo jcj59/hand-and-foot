@@ -14,7 +14,8 @@ import {
   type Suit,
   type ViewUpdate,
 } from "@hf/shared";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation, useParams } from "react-router-dom";
+import { IDENTITY_KEY, saveIdentity } from "../identity";
 import { createServerClock } from "../serverTime";
 import { useSession } from "../session";
 import type { HfClientSocket } from "../socket";
@@ -3731,6 +3732,70 @@ describe("a rematch", () => {
     act(() => useSession.setState({ result: final() }));
     act(() => useSession.getState().applyRoom(roomInfo({ playAgain: [1] })));
     expect(screen.queryByRole("button", { name: "Rematch" })).toBeNull();
+  });
+});
+
+describe("watching the match back from the final scores", () => {
+  const final = (matchId?: string): RoundEnded => ({
+    ...scored(
+      [
+        [0, 40],
+        [1, 90],
+      ],
+      0,
+      { matchOver: true, roundNumber: 4, totals: [2400, 1800] },
+    ),
+    ...(matchId ? { matchId } : {}),
+  });
+
+  /** Where the replay route was opened, and with what. */
+  function Opened(): React.ReactElement {
+    const { matchId } = useParams();
+    const { state } = useLocation();
+    return <p>replay {`${matchId} from ${JSON.stringify(state)}`}</p>;
+  }
+
+  function mountWithReplay(): void {
+    useSession.getState().applyUpdate(update());
+    render(
+      <MemoryRouter initialEntries={["/room/ABC234"]}>
+        <Routes>
+          <Route path="/room/:roomId" element={<Table socket={fakeSocket().socket} />} />
+          <Route path="/replay/:matchId" element={<Opened />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+  }
+
+  afterEach(() => window.localStorage.removeItem(IDENTITY_KEY));
+
+  it("opens the replay of the match just played, saying which table to come back to", () => {
+    saveIdentity({ userId: "u".repeat(16), secret: "s".repeat(32) });
+    mountWithReplay();
+    act(() => useSession.setState({ result: final("uid-123") }));
+    fireEvent.click(screen.getByRole("button", { name: "Watch it back" }));
+    expect(screen.getByText('replay uid-123 from {"table":"ABC234"}')).toBeInTheDocument();
+  });
+
+  it("is not offered for a match that was not kept, nor between rounds", () => {
+    saveIdentity({ userId: "u".repeat(16), secret: "s".repeat(32) });
+    mountWithReplay();
+    act(() => useSession.setState({ result: final() }));
+    expect(screen.getByRole("button", { name: "Play again" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Watch it back" })).toBeNull();
+    act(() =>
+      useSession.setState({
+        result: { ...final("uid-123"), matchOver: false, roundNumber: 2 },
+      }),
+    );
+    expect(screen.queryByRole("button", { name: "Watch it back" })).toBeNull();
+  });
+
+  it("is not offered to a player with no identity on this device, who could not open it", () => {
+    mountWithReplay();
+    act(() => useSession.setState({ result: final("uid-123") }));
+    expect(screen.getByRole("button", { name: "Play again" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Watch it back" })).toBeNull();
   });
 });
 

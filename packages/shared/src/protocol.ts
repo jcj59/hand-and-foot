@@ -196,6 +196,12 @@ export interface RoundEnded {
    */
   readonly tallies?: readonly SeatTally[];
   /**
+   * The id the finished match is kept under, to watch it back with. Sent with the
+   * last round's result only, and only when the match is kept (someone played it
+   * under an identity). Not a secret: a replay opens only for a player who was in it.
+   */
+  readonly matchId?: string;
+  /**
    * The cards each seat was left holding when the round ended, face up, in seat
    * order, so a scoreboard can show what a held penalty was made of. Only seats
    * dealt into the round are listed: one that had already left the match held

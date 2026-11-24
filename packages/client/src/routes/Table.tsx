@@ -17,6 +17,8 @@ import {
   sendReaction,
   stageDraft,
 } from "../actions";
+import { loadIdentity } from "../identity";
+import type { ReplayFrom } from "./Replay";
 import { useSession } from "../session";
 import type { HfClientSocket } from "../socket";
 import { TableView, type TableControls } from "../table/TableView";
@@ -61,6 +63,16 @@ export function Table({ socket }: TableProps): React.ReactElement {
         }),
       removePlayer: (seat) => void carryOnWithout(socket, seat, sink),
       react: (id) => void sendReaction(socket, id),
+      // Only a player with an identity can be shown a match: the server asks for it.
+      ...(loadIdentity()
+        ? {
+            watchBack: (matchId: string) => {
+              const table = useSession.getState().credentials?.roomId;
+              const from: ReplayFrom | undefined = table ? { table } : undefined;
+              navigate(`/replay/${encodeURIComponent(matchId)}`, { state: from });
+            },
+          }
+        : {}),
     };
   }, [socket, seat, setNotice, leave, navigate]);
 

@@ -9,12 +9,23 @@
  *
  * Only a match the player was in can be opened, on a browser holding their
  * identity: the server checks both, and an id on its own opens nothing.
+ *
+ * The final scoreboard opens it too ("Watch it back"), passing the table it came
+ * from as router state (`ReplayFrom`), so Back returns to that table while this
+ * tab still holds a seat at it, and the main screen otherwise.
  */
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { MATCH_PATH, type ReplayMatch } from "@hf/shared";
+import {
+  MATCH_PATH,
+  NO_SUCH_MATCH,
+  type Ack,
+  type ReplayMatch,
+  type UserCredentials,
+} from "@hf/shared";
 import { buildTimeline, type Timeline } from "@hf/engine";
 import { serverPost, loadIdentity, type Post } from "../identity";
+import { useSession } from "../session";
 import { formatLink, parseLink, stepFor } from "../playback/link";
 import { Player } from "../playback/Player";
 
@@ -39,6 +50,37 @@ export const UNREACHABLE = "Could not reach the server to load that game. Try ag
 export const UNPLAYABLE =
   "That game can no longer be played back: the rules have changed since it was recorded.";
 
+/**
+ * How long to wait before asking a second time for a match the server says is not
+ * the player's. The scoreboard offers the replay the moment the match ends, while
+ * the record is still being written in the background (the Worker's `keepMatch`
+ * runs under `waitUntil`), so the first ask can arrive before it. Asked at most
+ * twice, never in a loop: replay reads count against the per-identity read limit.
+ */
+export const REPLAY_RETRY_MS = 1_500;
+
+/** What the table passes when it opens its own match's replay: the table's code. */
+export interface ReplayFrom {
+  readonly table: string;
+}
+
+/**
+ * Ask for one match, and ask once more after `REPLAY_RETRY_MS` if the server has
+ * no such match yet. Any other answer, or a failure to reach it, is final.
+ */
+export async function loadReplay(
+  post: Post,
+  user: UserCredentials,
+  id: string,
+  wait: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+): Promise<Ack<ReplayMatch>> {
+  const ask = async () => (await post(MATCH_PATH, { user, id })) as Ack<ReplayMatch>;
+  const first = await ask();
+  if (first.ok || first.error !== NO_SUCH_MATCH) return first;
+  await wait(REPLAY_RETRY_MS);
+  return ask();
+}
+
 /** A recorded match as the player's input: how it was dealt, what was played, and who played it. */
 export function timelineOf(match: ReplayMatch): Timeline {
   return buildTimeline({
@@ -52,8 +94,12 @@ export function timelineOf(match: ReplayMatch): Timeline {
 export function Replay({ post = serverPost() }: ReplayProps): React.ReactElement {
   const { matchId = "" } = useParams();
   const navigate = useNavigate();
-  const { hash } = useLocation();
+  const { hash, state } = useLocation();
   const [loaded, setLoaded] = useState<Loaded>({ state: "loading" });
+  // Back to the table this was opened from, while this tab still holds a seat there.
+  const from = (state as Partial<ReplayFrom> | null)?.table;
+  const heldTable = useSession((s) => s.credentials?.roomId);
+  const back = from !== undefined && from === heldTable ? `/room/${from}` : "/";
 
   useEffect(() => {
     const user = loadIdentity();
@@ -62,10 +108,20 @@ export function Replay({ post = serverPost() }: ReplayProps): React.ReactElement
       return;
     }
     let live = true;
-    post(MATCH_PATH, { user, id: matchId })
+    let cancel = (): void => {};
+    // Leaving the page while it waits to ask again means it never asks again.
+    const wait = (ms: number): Promise<void> =>
+      new Promise((resolve, reject) => {
+        const timer = setTimeout(resolve, ms);
+        cancel = () => {
+          clearTimeout(timer);
+          reject(new Error("left the page"));
+        };
+      });
+    loadReplay(post, user, matchId, wait)
       .then((answer) => {
         if (!live) return;
-        if (answer.ok) setLoaded({ state: "ready", match: answer.data as ReplayMatch });
+        if (answer.ok) setLoaded({ state: "ready", match: answer.data });
         else setLoaded({ state: "failed", message: capitalize(answer.error) + "." });
       })
       .catch(() => {
@@ -73,6 +129,7 @@ export function Replay({ post = serverPost() }: ReplayProps): React.ReactElement
       });
     return () => {
       live = false;
+      cancel();
     };
   }, [post, matchId]);
 
@@ -97,10 +154,10 @@ export function Replay({ post = serverPost() }: ReplayProps): React.ReactElement
         </p>
         <button
           type="button"
-          onClick={() => navigate("/")}
+          onClick={() => navigate(back)}
           className="self-start rounded bg-white px-4 py-2 font-medium text-felt-900"
         >
-          Back to the main screen
+          {back === "/" ? "Back to the main screen" : "Back to the table"}
         </button>
       </main>
     );
@@ -126,7 +183,7 @@ export function Replay({ post = serverPost() }: ReplayProps): React.ReactElement
             window.history.replaceState(window.history.state, "", next);
           }
         }}
-        onMainMenu={() => navigate("/")}
+        onMainMenu={() => navigate(back)}
       />
     </div>
   );
