@@ -771,8 +771,37 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   (`scripts/reports/pull.ts`, typechecked by the root `typecheck`; `HF_REPORTS_URL` instead of
   `--url`). Locally: `wrangler dev --var REPORTS_TOKEN:<token>`. Worker tests set the token through
   `miniflare.bindings` in `vitest.config.ts`, and test the unset case by calling the handler with
-  another `env`. Tests: `server/src/reports.test.ts`, `worker/test/reports.test.ts`. The client
-  (PR 18b) is not built yet.
+  another `env`. Tests: `server/src/reports.test.ts`, `worker/test/reports.test.ts`.
+- **Bug reports, client half (change list item 31, PR 18b).** "Report a bug" is in the table menu
+  (`TableHeader`, beside "Go to the main menu"; watchers too) and on Profile (a settings row on a
+  phone, a Help card on a computer). `report/ReportSheet.tsx`: a required text box with a "what
+  were you doing" hint, "Sent with your report" (the attachment in words, `attachmentRows`), at a
+  table a "Leave out this table's details" checkbox, and "Show exactly what is sent" (the JSON
+  that goes, folded); sent once through `actions.sendReport(post, body)` (never throws: the
+  server's refusal, or `REPORT_NOT_SENT` when there was no answer), thanks or the refusal shown in
+  the sheet. The attachment is read as the sheet opens. `report/context.ts` (pure): `PageFacts`
+  (build, time, path, user agent, viewport, phone or computer, `userId` when the browser has an
+  identity, `username` when signed in, errors), `tableDetails` (an **allowlist, field by field**:
+  room, seat or "watching", round, phase, seat to play, round over, paused, players, the player's
+  own **counts only** as `yourCards`, stock and pile sizes, the side panel's move lines, and the
+  last `MOVE_RECORDS_KEPT` 20 `lastMove` records as this seat was sent them, copied field by
+  field, a draw's card dropped since it is the player's own hand card), `withRecord` (each move once, newest 20), `fitReport` (text trimmed; drops the oldest
+  error, then the oldest move record, then the oldest line, until `{at, text, context}` fits
+  `MAX_REPORT_BYTES`; a report that cannot fit goes as it is for the server to refuse).
+  `report/useMoveRecords.ts` keeps the records in a ref in `TableView` (reset when the room
+  changes); `TableHeader` takes `report: () => TableReport`. `report/errors.ts` (pure ring buffer):
+  `keepLast`, `ERRORS_KEPT` 20, messages cut to `ERROR_MESSAGE_MAX` 300 and stacks to
+  `ERROR_STACK_MAX` 600 (all pinned), `installErrorLog(window)` listens to `error` and
+  `unhandledrejection` and is called first thing in `main.tsx`. **Build id:** `vite.config.ts`
+  defines `__BUILD_ID__` as `git rev-parse --short HEAD` ("unknown" without git; declared in
+  `vite-env.d.ts`). Tests: `report/context.test.ts` (no card of anyone's but those the moves
+  name; every fitted report passes the real `parseReport`), `report/errors.test.ts`,
+  `report/ReportSheet.test.tsx` (Profile and the real table route through the page's `fetch`),
+  `report.integration.test.ts` (a real Node server). Harness actions `report`, `profile-report`,
+  `profile` (`REPORT_SEND=1`, `REPORT_SCROLL=1`). Mutation-tested: 50/50 killed over
+  `errors.ts`, `context.ts`, `sendReport` and the sheet's two guards (three only after tests were
+  added: an empty stack left as an `undefined` key, a move's card copied whole, and measuring
+  with an arrival time of 0).
 - **Scenario library and autoplay viewer (roadmap item 1).** Three layers, kept apart on purpose:
   - **Engine, `playback.ts`:** `buildTimeline(GameLog)` takes any `{ config, setup: {seed,
     playerCount} | {state}, actions, names?, moments? }` — a scenario, a golden game, a recorded

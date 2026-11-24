@@ -8,8 +8,13 @@ import { StrictMode, Suspense, lazy } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { App } from "./App";
+import { installErrorLog } from "./report/errors";
 import { connect, serverUrl } from "./socket";
 import "./index.css";
+
+// Before anything else runs, so a bug report can carry whatever goes wrong from
+// the first render on.
+installErrorLog(window);
 
 // The scenario viewer, in builds that carry it: development, or a build made with
 // VITE_SCENARIOS=1 (the screenshot harness). Written out here rather than imported

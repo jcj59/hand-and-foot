@@ -11,8 +11,10 @@
  * refused request as a value. A rejection is put on the store as a notice for the
  * interface to surface, and the caller learns whether it worked.
  */
-import { CARRIED_ON_WITHOUT_YOU } from "@hf/shared";
+import { CARRIED_ON_WITHOUT_YOU, REPORTS_PATH } from "@hf/shared";
 import type {
+  Ack,
+  ReportBody,
   BotSettings,
   Action,
   Avatar,
@@ -24,6 +26,7 @@ import type {
   UserCredentials,
 } from "@hf/shared";
 import { clearCredentials } from "./credentials";
+import type { Post } from "./identity";
 import { forgetSavedGame } from "./savedGames";
 import { normalizeRoomCode } from "./roomCode";
 import * as wire from "./socket";
@@ -489,4 +492,29 @@ export async function readyForNextRound(
     return false;
   }
   return true;
+}
+
+/** What the report sheet says when a report never reached the server, or its answer was not one. */
+export const REPORT_NOT_SENT = "the report could not be sent; check your connection and try again";
+
+/**
+ * Send a bug report, once. Answers the report's number, or the server's reason
+ * for refusing it (empty, too long, too many this hour), or `REPORT_NOT_SENT`
+ * when there was no answer to read: never throws, so the sheet always has
+ * something to say.
+ */
+export async function sendReport(
+  post: Post,
+  body: ReportBody,
+): Promise<Ack<{ id: number | null }>> {
+  try {
+    const answer = await post(REPORTS_PATH, body);
+    if (answer.ok) {
+      const id = (answer.data as { id?: unknown } | null)?.id;
+      return { ok: true, data: { id: typeof id === "number" ? id : null } };
+    }
+    return typeof answer.error === "string" ? answer : { ok: false, error: REPORT_NOT_SENT };
+  } catch {
+    return { ok: false, error: REPORT_NOT_SENT };
+  }
 }
