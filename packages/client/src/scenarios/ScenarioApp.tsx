@@ -22,6 +22,7 @@ import { Player } from "../playback/Player";
 import type { Speed } from "../playback/playback";
 import { playlist, timelineOf } from "./catalog";
 import { formatLink, parseLink, stepFor } from "../playback/link";
+import { ReportReplay } from "./ReportReplay";
 
 export default function ScenarioApp(): React.ReactElement {
   return (
@@ -29,6 +30,7 @@ export default function ScenarioApp(): React.ReactElement {
       <Routes>
         <Route path="/scenarios" element={<ScenarioList />} />
         <Route path="/scenarios/all" element={<RunAll />} />
+        <Route path="/scenarios/report" element={<ReportReplay />} />
         <Route path="/scenarios/:id" element={<ScenarioPage />} />
         <Route path="*" element={<Navigate to="/scenarios" replace />} />
       </Routes>
@@ -56,6 +58,12 @@ export function ScenarioList(): React.ReactElement {
           className="rounded border border-amber-300/60 px-3 py-1.5 text-sm text-amber-100"
         >
           Run all, around each moment only
+        </Link>
+        <Link
+          to="/scenarios/report"
+          className="rounded border border-sky-300/60 px-3 py-1.5 text-sm text-sky-100"
+        >
+          Replay a bug report
         </Link>
       </p>
       <ul className="mt-4 flex flex-col gap-3">

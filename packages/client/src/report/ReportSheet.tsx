@@ -1,48 +1,29 @@
 /**
- * "Report a bug": a sheet where a player says what went wrong, sees exactly
- * what is sent with it, and sends it once.
+ * "Report a bug": a sheet where a player says what went wrong and sends it once.
  *
- * Opened from the table's menu (with the table's details, which the player can
- * leave out) and from Profile (without). What is attached is read as the sheet
- * opens and shown both as a list in words and, folded, as the very JSON that
- * goes, so nothing is sent the player could not have read first. The answer,
- * thanks or the server's refusal, is shown in the sheet.
+ * Opened from the table's menu and from Profile. Everything the page knows that
+ * could help recreate the bug goes with it automatically (see `context.ts`); the
+ * player is told so in one line rather than shown it, since at a table it is the
+ * whole game as their screen had it. The facts are read as the sheet opens, so
+ * the report is of the moment the player saw the bug, and cleared of secrets and
+ * fitted to size as it is sent. The answer, thanks or the server's refusal, is
+ * shown in the sheet.
  */
-import { useId, useMemo, useState } from "react";
+import { useId, useState } from "react";
 import { REPORT_TEXT_MAX } from "@hf/shared";
 import { sendReport } from "../actions";
-import { loadAccount, loadIdentity, serverPost, type Post } from "../identity";
+import { serverPost, type Post } from "../identity";
 import { Button } from "../ui/Button";
 import { Sheet } from "../ui/Sheet";
 import { usePhone } from "../usePhone";
-import {
-  attachmentRows,
-  fitReport,
-  reportBody,
-  reportContext,
-  type PageFacts,
-  type TableReport,
-} from "./context";
-import { recentErrors } from "./errors";
+import { reportBody, reportContext, type TableReport } from "./context";
+import { pageFacts } from "./page";
 
-/** The build this page came from: the git short sha, set by Vite at build time. */
-const BUILD_ID: string = typeof __BUILD_ID__ === "string" ? __BUILD_ID__ : "unknown";
-
-function pageFacts(phone: boolean): PageFacts {
-  return {
-    build: BUILD_ID,
-    at: Date.now(),
-    path: window.location.pathname,
-    userAgent: window.navigator.userAgent,
-    width: window.innerWidth,
-    height: window.innerHeight,
-    pixelRatio: Math.round((window.devicePixelRatio || 1) * 100) / 100,
-    phone,
-    userId: loadIdentity()?.userId ?? null,
-    username: loadAccount(),
-    errors: recentErrors(),
-  };
-}
+/** What the sheet says goes with a report, at a table and elsewhere. */
+export const TABLE_DISCLOSURE =
+  "Your report includes your table\u2019s details so we can reproduce the problem.";
+export const PAGE_DISCLOSURE =
+  "Your report includes details about this page and device so we can reproduce the problem.";
 
 export interface ReportSheetProps {
   /** The table's details, at a table; null elsewhere. */
@@ -64,26 +45,21 @@ export function ReportSheet({
 }: ReportSheetProps): React.ReactElement {
   const phone = usePhone();
   const ids = useId();
-  // Read once, as the sheet opens: the list below is what goes, not what the
-  // page has become by the time Send is pressed.
-  const [page] = useState(() => pageFacts(phone));
+  // Read once, as the sheet opens: the report is of the moment the player saw the
+  // bug, not of what the page has become by the time Send is pressed.
+  const [page] = useState(() => {
+    const facts = pageFacts(phone);
+    return { context: reportContext(facts, table), secrets: facts.secrets };
+  });
   const [text, setText] = useState("");
-  const [leaveOutTable, setLeaveOutTable] = useState(false);
   const [sending, setSending] = useState<Sending>({ state: "writing" });
-
-  const context = useMemo(
-    () => reportContext(page, leaveOutTable ? null : table),
-    [page, table, leaveOutTable],
-  );
-  const body = fitReport(text, context);
-  const rows = attachmentRows(body.context);
   const empty = text.trim() === "";
   const busy = sending.state === "sending";
 
   const send = (): void => {
     if (empty || busy) return;
     setSending({ state: "sending" });
-    void sendReport(post, reportBody(body)).then((answer) =>
+    void sendReport(post, reportBody(text, page.context, page.secrets)).then((answer) =>
       setSending(
         answer.ok
           ? { state: "sent", id: answer.data.id }
@@ -136,50 +112,7 @@ export function ReportSheet({
           />
         </label>
 
-        <section aria-labelledby={`${ids}-sent`} className="flex flex-col gap-2">
-          <h3
-            id={`${ids}-sent`}
-            className="m-0 text-xs font-semibold tracking-[0.08em] text-quiet uppercase"
-          >
-            Sent with your report
-          </h3>
-          <dl className="m-0 flex flex-col rounded-2xl border border-white/6 bg-surface text-sm">
-            {rows.map((row, index) => (
-              <div
-                key={row.label}
-                className={`flex gap-3 px-3.5 py-2 ${index > 0 ? "border-t border-white/5" : ""}`}
-              >
-                <dt className="w-[84px] shrink-0 text-muted">{row.label}</dt>
-                <dd className="m-0 min-w-0 break-words text-ink-soft">{row.value}</dd>
-              </div>
-            ))}
-          </dl>
-          {table && (
-            <label className="flex min-h-11 items-center gap-3 text-sm">
-              <input
-                type="checkbox"
-                checked={leaveOutTable}
-                onChange={(event) => setLeaveOutTable(event.target.checked)}
-                className="size-5 accent-accent"
-              />
-              Leave out this table&rsquo;s details
-            </label>
-          )}
-          {table && !leaveOutTable && (
-            <p className="m-0 text-xs text-quiet">
-              Never sent: your cards or anyone else&rsquo;s, only how many you hold.
-            </p>
-          )}
-          <details className="text-sm">
-            <summary className="cursor-pointer text-muted">Show exactly what is sent</summary>
-            <pre
-              aria-label="What is sent"
-              className="mt-2 max-h-56 overflow-auto rounded-xl bg-black/30 p-3 font-mono text-[11px] leading-snug whitespace-pre-wrap text-ink-soft"
-            >
-              {JSON.stringify(body.context, null, 2)}
-            </pre>
-          </details>
-        </section>
+        <p className="m-0 text-sm text-muted">{table ? TABLE_DISCLOSURE : PAGE_DISCLOSURE}</p>
 
         {sending.state === "refused" && (
           <p

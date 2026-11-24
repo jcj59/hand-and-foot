@@ -1082,37 +1082,61 @@ if it fits the free plan.
 
 A player who finds a bug can report it from the game, and the game keeps the report for whoever
 fixes bugs to read. Reports are not filed as GitHub issues, although that would have needed no
-storage at all: the repository is public, and a report carries names, a room code and what a table
-was doing, which are the family's business and not the internet's. They are kept instead in one
+storage at all: the repository is public, and a report carries names, a room code and every card at
+a table, which are the family's business and not the internet's. They are kept instead in one
 Durable Object for the whole game, since reports are read all together and there are few of them.
-Each report is its own key, numbered in order, so keeping one is a single write and the newest 500
+Each report is its own key, numbered in order, so keeping one is a single write and the newest 200
 are kept by deleting the one that falls past the cap: a flood of reports pushes out old ones rather
 than growing storage without end.
 
-What a report holds is checked the same way on every host, before anything is stored: the player's
-own words, trimmed and at most 2,000 characters, and whatever the client attaches to help find the
-bug, which must be a JSON object, with the whole report at most 8 KB. The attachment's contents are
-not checked; it is read by a person, never by the game. The Worker counts reports by the address
-they came from, five an hour, in the isolate's memory like the history reads, and the count is
-asked before the object is, so a refused report costs no Durable Object request. A report that
-passes costs exactly one. Reading them back is a GET with a bearer token, a Wrangler secret, and a
-host with no token set does not offer the route at all; a small script fetches them and prints
-them as Markdown, which a person or an agent can work through. The Node server keeps reports in
-memory and writes each one to its log, which is where the operator of that host reads them.
+**A report carries everything, automatically (November 2026).** The first version carried only
+counts of cards and a short allowlist, and the player could read and trim it. That made reports
+safe to show anyone but too thin to act on: a developer could rarely recreate the bug. Reports are
+read only with a secret token, so the decision was reversed: a report now carries all the
+information the game has, and the player is told so in one line ("Your report includes your
+table's details so we can reproduce the problem") rather than shown a list. The client attaches
+the whole update its seat was sent (the view with the player's hand, foot and melds by card id,
+other players' melds, the legal hints, the clock), the room, what the player has staged and not
+played, every move the seat was sent (its own drawn card included), the last 200 socket frames each
+way, the last 200 console lines of every level, the page's errors and notices, the session store,
+every `hf.*` key of the browser's storage, the route, and the device: viewport, pixel ratio,
+orientation, layout, motion and color preferences, language, time zone, connection, the state of
+its audio, the server clock's offset and the page's timings. The server attaches the table's own
+record beside it, asking that table's object over RPC: rules, seed, first seat, every seat (names,
+levels, who is connected), every move with its source, the full game state, the pause and saved
+state, and the chat. That is what lets a developer replay the exact game; the pull script exports
+it as an engine `GameLog`, which a test or the scenario viewer plays from the deal. If the table is
+gone, or its object does not answer, the report is kept anyway and says why the record is missing.
 
-The client offers "Report a bug" in the table's menu and on Profile. A player rarely knows what
-broke, so the report carries what the page knows: the commit the page was built from, the time, the
-page, the browser and screen, the profile, the last twenty errors the page raised (kept in memory
-from the moment it loads, never sent on their own), and at a table its code, the seat, the round
-and phase, and the last twenty moves this seat was shown. The sheet lists all of it in words, and
-the exact JSON is a tap away, so nothing goes that the player could not have read first; the table's
-part can be left out with one checkbox. Of cards it carries only counts: how many the player holds
-and where, never which, and nothing at all of other players' hands or melds. The moves are the ones
-the server already cut for this seat, so another player's drawn card is not among them, and the
-player's own drawn card is dropped too, since it is a card in their hand. That part is
-built field by field from an allowlist rather than by copying the view, so a field added to the view
-later does not start travelling in reports unnoticed. When a report would pass the size cap, the
-oldest errors go first, then the oldest moves, then the oldest move lines.
+**Secrets never travel.** Seat tokens, identity secrets, passwords and anything under an
+authorization header would let a reader act as a player, which no bug report needs. `scrubSecrets`
+(in `@hf/shared`) removes every value under a key that names a secret, then searches every other
+string and key for those values and for the secrets the page knows by itself (its identity's
+secret, its seat tokens, its saved games' tokens, any token a socket frame carried), so a token
+quoted in a console line goes too. The client scrubs each socket frame as it records it and the
+whole report before sending; the server scrubs the attachment again by key and strips every token
+of the attached table from the whole report, and the record it builds names who is ready or went
+on by seat, never by token.
+
+**Size.** A Durable Object stores up to 2 MB a value. A client may send 256 KB (its text and
+attachment) and a kept report may be 512 KB, which leaves room beside the client's part for the
+table's record: a full six-seat match's moves come to about 200 KB and its state to 30 KB. Even if
+the storage keeps a string at two bytes a character, 512 KB of JSON stays under the limit, and 200
+reports at most is 100 MB, in practice a few. Both ends fit a report by the same rule
+(`fitToBytes`): the largest section goes first, a list losing its oldest entries until it is no
+larger than the next section or the whole fits, anything else replaced by a `truncated` marker,
+and every cut is listed in the report. The table's update, on the client, and the table's moves,
+state, seats and rules, on the server, are cut only after everything else, and the moves keep
+their start, which still replays. Fitting runs in the reports object rather than the Worker,
+because an object's CPU allowance is far larger than a free-plan request's.
+
+**Cost.** The Worker counts reports by the address they came from, five an hour, in the isolate's
+memory like the history reads, and the count is asked before any object is, so a refused report
+costs no Durable Object request. A report from a table costs two (the reports object, and the table
+object it asks for the record); one from anywhere else costs one. Reading them back is a GET with a
+bearer token, a Wrangler secret, 16 reports to a request, and a host with no token set does not
+offer the route at all. The Node server keeps reports in memory, attaches the table from its own
+rooms, and writes one line per report to its log.
 
 ## Visual design
 

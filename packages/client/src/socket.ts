@@ -6,7 +6,11 @@
  * change to the contract breaks whichever side is now inconsistent instead of
  * failing at runtime.
  */
-import { connect as connectTransport, type TableSocket } from "@hf/transport";
+import {
+  connect as connectTransport,
+  type TableSocket,
+  type TransportOptions,
+} from "@hf/transport";
 import type {
   BotSettings,
   Ack,
@@ -57,11 +61,14 @@ export function serverUrl(env: { readonly VITE_SERVER_URL?: string } = import.me
  * The URL is required rather than defaulted, so the one place that decides where
  * this client connects is the entry point, in plain sight.
  */
-export function connect(url: string): HfClientSocket {
+export function connect(
+  url: string,
+  options: Pick<TransportOptions, "onFrame"> = {},
+): HfClientSocket {
   // The transport reconnects on its own; the seat is reclaimed separately with the
   // stored credentials, because a new connection is a new socket as far as the
   // server is concerned and carries no seat with it.
-  return connectTransport(url);
+  return connectTransport(url, options);
 }
 
 /**

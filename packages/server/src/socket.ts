@@ -23,6 +23,9 @@ import {
   SIGN_OUT_PATH,
   MATCH_PATH,
   REPORTS_PATH,
+  jsonBytes,
+  MAX_REPORT_BODY_BYTES,
+  REPORT_TOO_LARGE,
   type Ack,
   type ClientFrame,
 } from "@hf/shared";
@@ -38,7 +41,14 @@ import {
   type LoginStore,
 } from "./accounts";
 import { InMemoryMatchStore, matchHistory, matchReplay, type MatchStore } from "./matches";
-import { InMemoryReportStore, parseReport, type ReportStore } from "./reports";
+import {
+  InMemoryReportStore,
+  NO_TABLE,
+  parseReport,
+  reportEntry,
+  tableForReport,
+  type ReportStore,
+} from "./reports";
 import type { RoomManager } from "./manager";
 import type { Room } from "./room";
 import { refusal, TableChannel } from "./table";
@@ -69,6 +79,11 @@ export const DEFAULT_HEARTBEAT_MS = 25_000;
 
 /** The largest request body read, well above any real one. */
 const MAX_BODY_BYTES = 16 * 1024;
+/**
+ * A bug report's: twice what one may be, so one a little over is refused for
+ * its size by `parseReport` rather than as unreadable.
+ */
+const MAX_REPORT_REQUEST_BYTES = 2 * MAX_REPORT_BODY_BYTES;
 
 export interface Tables {
   /** The channel for a table, made on first use. */
@@ -153,7 +168,10 @@ export function attachTables(
     if (request.method !== "POST") return void response.writeHead(404).end();
     if (!allowed(origin)) return void response.writeHead(403).end();
 
-    const body = await readJson(request);
+    const body = await readJson(
+      request,
+      path === REPORTS_PATH ? MAX_REPORT_REQUEST_BYTES : MAX_BODY_BYTES,
+    );
     if (body === null)
       return json(response, 400, { ok: false, error: "that request was not JSON" });
     if (path === USERS_PATH) {
@@ -171,11 +189,27 @@ export function attachTables(
     }
     if (path === REPORTS_PATH) {
       // Kept in memory and logged, which is where an operator of this host reads
-      // them; only the Worker serves them back (see the Worker's `index.ts`).
+      // them; only the Worker serves them back (see the Worker's `index.ts`). The
+      // table it names, if it is open here, is attached whole.
       const report = parseReport(body, now());
       if (!report.ok) return json(response, 200, report);
-      const kept = await reports.add(report.data);
-      console.log(`bug report ${kept.id}: ${JSON.stringify(kept)}`);
+      const code = report.data.room;
+      const room = code === null ? undefined : manager.get(code);
+      const table = room ? tableForReport(room) : null;
+      const entry = reportEntry(
+        report.data,
+        code === null
+          ? null
+          : table
+            ? { code, attached: true, record: table.record }
+            : { code, attached: false, reason: NO_TABLE },
+        table?.tokens,
+      );
+      if (!entry) return json(response, 200, { ok: false, error: REPORT_TOO_LARGE });
+      const kept = await reports.add(entry);
+      console.log(
+        `bug report ${kept.id}: ${jsonBytes(kept)} bytes, table ${code ?? "none"}: ${kept.text}`,
+      );
       return json(response, 200, { ok: true, data: { id: kept.id } });
     }
     // Who is sitting down, if their browser proved an identity (anonymous otherwise),
@@ -272,12 +306,15 @@ function json(response: ServerResponse, status: number, body: Ack<unknown> | obj
 }
 
 /** The request body as a JSON object, or null if it is not one or is too large. */
-async function readJson(request: IncomingMessage): Promise<Record<string, unknown> | null> {
+async function readJson(
+  request: IncomingMessage,
+  limit: number,
+): Promise<Record<string, unknown> | null> {
   let size = 0;
   const chunks: Buffer[] = [];
   for await (const chunk of request) {
     size += (chunk as Buffer).length;
-    if (size > MAX_BODY_BYTES) return null;
+    if (size > limit) return null;
     chunks.push(chunk as Buffer);
   }
   try {
