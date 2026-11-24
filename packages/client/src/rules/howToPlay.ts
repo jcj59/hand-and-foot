@@ -67,7 +67,7 @@ function sections(config: RulesConfig, where: "table" | "general"): readonly Rul
   const wild =
     "Twos and jokers are wild and can stand in for any rank in a meld." +
     (general ? "" : ` ${WILD_RATIO_TEXT[config.wildRatio]}`) +
-    " A meld can never be made of wilds alone. A wild can help a meld become a book, but once it is a book no wild can be added to it.";
+    " A meld can never be made of wilds alone. A wild can help a meld become a book, and a dirty book can take more, but a clean book never takes a wild: one would make it dirty.";
   const marva = general
     ? config.marvaRule
       ? "Tables play the Marva rule unless the host turns it off"
@@ -108,7 +108,7 @@ function sections(config: RulesConfig, where: "table" | "general"): readonly Rul
       title: "Melds and books",
       paragraphs: [
         "A meld is three or more cards of one rank; there are no runs. You keep one meld per rank and add to it as you go.",
-        "A meld of seven or more is a book. A book with no wilds is clean; one with any wild is dirty. Once a meld is a book its kind is settled: you can add more naturals to it, but never a wild.",
+        "A meld of seven or more is a book. A book with no wilds is clean; one with any wild is dirty. You can keep adding naturals to any book. A dirty book can take more wilds too, within the wild ratio, but a clean book never takes one.",
       ],
     },
     {

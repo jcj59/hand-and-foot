@@ -185,7 +185,7 @@ export const LESSONS: readonly Lesson[] = [
       discardStep(),
     ],
     outro:
-      "A book with a wild in it is dirty; one without is clean, and worth more. Once a meld is a book, no wild can join it.",
+      "A book with a wild in it is dirty; one without is clean, and worth more. A clean book never takes a wild, since one would make it dirty.",
   },
   {
     id: "threes",

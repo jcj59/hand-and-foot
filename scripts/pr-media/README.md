@@ -19,7 +19,8 @@ an animation) in its description, under `## Screenshots`.
    table's How to play dialog, `menu` (the table's menu), `scores` (the phone's scores sheet),
    `expand` (a seat's melds on a computer), `chip` (a phone chip's melds sheet), `card` (a
    card's choices; `CARD=<name>` picks the card, the Ten of hearts by default), `meld` (a
-   lay-down being built) and `hidescores` (the computer's side panel put away, or brought back
+   lay-down being built), `wildbook` (the Two of hearts staged onto the dirty book of 9s, or the
+   clean Ks with `BOOK=K`) and `hidescores` (the computer's side panel put away, or brought back
    with `HIDE_SCORES=1`, which starts with it put away); `PILE_WHY=1` puts the viewer in their
    draw phase with the pile not takeable, and `TAKEABLE=1` in their draw phase with it takeable;
    `FOOT=1` puts the viewer in their foot a dirty book short of going out, with a card of a melded

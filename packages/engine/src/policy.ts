@@ -12,9 +12,9 @@ import {
 } from "@hf/shared";
 import { activeCards } from "./core";
 import { layDownMinimum } from "./feasibility";
-import { BOOK_SIZE, isFinishedBook, validateMeld } from "./meld";
+import { BOOK_SIZE, validateMeld } from "./meld";
 import { greedyLayDown } from "./plan";
-import { cardValue, classifyBook } from "./scoring";
+import { cardValue, classifyBook, isCleanBook } from "./scoring";
 
 /**
  * How reluctant the policy is to part with a card. Higher is kept longer.
@@ -192,12 +192,25 @@ function wantsPile(view: PlayerView, config: RulesConfig, minimum: number): bool
 }
 
 /**
+ * The fewest cards the clean prospect must hold before `rescueWilds` keeps its
+ * last wilds off it. A clean meld of four or more is close enough to a book to
+ * protect; one of three is far from one, and a wild on it beats a wild thrown
+ * away. Set by measurement (see CLAUDE.md, "Heuristic bot policy"): at 4 the
+ * rounds that never end stayed within noise of guarding always, while 5 and 6
+ * made them about half again and twice as common. `placeWilds` guards the
+ * prospect at any size, since letting it spend wilds there too cost more.
+ */
+export const PROSPECT_GUARD_SIZE = 4;
+
+/**
  * The clean meld nearest to a book, which a wild must not dirty while the seat
- * still lacks the clean books going out requires; undefined once it has them.
+ * still lacks the clean books going out requires; undefined once it has them,
+ * or while that meld has fewer than `minSize` cards.
  */
 function guardedProspect(
   melds: ReadonlyMap<Rank, readonly Card[]>,
   config: RulesConfig,
+  minSize: number,
 ): Rank | undefined {
   let clean = 0;
   let prospect: { rank: Rank; size: number } | null = null;
@@ -207,7 +220,8 @@ function guardedProspect(
     if (kind !== "incomplete" || cards.some((c) => isWild(c.rank))) continue;
     if (!prospect || cards.length > prospect.size) prospect = { rank, size: cards.length };
   }
-  return clean < config.goOutCleanBooks ? prospect?.rank : undefined;
+  if (!prospect || prospect.size < minSize) return undefined;
+  return clean < config.goOutCleanBooks ? prospect.rank : undefined;
 }
 
 /**
@@ -215,7 +229,7 @@ function guardedProspect(
  * naturals are played. Wilds are the scarcest cards in the game, so they are
  * spent with a purpose rather than as soon as they fit:
  *
- * - **Never on a book already down**: the rules close a finished book to wilds.
+ * - **Never on a clean book already down**: the rules close one to wilds.
  * - **Never on a clean book**, and never on the seat's best clean prospect while
  *   it still lacks the clean books going out requires: one wild turns a 500
  *   bonus into 300, and can cost the round. The exception is a spare clean book
@@ -226,7 +240,8 @@ function guardedProspect(
  *   held, since a natural pair and a wild is how a seat takes the pile; in the
  *   foot the round is closing and a held wild is a 20- or 50-point penalty, so
  *   the rest go one at a time: a spare clean book this play completes first, then
- *   the unfinished meld nearest completion, then a dirty book this play completes.
+ *   the unfinished meld nearest completion, then a dirty book (one already down
+ *   or one this play completes), where a wild only scores.
  *
  * Returns rank → wild cards to add, for `heuristicAction` to merge with the
  * naturals.
@@ -236,7 +251,7 @@ function placeWilds(
   wilds: readonly Card[],
   inFoot: boolean,
   config: RulesConfig,
-  /** Books already down before this play: closed to wilds, as the reducer rules. */
+  /** Clean books already down before this play: closed to wilds, as the reducer rules. */
   closed: ReadonlySet<Rank>,
 ): Map<Rank, Card[]> {
   const added = new Map<Rank, Card[]>();
@@ -256,9 +271,10 @@ function placeWilds(
     }
     return { clean, dirty };
   };
-  const guarded = guardedProspect(melds, config);
+  // Guarded at any size: spending the foot there too made stalls more common.
+  const guarded = guardedProspect(melds, config, 0);
   /**
-   * Whether a wild may go on this meld. A book already down never may (the
+   * Whether a wild may go on this meld. A clean book already down never may (the
    * reducer refuses it). A clean book this play completes is closed too, unless
    * it is a spare: more clean books than going out needs, and too few dirty ones.
    * Then one wild turns it into the dirty book that is missing, while it still can.
@@ -387,32 +403,44 @@ export function heuristicAction(view: PlayerView, config: RulesConfig): Action |
  * The last resort before a wild is thrown away. `discardFrom` picks a wild only
  * when the zone holds nothing else, and a wild on the pile is the scarcest card
  * in the game given away for nothing, so a place on the table is better: every
- * wild in the zone goes, highest value first, onto an unfinished meld that takes
- * it within the wild ratio, the one nearest a book first. Playing the whole zone
- * this way empties it, which ends the turn without a discard (or picks up the
- * foot), so nothing is lost by not discarding.
+ * wild in the zone goes, highest value first, onto a meld that takes it within
+ * the wild ratio: an unfinished one first, the one nearest a book first, then a
+ * dirty book, where a wild only scores (the order `placeWilds` spends the foot
+ * in). Playing the whole zone this way empties it, which ends the turn without
+ * a discard (or picks up the foot), so nothing is lost by not discarding.
  *
- * A wild is still discarded when no meld will take one: a finished book takes
- * no wild and a wild cannot open a meld of its own, and the turn has to end.
- * The one meld it could go on and does not is the clean prospect `placeWilds`
- * guards, while a clean book is still owed. That was measured, not assumed:
- * dirtying it to save a wild made rounds that can never end (no clean book left
- * in reach for either seat) more than four times as common, which costs far more
- * than the wild.
+ * A wild is still discarded when no meld will take one: a clean book takes no
+ * wild and a wild cannot open a meld of its own, and the turn has to end. The
+ * one meld it could go on and does not is the clean prospect `placeWilds`
+ * guards, while a clean book is still owed and the prospect holds at least
+ * `PROSPECT_GUARD_SIZE` cards. That was measured, not assumed: dirtying it at
+ * any size to save a wild made rounds that can never end (no clean book left in
+ * reach for either seat) more than four times as common, which costs far more
+ * than the wild; a prospect of three is far enough from a book to take one.
  */
 function rescueWilds(
   zone: readonly Card[],
   downMelds: readonly Meld[],
   config: RulesConfig,
 ): MeldPlay[] {
-  // Guarded among every meld down, finished books included: they count toward
-  // the clean books owed. Only the unfinished ones can take a wild.
-  const guarded = guardedProspect(new Map(downMelds.map((m) => [m.rank, m.cards])), config);
+  // Guarded among every meld down, clean books included: they count toward the
+  // clean books owed. Only the others can take a wild.
+  const guarded = guardedProspect(
+    new Map(downMelds.map((m) => [m.rank, m.cards])),
+    config,
+    PROSPECT_GUARD_SIZE,
+  );
   const melds = new Map<Rank, Card[]>(
     downMelds
-      .filter((m) => m.rank !== guarded && !isFinishedBook(m.cards))
+      .filter((m) => m.rank !== guarded && !isCleanBook(m.cards))
       .map((m) => [m.rank, [...m.cards]]),
   );
+  // Unfinished melds first, nearest a book first, then the dirty books; the rank
+  // breaks ties so the order never depends on the order the melds arrived in.
+  const order = (rank: Rank): number => {
+    const size = melds.get(rank)!.length;
+    return size < BOOK_SIZE ? BOOK_SIZE - size : BOOK_SIZE;
+  };
   const plays = new Map<Rank, string[]>();
   const pool = zone
     .filter((c) => isWild(c.rank))
@@ -420,7 +448,7 @@ function rescueWilds(
   for (const wild of pool) {
     const target = [...melds.keys()]
       .filter((rank) => validateMeld([...melds.get(rank)!, wild], config).valid)
-      .sort((a, b) => melds.get(b)!.length - melds.get(a)!.length || (a < b ? -1 : 1))[0];
+      .sort((a, b) => order(a) - order(b) || (a < b ? -1 : 1))[0];
     // Every wild counts alike against the ratio, so once one has nowhere to go,
     // neither has the rest.
     if (target === undefined) break;
@@ -452,7 +480,7 @@ function downPlays(zone: readonly Card[], view: PlayerView, config: RulesConfig)
     zone.filter((c) => isWild(c.rank)),
     view.inFoot,
     config,
-    new Set(view.melds.filter((m) => isFinishedBook(m.cards)).map((m) => m.rank)),
+    new Set(view.melds.filter((m) => isCleanBook(m.cards)).map((m) => m.rank)),
   );
 
   const plays = naturals.map((play) => ({

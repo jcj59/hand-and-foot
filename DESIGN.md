@@ -874,8 +874,15 @@ is how a player takes the pile; from the foot, when a held wild is only a penalt
 spends them all. One exception was found by watching it fail: a seat that had built more clean books
 than going out needs, and could no longer find the cards for a dirty one, drew and discarded threes
 indefinitely. So a spare clean book is given a wild when a dirty book is missing, trading 200 points
-of bonus for the ability to go out. Since the rules close a finished book to wilds, that wild can only
-go on a spare clean book the same play completes; a book already down keeps its kind.
+of bonus for the ability to go out. Since the rules close a clean book to wilds, that wild can only
+go on a spare clean book the same play completes; a clean book already down stays clean.
+
+The rules draw that line at clean books on purpose. The engine first closed every finished book to
+wilds, on the idea that a book's kind is settled at seven cards. The family plays otherwise: a
+dirty book is already dirty, so another wild on it changes nothing but its points, while a wild on
+a clean book would quietly turn 500 into 300. So a dirty book takes wilds within the usual ratio,
+a clean one never does, and naturals go on either. Being a loosening, it leaves every recorded game
+replaying as it was played.
 
 Holding wilds back has a cost the first version did not count. Its discard judgement ranks a wild
 above every other card, so a wild is thrown only when nothing else is left, and that happened often:
@@ -883,14 +890,19 @@ a down seat whose hand had shrunk to wilds, or whose foot held only the wild it 
 clean prospect, threw one away. Counting over 300 arena matches found some 1,900 wild discards, and
 in all but about a hundred of them a meld of the seat's own would have taken the card. A wild on the
 pile is the scarcest card in the game given away for nothing, so the heuristic now plays one rather
-than throw it whenever an unfinished meld will take it within the ratio, nearest a book first. A
-wild is still discarded when no meld will take one (every meld a finished book, or the ratio full),
-which the rules force, since the turn must end with a discard. The one deliberate exception is the
-guarded clean prospect: letting a wild dirty it as a last resort cut wild discards to a twelfth,
-but made rounds that can never end more than four times as common over 10,000 matches, because
-both seats could lose their last route to a clean book. Holding the guard there still cut wild
-discards by more than two thirds, and left the rate of rounds that never end within noise of before
-(38 against 32 over 17,500 matches).
+than throw it whenever a meld will take it within the ratio: an unfinished one first, nearest a
+book, then a dirty book. A wild is still discarded when no meld will take one (every meld a clean
+book, or the ratio full), which the rules force, since the turn must end with a discard. The one
+deliberate exception is the guarded clean prospect: letting a wild dirty it as a last resort cut
+wild discards to a twelfth, but made rounds that can never end more than four times as common over
+10,000 matches, because both seats could lose their last route to a clean book. Holding the guard
+there still cut wild discards by more than two thirds, and left the rate of rounds that never end
+within noise of before. Opening dirty books to wilds halved the discards again (526 to 259 over 300
+matches). The guard was then narrowed to a prospect of four cards or more: a clean meld of three is
+far from a book, and dirtying it beats throwing the wild away. That took discards to 210 with
+stalls within noise (127 against 109 over 40,000 matches); a threshold of five or six cut discards
+further but made stalls half again to twice as common, and so did narrowing the guard on the
+seat's ordinary wild spending too, which keeps guarding the prospect at any size.
 
 The choices were settled by measurement, not intuition. A small arena plays whole matches
 headlessly with a policy per seat, and a script reports the heuristic's results against the
