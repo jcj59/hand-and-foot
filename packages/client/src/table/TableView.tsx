@@ -254,13 +254,13 @@ export function TableView({
     heading ?? `Table ${latestRoom.roomId}`,
     muted,
   );
-  const grabbyHeadline = useGrabbyAnnouncement(realRoom, muted, quiet);
+  const grabbyNews = useGrabbyAnnouncement(realRoom, muted, quiet);
   const [muteReactions, setMuteReactions] = useState(readMuteReactions);
   const bubbles = useReactionBubbles(reactions, update.view.seat, muteReactions, (r) => {
     if (r.seat !== update.view.seat) playSound("reaction");
   });
   // Real names: the celebration is about the player, not their title.
-  const marva = useMarvaCelebration(
+  const marvaNews = useMarvaCelebration(
     update.lastMove,
     (s) => realRoom.players.find((p) => p.seat === s)?.name ?? `Seat ${s}`,
     muted,
@@ -288,7 +288,7 @@ export function TableView({
   const owed = new Set(view.pickedUp);
   const obligationOpen = view.pickedUp.length > 0;
   const nameOf = (s: number): string => room.players.find((p) => p.seat === s)?.name ?? `Seat ${s}`;
-  const awardsShown = useAwardsCelebration(result, quiet);
+  const awardsNews = useAwardsCelebration(result, quiet);
   // Watching, the seat on view is someone's rather than the viewer's own — by their
   // own name, since the Grabby Pants badge already says who holds the title.
   // Watching the table without a seat: nobody's hand is ours to show.
@@ -869,9 +869,17 @@ export function TableView({
       )}
 
       {rulesOpen && <RulesDialog config={room.config} onClose={() => setRulesOpen(false)} />}
-      {grabbyHeadline && <GrabbyAnnouncement headline={grabbyHeadline} />}
-      {marva && <MarvaCelebration news={marva} />}
-      {awardsShown && <AwardsCelebration shown={awardsShown} nameOf={nameOf} />}
+      {grabbyNews.shown && (
+        <GrabbyAnnouncement headline={grabbyNews.shown} onDismiss={grabbyNews.dismiss} />
+      )}
+      {marvaNews.shown && <MarvaCelebration news={marvaNews.shown} onDismiss={marvaNews.dismiss} />}
+      {awardsNews.shown && (
+        <AwardsCelebration
+          shown={awardsNews.shown}
+          nameOf={nameOf}
+          onDismiss={awardsNews.dismiss}
+        />
+      )}
 
       {result && (
         <RoundResult

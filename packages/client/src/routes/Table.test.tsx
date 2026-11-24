@@ -21,7 +21,9 @@ import { useSession } from "../session";
 import type { HfClientSocket } from "../socket";
 import { STUCK_MS } from "../table/audio";
 import { evenRows, Hand, perRow } from "../table/Hand";
-import { REACTION_COOLDOWN_MS, REACTION_SHOW_MS } from "../table/reactions";
+import { REACTION_COOLDOWN_MS, REACTION_SHOW_MS, ReactionBubble } from "../table/reactions";
+import { CELEBRATION_DISMISS_AFTER_MS } from "../table/Celebration";
+import { GRABBY_MS } from "../table/grabby";
 import { PHONE_QUERY } from "../usePhone";
 import { Table } from "./Table";
 
@@ -2308,6 +2310,8 @@ describe("sound", () => {
   /** An audio device that counts what it is asked to play. */
   function fakeAudio(): {
     oscillators: number;
+    /** When each oscillator and each noise was started, on the audio clock. */
+    starts: { kind: "tone" | "noise"; at: number }[];
     noises: number;
     silences: number;
     contexts: number;
@@ -2319,6 +2323,7 @@ describe("sound", () => {
   } {
     const counts = {
       oscillators: 0,
+      starts: [] as { kind: "tone" | "noise"; at: number }[],
       noises: 0,
       silences: 0,
       contexts: 0,
@@ -2378,14 +2383,22 @@ describe("sound", () => {
       createBufferSource = () => ({
         ...node(),
         buffer: null as { length: number } | null,
-        start() {
-          if (this.buffer && this.buffer.length > 1) counts.noises++;
-          else counts.silences++;
+        start(at = 0) {
+          if (this.buffer && this.buffer.length > 1) {
+            counts.noises++;
+            counts.starts.push({ kind: "noise", at });
+          } else counts.silences++;
         },
       });
       createOscillator = () => {
         counts.oscillators++;
-        return { ...node(), type: "", frequency: { value: 0 }, start() {}, stop() {} };
+        return {
+          ...node(),
+          type: "",
+          frequency: { value: 0 },
+          start: (at = 0) => void counts.starts.push({ kind: "tone", at }),
+          stop() {},
+        };
       };
     }
     Object.defineProperty(window, "AudioContext", { configurable: true, value: FakeContext });
@@ -2396,14 +2409,38 @@ describe("sound", () => {
 
   afterEach(() => window.localStorage.removeItem("hf.muted"));
 
-  it("chimes when the turn comes round, once the player has touched the page", () => {
+  it("dings when the turn comes round, once the player has touched the page", () => {
     const audio = fakeAudio();
     try {
       mount(fakeSocket().socket, update({ hints: { seatToAct: 1 }, view: { currentSeat: 1 } }));
       fireEvent.pointerUp(window);
       expect(audio.silences).toBe(1);
       act(() => useSession.getState().applyUpdate(update()));
-      expect(audio.oscillators).toBe(2);
+      // The ding: a bell's five partials, all struck at once, at once.
+      expect(audio.oscillators).toBe(5);
+      expect(new Set(audio.starts.map((s) => s.at))).toEqual(new Set([0.01]));
+    } finally {
+      audio.restore();
+    }
+  });
+
+  it("dings a quarter of a second after the discard that hands this player the turn", () => {
+    const audio = fakeAudio();
+    try {
+      mount(fakeSocket().socket, update({ hints: { seatToAct: 1 }, view: { currentSeat: 1 } }));
+      fireEvent.pointerUp(window);
+      act(() =>
+        useSession
+          .getState()
+          .applyUpdate(
+            update({ lastMove: { seq: 4, seat: 1, kind: "discard", card: card("4", "clubs") } }),
+          ),
+      );
+      const noise = audio.starts.filter((s) => s.kind === "noise");
+      const tones = audio.starts.filter((s) => s.kind === "tone");
+      expect(noise).toEqual([{ kind: "noise", at: 0.01 }]);
+      expect(tones).toHaveLength(5);
+      for (const t of tones) expect(t.at).toBeCloseTo(0.26, 6);
     } finally {
       audio.restore();
     }
@@ -2621,11 +2658,11 @@ describe("sound", () => {
         useSession.setState({ result: scored([[0, 10]], 0, { matchOver: false, roundNumber: 1 }) }),
       );
       expect(audio.oscillators).toBe(3);
-      // Clearing the result reopens this player's turn, which chimes.
+      // Clearing the result reopens this player's turn, which dings.
       act(() => useSession.setState({ result: null }));
-      expect(audio.oscillators).toBe(3 + 2);
+      expect(audio.oscillators).toBe(3 + 5);
       act(() => useSession.setState({ result: scored([[0, 10]], 0, { matchOver: true }) }));
-      expect(audio.oscillators).toBe(3 + 2 + 5);
+      expect(audio.oscillators).toBe(3 + 5 + 5);
     } finally {
       audio.restore();
     }
@@ -2662,11 +2699,13 @@ describe("Grabby Pants", () => {
   function fakeSpeech(options: { voices?: { name: string }[]; events?: boolean } = {}): {
     said: string[];
     voices: (string | undefined)[];
+    cancels: () => number;
     loadVoices: (names: string[]) => void;
     restore: () => void;
   } {
     const said: string[] = [];
     const voices: (string | undefined)[] = [];
+    let cancelled = 0;
     let available = options.voices ?? [];
     const listeners = new Set<() => void>();
     class Utterance {
@@ -2686,7 +2725,7 @@ describe("Grabby Pants", () => {
           said.push(u.text);
           voices.push(u.voice?.name);
         },
-        cancel: () => {},
+        cancel: () => void cancelled++,
         getVoices: () => available,
         ...(options.events && {
           addEventListener: (_: string, fn: () => void) => listeners.add(fn),
@@ -2697,6 +2736,7 @@ describe("Grabby Pants", () => {
     return {
       said,
       voices,
+      cancels: () => cancelled,
       loadVoices: (names) => {
         available = names.map((name) => ({ name }));
         for (const fn of [...listeners]) fn();
@@ -2724,6 +2764,46 @@ describe("Grabby Pants", () => {
       expect(seat.querySelector("svg path[fill='#2f5da8']")).not.toBeNull();
     } finally {
       speech.restore();
+    }
+  });
+
+  it("can be clicked away once it has popped in, which stops the voice", () => {
+    vi.useFakeTimers();
+    const speech = fakeSpeech();
+    try {
+      mount(fakeSocket().socket);
+      act(() => useSession.getState().applyRoom(roomInfo({ grabbyPants: { seat: 1, streak: 3 } })));
+      const panel = screen.getByRole("status", { name: "Grabby Pants" });
+      const overlay = panel.parentElement!;
+      // Through its entrance it lets clicks through to the table and ignores them.
+      expect(overlay).toHaveClass("pointer-events-none");
+      act(() => vi.advanceTimersByTime(799));
+      fireEvent.click(overlay);
+      fireEvent.keyDown(window, { key: "Escape" });
+      expect(screen.getByRole("status", { name: "Grabby Pants" })).toBeInTheDocument();
+      // 800ms, pinned: the pop and the settle, then a tap anywhere puts it away.
+      expect(CELEBRATION_DISMISS_AFTER_MS).toBe(800);
+      act(() => vi.advanceTimersByTime(1));
+      expect(overlay).not.toHaveClass("pointer-events-none");
+      const before = speech.cancels();
+      fireEvent.click(overlay);
+      expect(screen.queryByRole("status", { name: "Grabby Pants" })).toBeNull();
+      expect(speech.cancels()).toBe(before + 1);
+      // Its timer went with it: the next holder's announcement gets its own full time.
+      act(() => vi.advanceTimersByTime(1_000));
+      act(() =>
+        useSession.getState().applyRoom(roomInfo({ grabbyPants: { seat: 0, streak: 3, from: 1 } })),
+      );
+      act(() => vi.advanceTimersByTime(GRABBY_MS - 1));
+      expect(screen.getByRole("status", { name: "Grabby Pants" })).toHaveTextContent(
+        "ana takes Grabby Pants from ben",
+      );
+      // And Escape does the same as a click.
+      fireEvent.keyDown(window, { key: "Escape" });
+      expect(screen.queryByRole("status", { name: "Grabby Pants" })).toBeNull();
+    } finally {
+      speech.restore();
+      vi.useRealTimers();
     }
   });
 
@@ -3000,6 +3080,35 @@ describe("quick reactions", () => {
     expect(within(picker).getByRole("button", { name: "Grimacing" })).toHaveTextContent("😬");
     fireEvent.click(within(picker).getByRole("button", { name: "Oof" }));
     expect(sent).toContainEqual({ event: "react", args: [{ id: "oof" }] });
+  });
+
+  it('offers "I Hate You" among the phrases', () => {
+    const { socket, sent } = fakeSocket();
+    mount(socket);
+    fireEvent.click(screen.getByRole("button", { name: "React" }));
+    const picker = screen.getByRole("group", { name: "Reactions" });
+    fireEvent.click(within(picker).getByRole("button", { name: "I Hate You" }));
+    expect(sent).toContainEqual({ event: "react", args: [{ id: "i-hate-you" }] });
+    heard(1, 1, "i-hate-you");
+    expect(screen.getByRole("status", { name: "ben: I Hate You" })).toHaveTextContent("I Hate You");
+  });
+
+  it("ignores a reaction this page does not know, as a tab loaded before a deploy hears one", () => {
+    mount(fakeSocket().socket);
+    // Sent by a newer server: an id added after this page loaded.
+    heard(1, 1, "brand-new" as ReactionId);
+    expect(useSession.getState().reactions).toEqual([]);
+    expect(screen.getByRole("button", { name: "React" })).toBeInTheDocument();
+    // The table goes on, and the next one it does know shows as usual.
+    heard(2, 1, "gg");
+    expect(screen.getByRole("status", { name: "ben: GG" })).toBeInTheDocument();
+  });
+
+  it("draws nothing for a reaction it cannot name", () => {
+    const { container } = render(
+      <ReactionBubble reaction={{ seq: 1, seat: 1, id: "brand-new" as ReactionId }} name="ben" />,
+    );
+    expect(container).toBeEmptyDOMElement();
   });
 
   it("shows my own reaction by my hand, and the latest one only", () => {

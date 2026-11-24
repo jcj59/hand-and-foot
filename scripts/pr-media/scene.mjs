@@ -266,9 +266,15 @@ const run = async () => {
     await page.addInitScript(() => {
       document.addEventListener("DOMContentLoaded", () => {
         const style = document.createElement("style");
-        style.textContent =
-          '@font-face{font-family:"Noto Color Emoji";src:url(/__emoji.ttf);' +
-          "unicode-range:U+1F000-1FAFF,U+2600-27BF,U+2B50,U+FE0F}";
+        // Declared as a face of each of the page's own families too, limited to
+        // emoji, since Chromium never falls back to a web font by name.
+        style.textContent = ["Noto Color Emoji", "Inter", "Space Grotesk", "JetBrains Mono"]
+          .map(
+            (family) =>
+              `@font-face{font-family:"${family}";src:url(/__emoji.ttf);font-weight:100 900;` +
+              "unicode-range:U+1F000-1FAFF,U+2600-27BF,U+2B50,U+FE0F}",
+          )
+          .join("");
         document.head.append(style);
       });
     });
@@ -813,11 +819,24 @@ const run = async () => {
   }[mode];
   if (waitText) {
     await page.getByText(waitText).first().waitFor();
+    // Frames to capture, and (CLICK_AT) moments to click the middle of the window,
+    // both in milliseconds after the change, in time order.
+    const times = (name, fallback) =>
+      (process.env[name] ?? fallback)
+        .split(",")
+        .filter(Boolean)
+        .map((ms) => ({ ms: Number(ms), click: name === "CLICK_AT" }));
+    const steps = [...times("FRAMES", "80,300,600"), ...times("CLICK_AT", "")].sort(
+      (a, b) => a.ms - b.ms || Number(a.click) - Number(b.click),
+    );
     let elapsed = 0;
-    for (const ms of (process.env.FRAMES ?? "80,300,600").split(",").map(Number)) {
+    for (const { ms, click } of steps) {
       await page.waitForTimeout(ms - elapsed);
       elapsed = ms;
-      await page.screenshot({ path: out.replace(".png", `-${ms}.png`) });
+      if (click) {
+        const size = page.viewportSize();
+        await page.mouse.click(size.width / 2, size.height / 2);
+      } else await page.screenshot({ path: out.replace(".png", `-${ms}.png`) });
     }
   } else {
     await page.waitForTimeout(Number(process.env.SHOT_AT ?? 300));
