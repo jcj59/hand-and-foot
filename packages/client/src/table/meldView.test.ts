@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { EAST_COAST, type Card, type Meld, type Rank, type Suit } from "@hf/shared";
-import { booksOf, meldChip, meldLabel, meldNote, sortMelds } from "./meldView";
+import { booksOf, goOutProgress, meldChip, meldLabel, meldNote, sortMelds } from "./meldView";
 import { cardShort, moveLine, withMove, MOVES_KEPT } from "./moveLine";
+import { discardWarning, rankPlural } from "./discardWarning";
 
 let next = 0;
 function card(rank: Rank, suit: Suit | null = "hearts"): Card {
@@ -106,6 +107,70 @@ describe("what a meld says", () => {
 
   it("lists only finished books, as clean or dirty", () => {
     expect(booksOf([meld("8", 4), meld("9", 7), meld("Q", 5, 2)])).toEqual(["clean", "dirty"]);
+  });
+});
+
+describe("the go-out status", () => {
+  it("counts clean and dirty books against what the table needs", () => {
+    const goals = goOutProgress([meld("9", 7), meld("Q", 5, 2), meld("8", 5, 1)], {
+      ...EAST_COAST,
+      goOutCleanBooks: 1,
+      goOutDirtyBooks: 2,
+    });
+    expect(goals).toEqual([
+      { label: "Clean books", have: 1, need: 1, done: true },
+      { label: "Dirty books", have: 1, need: 2, done: false },
+    ]);
+  });
+
+  it("has no goal for a kind the table asks none of", () => {
+    const config = { ...EAST_COAST, goOutCleanBooks: 2, goOutDirtyBooks: 0 };
+    expect(goOutProgress([meld("5", 3), meld("6", 4)], config)).toEqual([
+      { label: "Clean books", have: 0, need: 2, done: false },
+    ]);
+    expect(
+      goOutProgress([], { ...EAST_COAST, goOutCleanBooks: 0, goOutDirtyBooks: 1 }).map(
+        (g) => g.label,
+      ),
+    ).toEqual(["Dirty books"]);
+  });
+
+  it("is done at exactly the number needed, and past it", () => {
+    const config = { ...EAST_COAST, goOutCleanBooks: 1, goOutDirtyBooks: 1 };
+    expect(goOutProgress([meld("9", 7), meld("10", 7), meld("J", 6, 1)], config)).toEqual([
+      { label: "Clean books", have: 2, need: 1, done: true },
+      { label: "Dirty books", have: 1, need: 1, done: true },
+    ]);
+  });
+
+  it("does not let a clean book stand in for a dirty one", () => {
+    // As the engine counts them.
+    const goals = goOutProgress([meld("9", 7), meld("10", 7)], {
+      ...EAST_COAST,
+      goOutCleanBooks: 1,
+      goOutDirtyBooks: 1,
+    });
+    expect(goals[1]).toEqual({ label: "Dirty books", have: 0, need: 1, done: false });
+  });
+});
+
+describe("a discard that fits the player's own meld", () => {
+  it("is said, by the rank in words", () => {
+    expect(discardWarning(card("9"), true)).toBe("You have 9s down; it could go on them.");
+    expect(discardWarning(card("K"), true)).toBe("You have kings down; it could go on them.");
+  });
+
+  it("is the only discard said anything about", () => {
+    expect(discardWarning(card("9"), false)).toBeNull();
+    expect(discardWarning(card("JOKER", null), false)).toBeNull();
+  });
+
+  it("says ranks as they are said aloud", () => {
+    expect(rankPlural("A")).toBe("aces");
+    expect(rankPlural("J")).toBe("jacks");
+    expect(rankPlural("Q")).toBe("queens");
+    expect(rankPlural("3")).toBe("threes");
+    expect(rankPlural("10")).toBe("10s");
   });
 });
 

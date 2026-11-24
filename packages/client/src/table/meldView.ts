@@ -1,7 +1,8 @@
 /**
  * How melds are read at the table, as words and in an order: what each one is
- * worth, its folded form for a chip, its accessible name, and the two ways of
- * sorting them.
+ * worth, its folded form for a chip, its accessible name, the two ways of
+ * sorting them, and, for a player in their foot, the books held against the
+ * books going out needs.
  *
  * Pure, so the table, the other players' boxes and their sheet all say the same
  * thing about the same meld. Whether a meld is a book, and of which kind, is the
@@ -96,4 +97,42 @@ export function meldLabel(meld: Meld): string {
 /** Each finished book, in the order the melds are given: the markers on a player's chip. */
 export function booksOf(melds: readonly Meld[]): ("clean" | "dirty")[] {
   return melds.map(classifyBook).filter((kind) => kind !== "incomplete");
+}
+
+export interface GoOutGoal {
+  readonly label: "Clean books" | "Dirty books";
+  readonly have: number;
+  readonly need: number;
+  readonly done: boolean;
+}
+
+/**
+ * The books a player has against the books going out needs, as the engine's
+ * `canGoOut` counts them: clean and dirty separately, each at least the table's
+ * number. A rule asking for none of a kind has no goal shown for it. This is a
+ * count of what is on the table against a rule, not advice: it never says which
+ * meld is nearest a book.
+ */
+export function goOutProgress(melds: readonly Meld[], config: RulesConfig): GoOutGoal[] {
+  const books = booksOf(melds);
+  const clean = books.filter((kind) => kind === "clean").length;
+  const dirty = books.length - clean;
+  const goals: GoOutGoal[] = [];
+  if (config.goOutCleanBooks > 0) {
+    goals.push({
+      label: "Clean books",
+      have: clean,
+      need: config.goOutCleanBooks,
+      done: clean >= config.goOutCleanBooks,
+    });
+  }
+  if (config.goOutDirtyBooks > 0) {
+    goals.push({
+      label: "Dirty books",
+      have: dirty,
+      need: config.goOutDirtyBooks,
+      done: dirty >= config.goOutDirtyBooks,
+    });
+  }
+  return goals;
 }

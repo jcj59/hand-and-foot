@@ -14,15 +14,18 @@
  * staged lay-down is also sent to the server as it changes, so that if the turn
  * clock runs out the server plays it rather than it being lost.
  *
- * Clicking a card opens a menu of what it can do right now — meld it, discard it,
- * take it back — rather than one click meaning different things by mode.
+ * Clicking a card opens a menu of what it can do right now (meld it, discard it,
+ * take it back) rather than one click meaning different things by mode. A
+ * discard of a card that fits one of the player's own melds is warned about in
+ * the menu itself, whose button then reads "Discard anyway".
  *
- * A real table gives no advice: nothing says which move is wise, whether the pile
- * could be taken, or how near a book or going out is. What it says is the state
- * (whose turn, a debt to the pile, the last lap) and, when a move is refused, the
- * engine's own reason for refusing it.
+ * The table shows what the rules and the state allow: the pile glows and is a
+ * button only when the server says it can be taken, the cards that fit the
+ * player's melds can be added in one press, and once the books to go out are in
+ * place it says so. It does not coach: no how-to lines, no word on which meld is
+ * nearest a book, nothing about what a discard would give anyone else.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   isBlackThree,
   isWild,
@@ -45,6 +48,8 @@ import { usePhone } from "../usePhone";
 import { Hand } from "./Hand";
 import { PlayerFace } from "./PlayerFace";
 import { CardMenu } from "./CardMenu";
+import { discardWarning } from "./discardWarning";
+import { pulseStyle } from "./pulse";
 import { Icon } from "../ui/icons";
 import { MeldsPanel } from "./MeldsPanel";
 import type { MeldOrder } from "./meldView";
@@ -220,6 +225,12 @@ export function TableView({
   useEffect(() => {
     if (draftOpen) controls?.stageDraft(toMeldPlays(staging));
   }, [draftOpen, staging, controls]);
+
+  // The discard pile's glow starts when it becomes takeable, so its phase is set
+  // then, to agree with the stock's. Worked out before the early return below, as
+  // a hook has to be.
+  const takeable = turnOpen && update.hints.canTakePile && !busy;
+  const pilePulse = useMemo(() => (takeable ? pulseStyle() : undefined), [takeable]);
 
   // Other players' discards and pickups announced, and this player's draw marked.
   // Real names, for saying who took the Grabby Pants title from whom.
@@ -428,8 +439,7 @@ export function TableView({
   const outOfPlay = (card: Card): boolean => isUnplayable(card, playContext);
   const building = canMeld && (melding || stagedCount(staging) > 0);
   // Taking the pile before getting down asks for a lay-down the server has already
-  // found exists; the player may have it staged for them, to change and play. The
-  // one aid at a real table, asked for by name: nothing else is suggested.
+  // found exists; the player may have it staged for them, to change and play.
   const laidOutForMe =
     // No card owed, no offer: the search must play an owed card and then finds none.
     canMeld && !view.isDown
@@ -459,6 +469,24 @@ export function TableView({
       closeMenu();
       setStaging(restaged);
       setMelding(true);
+    });
+  }
+
+  /**
+   * Cards that can go straight onto a meld already down: naturals of a melded rank,
+   * never wilds (where a wild goes is a choice, and this is the button for not
+   * having to make one). Offered only while nothing is being built, so no card
+   * here is already in a lay-down.
+   */
+  const layOffs =
+    canMeld && view.isDown ? zone.filter((card) => canLayOff(card, meldRanks, playContext)) : [];
+
+  function layOffAll(): void {
+    const byRank = new Map<Rank, string[]>();
+    for (const card of layOffs) byRank.set(card.rank, [...(byRank.get(card.rank) ?? []), card.id]);
+    void send({
+      type: "playMelds",
+      melds: [...byRank].map(([rank, cardIds]) => ({ rank, cardIds })),
     });
   }
 
@@ -517,6 +545,9 @@ export function TableView({
       // Discarding would silently throw the staged lay-down away, so the melds have
       // to be played or taken back first.
       discardBlocked={stagedCount(staging) > 0}
+      // Only a card that fits the player's own melds is warned about; what a
+      // discard would give anyone else is theirs to judge.
+      warning={discardWarning(chosen, canLayOff(chosen, meldRanks, playContext))}
       busy={busy}
       onMeld={() => meld(chosen)}
       onLayOff={() => {
@@ -535,11 +566,9 @@ export function TableView({
   );
 
   const canDraw = myTurn && hints.canDraw && !busy;
-  // The pile can be tried whenever a draw can: whether it may be taken is the
-  // engine's to say, and it says why when it refuses. Asking the server first
-  // (`hints.canTakePile`) and lighting the pile up only when the answer was yes
-  // would tell the player what the solver found, which a real table does not.
-  const canTake = canDraw && view.discard.length > 0;
+  // Whether the pile can be taken is decided by a solver over the whole state, so
+  // this is the server's answer, not a guess made here.
+  const canTake = myTurn && hints.canTakePile && !busy;
 
   const lastLap = view.finalLapRemaining !== null && view.wentOutSeat !== null;
 
@@ -658,7 +687,8 @@ export function TableView({
             type="button"
             aria-label={`Take the pile (${view.discard.length} cards)`}
             onClick={() => void send({ type: "takePile" })}
-            className="rounded-xl p-1 transition hover:bg-white/5"
+            style={pilePulse}
+            className="pile-prompt rounded-xl p-1 transition hover:bg-white/5"
           >
             <DiscardPile cards={view.discard} size={pileSize} />
           </button>
@@ -698,6 +728,7 @@ export function TableView({
         setCompactMelds(on);
         writeFlag(COMPACT_MELDS_KEY, on);
       }}
+      inFoot={view.inFoot}
       empty={
         view.isDown || minimum === undefined
           ? "Nothing down yet."
@@ -727,6 +758,11 @@ export function TableView({
       {obligationOpen && myTurn && (
         <p role="status" className={`${BANNER} border-blue/50 bg-blue/14 text-[#D6E5F7]`}>
           You took the pile. Play at least one of the ringed cards before discarding.
+        </p>
+      )}
+      {hints.canGoOut && myTurn && (
+        <p role="status" className={`${BANNER} border-accent/45 bg-accent/12 text-[#C9F5DF]`}>
+          You have the books to go out. Shed your last card to end the round.
         </p>
       )}
     </>
@@ -789,6 +825,16 @@ export function TableView({
               className={`${ACTION} border border-blue/60 bg-blue/8 text-[#CFE0F5]`}
             >
               Take back melds
+            </button>
+          )}
+          {layOffs.length > 0 && !building && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={layOffAll}
+              className={`${ACTION} border border-accent/60 bg-accent/8 text-[#BDF5DA]`}
+            >
+              Add {layOffs.length} to my melds
             </button>
           )}
         </>
@@ -1341,7 +1387,7 @@ const FELT_CENTER = "radial-gradient(ellipse at 50% 35%, #2C6B53, #1A4535 70%, #
  */
 const FELT_PART = "-m-px flex flex-col overflow-y-auto p-px";
 
-/** A message on the felt: the last lap, a debt to the pile. */
+/** A message on the felt: the last lap, a debt to the pile, the books to go out. */
 const BANNER = "m-0 rounded-2xl border px-3 py-2.5 text-center text-[13px] leading-snug";
 
 /** The buttons by the hand, as the design sizes them. */

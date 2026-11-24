@@ -1136,17 +1136,22 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   in the redesign (1c):** no Hints toggle, no Suggest a move, no "why not the pile" line at a real
   table (`table/hints.ts` is gone; `Table.test.tsx` "hints" pins their absence). Hints live only in
   the lessons and the demo, which use their own step hints; `takePileWhy` is kept on the wire but
-  no client code reads it now, so the lessons' coach can use it later. **The word hints left at
-  a real table went too (2026-11-19 change list, items 16 to 18):** no risky-discard warning or
-  "Discard anyway" (`discardWarning.ts` is gone), no "Add N to my melds", no foot go-out tracker
-  (`goOutProgress` is gone: no book counts, no "Your Ks need two more cards"), no "books to go
-  out" banner, no how-to lines (the staging panel's intro is gone; `guidanceLine` says only
+  no client code reads it now, so the lessons' coach can use it later. **What a real table
+  says, as the family settled it (2026-11-19 change list, items 16 to 18, then revised
+  2026-11-21):** the how-to lines are gone (the staging panel's intro; `guidanceLine` says only
   "Your turn.", "Waiting for X.", "The table is paused.", or a rule: the pile debt, the discard
-  grace). The pile has no glow and is a button whenever a draw is open and it has cards,
-  whatever `hints.canTakePile` says; an illegal take is refused with the engine's reason as a
-  notice. Kept: the melded-rank underline, the points bar and refusal reasons, the pile-debt ring
-  and banner, dimmed red threes, the last-lap banner, the stock's glow, the one-card "Add to Ks
-  meld". `Table.test.tsx` "hints" pins each gone and each kept. **One exception, by name (same
+  grace), and so is the go-out tracker's "Your Ks need two more cards" (`goOutProgress` returns
+  only the goals, no `nearest`). Kept or brought back: "Add N to my melds" (`layOffs`,
+  `layOffAll`, naturals of a melded rank, offered in the play phase while not building); the
+  foot's "To go out" group (`MeldsPanel` `inFoot`, `goOutProgress`: "Clean books 1/1", "Dirty
+  books 0/2", the counts always, green when done); the "You have the books to go out" banner
+  (`hints.canGoOut`, own turn); the pile a button and glowing (`pile-prompt`, `pilePulse` in
+  phase with the stock) only when `hints.canTakePile` on the player's turn and not busy; the
+  discard warning only for a card that fits the player's own meld (`discardWarning(card,
+  fitsOwnMeld)`, "You have 9s down; it could go on them.", button "Discard anyway"; nothing for a
+  wild or a rank another player has down); the melded-rank underline, the points bar and refusal
+  reasons, the pile-debt ring and banner, dimmed red threes, the last-lap banner, the one-card
+  "Add to Ks meld". `Table.test.tsx` "hints" pins each kept and each gone. **One aid by name (same
   change list, item 19): "Lay down for me"**, in the action bar only when `canMeld`, the player is not
   down and `layDownForMe` finds a plan (with nothing in `pickedUp` it never does). `layDownForMe` (`table/staging.ts`) runs
   `greedyLayDown(zone, [], new Set(pickedUp), config, { minimum, inFoot })`, the search that let
@@ -1271,9 +1276,10 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   `useCardMotion` flies nothing. Harness: action `arrange` (`ARRANGE_CARD`, `ARRANGE_BEFORE`,
   frames `out-0..6.png`). Mutation-tested: 45/45 killed over `arrange`, `moveTo`/`moveBy`,
   `handArrangement.ts` and `Hand`'s drag and keys (a `moveBy` guard found equivalent was removed).
-  Banners (last lap, pile debt), the
+  Banners (last lap, pile debt, books to go out), the
   `StagingPanel` (points bar, gold ring where wilds go, scrolls itself into view) and
-  `MeldsPanel` (sort Rank/Newest, per device `hf.meldOrder`; Collapse `hf.compactMelds`). `Melds` fans small cards with a note
+  `MeldsPanel` (sort Rank/Newest, per device `hf.meldOrder`; Collapse `hf.compactMelds`; the
+  go-out status `goOutProgress` in the foot). `Melds` fans small cards with a note
   (`meldView`: `sortMelds`, `meldNote`, `meldChip`, `booksOf`); the note is the pre-redesign
   caption, size, kind and the cards' `meldPoints` ("5 cards · 70", "7 cards · clean · 120",
   the user's choice over the mockups' "3 more for a book"). A finished book is one squared-up
@@ -1296,7 +1302,9 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   `position: fixed`, placed by the pure `placeMenu` in `menuPlacement.ts`: above the card, from
   its left edge or else its right, below when there is no room above, clamped inside the
   window; it used to open by the card's index in the hand, which ran off the left for the
-  first card of a wrapped row); a discard is never warned about. `RoundResult` is a bottom sheet between rounds
+  first card of a wrapped row); a discard that fits the player's own meld (`discardWarning`) is
+  said up front and the button reads "Discard anyway" (no second confirmation; a wild or a rank
+  another player has down is not warned about). `RoundResult` is a bottom sheet between rounds
   (ranked rows with counts per column on a computer, the recap, `readiness` sentence, "I'm ready
   for round n" with aria "Next round", Save for later, Leave with aria "Back to the main screen",
   Look at the table) and a centered card at match end (winner, awards with `AwardIcon`); the old
@@ -1311,8 +1319,11 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   `Table.test.tsx` ("keeps the piles whole"); jsdom lays nothing out, so check it in a browser
   (`scene.mjs` at 1366 768). The same day's item 14 (a card's menu cut off) did not reproduce
   over hands of 1 to 4 and 15 cards, the foot, 768 to 1920 wide, 125% and 150% zoom, side panel
-  shown and hidden. Mutation-tested: 12/12 over `meldView`, `moveLine` and the since-removed
-  `discardWarning`.
+  shown and hidden. Mutation-tested: 12/12 over `meldView`, `moveLine` and the old
+  `discardWarning`; the 2026-11-21 restore (`discardWarning` with only the own-meld case,
+  `goOutProgress` without `nearest`, the pile's gating and glow, the bulk add, the go-out banner)
+  is 28/29 killed (one needed the "no discard on offer" test) with 1 equivalent: dropping
+  `view.isDown` from `layOffs`, since a player not down holds no melds; kept, as on `layOffTo`.
   **Practice (redesign 4):** `home/PracticeSheet.tsx`, also at `/practice` (closing goes home).
   New table without Mode (always family) and without empty seats: a computer stepper
   (`PRACTICE_BOTS` 1 to 7) and a chip per computer opening `BotEditor` (no Remove: the stepper

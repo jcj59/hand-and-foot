@@ -1010,24 +1010,25 @@ learning, in the lessons and the narrated demo game. The table's Hints button, t
 still works out why the pile cannot be taken (`LegalHints.takePileWhy`) and sends it, but nothing in
 the client reads it today; it is kept on the wire so the lessons' coach can use it later.
 
-A later pass (November 2026, at the family's request) took out the advice that was left at a real
-table, drawing the line between words that tell a player what to do and marks that show the state or
-a rule. Gone: the warning on a risky discard and its "Discard anyway" button (a wild, a rank another
-player has down, a card that fits the player's own meld), the "Add N to my melds" button, the foot's
-go-out tracker (the clean and dirty book counts and "Your Ks need two more cards"), the "You have the
-books to go out" banner, and the how-to lines ("Click the stock to draw, or the pile to take it",
-the lay-down panel's "Click cards in your hand to add them"). The line by the hand now says only
-whose turn it is, or the rule holding the player: a card owed to the pile, a clock that has run out.
-The pile's glow went too, and with it the rule that the pile was a button only when the server's
-solver said it could be taken: both told the player what the solver had found. The pile can now be
-tried whenever a draw is open, and a take the rules refuse comes back with the engine's own reason,
-as any refused move does. Kept, because each shows a rule or the state rather than advice: the
-underline under cards of a rank already down, the lay-down's points bar and its refusal reasons, the
-ring and banner for a card owed to the pile, the dimmed red threes, the last-lap banner, the stock's
-glow while a draw is open, and the one-card "Add to Ks meld" in a card's menu, which is an action,
-not a suggestion.
+A later pass (November 2026, at the family's request) drew the line at a real table between words
+that coach a player and aids that show the state, a rule, or what the server already knows can be
+done. A first cut took out nearly everything that spoke; the family then put back the aids they
+missed, and the line now sits here. Gone: the how-to lines ("Click the stock to draw, or the pile to
+take it", the lay-down panel's "Click cards in your hand to add them"), so the line by the hand says
+only whose turn it is or the rule holding the player (a card owed to the pile, a clock that has run
+out); the foot's "Your Ks need two more cards", which picked out a meld to work on; and the warnings
+on discarding a wild or a rank another player has down, which judge what a card is worth to someone
+else. Kept: the foot's count of clean and dirty books against the books going out needs ("Clean
+books 1/1, Dirty books 0/2"), a count of what is on the table against a rule, like the lay-down's
+points bar; the "You have the books to go out" banner; the "Add N to my melds" button and the
+one-card "Add to Ks meld"; the warning on discarding a card that fits one of the player's own
+melds, with its "Discard anyway"; the pile's glow, and the pile being a button only when the server
+says it can be taken (the server's solver decides it either way, and a pile that answers every
+click with a refusal helped nobody); and the underline under cards of a rank already down, the
+points bar and its refusal reasons, the ring and banner for a card owed to the pile, the dimmed red
+threes, the last-lap banner and the stock's glow.
 
-One aid came back by name, at the family's request: "Lay down for me", for a player who took the
+One new aid was added by name, at the family's request: "Lay down for me", for a player who took the
 pile before getting down. Taking it is the one moment the game asks for a lay-down it has already
 decided exists, since the server allowed the take only because its lay-down search found one over
 the hand and the pile. Pressing the button runs that same search (`greedyLayDown`, with the cards

@@ -1,8 +1,9 @@
 /**
  * The player's own melds, on the felt under the piles: sorted by rank or newest
  * first (the same order the other players' melds take), folded to chips with
- * Collapse. Nothing here counts what is still wanted to go out: that is the
- * player's to work out, as at a real table.
+ * Collapse, and, once the player is in their foot, the clean and dirty books they
+ * hold against the books going out needs. That is a count against a table rule,
+ * like the points bar of a lay-down; it never says which meld is nearest a book.
  *
  * The order and the fold are per device, like the rest of the table's display
  * choices.
@@ -10,7 +11,7 @@
 import type { Meld, Rank, RulesConfig } from "@hf/shared";
 import { usePhone } from "../usePhone";
 import { Melds } from "./Melds";
-import type { MeldOrder } from "./meldView";
+import { goOutProgress, type MeldOrder } from "./meldView";
 
 export interface MeldsPanelProps {
   readonly title: string;
@@ -22,6 +23,8 @@ export interface MeldsPanelProps {
   readonly onCollapsed: (collapsed: boolean) => void;
   /** Said when nothing is down yet. */
   readonly empty: string;
+  /** In the foot: show the books held against the books needed to go out. */
+  readonly inFoot: boolean;
   readonly onSelect?: (rank: Rank) => void;
   readonly selectedRank?: Rank | null;
   readonly provisionalIds?: ReadonlySet<string>;
@@ -36,11 +39,13 @@ export function MeldsPanel({
   collapsed,
   onCollapsed,
   empty,
+  inFoot,
   onSelect,
   selectedRank,
   provisionalIds,
 }: MeldsPanelProps): React.ReactElement {
   const phone = usePhone();
+  const goals = inFoot ? goOutProgress(melds, config) : [];
   const sorts: readonly [MeldOrder, string][] = [
     ["rank", phone ? "Rank" : "By rank"],
     ["newest", phone ? "Newest" : "Newest first"],
@@ -83,6 +88,24 @@ export function MeldsPanel({
         )}
       </div>
       {melds.length === 0 && <p className="m-0 text-[13px] text-ink/70">{empty}</p>}
+      {goals.length > 0 && (
+        <div aria-label="To go out" role="group" className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs font-semibold text-ink/75">To go out</span>
+          {goals.map((goal) => (
+            <span
+              key={goal.label}
+              className={`flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-semibold ${
+                goal.done ? "bg-accent/18 text-[#9EF0C7]" : "bg-black/30 text-ink"
+              }`}
+            >
+              {goal.label}{" "}
+              <span className="font-mono">
+                {goal.have}/{goal.need}
+              </span>
+            </span>
+          ))}
+        </div>
+      )}
       {melds.length > 0 && (
         <Melds
           melds={melds}

@@ -112,11 +112,10 @@ body[data-resizing="horizontal"] * {
   cursor: row-resize !important;
 }
 
-/* The stock while the player can draw: a soft glow that breathes, on one rhythm
-   (see pulse.ts, which puts it in phase), so the start of a turn is hard to miss.
-   The discard pile never glows: lighting it only when it can be taken would say
-   what the server's solver found. Off for anyone who has asked their system for
-   less motion. */
+/* The stock while the player can draw, and the discard pile while it can be
+   taken: a soft glow that breathes, on one rhythm (see pulse.ts, which puts each
+   one in phase), so the start of a turn, and whether the pile is open, are hard to
+   miss. Off for anyone who has asked their system for less motion. */
 @keyframes pile-glow {
   0%,
   100% {
