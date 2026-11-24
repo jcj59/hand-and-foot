@@ -1161,8 +1161,9 @@ across the room. The app does the same everywhere a book appears: the book's top
 book's chip (solid red, or near-black with a light outline so it reads on the dark felt), the tiny
 card marker per book under a player's name, and the note under a clean book, in a red light enough
 to read as text. The first redesign used gold for clean and silver for dirty; the family plays
-with red and black, so the app does too. Nothing about a book's look says it is closed: a finished book refuses wilds but
-still takes naturals, so it is drawn as finished, not locked.
+with red and black, so the app does too. Nothing about a book's look says it is closed: a finished
+book still takes naturals, and a dirty one wilds too (only a clean one refuses a wild), so it is
+drawn as finished, not locked.
 
 **Folded melds.** A meld folded to a chip (another player's box on a computer, or the player's own
 melds collapsed) shows its rank, the number of cards in it, and each wild as a small gold-faced card

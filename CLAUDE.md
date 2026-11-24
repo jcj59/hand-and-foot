@@ -1169,7 +1169,8 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   `bg-suit-red`, a dirty one's `bg-suit-black` with a light inset outline; `BookMarkers` are tiny
   cards in the same two colors (`data-book`); a clean book's note is `text-book-red` (a lighter
   red token, readable on the felt). `meldLabel` (now in `meldView`) adds the wilds: "Meld of Ks, 6
-  cards, 2 wild". Nothing marks a book as locked: it refuses wilds but still takes naturals.
+  cards, 2 wild". Nothing marks a book as locked: a finished book takes naturals, and a dirty one wilds too
+  (only a clean one refuses a wild).
   Harness: `BIG_OPP=1` melds hold twos and jokers, `COMPACT_MELDS=1`, `SEAT=<name>` for
   `expand`/`chip`. "Newest first" is `PlayerState.melds` reversed, which the engine keeps in laid
   order (pinned in `reducer.meldorder.test.ts`). The card's choices (`CardMenu`) are a sheet on
