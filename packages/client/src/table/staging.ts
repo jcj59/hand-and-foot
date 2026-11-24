@@ -28,7 +28,14 @@ import {
   type Rank,
   type RulesConfig,
 } from "@hf/shared";
-import { cardValue, classifyBook, isCleanBook, naturalRank, validateMeld } from "@hf/engine";
+import {
+  cardValue,
+  classifyBook,
+  greedyLayDown,
+  isCleanBook,
+  naturalRank,
+  validateMeld,
+} from "@hf/engine";
 
 export interface StagedGroup {
   readonly rank: Rank;
