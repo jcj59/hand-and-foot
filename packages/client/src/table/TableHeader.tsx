@@ -12,7 +12,7 @@
  * the way back, and the clock keeps running meanwhile).
  */
 import { useState } from "react";
-import type { ClockState, ReactionId } from "@hf/shared";
+import type { Avatar, ClockState, ReactionId } from "@hf/shared";
 import type { TableReport } from "../report/context";
 import { ReportSheet } from "../report/ReportSheet";
 import { Sheet } from "../ui/Sheet";
@@ -30,6 +30,8 @@ export interface TableHeaderProps {
   readonly clock: ClockState | null;
   /** Null when watching: no reactions, no pausing. */
   readonly onReact: ((id: ReactionId) => void) | null;
+  /** The player's own face, which the picker draws every emote on. */
+  readonly avatar: Avatar;
   /**
    * Open the chat, on a phone (a computer's is beside the table). Null where the
    * table has none.
@@ -62,6 +64,7 @@ export function TableHeader({
   sub,
   clock,
   onReact,
+  avatar,
   onChat,
   chatUnread,
   muteReactions,
@@ -110,6 +113,7 @@ export function TableHeader({
   const react = onReact && (
     <ReactionPicker
       onSend={onReact}
+      avatar={avatar}
       muted={muteReactions}
       onMutedChange={onMuteReactions}
       sheet={phone}

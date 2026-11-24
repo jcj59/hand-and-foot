@@ -21,7 +21,7 @@ import { Melds } from "./Melds";
 import { booksOf, type MeldOrder } from "./meldView";
 import { BookMarkers, HeldCards, LINE_COLOR, seatLine } from "./OpponentStrip";
 import { PlayerFace } from "./PlayerFace";
-import { ReactionBubble, type SeatSaying } from "./reactions";
+import { ReactionBubble, sayingKey, type SeatSaying } from "./reactions";
 import { useRemaining } from "./TurnClock";
 
 export interface SeatsProps {
@@ -79,10 +79,11 @@ export function Seats({
           >
             {reactions?.get(opponent.seat) && (
               <ReactionBubble
+                key={sayingKey(reactions.get(opponent.seat)!)}
                 reaction={reactions.get(opponent.seat)!}
                 name={name}
                 avatar={info && faceOf(info)}
-                inset
+                at="box"
               />
             )}
             <div className="flex items-center gap-2.5">

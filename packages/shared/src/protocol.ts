@@ -372,26 +372,31 @@ export interface ClientToServerEvents {
 
 /**
  * The quick reactions a seated player can send: a fixed set, so only an id ever
- * crosses the wire — never free text — and there is nothing to moderate. Each is
- * shown briefly by the sender's seat on every screen.
+ * crosses the wire, never free text, and there is nothing to moderate. Each is
+ * shown briefly by the sender's seat on every screen. Two kinds: an emote (the
+ * sender's own face, drawn large with an expression and a sound; its `text` is
+ * the emoji an older page drew instead) and a phrase (its label is its text).
  *
  * Only ever add to it. An id may be in flight to a client loaded before the
- * change, or remembered by one, so removing or renaming one breaks a table. The
- * client tells a phrase from an emoji by whether its text is its own label.
+ * change, or remembered by one, so removing or renaming one breaks a table. An
+ * entry the picker no longer offers stays here, still shown when an older page
+ * sends it; what the picker offers, and in what order, is `PICKER_EMOTES` and
+ * `PICKER_PHRASES`. The client tells a phrase from an emote by whether its text
+ * is its own label.
  */
 export const REACTIONS = [
   { id: "thumbs-up", text: "👍", label: "Thumbs up" },
   { id: "laugh", text: "😂", label: "Laughing" },
   { id: "wow", text: "😮", label: "Wow" },
-  { id: "angry", text: "😤", label: "Fuming" },
-  { id: "party", text: "🎉", label: "Party" },
+  { id: "angry", text: "😤", label: "Angry" },
+  { id: "party", text: "🎉", label: "Cheering" },
   { id: "pray", text: "🙏", label: "Please" },
-  { id: "grimace", text: "😬", label: "Grimacing" },
+  { id: "grimace", text: "😬", label: "Oops" },
   { id: "cry", text: "😭", label: "Crying" },
   { id: "facepalm", text: "🤦", label: "Facepalm" },
   { id: "fingers-crossed", text: "🤞", label: "Fingers crossed" },
   { id: "fire", text: "🔥", label: "On fire" },
-  { id: "cool", text: "😎", label: "Cool" },
+  { id: "cool", text: "😎", label: "Smug" },
   { id: "nice", text: "Nice!", label: "Nice!" },
   { id: "oops", text: "Oops", label: "Oops" },
   { id: "hurry", text: "Hurry up!", label: "Hurry up!" },
@@ -405,7 +410,15 @@ export const REACTIONS = [
   { id: "ha", text: "Ha!", label: "Ha!" },
   { id: "close-one", text: "Close one", label: "Close one" },
   { id: "gg", text: "GG", label: "GG" },
-  { id: "i-hate-you", text: "I Hate You", label: "I Hate You" },
+  { id: "i-hate-you", text: "I hate you!", label: "I hate you!" },
+  { id: "good-game", text: "Good game", label: "Good game" },
+  { id: "thanks", text: "Thanks!", label: "Thanks!" },
+  { id: "hewf", text: "Hewf!", label: "Hewf!" },
+  { id: "wow-phrase", text: "Wow!", label: "Wow!" },
+  { id: "bruh", text: "Bruh", label: "Bruh" },
+  { id: "marva", text: "Marva!", label: "Marva!" },
+  { id: "you-stink", text: "You stink!", label: "You stink!" },
+  { id: "crud", text: "Crud", label: "Crud" },
 ] as const;
 
 export type ReactionId = (typeof REACTIONS)[number]["id"];
@@ -414,6 +427,36 @@ export type ReactionId = (typeof REACTIONS)[number]["id"];
 export function isReactionId(value: unknown): value is ReactionId {
   return REACTIONS.some((r) => r.id === value);
 }
+
+/** The emotes the picker offers, in its order: each drawn as the sender's own face. */
+export const PICKER_EMOTES = [
+  "laugh",
+  "cry",
+  "angry",
+  "thumbs-up",
+  "wow",
+  "party",
+  "grimace",
+  "cool",
+] as const satisfies readonly ReactionId[];
+
+/** The phrases the picker offers, in its order. */
+export const PICKER_PHRASES = [
+  "good-game",
+  "well-played",
+  "thanks",
+  "oops",
+  "nice",
+  "hurry",
+  "grabby",
+  "i-hate-you",
+  "hewf",
+  "wow-phrase",
+  "bruh",
+  "marva",
+  "you-stink",
+  "crud",
+] as const satisfies readonly ReactionId[];
 
 /** One reaction, as everyone at the table is told it. Never stored, never logged. */
 export interface Reaction {

@@ -18,7 +18,8 @@ export const BACKGROUND_COLORS: Record<Avatar["background"], string> = {
   coral: "#f97316",
 };
 
-const SKIN: Record<Avatar["skin"], string> = {
+/** Each skin's color. */
+export const SKIN: Record<Avatar["skin"], string> = {
   porcelain: "#fde7d9",
   peach: "#f6c7a1",
   sand: "#e0ac69",
@@ -30,13 +31,13 @@ const SKIN: Record<Avatar["skin"], string> = {
 };
 
 /** Lines drawn on the face: dark, except on the darkest skins, where they would vanish. */
-function inkOn(skin: Avatar["skin"]): string {
+export function inkOn(skin: Avatar["skin"]): string {
   return skin === "cocoa" || skin === "umber" ? "#f1e4d8" : "#1f2937";
 }
 
-const HAIR = "#3b2314";
+export const HAIR = "#3b2314";
 
-function Eyes({ eyes, ink }: { readonly eyes: Avatar["eyes"]; readonly ink: string }) {
+export function Eyes({ eyes, ink }: { readonly eyes: Avatar["eyes"]; readonly ink: string }) {
   const at = [15.5, 24.5];
   switch (eyes) {
     case "dots":
@@ -113,6 +114,13 @@ function Eyes({ eyes, ink }: { readonly eyes: Avatar["eyes"]; readonly ink: stri
   }
 }
 
+/** The moustache's hair, which an emote's face keeps under its own mouth. */
+export const MOUSTACHE =
+  "M14.5 27.2 q2.6 -2.6 5.5 -0.8 q2.9 -1.8 5.5 0.8 q-2.8 0.6 -5.5 -0.4 q-2.7 1 -5.5 0.4 z";
+/** The beard's hair, likewise. */
+export const BEARD =
+  "M8.6 24 q0.6 10 11.4 10.2 q10.8 -0.2 11.4 -10.2 q-2.6 3.4 -5.6 3.6 q-3 -1.8 -5.8 -1.8 q-2.8 0 -5.8 1.8 q-3 -0.2 -5.6 -3.6 z";
+
 function Mouth({ mouth, ink }: { readonly mouth: Avatar["mouth"]; readonly ink: string }) {
   const line = { stroke: ink, strokeWidth: 1.2, fill: "none", strokeLinecap: "round" as const };
   switch (mouth) {
@@ -146,19 +154,13 @@ function Mouth({ mouth, ink }: { readonly mouth: Avatar["mouth"]; readonly ink: 
       return (
         <>
           <path d="M17.5 29 q2.5 1.6 5 0" {...line} />
-          <path
-            d="M14.5 27.2 q2.6 -2.6 5.5 -0.8 q2.9 -1.8 5.5 0.8 q-2.8 0.6 -5.5 -0.4 q-2.7 1 -5.5 0.4 z"
-            fill={HAIR}
-          />
+          <path d={MOUSTACHE} fill={HAIR} />
         </>
       );
     case "beard":
       return (
         <>
-          <path
-            d="M8.6 24 q0.6 10 11.4 10.2 q10.8 -0.2 11.4 -10.2 q-2.6 3.4 -5.6 3.6 q-3 -1.8 -5.8 -1.8 q-2.8 0 -5.8 1.8 q-3 -0.2 -5.6 -3.6 z"
-            fill={HAIR}
-          />
+          <path d={BEARD} fill={HAIR} />
           <path
             d="M17.6 29 q2.4 1.4 4.8 0"
             stroke="#fde7d9"
@@ -175,12 +177,12 @@ function Mouth({ mouth, ink }: { readonly mouth: Avatar["mouth"]; readonly ink: 
 const HAIR_CAP = "M7.8 22 a12.2 12.2 0 0 1 24.4 0 q-4.6 -5.6 -12.2 -5.2 q-7.6 -0.4 -12.2 5.2 z";
 
 /** What sits behind the face: only long hair falls behind it. */
-function TopBehind({ top }: { readonly top: Avatar["top"] }) {
+export function TopBehind({ top }: { readonly top: Avatar["top"] }) {
   if (top !== "long") return null;
   return <path d="M7 22 q0 -13 13 -13 q13 0 13 13 v12 h-26 z" fill={HAIR} />;
 }
 
-function Top({ top }: { readonly top: Avatar["top"] }) {
+export function Top({ top }: { readonly top: Avatar["top"] }) {
   switch (top) {
     case "none":
       return null;

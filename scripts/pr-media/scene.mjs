@@ -284,6 +284,8 @@ const run = async () => {
     deviceScaleFactor: 2,
     isMobile: true,
     hasTouch: true,
+    // REDUCED_MOTION=1 renders as a player who asked for less motion sees it.
+    ...(process.env.REDUCED_MOTION ? { reducedMotion: "reduce" } : {}),
   });
   // Headless Linux Chromium has no colour emoji font, so emoji draw as boxes. With
   // EMOJI_FONT pointing at a Noto Color Emoji .ttf, the page gets it for emoji code
@@ -598,11 +600,19 @@ const run = async () => {
           );
         }
         if (mode === "react") {
-          const reactions = [
-            { seq: 1, seat: 1, id: "nice" },
-            { seq: 2, seat: 2, id: "laugh" },
-            { seq: 3, seat: 0, id: "party" },
-          ];
+          // `EMOTE=<id>` has Cyrus (seat 3) and the viewer send that one emote;
+          // otherwise a phrase, an emote and the viewer's own.
+          const emote = process.env.EMOTE;
+          const reactions = emote
+            ? [
+                { seq: 1, seat: 3, id: emote },
+                { seq: 2, seat: 0, id: emote },
+              ]
+            : [
+                { seq: 1, seat: 1, id: "nice" },
+                { seq: 2, seat: 2, id: "laugh" },
+                { seq: 3, seat: 0, id: "party" },
+              ];
           for (const payload of reactions) {
             setTimeout(() => ws.send(JSON.stringify({ event: "reaction", payload })), 700);
           }
@@ -987,8 +997,14 @@ const run = async () => {
     react: "Nice!",
     chat: "Nice one!",
   }[mode];
+  // An emote has no text: wait for its face to be drawn.
+  const emoteShot = mode === "react" && process.env.EMOTE;
   if (waitText) {
-    await page.getByText(waitText).first().waitFor();
+    await (
+      emoteShot
+        ? page.locator("body > div svg[data-emote]").first()
+        : page.getByText(waitText).first()
+    ).waitFor();
     // Frames to capture, and (CLICK_AT) moments to click the middle of the window,
     // both in milliseconds after the change, in time order.
     const times = (name, fallback) =>

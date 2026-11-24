@@ -28,6 +28,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   isBlackThree,
+  defaultAvatar,
   isWild,
   SPECTATOR_SEAT,
   type Action,
@@ -68,7 +69,13 @@ import {
   withGrabbyName,
 } from "./grabby";
 import { MarvaCelebration, useMarvaCelebration } from "./marva";
-import { ReactionBubble, readMuteReactions, useSeatBubbles, writeMuteReactions } from "./reactions";
+import {
+  ReactionBubble,
+  readMuteReactions,
+  sayingKey,
+  useSeatBubbles,
+  writeMuteReactions,
+} from "./reactions";
 import {
   ChatPanel,
   latestSeq,
@@ -79,7 +86,7 @@ import {
 } from "./chat";
 import { Sheet } from "../ui/Sheet";
 import { useMoveNews } from "./moveNews";
-import { useTableSounds } from "./sounds";
+import { reactionSound, useTableSounds } from "./sounds";
 import { useTurnAttention } from "./turnAttention";
 import { PauseBar } from "./PauseBar";
 import { RulesDialog } from "../rules/HowToPlay";
@@ -308,6 +315,8 @@ export function TableView({
   const messages = chatOn ? chat : NO_CHAT;
   const oldThrough = chatOldThrough;
   const [muteChat, setMuteChat] = useState(readMuteChat);
+  // When each emote sound now playing ends, so no more than a few overlap.
+  const emoteSounds = useRef<readonly number[]>([]);
   const bubbles = useSeatBubbles({
     reactions,
     chat: messages,
@@ -316,7 +325,15 @@ export function TableView({
     muteReactions,
     muteChat,
     onReaction: (r) => {
-      if (r.seat !== update.view.seat) playSound("reaction");
+      // One sound per reaction, decided in `reactionSound`; emotes take turns.
+      const cue = reactionSound(
+        r.id,
+        r.seat === update.view.seat,
+        performance.now(),
+        emoteSounds.current,
+      );
+      emoteSounds.current = cue.playing;
+      if (cue.sound) playSound(cue.sound);
     },
     onChat: () => playSound("reaction"),
   });
@@ -606,6 +623,7 @@ export function TableView({
       // The header's clock is the player's own; another player's runs on their seat.
       clock={!result && controls && (myTurn || clock.paused) ? clock : null}
       onReact={controls ? controls.react : null}
+      avatar={me ? faceOf(me) : defaultAvatar(watched)}
       onChat={chatOn ? () => setChatSheetOpen(true) : null}
       chatUnread={unread}
       muteReactions={muteReactions}
@@ -885,6 +903,7 @@ export function TableView({
       <div className="relative min-w-0 flex-1">
         {bubbles.get(view.seat) && (
           <ReactionBubble
+            key={sayingKey(bubbles.get(view.seat)!)}
             reaction={bubbles.get(view.seat)!}
             name={watched}
             avatar={me && faceOf(me)}

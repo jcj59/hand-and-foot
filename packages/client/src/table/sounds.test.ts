@@ -2,10 +2,13 @@ import { describe, it, expect } from "vitest";
 import type { RoundEnded } from "@hf/shared";
 import {
   DING_PARTIALS,
+  EMOTE_SOUNDS_AT_ONCE,
+  EMOTE_SOUND_MS,
+  reactionSound,
   TURN_AFTER_CARD_MS,
   play,
   soundsFor,
-  type CardSound,
+  type Recorded,
   type Cue,
   type Moment,
 } from "./sounds";
@@ -62,45 +65,45 @@ describe("which sounds a change makes", () => {
   });
 });
 
-describe("the turn's ding", () => {
-  // A stand-in AudioContext that records each oscillator: its pitch, when it starts,
-  // and the gain envelope it is shaped by.
-  function synthContext() {
-    const voices: { frequency: number; start: number; peak: number; silentAt: number }[] = [];
-    const ctx = {
-      currentTime: 2,
-      destination: {},
-      createOscillator: () => {
-        const osc = {
-          type: "",
-          frequency: { value: 0 },
-          level: null as null | { peak: number; silentAt: number },
-          connect: (gain: { env: { peak: number; silentAt: number } }) => {
-            osc.level = gain.env;
-            return gain;
-          },
-          start: (at: number) =>
-            voices.push({ frequency: osc.frequency.value, start: at, ...osc.level! }),
-          stop: () => {},
-        };
-        return osc;
-      },
-      createGain: () => {
-        const env = { peak: 0, silentAt: 0 };
-        return {
-          env,
-          gain: {
-            setValueAtTime: () => {},
-            linearRampToValueAtTime: (v: number) => (env.peak = Math.max(env.peak, v)),
-            exponentialRampToValueAtTime: (_: number, at: number) => (env.silentAt = at),
-          },
-          connect: (next: unknown) => next,
-        };
-      },
-    };
-    return { ctx: ctx as unknown as AudioContext, voices };
-  }
+// A stand-in AudioContext that records each oscillator: its pitch, when it starts,
+// and the gain envelope it is shaped by.
+function synthContext() {
+  const voices: { frequency: number; start: number; peak: number; silentAt: number }[] = [];
+  const ctx = {
+    currentTime: 2,
+    destination: {},
+    createOscillator: () => {
+      const osc = {
+        type: "",
+        frequency: { value: 0 },
+        level: null as null | { peak: number; silentAt: number },
+        connect: (gain: { env: { peak: number; silentAt: number } }) => {
+          osc.level = gain.env;
+          return gain;
+        },
+        start: (at: number) =>
+          voices.push({ frequency: osc.frequency.value, start: at, ...osc.level! }),
+        stop: () => {},
+      };
+      return osc;
+    },
+    createGain: () => {
+      const env = { peak: 0, silentAt: 0 };
+      return {
+        env,
+        gain: {
+          setValueAtTime: () => {},
+          linearRampToValueAtTime: (v: number) => (env.peak = Math.max(env.peak, v)),
+          exponentialRampToValueAtTime: (_: number, at: number) => (env.silentAt = at),
+        },
+        connect: (next: unknown) => next,
+      };
+    },
+  };
+  return { ctx: ctx as unknown as AudioContext, voices };
+}
 
+describe("the turn's ding", () => {
   it("rings like a bell: inharmonic partials, louder than a reaction, dying away over a second", () => {
     const { ctx, voices } = synthContext();
     play(ctx, "turn", new Map());
@@ -152,10 +155,27 @@ describe("playing a recorded card sound", () => {
   }
   const draw = { name: "draw" } as unknown as AudioBuffer;
   const discard = { name: "discard" } as unknown as AudioBuffer;
-  const recordings = new Map<CardSound, AudioBuffer>([
+  const laugh = { name: "laugh" } as unknown as AudioBuffer;
+  const recordings = new Map<Recorded, AudioBuffer>([
     ["draw", draw],
     ["discard", discard],
+    ["emote-laugh", laugh],
   ]);
+
+  it("plays an emote's own recording, once", () => {
+    const { ctx, played } = fakeContext();
+    play(ctx, "emote-laugh", recordings);
+    expect(played).toEqual([{ buffer: laugh, rate: 1 }]);
+  });
+
+  it("stands the blip in for an emote whose recording has not loaded", () => {
+    const tones = synthContext();
+    play(tones.ctx, "emote-cry", recordings);
+    expect(tones.voices.length).toBe(2);
+    const blip = synthContext();
+    play(blip.ctx, "reaction", new Map());
+    expect(tones.voices).toEqual(blip.voices);
+  });
 
   it("plays a draw at its own speed", () => {
     const { ctx, played } = fakeContext();
@@ -173,5 +193,46 @@ describe("playing a recorded card sound", () => {
     const { ctx, played } = fakeContext();
     play(ctx, "discard", recordings);
     expect(played).toEqual([{ buffer: discard, rate: 1 }]);
+  });
+});
+
+describe("the sound a reaction makes", () => {
+  it("is an emote's own sound, for anyone's emote, mine too", () => {
+    expect(reactionSound("laugh", false, 0, [])).toEqual({
+      sound: "emote-laugh",
+      playing: [1_800],
+    });
+    expect(reactionSound("cool", true, 100, []).sound).toBe("emote-cool");
+    // Each recording is cut to this; pinned, since the files were cut by hand.
+    expect(EMOTE_SOUND_MS).toBe(1_800);
+  });
+
+  it("is the soft blip for another player's phrase, or an old page's emoji, never my own", () => {
+    expect(reactionSound("nice", false, 0, [])).toEqual({ sound: "reaction", playing: [] });
+    expect(reactionSound("fire", false, 0, [])).toEqual({ sound: "reaction", playing: [] });
+    expect(reactionSound("nice", true, 0, [])).toEqual({ sound: null, playing: [] });
+  });
+
+  it("is nothing for an id this page does not know", () => {
+    expect(reactionSound("brand-new", false, 0, [])).toEqual({ sound: null, playing: [] });
+  });
+
+  it("lets two emote sounds overlap and no more, until one has finished", () => {
+    expect(EMOTE_SOUNDS_AT_ONCE).toBe(2);
+    const one = reactionSound("laugh", false, 0, []);
+    const two = reactionSound("cry", false, 500, one.playing);
+    expect(two).toEqual({ sound: "emote-cry", playing: [1_800, 2_300] });
+    const three = reactionSound("wow", false, 1_000, two.playing);
+    expect(three).toEqual({ sound: null, playing: [1_800, 2_300] });
+    // A phrase still blips meanwhile, and leaves the emotes as they were.
+    expect(reactionSound("bruh", false, 1_000, two.playing)).toEqual({
+      sound: "reaction",
+      playing: [1_800, 2_300],
+    });
+    // The first ends at 1800, so at 1800 there is room again, and it is forgotten.
+    expect(reactionSound("wow", false, 1_800, two.playing)).toEqual({
+      sound: "emote-wow",
+      playing: [2_300, 3_600],
+    });
   });
 });

@@ -9,7 +9,15 @@ import type {
   ServerToClientEvents,
   ViewUpdate,
 } from "./protocol";
-import { CHAT_MAX_LENGTH, REACTIONS, chatLength, isReactionId, normalizeChat } from "./protocol";
+import {
+  CHAT_MAX_LENGTH,
+  PICKER_EMOTES,
+  PICKER_PHRASES,
+  REACTIONS,
+  chatLength,
+  isReactionId,
+  normalizeChat,
+} from "./protocol";
 import type { PlayerView } from "./index";
 
 // The protocol is types only, so `tsc` is what really checks it. These pin the
@@ -99,28 +107,28 @@ describe("quick reactions", () => {
     }
   });
 
-  it("only ever grow: every id ever sent is still one, and the list stays short", () => {
-    // An id may be in flight to, or remembered by, a client loaded before a change.
-    const ids = REACTIONS.map((r) => r.id);
-    for (const id of [
+  it("only ever grow: every id ever sent is still one, in the order it was added", () => {
+    // An id may be in flight to, or remembered by, a client loaded before a change:
+    // the whole list is pinned, so removing, renaming or reordering one fails here.
+    expect(REACTIONS.map((r) => r.id)).toEqual([
       "thumbs-up",
       "laugh",
       "wow",
       "angry",
       "party",
       "pray",
-      "nice",
-      "oops",
-      "hurry",
-      "grabby",
-      "well-played",
-      "good-luck",
       "grimace",
       "cry",
       "facepalm",
       "fingers-crossed",
       "fire",
       "cool",
+      "nice",
+      "oops",
+      "hurry",
+      "grabby",
+      "well-played",
+      "good-luck",
       "oof",
       "ouch",
       "yikes",
@@ -129,14 +137,70 @@ describe("quick reactions", () => {
       "close-one",
       "gg",
       "i-hate-you",
-    ]) {
-      expect(ids).toContain(id);
+      // The Clash-style emotes and phrases (2026-11): new phrases only; the emotes
+      // reuse the emoji ids they replace.
+      "good-game",
+      "thanks",
+      "hewf",
+      "wow-phrase",
+      "bruh",
+      "marva",
+      "you-stink",
+      "crud",
+    ]);
+    // The picker shows a chosen few, so this only bounds how far the wire list
+    // grows: a cap that keeps an accidental flood of ids out of review.
+    expect(REACTIONS.length).toBeLessThanOrEqual(40);
+  });
+
+  it("offer the user's eight emotes and fourteen phrases, in the user's order", () => {
+    expect(PICKER_EMOTES).toEqual([
+      "laugh",
+      "cry",
+      "angry",
+      "thumbs-up",
+      "wow",
+      "party",
+      "grimace",
+      "cool",
+    ]);
+    const label = (id: string) => REACTIONS.find((r) => r.id === id)?.label;
+    expect(PICKER_EMOTES.map(label)).toEqual([
+      "Laughing",
+      "Crying",
+      "Angry",
+      "Thumbs up",
+      "Wow",
+      "Cheering",
+      "Oops",
+      "Smug",
+    ]);
+    expect(PICKER_PHRASES.map(label)).toEqual([
+      "Good game",
+      "Well played",
+      "Thanks!",
+      "Oops",
+      "Nice!",
+      "Hurry up!",
+      "Grabby!",
+      "I hate you!",
+      "Hewf!",
+      "Wow!",
+      "Bruh",
+      "Marva!",
+      "You stink!",
+      "Crud",
+    ]);
+    // An emote is drawn, so its text (the emoji an older page shows) is not its
+    // label; a phrase is its own label. The picker tells them apart by that.
+    for (const id of PICKER_EMOTES) {
+      const r = REACTIONS.find((x) => x.id === id)!;
+      expect(r.text).not.toBe(r.label);
     }
-    // The last one added, in the user's own words (a phrase: its label is its text).
-    expect(REACTIONS.at(-1)).toEqual({ id: "i-hate-you", text: "I Hate You", label: "I Hate You" });
-    expect(REACTIONS).toHaveLength(26);
-    // Small enough to find one at a glance.
-    expect(REACTIONS.length).toBeLessThanOrEqual(30);
+    for (const id of PICKER_PHRASES) {
+      const r = REACTIONS.find((x) => x.id === id)!;
+      expect(r.text).toBe(r.label);
+    }
   });
 
   it("recognize only their own ids, whatever else arrives", () => {

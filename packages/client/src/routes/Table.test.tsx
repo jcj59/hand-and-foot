@@ -22,7 +22,12 @@ import { useSession } from "../session";
 import type { HfClientSocket } from "../socket";
 import { STUCK_MS } from "../table/audio";
 import { evenRows, Hand, perRow } from "../table/Hand";
-import { REACTION_COOLDOWN_MS, REACTION_SHOW_MS, ReactionBubble } from "../table/reactions";
+import {
+  EMOTE_SHOW_MS,
+  REACTION_COOLDOWN_MS,
+  REACTION_SHOW_MS,
+  ReactionBubble,
+} from "../table/reactions";
 import { CELEBRATION_DISMISS_AFTER_MS } from "../table/Celebration";
 import { GRABBY_MS } from "../table/grabby";
 import { PHONE_QUERY } from "../usePhone";
@@ -3311,6 +3316,41 @@ describe("sound", () => {
     }
   });
 
+  it("makes one sound per reaction: an emote's own, a phrase's blip, two emotes at most at once", () => {
+    const audio = fakeAudio();
+    try {
+      mount(fakeSocket().socket, update({ hints: { seatToAct: 1 }, view: { currentSeat: 1 } }));
+      fireEvent.pointerUp(window);
+      const before = audio.oscillators;
+      const react = (seq: number, seat: number, id: ReactionId): void =>
+        act(() => useSession.getState().applyReaction({ seq, seat, id }));
+      // No recordings in jsdom, so an emote's sound is the blip standing in: two notes.
+      react(1, 1, "laugh");
+      expect(audio.oscillators).toBe(before + 2);
+      // My own emote sounds too; my own phrase does not.
+      react(2, 0, "party");
+      expect(audio.oscillators).toBe(before + 4);
+      react(3, 0, "nice");
+      expect(audio.oscillators).toBe(before + 4);
+      // A third emote while two still play is shown but not heard.
+      react(4, 1, "cry");
+      expect(screen.getByRole("status", { name: "ben: Crying" })).toBeInTheDocument();
+      expect(audio.oscillators).toBe(before + 4);
+      // Another player's phrase blips whatever the emotes are doing.
+      react(5, 1, "bruh");
+      expect(audio.oscillators).toBe(before + 6);
+      // Muted, another player's reactions are neither shown nor heard; mine are.
+      fireEvent.click(screen.getByRole("button", { name: "React" }));
+      fireEvent.click(screen.getByRole("checkbox", { name: "Mute other players' reactions" }));
+      react(6, 1, "wow-phrase");
+      expect(screen.queryByRole("status", { name: "ben: Wow!" })).toBeNull();
+      expect(audio.oscillators).toBe(before + 6);
+    } finally {
+      audio.restore();
+      window.localStorage.removeItem("hf.muteReactions");
+    }
+  });
+
   it("blips for another player's chat, never for my own, and not once chat is muted", () => {
     const audio = fakeAudio();
     try {
@@ -3630,14 +3670,16 @@ describe("the Marva Rule", () => {
   });
 });
 
+/** A face ben chose, so his is told apart from one drawn from his name. */
+const BEN = {
+  background: "teal",
+  skin: "cocoa",
+  eyes: "shades",
+  mouth: "beard",
+  top: "cap",
+} as const;
+
 describe("pictures at the table", () => {
-  const BEN = {
-    background: "teal",
-    skin: "cocoa",
-    eyes: "shades",
-    mouth: "beard",
-    top: "cap",
-  } as const;
   const faceIn = (el: Element): string | null =>
     el.querySelector("[data-avatar]")?.getAttribute("data-avatar") ?? null;
   afterEach(() => delete (window as { matchMedia?: unknown }).matchMedia);
@@ -3750,28 +3792,106 @@ describe("quick reactions", () => {
     expect(screen.queryByRole("status", { name: "ben: Hurry up!" })).toBeNull();
   });
 
-  it("offers every reaction, emoji in a grid and phrases as words", () => {
+  it("offers the eight emotes, drawn on my own face, with the phrases beside them", () => {
     const { socket, sent } = fakeSocket();
     mount(socket);
     fireEvent.click(screen.getByRole("button", { name: "React" }));
     const picker = screen.getByRole("group", { name: "Reactions" });
-    for (const name of ["Oof", "Ouch", "Yikes", "Phew", "Ha!", "GG", "Close one"]) {
-      expect(within(picker).getByRole("button", { name })).toHaveTextContent(name);
+    const emotes = within(picker).getByRole("group", { name: "Emotes" });
+    const names = (group: HTMLElement) =>
+      within(group)
+        .getAllByRole("button")
+        .map((b) => b.getAttribute("aria-label") ?? b.textContent);
+    expect(names(emotes)).toEqual([
+      "Laughing",
+      "Crying",
+      "Angry",
+      "Thumbs up",
+      "Wow",
+      "Cheering",
+      "Oops",
+      "Smug",
+    ]);
+    // Each is the viewer's own face (ana's, drawn from her name), with no emoji.
+    for (const button of within(emotes).getAllByRole("button")) {
+      expect(button.querySelector("[data-avatar]")!.getAttribute("data-avatar")).toBe(
+        Object.values(defaultAvatar("ana")).join(" "),
+      );
+      expect(button.textContent).toBe("");
     }
-    expect(within(picker).getByRole("button", { name: "Grimacing" })).toHaveTextContent("😬");
-    fireEvent.click(within(picker).getByRole("button", { name: "Oof" }));
-    expect(sent).toContainEqual({ event: "react", args: [{ id: "oof" }] });
+    const phrases = within(picker).getByRole("group", { name: "Phrases" });
+    expect(names(phrases)).toEqual([
+      "Good game",
+      "Well played",
+      "Thanks!",
+      "Oops",
+      "Nice!",
+      "Hurry up!",
+      "Grabby!",
+      "I hate you!",
+      "Hewf!",
+      "Wow!",
+      "Bruh",
+      "Marva!",
+      "You stink!",
+      "Crud",
+    ]);
+    // What the picker no longer offers is still a reaction, but not in it.
+    expect(within(picker).queryByRole("button", { name: "Good luck" })).toBeNull();
+    expect(within(picker).queryByRole("button", { name: "On fire" })).toBeNull();
+    fireEvent.click(within(emotes).getByRole("button", { name: "Oops" }));
+    expect(sent).toContainEqual({ event: "react", args: [{ id: "grimace" }] });
   });
 
-  it('offers "I Hate You" among the phrases', () => {
+  it('offers "I hate you!" among the phrases, on the id it always had', () => {
     const { socket, sent } = fakeSocket();
     mount(socket);
     fireEvent.click(screen.getByRole("button", { name: "React" }));
-    const picker = screen.getByRole("group", { name: "Reactions" });
-    fireEvent.click(within(picker).getByRole("button", { name: "I Hate You" }));
+    const picker = screen.getByRole("group", { name: "Phrases" });
+    fireEvent.click(within(picker).getByRole("button", { name: "I hate you!" }));
     expect(sent).toContainEqual({ event: "react", args: [{ id: "i-hate-you" }] });
     heard(1, 1, "i-hate-you");
-    expect(screen.getByRole("status", { name: "ben: I Hate You" })).toHaveTextContent("I Hate You");
+    expect(screen.getByRole("status", { name: "ben: I hate you!" })).toHaveTextContent(
+      "I hate you!",
+    );
+  });
+
+  it("shows another player's emote as their own face, large, then takes it away", () => {
+    vi.useFakeTimers();
+    mount(
+      fakeSocket().socket,
+      update({
+        room: roomInfo({
+          players: [
+            { seat: 0, name: "ana", connected: true },
+            { seat: 1, name: "ben", connected: true, avatar: BEN },
+          ],
+        }),
+      }),
+    );
+    heard(1, 1, "laugh");
+    const seat = screen.getByLabelText(/^ben, /);
+    // Found with the seat it belongs to...
+    expect(within(seat).getByRole("status", { name: "ben: Laughing" })).toBeInTheDocument();
+    // ...and drawn over the page, so the seat cannot clip it: ben's face, laughing.
+    const drawn = document.body.querySelector('svg[data-emote="laugh"]')!;
+    expect(seat.contains(drawn)).toBe(false);
+    expect(drawn.getAttribute("data-avatar")).toBe("teal cocoa shades beard cap");
+    expect(drawn.closest(".emote-pop")!.getAttribute("style")).toContain("--emote-ms: 3000ms");
+    // Three seconds: a big face covers what is under it. Pinned as a literal.
+    expect(EMOTE_SHOW_MS).toBe(3_000);
+    act(() => vi.advanceTimersByTime(EMOTE_SHOW_MS - 100));
+    expect(screen.getByRole("status", { name: "ben: Laughing" })).toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(100));
+    expect(screen.queryByRole("status", { name: "ben: Laughing" })).toBeNull();
+    expect(document.body.querySelector("svg[data-emote]")).toBeNull();
+  });
+
+  it("still shows an emoji an older page sends, which the picker no longer offers", () => {
+    mount(fakeSocket().socket);
+    heard(1, 1, "fire");
+    expect(screen.getByRole("status", { name: "ben: On fire" })).toHaveTextContent("🔥");
+    expect(document.body.querySelector("svg[data-emote]")).toBeNull();
   });
 
   it("ignores a reaction this page does not know, as a tab loaded before a deploy hears one", () => {
@@ -3814,7 +3934,7 @@ describe("quick reactions", () => {
     heard(1, 1, "nice");
     heard(2, 0, "party");
     expect(screen.queryByRole("status", { name: "ben: Nice!" })).toBeNull();
-    expect(screen.getByRole("status", { name: "ana: Party" })).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "ana: Cheering" })).toBeInTheDocument();
   });
 
   it("opens its menu towards whichever side of the button has room", () => {
@@ -3849,8 +3969,8 @@ describe("quick reactions", () => {
     expect(picker.closest("main")).toBeNull();
     expect(picker.className).toMatch(/max-h-\[70dvh\]/);
     expect(picker.className).toMatch(/overflow-y-auto/);
-    fireEvent.click(within(picker).getByRole("button", { name: "Good luck" }));
-    expect(sent).toContainEqual({ event: "react", args: [{ id: "good-luck" }] });
+    fireEvent.click(within(picker).getByRole("button", { name: "Good game" }));
+    expect(sent).toContainEqual({ event: "react", args: [{ id: "good-game" }] });
   });
 });
 
@@ -3954,7 +4074,7 @@ describe("chat at the table", () => {
     mount(fakeSocket().socket);
     said(1, 1, "watch this");
     act(() => useSession.getState().applyReaction({ seq: 1, seat: 1, id: "party" }));
-    expect(screen.getByRole("status", { name: "ben: Party" })).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "ben: Cheering" })).toBeInTheDocument();
     expect(screen.queryByRole("status", { name: "ben: watch this" })).toBeNull();
     said(2, 1, "told you");
     expect(screen.getByRole("status", { name: "ben: told you" })).toBeInTheDocument();
