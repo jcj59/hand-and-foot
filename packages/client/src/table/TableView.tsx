@@ -52,6 +52,7 @@ import { ScoresPanel } from "./ScoresPanel";
 import { TableHeader } from "./TableHeader";
 import { useMoveRecords } from "../report/useMoveRecords";
 import { useCardMotion } from "./cardMotion";
+import { useHandOrder } from "./handArrangement";
 import {
   GRABBY_NAME,
   GrabbyAnnouncement,
@@ -295,6 +296,18 @@ export function TableView({
   // The foot is revealed only once picked up; before that the server sends a count
   // and no cards, so there is nothing to show but a back.
   const zone = view.inFoot ? (view.foot ?? []) : view.hand;
+  // The player's own arrangement of these cards; a hand watched or replayed has none.
+  const [handOrder, setHandOrder] = useHandOrder(
+    controls && !onFelt && view.seat !== SPECTATOR_SEAT
+      ? {
+          roomId: latestRoom.roomId,
+          seat: view.seat,
+          round: view.roundNumber,
+          zone: view.inFoot ? "foot" : "hand",
+        }
+      : null,
+    zone,
+  );
   const owed = new Set(view.pickedUp);
   const obligationOpen = view.pickedUp.length > 0;
   const nameOf = (s: number): string => room.players.find((p) => p.seat === s)?.name ?? `Seat ${s}`;
@@ -748,6 +761,8 @@ export function TableView({
           owner={owner}
           rows={phone}
           newId={drawnId}
+          order={handOrder}
+          onArrange={controls ? setHandOrder : undefined}
         />
       </div>
       {/* The foot waits beside the hand it will replace. */}

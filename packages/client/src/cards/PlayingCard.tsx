@@ -35,6 +35,10 @@ export interface PlayingCardProps {
    * instead, so a ring drawn around the card moves with it.
    */
   readonly lift?: boolean;
+  /** A plain card that can still be focused: one in the player's hand, out of turn. */
+  readonly focusable?: boolean;
+  /** Keys that act on the card where it is shown, announced as `aria-keyshortcuts`. */
+  readonly keyShortcuts?: string;
 }
 
 const DIMENSIONS: Readonly<Record<CardSize, { readonly w: number; readonly h: number }>> = {
@@ -216,6 +220,8 @@ export function PlayingCard({
   disabled = false,
   dimmed = isDeadWeight(card),
   lift = true,
+  focusable = false,
+  keyShortcuts,
 }: PlayingCardProps): React.ReactElement {
   const { w, h } = DIMENSIONS[size];
   const label = cardLabel(card);
@@ -247,6 +253,8 @@ export function PlayingCard({
         aria-label={label}
         className={dimmed ? "opacity-60" : undefined}
         data-card-id={card.id}
+        tabIndex={focusable ? 0 : undefined}
+        aria-keyshortcuts={keyShortcuts}
       >
         {face}
       </span>
@@ -260,6 +268,7 @@ export function PlayingCard({
       aria-pressed={selected}
       disabled={disabled}
       data-card-id={card.id}
+      aria-keyshortcuts={keyShortcuts}
       onClick={() => onSelect(card)}
       className={`rounded transition-transform duration-150 ease-out ${selected && lift ? "-translate-y-3" : ""} ${
         dimmed ? "opacity-60" : ""
