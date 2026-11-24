@@ -26,6 +26,8 @@ export function Watch({ socket }: WatchProps): React.ReactElement {
   const update = useSession((s) => s.update);
   const result = useSession((s) => s.result);
   const reactions = useSession((s) => s.reactions);
+  const chat = useSession((s) => s.chat);
+  const chatOldThrough = useSession((s) => s.chatHistoryThrough);
   const [refused, setRefused] = useState<string | null>(null);
 
   useEffect(() => {
@@ -52,7 +54,14 @@ export function Watch({ socket }: WatchProps): React.ReactElement {
       // Let go of the table, and of what was shown of it; a seat stored for another
       // table is left alone.
       void wire.leaveRoom(socket);
-      useSession.setState({ room: null, update: null, result: null, reactions: [] });
+      useSession.setState({
+        room: null,
+        update: null,
+        result: null,
+        reactions: [],
+        chat: [],
+        chatHistoryThrough: 0,
+      });
     };
   }, [socket, code]);
 
@@ -113,6 +122,8 @@ export function Watch({ socket }: WatchProps): React.ReactElement {
       onMainMenu={() => navigate("/")}
       heading={`Watching table ${code}`}
       reactions={reactions}
+      chat={chat}
+      chatOldThrough={chatOldThrough}
     />
   );
 }

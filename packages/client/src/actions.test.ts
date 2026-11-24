@@ -8,6 +8,8 @@ import {
   pauseTable,
   saveTableForLater,
   sendReaction,
+  sendChat,
+  NOTHING_TO_SAY,
   play,
   reclaimOnReconnect,
   reclaimSeat,
@@ -507,6 +509,45 @@ describe("sending a reaction", () => {
       ["react", { id: "nice" }],
       ["react", { id: "nice" }],
     ]);
+  });
+});
+
+describe("sending a chat message", () => {
+  it("sends what the table will show, and answers null once it went", async () => {
+    const { socket, sent } = fakeSocket([{ ok: true, data: undefined }]);
+    expect(await sendChat(socket, "  good\n luck  ")).toBeNull();
+    expect(sent).toEqual([{ event: "chat", args: [{ text: "good luck" }] }]);
+  });
+
+  it("hands back the server's refusal, to show beside the box, never as the table's notice", async () => {
+    const { socket, sent } = fakeSocket([
+      { ok: false, error: "a message can be at most 200 characters" },
+      { ok: false, error: "too many messages; wait a moment" },
+    ]);
+    // Over-long is the server's to refuse: the text goes as typed, uncut.
+    const long = "a".repeat(201);
+    expect(await sendChat(socket, long)).toBe("a message can be at most 200 characters");
+    expect(sent[0]!.args).toEqual([{ text: long }]);
+    expect(await sendChat(socket, "again")).toBe("too many messages; wait a moment");
+  });
+
+  it("sends nothing for a message of only spaces", async () => {
+    const { socket, sent } = fakeSocket([]);
+    expect(await sendChat(socket, " \t ")).toBe(NOTHING_TO_SAY);
+    expect(NOTHING_TO_SAY).toBe("there is nothing to send");
+    expect(sent).toEqual([]);
+  });
+
+  it("says so when the server never answers", async () => {
+    vi.useFakeTimers();
+    try {
+      const socket = { emit: () => socket } as unknown as HfClientSocket;
+      const answer = sendChat(socket, "hello?");
+      await vi.runAllTimersAsync();
+      expect(await answer).toBe(NO_RESPONSE);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

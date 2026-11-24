@@ -14,6 +14,7 @@
 import { create } from "zustand";
 import {
   isReactionId,
+  type ChatMessage,
   type Reaction,
   type RoomInfo,
   type RoundEnded,
@@ -44,6 +45,21 @@ export interface SessionState {
    * they are shown for a moment and forgotten, never part of the game.
    */
   reactions: readonly Reaction[];
+  /**
+   * What has been said at this table, oldest first and only the last `KEPT_CHAT`.
+   * Each table's history (`chatBacklog`, sent whenever a seat is taken or taken
+   * back, or watching starts) replaces it, so moving to another table brings that
+   * table's history with it; it is not cleared when the seat changes, because the
+   * new table's history can arrive before the request that took the seat answers.
+   */
+  chat: readonly ChatMessage[];
+  /**
+   * The newest message that came as history rather than as it was said: old news,
+   * so it neither pops up by its sender's seat nor counts as unread. A message's
+   * number comes from the server's clock, so a mark left by one table is older
+   * than anything said later at the next.
+   */
+  chatHistoryThrough: number;
   readonly clock: ServerClock;
 
   setStatus(status: ConnectionStatus): void;
@@ -61,11 +77,20 @@ export interface SessionState {
   applyUpdate(update: ViewUpdate): void;
   applyResult(result: RoundEnded): void;
   applyReaction(reaction: Reaction): void;
+  /** One message said at the table, the player's own included. */
+  applyChat(message: ChatMessage): void;
+  /** What has been said so far, from the server, replacing whatever was held. */
+  applyChatBacklog(messages: readonly ChatMessage[]): void;
   setNotice(notice: string | null): void;
 }
 
 /** How many reactions the store keeps: enough for every seat's latest. */
 export const KEPT_REACTIONS = 16;
+/** How many chat messages the store keeps: as many as the server keeps for a reload. */
+export const KEPT_CHAT = 50;
+
+/** Everything a page that has left the table forgets: what was heard and said there. */
+const NO_TABLE_TALK = { reactions: [], chat: [], chatHistoryThrough: 0 } as const;
 
 export const useSession = create<SessionState>((set, get) => ({
   status: "connecting",
@@ -74,7 +99,7 @@ export const useSession = create<SessionState>((set, get) => ({
   update: null,
   result: null,
   notice: null,
-  reactions: [],
+  ...NO_TABLE_TALK,
   clock: createServerClock(),
 
   setStatus: (status) => set({ status }),
@@ -86,6 +111,7 @@ export const useSession = create<SessionState>((set, get) => ({
     if (get().credentials?.roomId !== credentials.roomId) {
       // The last table's match may have ended, or been left: the history is stale.
       forgetHistory();
+      // Chat is the exception: see `chat`.
       set({ credentials, room: null, update: null, result: null, reactions: [] });
       return;
     }
@@ -108,7 +134,7 @@ export const useSession = create<SessionState>((set, get) => ({
       update: null,
       result: null,
       notice: null,
-      reactions: [],
+      ...NO_TABLE_TALK,
     });
   },
 
@@ -150,6 +176,23 @@ export const useSession = create<SessionState>((set, get) => ({
     set({ reactions: [...get().reactions, reaction].slice(-KEPT_REACTIONS) });
   },
 
+  applyChat: (message) => {
+    // The sender hears their own message too, and a message can also arrive in a
+    // history: one already held is not shown twice.
+    const chat = get().chat;
+    if (chat.some((m) => m.seq === message.seq)) return;
+    const next = [...chat, message].sort((a, b) => a.seq - b.seq).slice(-KEPT_CHAT);
+    set({ chat: next });
+  },
+
+  applyChatBacklog: (messages) => {
+    const latest = messages.reduce((most, m) => Math.max(most, m.seq), 0);
+    set({
+      chat: [...messages].sort((a, b) => a.seq - b.seq).slice(-KEPT_CHAT),
+      chatHistoryThrough: Math.max(get().chatHistoryThrough, latest),
+    });
+  },
+
   setNotice: (notice) => set({ notice }),
 }));
 
@@ -169,18 +212,29 @@ export interface SessionSocket {
   on(event: "roundEnded", handler: (result: RoundEnded) => void): void;
   on(event: "seat", handler: (seat: number) => void): void;
   on(event: "reaction", handler: (reaction: Reaction) => void): void;
+  on(event: "chat", handler: (message: ChatMessage) => void): void;
+  on(event: "chatBacklog", handler: (messages: readonly ChatMessage[]) => void): void;
   off(event: "connect" | "disconnect", handler: () => void): void;
   off(event: "view", handler: (update: ViewUpdate) => void): void;
   off(event: "room", handler: (info: RoomInfo) => void): void;
   off(event: "roundEnded", handler: (result: RoundEnded) => void): void;
   off(event: "seat", handler: (seat: number) => void): void;
   off(event: "reaction", handler: (reaction: Reaction) => void): void;
+  off(event: "chat", handler: (message: ChatMessage) => void): void;
+  off(event: "chatBacklog", handler: (messages: readonly ChatMessage[]) => void): void;
 }
 
 /** The subset of the store the wiring writes to. */
 export type SessionSink = Pick<
   SessionState,
-  "setStatus" | "applyRoom" | "applyUpdate" | "applyResult" | "reseat" | "applyReaction"
+  | "setStatus"
+  | "applyRoom"
+  | "applyUpdate"
+  | "applyResult"
+  | "reseat"
+  | "applyReaction"
+  | "applyChat"
+  | "applyChatBacklog"
 >;
 
 /**
@@ -198,6 +252,8 @@ export function attachSession(socket: SessionSocket, sink: SessionSink): () => v
   const onResult = (result: RoundEnded): void => sink.applyResult(result);
   const onSeat = (seat: number): void => sink.reseat(seat);
   const onReaction = (reaction: Reaction): void => sink.applyReaction(reaction);
+  const onChat = (message: ChatMessage): void => sink.applyChat(message);
+  const onChatBacklog = (messages: readonly ChatMessage[]): void => sink.applyChatBacklog(messages);
 
   socket.on("connect", onConnect);
   socket.on("disconnect", onDisconnect);
@@ -206,6 +262,8 @@ export function attachSession(socket: SessionSocket, sink: SessionSink): () => v
   socket.on("roundEnded", onResult);
   socket.on("seat", onSeat);
   socket.on("reaction", onReaction);
+  socket.on("chat", onChat);
+  socket.on("chatBacklog", onChatBacklog);
   // The transport announces itself on its own schedule, which can be before the app
   // has mounted and attached this; asking catches up on what was missed.
   if (socket.connected) sink.setStatus("connected");
@@ -218,5 +276,7 @@ export function attachSession(socket: SessionSocket, sink: SessionSink): () => v
     socket.off("roundEnded", onResult);
     socket.off("seat", onSeat);
     socket.off("reaction", onReaction);
+    socket.off("chat", onChat);
+    socket.off("chatBacklog", onChatBacklog);
   };
 }

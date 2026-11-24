@@ -491,6 +491,8 @@ describe("listener lifecycle", () => {
     expect(socket.removed.sort()).toEqual(
       // `connect` twice: once for the connection status, once to reclaim the seat.
       [
+        "chat",
+        "chatBacklog",
         "connect",
         "connect",
         "disconnect",

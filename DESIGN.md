@@ -357,6 +357,30 @@ bounds a seat at 30 messages a minute after its burst, so even a client stuck se
 spends at most about 1.5 requests and 30 written rows a minute, and a refused message writes
 nothing.
 
+On screen, chat sits beside the scores rather than over the table. On a computer the side panel
+that holds the scores and latest moves has two tabs, Scores and Chat, with a count of unread
+messages on the Chat tab, and on the panel's rail when it is put away (that badge opens the chat);
+on a phone, where the scores are already behind a button in the header, Chat is a button beside it
+with a dot for unread, opening a sheet. A message from someone else also shows for a moment as a
+bubble at their seat, one line like a quick reaction's phrase, with the reaction's blip; whichever
+of a reaction or a message came last is the one shown. Your own message is not bubbled: you just
+typed it, and it is in the chat. Enter sends. A refusal (too long, too many too quickly) is shown
+under the box with the text left in it, not as the table's notice, and an over-long message is
+refused rather than cut, so nothing is lost without the player seeing it; a count appears near the
+limit. "Mute chat" is per device, like muting reactions, and hides other players' messages, their
+bubbles and their sound, never your own. A table where everyone else is a computer has no chat,
+since nobody could answer.
+
+Unread means said by someone else since the chat was last on screen. History is never news: what
+the table hands over when a seat is taken or taken back is old, so a reload neither counts it nor
+pops it up at the seats. The cost of that rule is that a line said while the player's connection
+was down arrives with the history after the reconnect and is shown only in the list. Telling the
+two apart would mean remembering per table what each tab had seen; message numbers come from the
+server's clock, so the client keeps only one mark, the newest message that came as history, and a
+mark left at one table is older than anything said later at the next. The client does not clear
+chat when it takes a new seat, because the new table's history can arrive before the request that
+took the seat answers; the history replaces what was held instead, and leaving the table clears it.
+
 ### Rules chosen when a room is opened
 
 A table's rules are settled before anyone sits down, so the creator picks them at room creation and

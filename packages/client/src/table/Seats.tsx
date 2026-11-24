@@ -14,14 +14,14 @@
  * reconnect grace elapses, so the table should say why moves are happening.
  */
 import { useState } from "react";
-import type { ClockState, OpponentView, Reaction, RoomInfo } from "@hf/shared";
+import type { ClockState, OpponentView, RoomInfo } from "@hf/shared";
 import { faceOf } from "../profile/avatarStore";
 import { GRABBY_NAME, GrabbyIcon } from "./grabby";
 import { Melds } from "./Melds";
 import { booksOf, type MeldOrder } from "./meldView";
 import { BookMarkers, HeldCards, LINE_COLOR, seatLine } from "./OpponentStrip";
 import { PlayerFace } from "./PlayerFace";
-import { ReactionBubble } from "./reactions";
+import { ReactionBubble, type SeatSaying } from "./reactions";
 import { useRemaining } from "./TurnClock";
 
 export interface SeatsProps {
@@ -32,8 +32,8 @@ export interface SeatsProps {
   readonly seatToAct: number;
   readonly clock: ClockState;
   readonly order: MeldOrder;
-  /** A quick reaction to show by each seat that has one up. */
-  readonly reactions?: ReadonlyMap<number, Reaction>;
+  /** A quick reaction or a line of chat to show by each seat that has one up. */
+  readonly reactions?: ReadonlyMap<number, SeatSaying>;
   /**
    * The tallest a box may be, once the player has dragged the players' row to a
    * height; without it a box stops at `BOX_MAX_HEIGHT`. Its melds scroll inside.
@@ -82,6 +82,7 @@ export function Seats({
                 reaction={reactions.get(opponent.seat)!}
                 name={name}
                 avatar={info && faceOf(info)}
+                inset
               />
             )}
             <div className="flex items-center gap-2.5">
