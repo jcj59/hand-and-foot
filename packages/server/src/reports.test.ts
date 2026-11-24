@@ -8,6 +8,7 @@ import {
   REMOVED,
   REPORT_TEXT_MAX,
   REPORTS_PATH,
+  TRUNCATED,
   type BugReport,
   type ReportTable,
 } from "@hf/shared";
@@ -427,6 +428,30 @@ describe("reportsMarkdown", () => {
     ).toBe("## Report 4, 2026-11-20T13:00:00.000Z\n\n> no sound\n");
   });
 
+  it("survives a client-sent truncated that is not a list, and a table record cut to a string", () => {
+    const { record } = tableForReport(playedRoom(10));
+    const text = reportMarkdown({
+      id: 0,
+      at: T,
+      text: "x",
+      context: { truncated: "everything", other: 1 },
+      table: {
+        code: "ABC234",
+        attached: true,
+        record: { ...record, players: TRUNCATED as never, config: TRUNCATED as never },
+      },
+    });
+    expect(text).toContain("attached: cut seats");
+    expect(text).not.toContain("Cut by the client");
+    const entries = reportMarkdown({
+      id: 0,
+      at: T,
+      text: "x",
+      context: { truncated: [null, 5, { section: "a", bytes: 3 }, { section: 1 }] },
+    });
+    expect(entries).toContain("- **Cut by the client:** a (all 3 bytes)");
+  });
+
   it("fences details with more backticks than they hold", () => {
     const text = reportsMarkdown([{ id: 0, at: T, text: "x", context: { note: "````" } }]);
     expect(text).toContain('\n`````json\n"````"\n`````\n');
@@ -441,6 +466,16 @@ describe("reportReplay", () => {
       reportReplay({ ...base, table: { code: "ZZZ222", attached: false, reason: NO_TABLE } }),
     ).toBeNull();
     const { record } = tableForReport(playedRoom(0));
+    expect(
+      reportReplay({
+        ...base,
+        table: {
+          code: "ABC234",
+          attached: true,
+          record: { ...record, players: TRUNCATED as never },
+        },
+      }),
+    ).toBeNull();
     expect(
       reportReplay({
         ...base,

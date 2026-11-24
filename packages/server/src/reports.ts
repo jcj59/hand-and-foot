@@ -253,6 +253,9 @@ export function reportReplay(report: BugReport): GameLog | null {
   const table = report.table;
   if (!table?.attached || !table.record.started) return null;
   const record = table.record;
+  if (!Array.isArray(record.players) || typeof record.config !== "object" || !record.config) {
+    return null;
+  }
   return {
     config: record.config,
     setup: {
@@ -292,6 +295,7 @@ function tableLine(table: ReportTable | undefined): string | null {
   if (!table.attached) return line("Table record", `${table.code}, not attached: ${table.reason}`);
   const record = table.record;
   const state = record.state;
+  const seats = Array.isArray(record.players) ? String(record.players.length) : "cut";
   const moves = Array.isArray(record.actions) ? `${record.actions.length} moves` : "moves cut";
   const where =
     state && typeof state === "object"
@@ -299,15 +303,23 @@ function tableLine(table: ReportTable | undefined): string | null {
       : "";
   return line(
     "Table record",
-    `${table.code}, attached: ${record.players.length} seats, seed ${record.seed}, ${moves}${where}`,
+    `${table.code}, attached: ${seats} seats, seed ${record.seed}, ${moves}${where}`,
   );
 }
 
-function truncationLine(truncated: readonly Truncation[] | undefined): string | null {
-  if (!truncated?.length) return null;
+function isTruncation(value: unknown): value is Truncation {
+  if (typeof value !== "object" || value === null) return false;
+  const t = value as Record<string, unknown>;
+  return typeof t.section === "string" && typeof t.bytes === "number";
+}
+
+function truncationLine(truncated: unknown): string | null {
+  if (!Array.isArray(truncated)) return null;
+  const valid = truncated.filter(isTruncation);
+  if (valid.length === 0) return null;
   return line(
     "Truncated to fit",
-    truncated
+    valid
       .map((t) =>
         t.kept === undefined
           ? `${t.section} (all ${t.bytes} bytes)`
@@ -332,7 +344,7 @@ export function reportMarkdown(report: BugReport): string {
     typeof summary === "object" && summary !== null && !Array.isArray(summary)
       ? Object.entries(summary).map(([key, value]) => line(key, value))
       : [];
-  const clientCut = report.context.truncated as readonly Truncation[] | undefined;
+  const clientCut = report.context.truncated;
   const lines = [
     ...facts,
     tableLine(report.table),
