@@ -258,7 +258,7 @@ export function EmoteFace({
       <g className={look.motion ? `emote-motion emote-${look.motion}` : undefined}>
         {has("arms-up") && (
           <g className={moving("emote-arms")} stroke={ink} strokeWidth={0.8}>
-            {/* Behind the disc, thrown up either side of the head. */}
+            {/* Behind the tile, thrown up either side of the head. */}
             <path d="M6 34 L-4 4" stroke={skin} strokeWidth={5} strokeLinecap="round" fill="none" />
             <path
               d="M34 34 L44 4"
