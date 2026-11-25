@@ -1206,8 +1206,8 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   tab bar on phone. DESIGN.md "Visual design" describes the look as a whole. **Routes** (`App.tsx`):
   inside `AppShell` are `/` (Home), `/practice` (Home with the Practice sheet open), `/history`,
   `/learn` (lesson list), `/rules` and `/profile`; inside `BareFrame` (full screen, no navigation,
-  the one remaining felt token `felt-900` behind it) are `/room/:roomId` (join card, lobby or
-  table), `/watch/:roomId`, `/learn/:lessonId` (a lesson, or `demo`) and `/replay/:matchId`;
+  the one remaining felt token `felt-900` behind it) are `/room/:roomId` (lobby or table; without a seat it is
+  Home with the join card, inside `AppShell`), `/watch/:roomId`, `/learn/:lessonId` (a lesson, or `demo`) and `/replay/:matchId`;
   `/join/:roomId` redirects to `/room/:roomId`, and anything else to `/`. `/scenarios` is the
   dev-only viewer that `main.tsx` mounts instead of the app. Below `md` (`PHONE_QUERY`, 767px)
   `usePhone()` switches markup, not just spacing: tab bar instead of sidebar, sheets from the
