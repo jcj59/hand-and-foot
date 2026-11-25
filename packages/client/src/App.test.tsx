@@ -175,16 +175,25 @@ describe("routing", () => {
     expect(screen.getByRole("heading", { name: /hand and foot/i })).toBeInTheDocument();
   });
 
-  it("offers the join form to a visitor arriving at a table with no seat", () => {
+  it("offers the join form to a visitor arriving at a table with no seat", async () => {
     mount(fakeSocket().socket, "/room/abc234");
-    const join = screen.getByRole("dialog", { name: "Your player card" });
+    const join = await screen.findByRole("dialog", { name: "Your player card" });
     expect(join).toHaveTextContent("Table ABC234");
     expect(within(join).getByRole("button", { name: "Take a seat" })).toBeInTheDocument();
   });
 
-  it("takes a join link to the same place", () => {
+  it("keeps the app's navigation on the home screen at a table's link", async () => {
+    // It used to be the home screen with no way to anywhere else, which is what a
+    // link to a closed table left the player looking at.
+    mount(fakeSocket().socket, "/room/abc234");
+    await screen.findByRole("dialog", { name: "Your player card" });
+    const nav = screen.getByRole("navigation", { name: "Main" });
+    expect(within(nav).getByRole("link", { name: /history/i })).toBeInTheDocument();
+  });
+
+  it("takes a join link to the same place", async () => {
     mount(fakeSocket().socket, "/join/abc234");
-    expect(screen.getByRole("dialog", { name: "Your player card" })).toHaveTextContent(
+    expect(await screen.findByRole("dialog", { name: "Your player card" })).toHaveTextContent(
       "Table ABC234",
     );
   });

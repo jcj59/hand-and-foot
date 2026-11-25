@@ -223,6 +223,22 @@ describe("the table socket, spoken directly", () => {
     expect(await post(base, "/api/rooms", { name: "ana" })).toMatchObject({ ok: true });
   });
 
+  it("says whether a table is open under a code, case aside, and sits nobody down", async () => {
+    const { server, base } = await boot();
+    const seat = await post(base, "/api/rooms", { name: "ana" });
+    if (!seat.ok) throw new Error(seat.error);
+    const look = async (code: string): Promise<unknown> =>
+      (await fetch(`http://${base}/api/rooms/${code}`)).json();
+    expect(await look(seat.data.roomId)).toEqual({ ok: true, data: { started: false } });
+    expect(await look(seat.data.roomId.toLowerCase())).toEqual({
+      ok: true,
+      data: { started: false },
+    });
+    expect(server.manager.get(seat.data.roomId)?.seatCount).toBe(1);
+    server.manager.remove(seat.data.roomId);
+    expect(await look(seat.data.roomId)).toEqual({ ok: false, error: "no room with that code" });
+  });
+
   it("answers nothing but its own routes", async () => {
     const { base } = await boot();
     expect((await fetch(`http://${base}/elsewhere`)).status).toBe(404);

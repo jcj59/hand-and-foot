@@ -217,6 +217,34 @@ describe("a seat per tab", () => {
     expect(local.items.size).toBe(0);
   });
 
+  it("forgets a refused seat everywhere, even one only the shared copy held", () => {
+    // The bug: a table's link opened in a new tab finds the seat in the shared
+    // copy, the server refuses it, and clearing only this tab's own copy left the
+    // shared one offering a Rejoin to a table that was gone.
+    const local = memory();
+    saveCredentials(ana, tabbedStore(memory(), local));
+    const fresh = tabbedStore(memory(), local);
+    clearCredentials(fresh, ana);
+    expect(loadCredentials(fresh)).toBeNull();
+    expect(local.items.size).toBe(0);
+  });
+
+  it("keeps another tab's seat when the refused one is not what is shared", () => {
+    const local = memory();
+    const tabA = tabbedStore(memory(), local);
+    saveCredentials(ana, tabA);
+    saveCredentials(ben, tabbedStore(memory(), local));
+    clearCredentials(tabA, ana);
+    expect(loadCredentials(tabbedStore(memory(), local))).toEqual(ben);
+  });
+
+  it("keeps a shared seat at the same table under another token", () => {
+    const local = memory();
+    saveCredentials({ ...ana, token: "newer" }, tabbedStore(memory(), local));
+    clearCredentials(tabbedStore(memory(), local), ana);
+    expect(local.items.size).toBe(1);
+  });
+
   it("works with only one of the two stores reachable", () => {
     const onlyLocal = tabbedStore(null, memory());
     saveCredentials(ana, onlyLocal);

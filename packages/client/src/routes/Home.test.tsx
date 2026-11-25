@@ -3,6 +3,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import type { Ack } from "@hf/shared";
 import { CREDENTIALS_KEY } from "../credentials";
+import type { TableState } from "../join/lookUp";
+import { SAVED_GAMES_KEY } from "../savedGames";
 import { createServerClock } from "../serverTime";
 import { useSession } from "../session";
 import type { HfClientSocket } from "../socket";
@@ -47,14 +49,17 @@ function mount(
   socket: HfClientSocket,
   path = "/",
   post: Post = fakeUsers(),
+  // Every table a link names is open, unless a test says otherwise.
+  look: (code: string) => Promise<TableState> = async () => "open",
 ): { readonly landed: () => string | null } {
   let landed: string | null = null;
+  const home = <Home socket={socket} post={post} look={look} />;
   render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route path="/" element={<Home socket={socket} post={post} />} />
-        <Route path="/room/:roomId" element={<Home socket={socket} post={post} />} />
-        <Route path="/practice" element={<Home socket={socket} post={post} />} />
+        <Route path="/" element={home} />
+        <Route path="/room/:roomId" element={home} />
+        <Route path="/practice" element={home} />
       </Routes>
       <Landing onRender={(p) => (landed = p)} />
     </MemoryRouter>,
@@ -280,17 +285,68 @@ describe("joining a table", () => {
     expect((codeBox() as HTMLInputElement).maxLength).toBeGreaterThanOrEqual("A B C 2 3 4".length);
   });
 
-  it("fills in the code when arriving from a shared link", () => {
+  it("fills in the code when arriving from a shared link", async () => {
     // The common case: the code is already known and only a name is missing.
     mount(fakeSocket().socket, "/room/abc234");
     // Straight past the code, which the link gave, to who is sitting down.
-    const sheet = screen.getByRole("dialog", { name: "Your player card" });
+    const sheet = await screen.findByRole("dialog", { name: "Your player card" });
     expect(sheet).toHaveTextContent("Joining");
     expect(sheet).toHaveTextContent("Table ABC234");
     expect(screen.getByText(/invited to a table/i)).not.toBeNull();
     // The name is the only thing missing, so the cursor goes there.
-    expect(nameBox()).toHaveFocus();
+    await waitFor(() => expect(nameBox()).toHaveFocus());
     expect(codeBox()).toHaveValue("ABC234");
+  });
+
+  it("asks whether the link's table is open, by its code, before offering a seat", async () => {
+    const asked: string[] = [];
+    let answer: (state: TableState) => void = () => {};
+    mount(fakeSocket().socket, "/room/abc234", fakeUsers(), (code) => {
+      asked.push(code);
+      return new Promise((resolve) => (answer = resolve));
+    });
+    expect(asked).toEqual(["ABC234"]);
+    // No seat on offer until the table is known to be there.
+    expect(screen.queryByRole("dialog", { name: "Your player card" })).toBeNull();
+    act(() => answer("open"));
+    expect(await screen.findByRole("dialog", { name: "Your player card" })).toHaveTextContent(
+      "Table ABC234",
+    );
+  });
+
+  it("still offers the seat when it cannot tell whether the table is open", async () => {
+    // No network, or a server from before the question existed: the table's own
+    // answer to sitting down is the last word, as it always was.
+    mount(fakeSocket().socket, "/room/abc234", fakeUsers(), async () => "unknown");
+    expect(await screen.findByRole("dialog", { name: "Your player card" })).toBeInTheDocument();
+  });
+
+  it("says a link's table has closed, on the home screen, and forgets what it kept for it", async () => {
+    // The bug: a link to a closed table offered a seat there, and a seat kept
+    // for it offered a Rejoin that could only bring the player back to this.
+    const dead = { roomId: "ABC234", seat: 0, token: "dead-token" };
+    window.localStorage.setItem(CREDENTIALS_KEY, JSON.stringify(dead));
+    window.localStorage.setItem(
+      SAVED_GAMES_KEY,
+      JSON.stringify([{ ...dead, savedUntil: Date.now() + 60_000, names: ["Ana"], round: 2 }]),
+    );
+    const { landed } = mount(fakeSocket().socket, "/room/abc234", fakeUsers(), async () => "gone");
+    expect(await screen.findByText("Table ABC234 has closed, or the link is wrong.")).toBeVisible();
+    // The notice comes from the store and can paint a render before the
+    // navigation commits, so wait for the move home rather than racing it.
+    await waitFor(() => expect(landed()).toBe("/"));
+    expect(screen.queryByRole("dialog", { name: "Your player card" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Rejoin" })).toBeNull();
+    expect(window.localStorage.getItem(CREDENTIALS_KEY)).toBeNull();
+    expect(JSON.parse(window.localStorage.getItem(SAVED_GAMES_KEY) ?? "[]")).toEqual([]);
+  });
+
+  it("keeps a seat at another table when a link's table has closed", async () => {
+    const other = { roomId: "XYZ789", seat: 1, token: "live-token" };
+    window.localStorage.setItem(CREDENTIALS_KEY, JSON.stringify(other));
+    mount(fakeSocket().socket, "/room/abc234", fakeUsers(), async () => "gone");
+    await screen.findByText("Table ABC234 has closed, or the link is wrong.");
+    expect(JSON.parse(window.localStorage.getItem(CREDENTIALS_KEY)!)).toEqual(other);
   });
 
   it("starts with the name field focused on a plain visit too", () => {
@@ -904,7 +960,7 @@ describe("your player card", () => {
     window.localStorage.setItem(ACCOUNT_KEY, "jack");
     const { socket, sent } = fakeSocket();
     mount(socket, "/room/abc234");
-    const card = screen.getByRole("dialog", { name: "Your player card" });
+    const card = await screen.findByRole("dialog", { name: "Your player card" });
     expect(within(card).getByText("@jack")).toBeInTheDocument();
     expect(within(card).queryByLabelText(/your name/i)).toBeNull();
     // Changing it turns it into the editor.
@@ -915,11 +971,11 @@ describe("your player card", () => {
     expect(sent[0]!.event).toBe("joinRoom");
   });
 
-  it("offers Sit down as the name, while signed in and not editing", () => {
+  it("offers Sit down as the name, while signed in and not editing", async () => {
     window.localStorage.setItem(NAME_KEY, "Jack");
     window.localStorage.setItem(ACCOUNT_KEY, "jack");
     mount(fakeSocket().socket, "/room/abc234");
-    expect(screen.getByRole("button", { name: "Sit down as Jack" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Sit down as Jack" })).toBeInTheDocument();
   });
 
   it("picks a color for the face, and shuffles it", () => {

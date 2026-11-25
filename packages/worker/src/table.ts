@@ -34,6 +34,7 @@ import {
   type TableForReport,
 } from "@hf/server/core";
 import {
+  NO_ROOM,
   PING,
   PONG,
   ROOM_CODE_ALPHABET,
@@ -43,6 +44,7 @@ import {
   type MatchRecord,
   type RulesConfig,
   type SeatCredentials,
+  type TableLook,
   LEGACY_BOT_LEVEL,
 } from "@hf/shared";
 import { newCode } from "./codes";
@@ -199,6 +201,16 @@ export class TableObject extends DurableObject<Env> {
     room.start(room.hostSeat);
     this.scheduleReaping();
     return { ok: true, data: out };
+  }
+
+  /**
+   * Whether a table is open here, for someone opening its link without a seat.
+   * Reads nothing it does not already hold, and sits nobody down.
+   */
+  async look(): Promise<Ack<TableLook>> {
+    const room = this.channel?.room;
+    if (!room) return { ok: false, error: NO_ROOM };
+    return { ok: true, data: { started: room.started } };
   }
 
   /** Sit down at this table, as the identity the Worker verified (if any), with their picture. */

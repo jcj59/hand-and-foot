@@ -466,6 +466,18 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
     references") where a real restart would not — tests cancel the room's timer first
     (`stopClock`). Eviction with `webSockets: "close"` only affects hibernatable sockets.
     `compatibility_date` cannot be newer than the local workerd supports (2026-08-15 now).
+- **A link to a closed table (2026-11-25).** `GET /api/rooms/<code>` (`tablePath`, `parseRoomPath`
+  `what: "look"`) answers `Ack<TableLook {started}>` or `NO_ROOM` ("no room with that code", now a
+  shared constant) on both hosts (Node `socket.ts` route, Worker `TableObject.look`, one DO request,
+  none for a malformed code, which the Worker refuses as `NO_ROOM` itself); it seats nobody. Home,
+  opened at `/room/<code>` without a seat, asks it once (`join/lookUp.ts` `lookUpTable`: `open` /
+  `gone` / `unknown`; anything unreadable, or no answer within `LOOK_TIMEOUT_MS` 3000, pinned, is
+  `unknown`) before opening the join card; `gone` forgets a stored seat and saved game for that code, sets `tableGone(code)` as the
+  notice and goes to `/`. An unseated `/room/<code>` is Home inside `AppShell` (which now takes
+  `children`), so the navigation stays. `clearCredentials(store, gone)` also removes the copy kept
+  for every tab when it is that refused seat (`CredentialStore.removeShared`, same room and token):
+  before, a seat only `localStorage` held survived its refusal and Home offered a Rejoin that led
+  back to the same screen. `reclaimSeat` passes the refused seat.
 - **Table lifetime (post-M5).** `Room.closing(abandonedMs)` is the one rule both hosts close tables
   by (Node `RoomManager.sweep`, the Durable Object's alarm via the `TableHooks.changed` hook):
   paused → `PAUSED_TABLE_MS` (30 min) after `pausedSince`; saved for later (family only, while
@@ -1194,8 +1206,8 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   tab bar on phone. DESIGN.md "Visual design" describes the look as a whole. **Routes** (`App.tsx`):
   inside `AppShell` are `/` (Home), `/practice` (Home with the Practice sheet open), `/history`,
   `/learn` (lesson list), `/rules` and `/profile`; inside `BareFrame` (full screen, no navigation,
-  the one remaining felt token `felt-900` behind it) are `/room/:roomId` (join card, lobby or
-  table), `/watch/:roomId`, `/learn/:lessonId` (a lesson, or `demo`) and `/replay/:matchId`;
+  the one remaining felt token `felt-900` behind it) are `/room/:roomId` (lobby or table; without a seat it is
+  Home with the join card, inside `AppShell`), `/watch/:roomId`, `/learn/:lessonId` (a lesson, or `demo`) and `/replay/:matchId`;
   `/join/:roomId` redirects to `/room/:roomId`, and anything else to `/`. `/scenarios` is the
   dev-only viewer that `main.tsx` mounts instead of the app. Below `md` (`PHONE_QUERY`, 767px)
   `usePhone()` switches markup, not just spacing: tab bar instead of sidebar, sheets from the

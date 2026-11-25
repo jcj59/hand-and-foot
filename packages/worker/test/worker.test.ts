@@ -228,6 +228,34 @@ describe("the Worker", () => {
   it("answers nothing else under /api", async () => {
     expect((await SELF.fetch(`${BASE}/api/nope`)).status).toBe(404);
     expect((await SELF.fetch(`${BASE}/api/rooms/ABC234/join`)).status).toBe(405);
+    expect((await SELF.fetch(`${BASE}/api/rooms/ABC234`, { method: "POST" })).status).toBe(405);
+  });
+
+  it("says whether a table is open under a code, and sits nobody down", async () => {
+    const opened = (await (
+      await SELF.fetch(`${BASE}/api/rooms`, {
+        method: "POST",
+        body: JSON.stringify({ name: "ana" }),
+      })
+    ).json()) as Ack<SeatCredentials>;
+    if (!opened.ok) throw new Error(opened.error);
+    const code = opened.data.roomId;
+    const look = async (c: string): Promise<unknown> =>
+      (await SELF.fetch(`${BASE}/api/rooms/${c}`)).json();
+    expect(await look(code)).toEqual({ ok: true, data: { started: false } });
+    expect(await look(code.toLowerCase())).toEqual({ ok: true, data: { started: false } });
+    // Looking took no seat: the next person to sit down is the second.
+    const joined = (await (
+      await SELF.fetch(`${BASE}/api/rooms/${code}/join`, {
+        method: "POST",
+        body: JSON.stringify({ name: "ben" }),
+      })
+    ).json()) as Ack<SeatCredentials>;
+    expect(joined).toMatchObject({ ok: true, data: { seat: 1 } });
+    expect(await look("ZZ9ZZ9")).toEqual({ ok: false, error: "no room with that code" });
+    for (const malformed of ["ABC10O", "ABC23", "ABC2345", "ab%20cd"]) {
+      expect(await look(malformed)).toEqual({ ok: false, error: "no room with that code" });
+    }
   });
 
   it("refuses a request body that is not a JSON object", async () => {
