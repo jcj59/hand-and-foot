@@ -243,6 +243,11 @@ export default {
       // Codes are matched without regard to case; nobody types a link exactly.
       const table = env.TABLES.getByName(target.roomId.toUpperCase());
       if (target.what === "socket") return table.fetch(request);
+      if (target.what === "look") {
+        // One Durable Object request each time a table's link is opened without a seat.
+        if (request.method !== "GET") return new Response(null, { status: 405 });
+        return json(await table.look());
+      }
       if (request.method !== "POST") return new Response(null, { status: 405 });
       const body = await readJson(request);
       if (!body) return json({ ok: false, error: "that request was not JSON" }, 400);

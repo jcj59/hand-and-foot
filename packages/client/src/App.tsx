@@ -234,12 +234,13 @@ function RoomRoute({ socket }: { readonly socket: HfClientSocket }): React.React
   const credentials = useSession((s) => s.credentials);
   const room = useSession((s) => s.room);
 
-  // Not seated: the home screen, with the way to a seat at this table open over it.
+  // Not seated: the home screen, navigation and all, with the way to a seat at
+  // this table open over it (or, for a table that has closed, a note saying so).
   if (!credentials)
     return (
-      <div className="min-h-full bg-page text-ink">
+      <AppShell>
         <Home socket={socket} />
-      </div>
+      </AppShell>
     );
   if (room?.started && room.savedUntil != null) return <SavedGame socket={socket} />;
   if (room?.started) return <Table socket={socket} />;

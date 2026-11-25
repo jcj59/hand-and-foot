@@ -21,6 +21,11 @@ export interface CredentialStore {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
   removeItem(key: string): void;
+  /**
+   * Remove the copy kept for every tab when it is one `matches` accepts. Only a
+   * store that keeps such a copy (`tabbedStore`) has one.
+   */
+  removeShared?(key: string, matches: (raw: string) => boolean): void;
 }
 
 /**
@@ -51,6 +56,10 @@ export function tabbedStore(
       session?.removeItem(key);
       if (mine !== null && local?.getItem(key) === mine) local.removeItem(key);
     },
+    removeShared: (key, matches) => {
+      const kept = local?.getItem(key) ?? null;
+      if (kept !== null && matches(kept)) local?.removeItem(key);
+    },
   };
 }
 
@@ -71,6 +80,16 @@ export function browserStore(): CredentialStore | null {
   const session = reach(() => window.sessionStorage);
   const local = reach(() => window.localStorage);
   return session || local ? tabbedStore(session, local) : null;
+}
+
+/** Whether a stored entry is this seat: the same table and the same token. */
+function sameSeat(raw: string, seat: SeatCredentials): boolean {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return isCredentials(parsed) && parsed.roomId === seat.roomId && parsed.token === seat.token;
+  } catch {
+    return false;
+  }
 }
 
 function isCredentials(value: unknown): value is SeatCredentials {
@@ -120,9 +139,19 @@ export function saveCredentials(
   }
 }
 
-export function clearCredentials(store: CredentialStore | null = browserStore()): void {
+/**
+ * Forget this tab's seat. With `gone`, a seat the server has refused, the copy
+ * kept for every tab goes too when it is that same seat: a refused seat is gone
+ * for every tab, and leaving it there offered a Rejoin that could only fail. A
+ * different seat another tab saved since is kept.
+ */
+export function clearCredentials(
+  store: CredentialStore | null = browserStore(),
+  gone?: SeatCredentials,
+): void {
   try {
     store?.removeItem(CREDENTIALS_KEY);
+    if (gone) store?.removeShared?.(CREDENTIALS_KEY, (raw) => sameSeat(raw, gone));
   } catch {
     // Nothing to do: the caller is leaving the table either way.
   }

@@ -10,6 +10,7 @@ import type { Duplex } from "node:stream";
 import { WebSocketServer, type WebSocket } from "ws";
 import {
   HEALTH_PATH,
+  NO_ROOM,
   parseAvatar,
   parseRoomPath,
   PING,
@@ -164,6 +165,16 @@ export function attachTables(
     // configured to check it.
     if (request.method === "GET" && (path === HEALTH_PATH || path === "/healthz")) {
       return json(response, 200, { ok: true, rooms: manager.size });
+    }
+    // Whether a table is open under a code, for a link opened without a seat.
+    const looked = parseRoomPath(path);
+    if (request.method === "GET" && looked?.what === "look") {
+      const room = manager.get(looked.roomId);
+      return json(
+        response,
+        200,
+        room ? { ok: true, data: { started: room.started } } : { ok: false, error: NO_ROOM },
+      );
     }
     if (request.method !== "POST") return void response.writeHead(404).end();
     if (!allowed(origin)) return void response.writeHead(403).end();

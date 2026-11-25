@@ -48,6 +48,23 @@ export function socketPath(roomId: string): string {
   return `${ROOMS_PATH}/${encodeURIComponent(roomId)}/socket`;
 }
 
+/**
+ * Whether a table is open under a code: GET, answering `Ack<TableLook>`, or
+ * `NO_ROOM` when there is none. Asked when a table's link is opened, so a link to
+ * a table that has closed says so instead of offering a seat at it.
+ */
+export function tablePath(roomId: string): string {
+  return `${ROOMS_PATH}/${encodeURIComponent(roomId)}`;
+}
+
+/** What a look at an open table tells someone who is not at it. */
+export interface TableLook {
+  readonly started: boolean;
+}
+
+/** The refusal for a code with no table behind it, on every route that names one. */
+export const NO_ROOM = "no room with that code";
+
 /** Whether the process is up, for a host's health check. */
 export const HEALTH_PATH = "/api/healthz";
 
@@ -68,8 +85,8 @@ export const PONG = "pong";
  */
 export function parseRoomPath(
   path: string,
-): { readonly roomId: string; readonly what: "join" | "socket" } | null {
-  const match = /^\/api\/rooms\/([^/]+)\/(join|socket)$/.exec(path);
+): { readonly roomId: string; readonly what: "look" | "join" | "socket" } | null {
+  const match = /^\/api\/rooms\/([^/]+)(?:\/(join|socket))?$/.exec(path);
   if (!match) return null;
   let roomId: string;
   try {
@@ -77,7 +94,7 @@ export function parseRoomPath(
   } catch {
     return null;
   }
-  return { roomId, what: match[2] as "join" | "socket" };
+  return { roomId, what: (match[2] as "join" | "socket" | undefined) ?? "look" };
 }
 
 /** Tell a reply from a push. */

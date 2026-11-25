@@ -19,9 +19,10 @@ import { LESSONS } from "@hf/scenarios";
 import { addComputerPlayer, createTable, joinTable, resumeSavedGame, startTable } from "../actions";
 import { loadAvatar, saveAvatar, faceOf } from "../profile/avatarStore";
 import { AvatarFace } from "../profile/Avatar";
-import { loadCredentials } from "../credentials";
+import { clearCredentials, loadCredentials } from "../credentials";
+import { lookUpTable, tableGone, type TableState } from "../join/lookUp";
 import { normalizeRoomCode } from "../roomCode";
-import { heldSeat, liveSavedGames, type SavedGame } from "../savedGames";
+import { forgetSavedGame, heldSeat, liveSavedGames, type SavedGame } from "../savedGames";
 import { loadRulesChoice, rememberRulesChoice, type RulesChoice } from "../rules/customRules";
 import { useSession } from "../session";
 import { type HfClientSocket } from "../socket";
@@ -57,11 +58,17 @@ export interface HomeProps {
   readonly socket: HfClientSocket;
   /** How identities reach the server; the page's own origin unless a test answers it. */
   readonly post?: Post;
+  /** Whether a link's table is still open; the page's own server unless a test answers it. */
+  readonly look?: (code: string) => Promise<TableState>;
 }
 
 type Open = "new" | "join" | "practice" | null;
 
-export function Home({ socket, post = serverPost() }: HomeProps): React.ReactElement {
+export function Home({
+  socket,
+  post = serverPost(),
+  look = lookUpTable,
+}: HomeProps): React.ReactElement {
   const navigate = useNavigate();
   const { roomId: fromLink } = useParams<{ roomId?: string }>();
   // `/practice` is the Practice sheet open over the home screen, so it can be linked to.
@@ -77,14 +84,39 @@ export function Home({ socket, post = serverPost() }: HomeProps): React.ReactEle
   // A seat at a saved game is offered as that, below, not as a table to rejoin.
   const held = heldSeat(stored, savedGames);
 
-  // From a shared link the code is known: straight to joining.
-  const [chosen, setOpen] = useState<Open>(fromLink ? "join" : null);
+  // From a shared link the code is known: straight to joining, once the table is
+  // known to be there (see the effect below), so a closed one never offers a seat.
+  const [chosen, setOpen] = useState<Open>(null);
   const open: Open = atPractice ? "practice" : chosen;
   // The name this player went by last time, ready to use again or change.
   const [name, setName] = useState(loadName);
   // The picture this device chose, if any; changed here, kept at once.
   const [avatar, setAvatar] = useState(loadAvatar);
   const [code, setCode] = useState(fromLink ? normalizeRoomCode(fromLink) : "");
+
+  // A link to a table: asked about once, as it opens. A closed table is said to be
+  // gone on the home screen proper, and anything kept for it (a seat, a saved
+  // game) is forgotten, since it could only offer a way back that fails.
+  useEffect(() => {
+    if (!fromLink) return;
+    const linked = normalizeRoomCode(fromLink);
+    let live = true;
+    void look(linked).then((state) => {
+      if (!live) return;
+      if (state !== "gone") {
+        setOpen("join");
+        return;
+      }
+      const kept = loadCredentials();
+      if (kept && kept.roomId.toUpperCase() === linked) clearCredentials(undefined, kept);
+      forgetSavedGame(linked);
+      setNotice(tableGone(linked));
+      navigate("/", { replace: true });
+    });
+    return () => {
+      live = false;
+    };
+  }, [fromLink, look, navigate, setNotice]);
   // The rules this device last opened a table with, ready to use again or change.
   const [choice, setChoice] = useState<RulesChoice>(loadRulesChoice);
   // One flag for both sheets: a request is in flight and none should be sent

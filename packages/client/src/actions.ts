@@ -108,7 +108,8 @@ export async function reclaimSeat(
     return "reclaimed";
   }
   if (result.error === wire.NO_RESPONSE) return "unreachable";
-  clearCredentials();
+  // Gone for every tab, so forgotten everywhere it was kept, not only in this one.
+  clearCredentials(undefined, credentials);
   // Gone in a way worth telling the player, whenever they find out: the table is
   // still there, and the match went on without them.
   return result.error === CARRIED_ON_WITHOUT_YOU ? "removed" : "gone";

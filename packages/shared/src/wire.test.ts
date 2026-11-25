@@ -1,15 +1,30 @@
 import { describe, expect, it } from "vitest";
-import { isAckFrame, joinPath, parseRoomPath, PING, PONG, socketPath } from "./wire";
+import {
+  isAckFrame,
+  joinPath,
+  NO_ROOM,
+  parseRoomPath,
+  PING,
+  PONG,
+  socketPath,
+  tablePath,
+} from "./wire";
 
 describe("table paths", () => {
-  it("round-trips a code through the join and socket paths", () => {
+  it("round-trips a code through the look, join and socket paths", () => {
+    expect(parseRoomPath(tablePath("ABC234"))).toEqual({ roomId: "ABC234", what: "look" });
     expect(parseRoomPath(joinPath("ABC234"))).toEqual({ roomId: "ABC234", what: "join" });
     expect(parseRoomPath(socketPath("ABC234"))).toEqual({ roomId: "ABC234", what: "socket" });
   });
 
   it("pins the paths the two servers and the client agree on", () => {
+    expect(tablePath("ABC234")).toBe("/api/rooms/ABC234");
     expect(joinPath("ABC234")).toBe("/api/rooms/ABC234/join");
     expect(socketPath("ABC234")).toBe("/api/rooms/ABC234/socket");
+  });
+
+  it("pins the refusal for a code with no table, which the client recognizes", () => {
+    expect(NO_ROOM).toBe("no room with that code");
   });
 
   it("escapes a code that is not a plain word, and reads it back", () => {
@@ -24,7 +39,8 @@ describe("table paths", () => {
   it("recognises nothing else", () => {
     for (const path of [
       "/api/rooms",
-      "/api/rooms/ABC234",
+      "/api/rooms/",
+      "/api/rooms/ABC234/",
       "/api/rooms/ABC234/leave",
       "/rooms/X/join",
     ]) {

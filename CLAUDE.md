@@ -466,6 +466,17 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
     references") where a real restart would not — tests cancel the room's timer first
     (`stopClock`). Eviction with `webSockets: "close"` only affects hibernatable sockets.
     `compatibility_date` cannot be newer than the local workerd supports (2026-08-15 now).
+- **A link to a closed table (2026-11-25).** `GET /api/rooms/<code>` (`tablePath`, `parseRoomPath`
+  `what: "look"`) answers `Ack<TableLook {started}>` or `NO_ROOM` ("no room with that code", now a
+  shared constant) on both hosts (Node `socket.ts` route, Worker `TableObject.look`, one DO request);
+  it seats nobody. Home, opened at `/room/<code>` without a seat, asks it once (`join/lookUp.ts`
+  `lookUpTable`: `open` / `gone` / `unknown`, anything unreadable is `unknown`) before opening the
+  join card; `gone` forgets a stored seat and saved game for that code, sets `tableGone(code)` as the
+  notice and goes to `/`. An unseated `/room/<code>` is Home inside `AppShell` (which now takes
+  `children`), so the navigation stays. `clearCredentials(store, gone)` also removes the copy kept
+  for every tab when it is that refused seat (`CredentialStore.removeShared`, same room and token):
+  before, a seat only `localStorage` held survived its refusal and Home offered a Rejoin that led
+  back to the same screen. `reclaimSeat` passes the refused seat.
 - **Table lifetime (post-M5).** `Room.closing(abandonedMs)` is the one rule both hosts close tables
   by (Node `RoomManager.sweep`, the Durable Object's alarm via the `TableHooks.changed` hook):
   paused → `PAUSED_TABLE_MS` (30 min) after `pausedSince`; saved for later (family only, while

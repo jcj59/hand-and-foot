@@ -39,23 +39,25 @@ const DESTINATIONS: readonly Destination[] = [
 /** Whether the sidebar is folded to its rail, kept per device. */
 export const NAV_FOLDED_KEY = "hf.navFolded";
 
-export function AppShell(): React.ReactElement {
+/**
+ * `children` stands in for the routed page: a table's link opened without a seat
+ * there is the home screen, and keeps the app's navigation like the home screen.
+ */
+export function AppShell({
+  children,
+}: { readonly children?: React.ReactNode } = {}): React.ReactElement {
   const phone = usePhone();
   const { pathname } = useLocation();
   const tabbed = !DESTINATIONS.some((d) => !d.tab && d.to === pathname);
   return phone ? (
     <div className="flex h-full min-h-0 flex-col bg-page text-ink">
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <Outlet />
-      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto">{children ?? <Outlet />}</div>
       {tabbed && <TabBar />}
     </div>
   ) : (
     <div className="flex h-full min-h-0 bg-page text-ink">
       <Sidebar />
-      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-        <Outlet />
-      </div>
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">{children ?? <Outlet />}</div>
     </div>
   );
 }
