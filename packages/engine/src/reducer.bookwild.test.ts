@@ -192,12 +192,11 @@ describe("a finished book and wild cards", () => {
     if (r.ok) expect(r.state.players[0].melds[0].cards).toHaveLength(8);
   });
 
-  it("counts a book of black threes as dirty, so it takes a wild within the ratio", () => {
+  it("never lets a book of black threes take a wild", () => {
     const threes = cards("3", 7);
     const two = card("2");
     const state = downWith([{ rank: "3", cards: threes }], [two, card("K"), card("Q")], true);
     const r = applyAction(state, { type: "playMelds", melds: [play("3", [two])] });
-    expect(r.ok).toBe(true);
-    if (r.ok) expect(r.state.players[0].melds[0].cards).toHaveLength(8);
+    expect(r.ok).toBe(false);
   });
 });

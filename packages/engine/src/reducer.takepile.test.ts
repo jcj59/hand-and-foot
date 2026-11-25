@@ -386,14 +386,13 @@ describe("taking the pile with a black three on it", () => {
     expect(after.players[0].melds.find((m) => m.rank === "3")?.cards).toHaveLength(8);
   });
 
-  it("is allowed with a wild making up the seven, as a lay-down would be", () => {
+  it("is refused when a wild would have to make up the seven", () => {
     const s = state(
       { isDown: true, inFoot: true, foot: [...blackThrees(5), card("JOKER"), card("9")] },
       [card("3", "spades")],
     );
-    expect(canTakePile(s, 0).feasible).toBe(true);
-    const after = takeAndSettle(s);
-    expect(after.players[0].melds.find((m) => m.rank === "3")?.cards).toHaveLength(7);
+    expect(canTakePile(s, 0).feasible).toBe(false);
+    expect(applyAction(s, { type: "takePile" }).ok).toBe(false);
   });
 
   it("is refused when the threes fall short of seven", () => {

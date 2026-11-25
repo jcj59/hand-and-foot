@@ -212,6 +212,12 @@ function fullFace(size: CardSize): boolean {
   return size === "large" || size === "normal";
 }
 
+/**
+ * A card out of play is darkened and drained of color, never made translucent: the
+ * cards in a hand overlap, and a see-through one shows the card beside it.
+ */
+const DIMMED = "[filter:grayscale(0.6)_brightness(0.6)]";
+
 export function PlayingCard({
   card,
   size = "normal",
@@ -251,7 +257,7 @@ export function PlayingCard({
       <span
         role="img"
         aria-label={label}
-        className={dimmed ? "opacity-60" : undefined}
+        className={dimmed ? DIMMED : undefined}
         data-card-id={card.id}
         tabIndex={focusable ? 0 : undefined}
         aria-keyshortcuts={keyShortcuts}
@@ -271,7 +277,7 @@ export function PlayingCard({
       aria-keyshortcuts={keyShortcuts}
       onClick={() => onSelect(card)}
       className={`rounded transition-transform duration-150 ease-out ${selected && lift ? "-translate-y-3" : ""} ${
-        dimmed ? "opacity-60" : ""
+        dimmed ? DIMMED : ""
       } disabled:cursor-not-allowed disabled:opacity-40`}
     >
       {face}

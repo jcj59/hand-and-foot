@@ -98,9 +98,8 @@ describe("taking a pile topped by a black three (property-based)", () => {
       fc.property(shapes, (shape) => {
         const s = build({ ...shape, isDown: true });
         const threes = shape.threes + 1;
-        // Seven cards with at least four threes satisfies either wild ratio.
-        const expected =
-          shape.inFoot && (shape.bookDown || (threes >= 4 && threes + shape.wilds >= 7));
+        // Wilds never help: the book is seven black threes, or one already down.
+        const expected = shape.inFoot && (shape.bookDown || threes >= 7);
         expect(canTakePile(s, 0).feasible).toBe(expected);
       }),
       { numRuns: 500 },

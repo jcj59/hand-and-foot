@@ -1671,7 +1671,7 @@ describe("arranging your own cards", () => {
       stagedIds: new Set<string>(),
       owedIds: new Set<string>(),
       meldRanks: new Set<Rank>(),
-      playContext: { inFoot: false, blackThreesHeld: 0, wildsHeld: 0, hasBlackThreeMeld: false },
+      playContext: { inFoot: false, blackThreesHeld: 0, hasBlackThreeMeld: false },
       onSelect: () => {},
       chosenId: null,
       menu: null,
@@ -2212,8 +2212,8 @@ describe("the controls added from play-testing", () => {
       }),
     );
     const three = handCard("Three of clubs, blocks the pile");
-    expect(three.className).toMatch(/opacity-60/);
-    expect(handCard("King of spades").className).not.toMatch(/opacity-60/);
+    expect(three.className).toMatch(/brightness\(0\.6\)/);
+    expect(handCard("King of spades").className).not.toMatch(/brightness\(0\.6\)/);
     fireEvent.click(three);
     expect(screen.queryByRole("menuitem", { name: /meld/i })).toBeNull();
     expect(screen.getByRole("menuitem", { name: "Discard" })).toBeInTheDocument();
@@ -2235,7 +2235,7 @@ describe("the controls added from play-testing", () => {
     const buttons = within(screen.getByRole("region", { name: /your foot/i })).getAllByRole(
       "button",
     );
-    expect(buttons.every((b) => !/opacity-60/.test(b.className))).toBe(true);
+    expect(buttons.every((b) => !/brightness\(0\.6\)/.test(b.className))).toBe(true);
     fireEvent.click(buttons[0]!);
     expect(screen.getByRole("menuitem", { name: "Meld" })).toBeInTheDocument();
   });
@@ -2261,7 +2261,9 @@ describe("the controls added from play-testing", () => {
         hints: { phase: "play", canDraw: false },
       }),
     );
-    expect(handCard("Three of spades, blocks the pile").className).not.toMatch(/opacity-60/);
+    expect(handCard("Three of spades, blocks the pile").className).not.toMatch(
+      /brightness\(0\.6\)/,
+    );
     // And its menu adds it to the book in one click.
     choose("Three of spades, blocks the pile", /add to 3s meld/i);
     await waitFor(() => expect(sent).toHaveLength(1));
@@ -2821,7 +2823,7 @@ describe("laying a hand out in rows", () => {
           playContext={{
             inFoot: false,
             blackThreesHeld: 0,
-            wildsHeld: 0,
+
             hasBlackThreeMeld: false,
           }}
           onSelect={() => {}}
@@ -4807,7 +4809,7 @@ describe("hints", () => {
     const foot = screen.getByRole("region", { name: /your foot/i });
     expect(within(foot).getByTitle(/you have a meld of Qs/i)).toBeInTheDocument();
     expect(within(foot).queryByTitle(/meld of Ks/i)).toBeNull();
-    expect(handCard("Three of hearts, penalty").className).toMatch(/opacity-60/);
+    expect(handCard("Three of hearts, penalty").className).toMatch(/brightness\(0\.6\)/);
 
     cleanup();
     const owed = card("7", "clubs");

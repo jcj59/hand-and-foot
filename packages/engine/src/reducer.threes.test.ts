@@ -78,6 +78,27 @@ describe("red and black three rules", () => {
     expect(classifyBook(meld!)).toBe("dirty");
   });
 
+  it("rejects a black-three book made up with a wild, new or extending one down", () => {
+    const blacks = cards("3", 6, "spades");
+    const wild = card("2", "hearts");
+    const fresh = gs(player({ foot: [...blacks, wild, card("9")], inFoot: true }));
+    const r1 = applyAction(fresh, {
+      type: "playMelds",
+      melds: [{ rank: "3", cardIds: [...blacks, wild].map((c) => c.id) }],
+    });
+    expect(r1.ok).toBe(false);
+
+    const down = cards("3", 7, "clubs");
+    const extend = gs(
+      player({ foot: [wild, card("9")], inFoot: true, melds: [{ rank: "3", cards: down }] }),
+    );
+    const r2 = applyAction(extend, {
+      type: "playMelds",
+      melds: [{ rank: "3", cardIds: [wild.id] }],
+    });
+    expect(r2.ok).toBe(false);
+  });
+
   it("rejects a black-three book played from the hand rather than the foot", () => {
     const blacks = cards("3", 7, "spades");
     const s = gs(player({ hand: blacks, inFoot: false }));
