@@ -1,7 +1,11 @@
-import { describe, expect, it } from "vitest";
-import { lookUpTable, tableGone } from "./lookUp";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { LOOK_TIMEOUT_MS, lookUpTable, tableGone } from "./lookUp";
 
 describe("lookUpTable", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("asks the table's own path", async () => {
     const asked: string[] = [];
     await lookUpTable("ABC234", async (path) => {
@@ -32,6 +36,20 @@ describe("lookUpTable", () => {
     ).toBe("unknown");
     expect(await lookUpTable("ABC234", async () => null)).toBe("unknown");
     expect(await lookUpTable("ABC234", async () => "<html>")).toBe("unknown");
+  });
+
+  it("gives up on a look that never answers, as unknown", async () => {
+    vi.useFakeTimers();
+    let settled: string | null = null;
+    void lookUpTable("ABC234", () => new Promise(() => {})).then((s) => (settled = s));
+    await vi.advanceTimersByTimeAsync(LOOK_TIMEOUT_MS - 1);
+    expect(settled).toBeNull();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(settled).toBe("unknown");
+  });
+
+  it("waits three seconds for the answer", () => {
+    expect(LOOK_TIMEOUT_MS).toBe(3000);
   });
 
   it("says which table has closed", () => {

@@ -20,17 +20,32 @@ export function httpGet(base: string): Get {
   return async (path) => (await fetch(`${base}${path}`)).json();
 }
 
+/**
+ * How long the link waits for the answer before offering the seat anyway. The
+ * join card waits on it, so a request that stalls must not keep it shut.
+ */
+export const LOOK_TIMEOUT_MS = 3000;
+
 export async function lookUpTable(
   code: string,
   get: Get = httpGet(serverUrl()),
 ): Promise<TableState> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("no answer")), LOOK_TIMEOUT_MS);
+  });
   try {
-    const answer = (await get(tablePath(code))) as { ok?: unknown; error?: unknown } | null;
+    const answer = (await Promise.race([get(tablePath(code)), late])) as {
+      ok?: unknown;
+      error?: unknown;
+    } | null;
     if (answer?.ok === true) return "open";
     if (answer?.ok === false && answer.error === NO_ROOM) return "gone";
     return "unknown";
   } catch {
     return "unknown";
+  } finally {
+    clearTimeout(timer);
   }
 }
 

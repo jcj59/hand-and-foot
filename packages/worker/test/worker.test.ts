@@ -253,6 +253,9 @@ describe("the Worker", () => {
     ).json()) as Ack<SeatCredentials>;
     expect(joined).toMatchObject({ ok: true, data: { seat: 1 } });
     expect(await look("ZZ9ZZ9")).toEqual({ ok: false, error: "no room with that code" });
+    for (const malformed of ["ABC10O", "ABC23", "ABC2345", "ab%20cd"]) {
+      expect(await look(malformed)).toEqual({ ok: false, error: "no room with that code" });
+    }
   });
 
   it("refuses a request body that is not a JSON object", async () => {

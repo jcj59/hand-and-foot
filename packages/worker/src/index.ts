@@ -29,9 +29,12 @@ import {
   PASSWORD_PATH,
   parseRoomPath,
   MAX_REPORT_BODY_BYTES,
+  NO_ROOM,
   REPORT_TOO_LARGE,
   REPORTS_PATH,
   resolveRules,
+  ROOM_CODE_ALPHABET,
+  ROOM_CODE_LENGTH,
   ROOMS_PATH,
   SIGN_IN_PATH,
   SIGN_OUT_PATH,
@@ -241,11 +244,14 @@ export default {
     const target = parseRoomPath(pathname);
     if (target) {
       // Codes are matched without regard to case; nobody types a link exactly.
-      const table = env.TABLES.getByName(target.roomId.toUpperCase());
+      const code = target.roomId.toUpperCase();
+      const table = env.TABLES.getByName(code);
       if (target.what === "socket") return table.fetch(request);
       if (target.what === "look") {
-        // One Durable Object request each time a table's link is opened without a seat.
+        // One Durable Object request each time a table's link is opened without a seat,
+        // and none for a link that could never name a table (a crawler, a typo).
         if (request.method !== "GET") return new Response(null, { status: 405 });
+        if (!isRoomCode(code)) return json({ ok: false, error: NO_ROOM });
         return json(await table.look());
       }
       if (request.method !== "POST") return new Response(null, { status: 405 });
@@ -263,3 +269,7 @@ export default {
     return env.ASSETS.fetch(request);
   },
 } satisfies ExportedHandler<Env>;
+
+function isRoomCode(code: string): boolean {
+  return code.length === ROOM_CODE_LENGTH && [...code].every((c) => ROOM_CODE_ALPHABET.includes(c));
+}
