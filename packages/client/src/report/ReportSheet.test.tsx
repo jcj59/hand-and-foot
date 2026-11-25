@@ -32,6 +32,7 @@ import type { HfClientSocket } from "../socket";
 import { PHONE_QUERY } from "../usePhone";
 import { forgetErrors, noteError } from "./errors";
 import { forgetRecords, noteConsole, noteFrame, noteNotice } from "./recorder";
+import { ReportButton } from "./ReportButton";
 import { PAGE_DISCLOSURE, TABLE_DISCLOSURE } from "./ReportSheet";
 
 const SECRET = "Sk3y".repeat(10);
@@ -402,6 +403,26 @@ function openFromMenu(): void {
   fireEvent.click(screen.getByRole("button", { name: "Main menu" }));
   fireEvent.click(screen.getByRole("button", { name: "Report a bug" }));
 }
+
+describe("from the corner button, at a table", () => {
+  it("sends the table as the menu's report does", async () => {
+    const reports = stubFetch();
+    atTable();
+    render(<ReportButton />);
+    fireEvent.click(screen.getByRole("button", { name: "Report a bug" }));
+    expect(within(sheet()).getByText(TABLE_DISCLOSURE)).toBeInTheDocument();
+    write("Something went wrong at the table");
+    send();
+    await waitFor(() => expect(reports).toHaveLength(1));
+    const [report] = reports;
+    expect(report!.room).toBe("ABC234");
+    expect(report!.context).toMatchObject({
+      summary: { room: "ABC234", seat: 0 },
+      table: { own: { hand: HAND, melds: MINE } },
+    });
+    expectNoSecrets(report);
+  });
+});
 
 describe("from the table's menu", () => {
   it("sends the whole table as this seat saw it, every card and the drawn one included, but no secret", async () => {

@@ -10,6 +10,7 @@ import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from "re
 import { CARRIED_ON_WITHOUT_YOU } from "@hf/shared";
 import { followRematch, leaveOnClose, reclaimOnReconnect, reclaimSeat } from "./actions";
 import { ConnectionBanner } from "./ConnectionBanner";
+import { ReportButton } from "./report/ReportButton";
 import { loadCredentials } from "./credentials";
 import { forgetSavedGame } from "./savedGames";
 import { Home } from "./routes/Home";
@@ -145,6 +146,8 @@ export function App({ socket }: AppProps): React.ReactElement {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
+      {/* On every screen, so a problem can be reported wherever it is met. */}
+      <ReportButton />
     </div>
   );
 }

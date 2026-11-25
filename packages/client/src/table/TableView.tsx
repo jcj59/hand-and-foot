@@ -927,9 +927,10 @@ export function TableView({
           onArrange={controls ? setHandOrder : undefined}
         />
       </div>
-      {/* The foot waits beside the hand it will replace. */}
+      {/* The foot waits beside the hand it will replace. On a phone it sits by the
+          hand's first row, clear of the corner "Report a bug" button. */}
       {!view.inFoot && (
-        <div className="flex shrink-0 flex-col items-center gap-1">
+        <div className={`flex shrink-0 flex-col items-center gap-1 ${phone ? "self-start" : ""}`}>
           <span className="text-[11px] text-muted md:text-xs">
             {phone ? "Foot" : `${whose} foot`}
           </span>
@@ -1140,7 +1141,8 @@ export function TableView({
           id="table-footer"
           className={`flex shrink-0 flex-col border-t border-white/7 bg-nav ${
             phone
-              ? "mt-2 max-h-[46dvh] gap-2 overflow-y-auto px-3 pt-2.5 pb-[calc(1.1rem+env(safe-area-inset-bottom,0px))]"
+              ? // Room at the bottom for the corner "Report a bug" button, clear of the foot.
+                "mt-2 max-h-[46dvh] gap-2 overflow-y-auto px-3 pt-2.5 pb-[calc(3.5rem+env(safe-area-inset-bottom,0px))]"
               : "mt-2 gap-2.5 px-6 pt-2.5 pb-5"
           }`}
           style={phone ? undefined : { height: layout.drawn.footerHeight ?? undefined }}
