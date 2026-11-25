@@ -17,9 +17,11 @@ export function naturalRank(cards: readonly Card[]): Rank | null {
 /**
  * Structural validity of a meld, independent of game state: a single natural
  * rank, at least three cards, not composed entirely of wilds, and a wild ratio
- * permitted by the config (and no wilds at all with black threes) (East Coast requires naturals to strictly outnumber
- * wilds; West Coast allows them to be equal). State-dependent placement rules
- * for red and black threes are enforced separately at action time.
+ * permitted by the config (East Coast requires naturals to strictly outnumber
+ * wilds; West Coast allows them to be equal). Black threes take no wild at all:
+ * they meld only with each other, as the family plays, so a black-three book is
+ * black threes only. State-dependent placement rules for red and black threes
+ * are enforced separately at action time.
  */
 export function validateMeld(cards: readonly Card[], config: RulesConfig): MeldValidation {
   if (cards.length < 3) {
