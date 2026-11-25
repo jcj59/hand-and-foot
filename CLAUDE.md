@@ -1563,16 +1563,21 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
 - **A black three on the pile can be taken when it can be melded at once (P1, 2026-10-01).**
   Found in a real game: six black threes in the foot, a seventh discarded, pile refused, because
   `greedyLayDown` skipped black threes. The rule is the one `applyPlayMelds` already enforced:
-  black threes meld **only from the foot**, as a book of **seven or more**, wilds allowed within
-  the table's ratio (so at least four threes in seven). So the pile's black three is takeable
-  when the player is in the foot and either has a black-three book down, or with it holds seven,
-  or at least four plus wilds to make seven; never from the hand. Considered and rejected: the
-  variant where a black three *blocks* the pile for the next player — the family expected to take
-  it, and the engine already let them meld it. `greedyLayDown` takes `{ minimum, inFoot }` (inFoot
+  black threes meld **only from the foot**, as a book of **seven or more**, and **never with a
+  wild** (changed 2026-11-24: `validateMeld` rejects a black three beside a wild, so a book is
+  black threes only). This one **tightens** the rules, where earlier changes only loosened them:
+  a stored log that put a wild with black threes no longer replays, so `Room.restore` closes such
+  a table and `buildTimeline` refuses such a kept match's replay. Deliberate, as with the foot
+  pickup: such a play needs seven black threes in one foot, so few if any logs hold one, and
+  version-gating the rule by the record's config was judged not worth carrying. So the pile's
+  black three is takeable when the player is in the foot and either has a black-three book down,
+  or with it holds seven; never from the hand. Considered and rejected: the variant where a black
+  three *blocks* the pile for the next player — the family expected to take it, and the engine
+  already let them meld it. `greedyLayDown` takes `{ minimum, inFoot }` (inFoot
   required, so no caller can forget it); black threes form a free group at seven or onto a book,
-  and a *required* black three short of seven is made up with wilds. The client's `isUnplayable`
-  learned the same wild rule (`PlayContext.wildsHeld`), or a take relying on wilds would have
-  dimmed the cards needed to settle it. `blackthrees.property.test.ts` generates such positions
+  and a *required* black three short of seven cannot be made up. The client's `isUnplayable`
+  follows the same rule, and dims a card with a brightness filter, never `opacity` (a see-through
+  card shows its neighbor in the fanned hand). `blackthrees.property.test.ts` generates such positions
   directly (random games almost never reach one) and asserts both exact legality and that the
   policy and the heuristic settle every allowed take. Note: a 2-player shoe holds only six black
   threes, so these need three seats.
@@ -1591,7 +1596,8 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   a **clean** book before the play ("a finished book cannot take a wild card", the text kept from
   #64), because a wild would dirty it and turn its 500 into 300. A dirty book may take more wilds,
   within the wild ratio (`validateMeld` refuses one past it with the ratio's own reason), since its
-  kind cannot change. A book of black threes is dirty by definition, so it takes them too.
+  kind cannot change. A book of black threes is the exception: it takes no wild at all (since
+  2026-11-24, `validateMeld` refuses a black three beside a wild).
   Naturals go on any book, and a play that completes a book may use wilds within the ratio. #64
   closed every book; the user asked for dirty books to stay open, as the family plays. The
   predicate is `isCleanBook(cards)` in `scoring.ts` (`classifyBook` is built on it, so the two

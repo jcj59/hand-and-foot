@@ -127,7 +127,7 @@ function sections(config: RulesConfig, where: "table" | "general"): readonly Rul
       title: "Threes",
       paragraphs: [
         `Red threes can never be melded. One left in your hand or foot at the end of a round costs ${Math.abs(s.redThree)} points, so get rid of them by discarding.`,
-        `Black threes can be melded only from your foot, as a book of seven or more (counted as dirty), with wilds allowed as for any meld. One left in your hand or foot costs ${s.blackThree}.`,
+        `Black threes can be melded only from your foot, as a book of seven or more (counted as dirty), and only with other black threes: no wilds. One left in your hand or foot costs ${s.blackThree}.`,
       ],
     },
     {

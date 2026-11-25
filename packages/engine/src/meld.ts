@@ -1,4 +1,4 @@
-import { type Card, type RulesConfig, type Rank, isWild } from "@hf/shared";
+import { type Card, type RulesConfig, type Rank, isBlackThree, isWild } from "@hf/shared";
 
 /** The result of validating a meld: valid, or invalid with a human-readable reason. */
 export type MeldValidation = { valid: true } | { valid: false; reason: string };
@@ -18,8 +18,10 @@ export function naturalRank(cards: readonly Card[]): Rank | null {
  * Structural validity of a meld, independent of game state: a single natural
  * rank, at least three cards, not composed entirely of wilds, and a wild ratio
  * permitted by the config (East Coast requires naturals to strictly outnumber
- * wilds; West Coast allows them to be equal). State-dependent placement rules
- * for red and black threes are enforced separately at action time.
+ * wilds; West Coast allows them to be equal). Black threes take no wild at all:
+ * they meld only with each other, as the family plays, so a black-three book is
+ * black threes only. State-dependent placement rules for red and black threes
+ * are enforced separately at action time.
  */
 export function validateMeld(cards: readonly Card[], config: RulesConfig): MeldValidation {
   if (cards.length < 3) {
@@ -29,6 +31,9 @@ export function validateMeld(cards: readonly Card[], config: RulesConfig): MeldV
   const naturals = cards.length - wilds;
   if (naturals === 0) {
     return { valid: false, reason: "a meld cannot be made of only wild cards" };
+  }
+  if (wilds > 0 && cards.some(isBlackThree)) {
+    return { valid: false, reason: "black threes can only be melded with other black threes" };
   }
   const rank = naturalRank(cards);
   const mixedRanks = cards.some((c) => !isWild(c.rank) && c.rank !== rank);

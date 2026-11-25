@@ -103,7 +103,15 @@ if (process.env.BLACK_BOOK) {
     c("9", "spades", 52),
     c("K", "hearts", 53),
   ];
-  view.footCount = 4;
+  if (process.env.DEAD_THREES) {
+    // A foot big enough that its cards overlap, with dead threes between live cards:
+    // a dimmed card must not show its neighbor through it.
+    view.foot = ["9", "3", "K", "3", "Q", "3", "10", "3", "8", "3", "J", "3", "A", "7"].map(
+      (r, i) =>
+        c(r, r === "3" ? (i % 4 === 1 ? "hearts" : "clubs") : i % 2 ? "spades" : "hearts", 60 + i),
+    );
+  }
+  view.footCount = view.foot.length;
   view.melds = [
     meld(
       "3",

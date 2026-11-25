@@ -29,7 +29,9 @@ describe("a card nothing can be done with", () => {
 
   it("dims a red three, which can never be played", () => {
     render(<PlayingCard card={card("3", "hearts")} />);
-    expect(screen.getByRole("img", { name: /penalty/i }).className).toMatch(/opacity-60/);
+    expect(screen.getByRole("img", { name: /penalty/i }).className).toMatch(/brightness\(0\.6\)/);
+    // Darkened, never translucent: in a fanned hand a see-through card shows its neighbor.
+    expect(screen.getByRole("img", { name: /penalty/i }).className).not.toMatch(/(^|\s)opacity-/);
   });
 });
 
