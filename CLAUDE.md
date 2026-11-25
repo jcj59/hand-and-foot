@@ -1569,10 +1569,11 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   a stored log that put a wild with black threes no longer replays, so `Room.restore` closes such
   a table and `buildTimeline` refuses such a kept match's replay. Deliberate, as with the foot
   pickup: such a play needs seven black threes in one foot, so few if any logs hold one, and
-  version-gating the rule by the record's config was judged not worth carrying. So the pile's black three is takeable when the player is in the foot and
-  either has a black-three book down, or with it holds seven; never from the hand. Considered and rejected: the
-  variant where a black three *blocks* the pile for the next player — the family expected to take
-  it, and the engine already let them meld it. `greedyLayDown` takes `{ minimum, inFoot }` (inFoot
+  version-gating the rule by the record's config was judged not worth carrying. So the pile's
+  black three is takeable when the player is in the foot and either has a black-three book down,
+  or with it holds seven; never from the hand. Considered and rejected: the variant where a black
+  three *blocks* the pile for the next player — the family expected to take it, and the engine
+  already let them meld it. `greedyLayDown` takes `{ minimum, inFoot }` (inFoot
   required, so no caller can forget it); black threes form a free group at seven or onto a book,
   and a *required* black three short of seven cannot be made up. The client's `isUnplayable`
   follows the same rule, and dims a card with a brightness filter, never `opacity` (a see-through
