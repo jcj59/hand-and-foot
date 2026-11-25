@@ -332,7 +332,9 @@ describe("joining a table", () => {
     );
     const { landed } = mount(fakeSocket().socket, "/room/abc234", fakeUsers(), async () => "gone");
     expect(await screen.findByText("Table ABC234 has closed, or the link is wrong.")).toBeVisible();
-    expect(landed()).toBe("/");
+    // The notice comes from the store and can paint a render before the
+    // navigation commits, so wait for the move home rather than racing it.
+    await waitFor(() => expect(landed()).toBe("/"));
     expect(screen.queryByRole("dialog", { name: "Your player card" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Rejoin" })).toBeNull();
     expect(window.localStorage.getItem(CREDENTIALS_KEY)).toBeNull();
