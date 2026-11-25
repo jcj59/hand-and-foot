@@ -468,10 +468,11 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
     `compatibility_date` cannot be newer than the local workerd supports (2026-08-15 now).
 - **A link to a closed table (2026-11-25).** `GET /api/rooms/<code>` (`tablePath`, `parseRoomPath`
   `what: "look"`) answers `Ack<TableLook {started}>` or `NO_ROOM` ("no room with that code", now a
-  shared constant) on both hosts (Node `socket.ts` route, Worker `TableObject.look`, one DO request);
-  it seats nobody. Home, opened at `/room/<code>` without a seat, asks it once (`join/lookUp.ts`
-  `lookUpTable`: `open` / `gone` / `unknown`, anything unreadable is `unknown`) before opening the
-  join card; `gone` forgets a stored seat and saved game for that code, sets `tableGone(code)` as the
+  shared constant) on both hosts (Node `socket.ts` route, Worker `TableObject.look`, one DO request,
+  none for a malformed code, which the Worker refuses as `NO_ROOM` itself); it seats nobody. Home,
+  opened at `/room/<code>` without a seat, asks it once (`join/lookUp.ts` `lookUpTable`: `open` /
+  `gone` / `unknown`; anything unreadable, or no answer within `LOOK_TIMEOUT_MS` 3000, pinned, is
+  `unknown`) before opening the join card; `gone` forgets a stored seat and saved game for that code, sets `tableGone(code)` as the
   notice and goes to `/`. An unseated `/room/<code>` is Home inside `AppShell` (which now takes
   `children`), so the navigation stays. `clearCredentials(store, gone)` also removes the copy kept
   for every tab when it is that refused seat (`CredentialStore.removeShared`, same room and token):
