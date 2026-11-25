@@ -95,8 +95,7 @@ export function Player({
   // On a phone the jumps by turn, round and moment fold away, to leave the table room.
   const phone = usePhone();
   // The corner "Report a bug" button sits above the playback bar.
-  const playbackBar = useRef<HTMLElement>(null);
-  useReportLift(playbackBar);
+  const playbackBar = useReportLift<HTMLElement>();
   const [more, setMore] = useState(false);
   // The narration on a phone, which can be put away to see more of the table.
   const [captions, setCaptions] = useState(true);

@@ -16,8 +16,9 @@
  * cards is easy to miss. It can be hidden to look back at the table, and on a
  * computer dragged aside by its heading to keep the scores beside it.
  */
-import { useId, useState } from "react";
+import { useCallback, useId, useState } from "react";
 import { LEVEL_WORDS } from "../home/sheets";
+import { useReportLift } from "../report/ReportButton";
 import { Icon } from "../ui/icons";
 import { usePhone } from "../usePhone";
 import { AwardIcon, awardsOf, winnersOf } from "./awards";
@@ -116,6 +117,17 @@ export function RoundResult({
   const drag = useDraggable<HTMLElement>(
     !phone && !hidden,
     `${result.roundNumber}:${result.matchOver}`,
+  );
+  // Along the bottom edge (the bar with the scores hidden, a phone's sheet), the
+  // corner "Report a bug" button sits above it.
+  const lift = useReportLift<HTMLElement>();
+  const dragRef = drag.ref;
+  const sheetRef = useCallback(
+    (el: HTMLElement | null) => {
+      dragRef.current = el;
+      lift(phone ? el : null);
+    },
+    [dragRef, lift, phone],
   );
   const heldOf = (seat: number) => result.held?.find((h) => h.seat === seat);
   const toggle = (seat: number): void =>
@@ -226,6 +238,7 @@ export function RoundResult({
   if (hidden) {
     return (
       <div
+        ref={lift}
         role="region"
         aria-label="Round over"
         className="fixed right-3 bottom-3 left-3 z-30 flex flex-wrap items-center gap-2 rounded-2xl border border-gold/40 bg-sheet p-3 shadow-[0_20px_50px_rgba(0,0,0,0.6)] md:left-auto"
@@ -529,7 +542,7 @@ export function RoundResult({
       }`}
     >
       <section
-        ref={drag.ref}
+        ref={sheetRef}
         style={placed}
         role="dialog"
         aria-label="Round result"

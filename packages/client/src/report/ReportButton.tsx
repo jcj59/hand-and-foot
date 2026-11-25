@@ -4,10 +4,10 @@
  *
  * Small and quiet, so it sits over the page without competing with it. A bar that
  * owns the bottom edge of the screen (the phone's tab bar, a replay's playback
- * bar) lifts it clear by its own height (`useReportLift`). At a table it attaches
+ * bar, a round's result along the bottom) lifts it clear by its own height (`useReportLift`). At a table it attaches
  * the table's details, as the table menu's report does (see `reportSource.ts`).
  */
-import { useLayoutEffect, useState, type RefObject } from "react";
+import { useLayoutEffect, useState } from "react";
 import type { TableReport } from "./context";
 import { ReportSheet } from "./ReportSheet";
 import { currentTableReport } from "./reportSource";
@@ -16,19 +16,48 @@ import { Icon } from "../ui/icons";
 /** How far a bar along the bottom of the screen lifts the button, while it is shown. */
 export const REPORT_LIFT_VAR = "--report-lift";
 
-/** Lift the corner button above `bar`, by the bar's height, while the bar is mounted. */
-export function useReportLift(bar: RefObject<HTMLElement | null>): void {
+/** The lift each mounted bar asks for, by bar; the button clears the highest. */
+const lifts = new Map<symbol, number>();
+
+function applyLift(): void {
+  const root = document.documentElement.style;
+  if (lifts.size === 0) root.removeProperty(REPORT_LIFT_VAR);
+  else root.setProperty(REPORT_LIFT_VAR, `${Math.max(...lifts.values())}px`);
+}
+
+/** How far `bar` reaches up from the bottom of the window: its height and any gap below it. */
+function liftOf(bar: HTMLElement): number {
+  const rect = bar.getBoundingClientRect();
+  const gap = rect.height > 0 ? Math.max(0, window.innerHeight - rect.bottom) : 0;
+  return bar.offsetHeight + gap;
+}
+
+/**
+ * Lift the corner button above the element given to the returned ref, while it is
+ * mounted, following its size. With several such bars on screen, the button clears
+ * the one that reaches highest.
+ */
+export function useReportLift<T extends HTMLElement>(): (bar: T | null) => void {
+  const [bar, setBar] = useState<T | null>(null);
   useLayoutEffect(() => {
-    const root = document.documentElement.style;
-    const measure = (): void =>
-      root.setProperty(REPORT_LIFT_VAR, `${bar.current?.offsetHeight ?? 0}px`);
+    if (!bar) return;
+    const key = Symbol("lift");
+    const measure = (): void => {
+      lifts.set(key, liftOf(bar));
+      applyLift();
+    };
     measure();
-    window.addEventListener("resize", measure);
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    if (observer) observer.observe(bar);
+    else window.addEventListener("resize", measure);
     return () => {
+      observer?.disconnect();
       window.removeEventListener("resize", measure);
-      root.removeProperty(REPORT_LIFT_VAR);
+      lifts.delete(key);
+      applyLift();
     };
   }, [bar]);
+  return setBar;
 }
 
 export function ReportButton(): React.ReactElement {

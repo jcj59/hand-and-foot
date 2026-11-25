@@ -11,7 +11,7 @@
  * gone to rather than a tab: it has a Back button of its own and no tab bar, which
  * would have nothing to mark as the page being shown.
  */
-import { useRef, useState, useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { loadAccount, loadName, onProfileChange } from "../identity";
 import { AvatarFace } from "../profile/Avatar";
@@ -72,8 +72,7 @@ export function BareFrame(): React.ReactElement {
 
 function TabBar(): React.ReactElement {
   // The corner "Report a bug" button sits above the bar.
-  const bar = useRef<HTMLElement>(null);
-  useReportLift(bar);
+  const bar = useReportLift<HTMLElement>();
   return (
     <nav
       ref={bar}
