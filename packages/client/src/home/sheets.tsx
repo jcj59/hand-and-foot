@@ -665,7 +665,7 @@ export function TablePreview({
           >
             {i === 0 ? (
               you ? (
-                <span className="flex rounded-full border-[3px] border-accent">{you}</span>
+                <span className="flex rounded-xl border-[3px] border-accent">{you}</span>
               ) : (
                 <span className="flex size-10 items-center justify-center rounded-xl border-[3px] border-accent bg-coral" />
               )
