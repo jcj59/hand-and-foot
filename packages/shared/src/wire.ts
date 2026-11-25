@@ -1,7 +1,8 @@
 // The wire: how the events in `protocol.ts` travel.
 //
 // A table is reached two ways. Opening one and sitting down at one are plain HTTP
-// requests, because they happen before there is a table to be connected to. Once
+// requests, because they happen before there is a table to be connected to (as
+// does looking up whether a table is still open, which seats nobody). Once
 // seated, a client holds one WebSocket to its table, and every other request and
 // every broadcast goes over it as JSON frames. The same shapes serve the Node
 // server and the Cloudflare Worker, so the client speaks one protocol to either.
