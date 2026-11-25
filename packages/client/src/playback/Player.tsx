@@ -281,7 +281,8 @@ export function Player({
     <section
       aria-label="Narration"
       aria-live="polite"
-      className="mx-3 mt-2.5 shrink-0 rounded-2xl border border-white/6 bg-surface px-3.5 py-3"
+      // Right padding: the corner "Report a bug" button sits over this card's corner.
+      className="mx-3 mt-2.5 shrink-0 rounded-2xl border border-white/6 bg-surface py-3 pr-12 pl-3.5"
     >
       <p className="m-0 text-xs font-semibold text-accent">{now.head}</p>
       <p className="m-0 mt-0.5 text-[13px] leading-[1.45] text-[#D5DADF]">{now.body}</p>

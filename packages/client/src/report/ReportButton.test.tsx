@@ -99,7 +99,7 @@ describe("lifting the corner button above what sits along the bottom edge", () =
     delete (globalThis as { ResizeObserver?: unknown }).ResizeObserver;
   });
 
-  it("clears the tallest round result on a phone, follows its size, and lets go as each goes", () => {
+  it("clears the round-over bar on a phone and follows its size, but not the nearly full-screen sheet", () => {
     Object.defineProperty(window, "matchMedia", {
       configurable: true,
       value: (query: string) => ({
@@ -133,26 +133,23 @@ describe("lifting the corner button above what sits along the bottom edge", () =
 
     render(<ReportButton />);
     expect(lift()).toBe("");
+    // The sheet is nearly the whole screen: lifted by it, the button would sit over
+    // the table's header, so it stays in the corner and the sheet leaves room.
     const sheet = render(board());
-    expect(lift()).toBe("400px");
+    expect(within(sheet.container).getByRole("dialog", { name: "Round result" })).toBeVisible();
+    expect(lift()).toBe("");
 
-    // A second board, its scores put away to the bar along the bottom.
-    const bar = render(board());
-    fireEvent.click(within(bar.container).getByRole("button", { name: "Look at the table" }));
-    expect(within(bar.container).getByRole("region", { name: "Round over" })).toBeInTheDocument();
-    // The taller of the two still decides, though the bar came last.
-    expect(lift()).toBe("400px");
-
-    sheet.unmount();
+    // With the scores put away, the bar along the bottom lifts it.
+    fireEvent.click(within(sheet.container).getByRole("button", { name: "Look at the table" }));
+    const region = within(sheet.container).getByRole("region", { name: "Round over" });
     expect(lift()).toBe("80px");
 
     // The bar grows without the window changing size.
     heights.set("Round over", 130);
-    const region = within(bar.container).getByRole("region", { name: "Round over" });
     act(() => observed.filter((o) => o.target === region).forEach((o) => o.fire()));
     expect(lift()).toBe("130px");
 
-    bar.unmount();
+    sheet.unmount();
     expect(lift()).toBe("");
   });
 });

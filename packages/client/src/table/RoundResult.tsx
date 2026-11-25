@@ -16,7 +16,7 @@
  * cards is easy to miss. It can be hidden to look back at the table, and on a
  * computer dragged aside by its heading to keep the scores beside it.
  */
-import { useCallback, useId, useState } from "react";
+import { useId, useState } from "react";
 import { LEVEL_WORDS } from "../home/sheets";
 import { useReportLift } from "../report/ReportButton";
 import { Icon } from "../ui/icons";
@@ -118,17 +118,11 @@ export function RoundResult({
     !phone && !hidden,
     `${result.roundNumber}:${result.matchOver}`,
   );
-  // Along the bottom edge (the bar with the scores hidden, a phone's sheet), the
-  // corner "Report a bug" button sits above it.
+  // The bar shown with the scores hidden lifts the corner "Report a bug" button
+  // above it. A phone's sheet is nearly the whole screen, so it does not: lifted
+  // by all of it, the button would sit over the table's header; the sheet instead
+  // leaves room at the end of what it scrolls, so its last row comes clear.
   const lift = useReportLift<HTMLElement>();
-  const dragRef = drag.ref;
-  const sheetRef = useCallback(
-    (el: HTMLElement | null) => {
-      dragRef.current = el;
-      lift(phone ? el : null);
-    },
-    [dragRef, lift, phone],
-  );
   const heldOf = (seat: number) => result.held?.find((h) => h.seat === seat);
   const toggle = (seat: number): void =>
     setOpen((o) => (o.includes(seat) ? o.filter((s) => s !== seat) : [...o, seat]));
@@ -542,13 +536,15 @@ export function RoundResult({
       }`}
     >
       <section
-        ref={sheetRef}
+        ref={drag.ref}
         style={placed}
         role="dialog"
         aria-label="Round result"
-        className={`flex max-h-[92%] w-full max-w-[880px] flex-col gap-3 overflow-y-auto rounded-t-[28px] border border-white/8 bg-sheet px-[18px] pt-[18px] pb-[calc(22px+env(safe-area-inset-bottom,0px))] ${
-          drag.moved ? "rounded-b-[28px] shadow-[0_24px_60px_rgba(0,0,0,0.55)]" : ""
-        }`}
+        className={`flex max-h-[92%] w-full max-w-[880px] flex-col gap-3 overflow-y-auto rounded-t-[28px] border border-white/8 bg-sheet px-[18px] pt-[18px] ${
+          phone
+            ? "pb-[calc(64px+env(safe-area-inset-bottom,0px))]"
+            : "pb-[calc(22px+env(safe-area-inset-bottom,0px))]"
+        } ${drag.moved ? "rounded-b-[28px] shadow-[0_24px_60px_rgba(0,0,0,0.55)]" : ""}`}
       >
         <div {...handle} className={`flex flex-col gap-3 ${handleLook}`}>
           <span
