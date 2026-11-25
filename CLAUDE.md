@@ -878,6 +878,21 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   kept report has the record, replays to the table's state, and holds no secret). Mutation-tested
   over scrubbing, fitting, the caps, the attachment and the recorder (see the PR). Harness actions
   `report`, `profile-report`, `profile` (`REPORT_SEND=1`, `REPORT_SCROLL=1`).
+- **"Report a bug" in the corner of every screen (2026-11-25).** `report/ReportButton.tsx`, rendered
+  once in `App` (outside the routes): a small round bug button, `fixed` bottom-right, opening
+  `ReportSheet`. At a table it attaches the table's details through `report/reportSource.ts`
+  (`useTableReportSource`, called by `TableHeader` with its `report` prop; the newest mounted table
+  wins and an unmount clears only its own; `currentTableReport()` is read as the button is pressed).
+  A bar along the bottom edge lifts it by its height (and any gap below it) through the callback
+  ref `useReportLift()` returns (CSS var `--report-lift`, the highest bar wins): the phone's
+  `TabBar`, the `Player`'s playback bar, and `RoundResult`'s hidden round-over bar (after "Look at
+  the table"), following its size. The phone round-result sheet does **not** lift it: the sheet is
+  nearly full screen, and lifted by it the button landed on the header's trophy button. The sheet
+  instead has 64px of bottom padding so its last row scrolls clear. On a phone table the foot sits
+  by the hand's first row (`self-start`) and the footer has 3.5rem of bottom padding, so neither
+  the foot nor the last card row is under the button; the phone replay's narration card has right
+  padding so its text wraps clear of it. The table menu's and Profile's "Report a bug" entries
+  stay. Tests: `ReportButton.test.tsx`, `ReportSheet.test.tsx` "from the corner button".
 - **Scenario library and autoplay viewer (roadmap item 1).** Three layers, kept apart on purpose:
   - **Engine, `playback.ts`:** `buildTimeline(GameLog)` takes any `{ config, setup: {seed,
     playerCount} | {state}, actions, names?, moments? }` — a scenario, a golden game, a recorded

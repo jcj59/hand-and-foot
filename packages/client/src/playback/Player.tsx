@@ -21,6 +21,7 @@ import { Icon, ICONS } from "../ui/icons";
 import { TableView } from "../table/TableView";
 import { usePhone } from "../usePhone";
 import { frameAt } from "./frame";
+import { useReportLift } from "../report/ReportButton";
 import {
   describeStep,
   nextMoment,
@@ -93,6 +94,8 @@ export function Player({
   const [revealAll, setRevealAll] = useState(start.revealAll ?? false);
   // On a phone the jumps by turn, round and moment fold away, to leave the table room.
   const phone = usePhone();
+  // The corner "Report a bug" button sits above the playback bar.
+  const playbackBar = useReportLift<HTMLElement>();
   const [more, setMore] = useState(false);
   // The narration on a phone, which can be put away to see more of the table.
   const [captions, setCaptions] = useState(true);
@@ -278,7 +281,8 @@ export function Player({
     <section
       aria-label="Narration"
       aria-live="polite"
-      className="mx-3 mt-2.5 shrink-0 rounded-2xl border border-white/6 bg-surface px-3.5 py-3"
+      // Right padding: the corner "Report a bug" button sits over this card's corner.
+      className="mx-3 mt-2.5 shrink-0 rounded-2xl border border-white/6 bg-surface py-3 pr-12 pl-3.5"
     >
       <p className="m-0 text-xs font-semibold text-accent">{now.head}</p>
       <p className="m-0 mt-0.5 text-[13px] leading-[1.45] text-[#D5DADF]">{now.body}</p>
@@ -434,6 +438,7 @@ export function Player({
 
   const playback = (
     <section
+      ref={playbackBar}
       aria-label="Playback"
       className={`flex shrink-0 flex-col ${
         phone

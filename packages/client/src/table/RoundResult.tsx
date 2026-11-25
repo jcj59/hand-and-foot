@@ -18,6 +18,7 @@
  */
 import { useId, useState } from "react";
 import { LEVEL_WORDS } from "../home/sheets";
+import { useReportLift } from "../report/ReportButton";
 import { Icon } from "../ui/icons";
 import { usePhone } from "../usePhone";
 import { AwardIcon, awardsOf, winnersOf } from "./awards";
@@ -117,6 +118,11 @@ export function RoundResult({
     !phone && !hidden,
     `${result.roundNumber}:${result.matchOver}`,
   );
+  // The bar shown with the scores hidden lifts the corner "Report a bug" button
+  // above it. A phone's sheet is nearly the whole screen, so it does not: lifted
+  // by all of it, the button would sit over the table's header; the sheet instead
+  // leaves room at the end of what it scrolls, so its last row comes clear.
+  const lift = useReportLift<HTMLElement>();
   const heldOf = (seat: number) => result.held?.find((h) => h.seat === seat);
   const toggle = (seat: number): void =>
     setOpen((o) => (o.includes(seat) ? o.filter((s) => s !== seat) : [...o, seat]));
@@ -226,6 +232,7 @@ export function RoundResult({
   if (hidden) {
     return (
       <div
+        ref={lift}
         role="region"
         aria-label="Round over"
         className="fixed right-3 bottom-3 left-3 z-30 flex flex-wrap items-center gap-2 rounded-2xl border border-gold/40 bg-sheet p-3 shadow-[0_20px_50px_rgba(0,0,0,0.6)] md:left-auto"
@@ -533,9 +540,11 @@ export function RoundResult({
         style={placed}
         role="dialog"
         aria-label="Round result"
-        className={`flex max-h-[92%] w-full max-w-[880px] flex-col gap-3 overflow-y-auto rounded-t-[28px] border border-white/8 bg-sheet px-[18px] pt-[18px] pb-[calc(22px+env(safe-area-inset-bottom,0px))] ${
-          drag.moved ? "rounded-b-[28px] shadow-[0_24px_60px_rgba(0,0,0,0.55)]" : ""
-        }`}
+        className={`flex max-h-[92%] w-full max-w-[880px] flex-col gap-3 overflow-y-auto rounded-t-[28px] border border-white/8 bg-sheet px-[18px] pt-[18px] ${
+          phone
+            ? "pb-[calc(64px+env(safe-area-inset-bottom,0px))]"
+            : "pb-[calc(22px+env(safe-area-inset-bottom,0px))]"
+        } ${drag.moved ? "rounded-b-[28px] shadow-[0_24px_60px_rgba(0,0,0,0.55)]" : ""}`}
       >
         <div {...handle} className={`flex flex-col gap-3 ${handleLook}`}>
           <span

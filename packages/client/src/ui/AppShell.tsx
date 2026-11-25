@@ -16,6 +16,7 @@ import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { loadAccount, loadName, onProfileChange } from "../identity";
 import { AvatarFace } from "../profile/Avatar";
 import { faceOf, loadAvatar } from "../profile/avatarStore";
+import { useReportLift } from "../report/ReportButton";
 import { usePhone } from "../usePhone";
 import { Icon, type IconName } from "./icons";
 
@@ -70,8 +71,11 @@ export function BareFrame(): React.ReactElement {
 }
 
 function TabBar(): React.ReactElement {
+  // The corner "Report a bug" button sits above the bar.
+  const bar = useReportLift<HTMLElement>();
   return (
     <nav
+      ref={bar}
       aria-label="Main"
       className="grid shrink-0 grid-cols-4 border-t border-white/7 bg-nav px-2 pt-2 pb-[max(env(safe-area-inset-bottom),10px)]"
     >

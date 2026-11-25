@@ -15,6 +15,7 @@ import { useState } from "react";
 import type { Avatar, ClockState, ReactionId } from "@hf/shared";
 import type { TableReport } from "../report/context";
 import { ReportSheet } from "../report/ReportSheet";
+import { useTableReportSource } from "../report/reportSource";
 import { Sheet } from "../ui/Sheet";
 import { Icon } from "../ui/icons";
 import { usePhone } from "../usePhone";
@@ -83,6 +84,8 @@ export function TableHeader({
   const [menuOpen, setMenuOpen] = useState(false);
   const [scoresOpen, setScoresOpen] = useState(false);
   const [reporting, setReporting] = useState<TableReport | null>(null);
+  // The corner "Report a bug" button reads this table's details too.
+  useTableReportSource(report);
 
   const soundLabel = sound.muted
     ? "Turn sound on"
