@@ -574,13 +574,13 @@ function SeatRing({
                       type="button"
                       onClick={onInvite}
                       aria-label="Invite someone to this seat"
-                      className="rounded-full border-2 border-dashed border-accent/50"
+                      className="rounded-[27.5%] border-2 border-dashed border-accent/50"
                       style={{ width: face, height: face }}
                     />
                   ) : (
                     <span
                       aria-hidden="true"
-                      className="rounded-full border-2 border-dashed border-white/25"
+                      className="rounded-[27.5%] border-2 border-dashed border-white/25"
                       style={{ width: face, height: face }}
                     />
                   )}
@@ -616,7 +616,10 @@ function SeatFace({
   const ring = you ? "#4ADE9B" : level ? LEVEL_COLOR[level] : "#0F1215";
   return (
     <>
-      <span className="rounded-full" style={{ boxShadow: `0 0 0 3px #0F1215, 0 0 0 6px ${ring}` }}>
+      <span
+        className="rounded-[27.5%]"
+        style={{ boxShadow: `0 0 0 3px #0F1215, 0 0 0 6px ${ring}` }}
+      >
         {level ? (
           <BotFace level={level} size={size} />
         ) : (

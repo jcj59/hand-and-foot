@@ -142,7 +142,7 @@ export function MoreSheet({
                 className="flex min-h-14 w-full items-center gap-3 rounded-xl px-2 py-2 text-left hover:bg-white/6"
               >
                 <span
-                  className={`shrink-0 rounded-full ${on ? "shadow-[0_0_0_2px_#1B2025,0_0_0_4px_#4ADE9B]" : ""}`}
+                  className={`shrink-0 rounded-[27.5%] ${on ? "shadow-[0_0_0_2px_#1B2025,0_0_0_4px_#4ADE9B]" : ""}`}
                 >
                   <AvatarFace avatar={faceOf(person)} size={40} />
                 </span>

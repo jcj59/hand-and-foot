@@ -107,7 +107,7 @@ export function AvatarEditor({
                     aria-label={`${PART_LABEL[part]}: ${id}`}
                     aria-pressed={chosen}
                     onClick={() => onChange({ ...face, [part]: id })}
-                    className={`shrink-0 rounded-full p-0.5 ${chosen ? "ring-2 ring-amber-300" : "ring-1 ring-white/15"}`}
+                    className={`shrink-0 rounded-xl p-0.5 ${chosen ? "ring-2 ring-amber-300" : "ring-1 ring-white/15"}`}
                   >
                     <AvatarFace avatar={{ ...face, [part]: id }} size={36} />
                   </button>

@@ -142,7 +142,7 @@ export function ProfileCard({
         {initial}
       </span>
       <div className="relative">
-        <span className="block rounded-full shadow-[0_0_0_6px_rgba(255,255,255,0.06)]">
+        <span className="block rounded-[27.5%] shadow-[0_0_0_6px_rgba(255,255,255,0.06)]">
           <AvatarFace avatar={face} size={104} label={label} />
         </span>
         {shuffle(44, 18, "-right-1.5 -bottom-0.5")}

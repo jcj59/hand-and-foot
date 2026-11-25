@@ -17,7 +17,7 @@ export function PlayerFace({
 }): React.ReactElement {
   if (!player)
     return (
-      <span className="shrink-0 rounded-full bg-raised" style={{ width: size, height: size }} />
+      <span className="shrink-0 rounded-[27.5%] bg-raised" style={{ width: size, height: size }} />
     );
   if (player.bot) return <BotFace level={player.botLevel ?? "standard"} size={size} />;
   return <AvatarFace avatar={faceOf(player)} size={size} />;
