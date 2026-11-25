@@ -620,7 +620,7 @@ export function BotFace({
   const ink = "#0B2340";
   return (
     <svg aria-hidden="true" width={size} height={size} viewBox="0 0 20 20" className="shrink-0">
-      <circle cx="10" cy="10" r="10" fill={LEVEL_COLOR[level]} />
+      <rect width="20" height="20" rx="5.5" fill={LEVEL_COLOR[level]} />
       <circle cx="7" cy="9" r="1.6" fill={ink} />
       <circle cx="13" cy="9" r="1.6" fill={ink} />
     </svg>
@@ -665,14 +665,14 @@ export function TablePreview({
           >
             {i === 0 ? (
               you ? (
-                <span className="flex rounded-full border-[3px] border-accent">{you}</span>
+                <span className="flex rounded-xl border-[3px] border-accent">{you}</span>
               ) : (
-                <span className="flex size-10 items-center justify-center rounded-full border-[3px] border-accent bg-coral" />
+                <span className="flex size-10 items-center justify-center rounded-xl border-[3px] border-accent bg-coral" />
               )
             ) : bot ? (
               <BotFace level={bot.level} size={32} />
             ) : (
-              <span className="flex size-8 items-center justify-center rounded-full border-2 border-dashed border-accent/60 text-xs text-accent">
+              <span className="flex size-8 items-center justify-center rounded-lg border-2 border-dashed border-accent/60 text-xs text-accent">
                 +
               </span>
             )}

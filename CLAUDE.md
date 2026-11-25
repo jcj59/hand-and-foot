@@ -703,7 +703,11 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   `RoomPlayerInfo` (public; absent rather than undefined when none). Client: `profile/avatarStore.ts`
   (`hf.avatar` per device, `faceOf(player)` = chosen or `defaultAvatar(name)`; named apart from
   `Avatar.tsx` because the two differ only by case), `profile/Avatar.tsx` (`AvatarFace`, SVG, a
-  `useId` clip per face, `data-avatar` lists the part ids for tests), `profile/AvatarEditor.tsx` on
+  `useId` clip per face, `data-avatar` lists the part ids for tests; since 2026-11-25 a head and
+  shoulders on a rounded-square tile, `TILE_RADIUS` 11 of 40, the face parts drawn in their
+  original box shrunk by `FACE`, so part ids and stored avatars are unchanged; `EmoteFace` uses the
+  same `Tile`/`Bust`/`Head`, and anything ringing a face is a rounded square to match; the
+  favicon and PWA icons are the shell charcoal with a green back card), `profile/AvatarEditor.tsx` on
   Home (preview, "Change picture" opens a row per part drawn as whole faces, Shuffle, "Use the one
   from my name"). Shown in the lobby, seat boxes, phone strip chips, and reaction bubbles (own
   too). `withGrabbyName` sets `avatar: faceOf(p)` so the renamed holder keeps the face of their real

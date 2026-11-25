@@ -1,22 +1,111 @@
 /**
- * An avatar drawn: a face on a coloured disc, put together from its parts. Plain
- * SVG with no assets, so it scales from a chip to the editor's preview, and every
- * part is a few shapes.
+ * An avatar drawn: a head and shoulders on a colored tile, put together from its
+ * parts. Plain SVG with no assets, so it scales from a chip to the editor's
+ * preview, and every part is a few shapes.
+ *
+ * The face parts (eyes, mouth, tops) are drawn in the 40-unit box they were first
+ * drawn in, around a head centered at (20, 22.4); `FACE` shrinks that box a little
+ * so the shoulders fit under the chin on the same tile.
  */
 import { useId } from "react";
 import type { Avatar } from "@hf/shared";
 
 /** Each background's color: also the player card's swatches. */
 export const BACKGROUND_COLORS: Record<Avatar["background"], string> = {
-  teal: "#14b8a6",
-  sky: "#38bdf8",
-  violet: "#8b5cf6",
-  rose: "#f43f5e",
-  amber: "#f59e0b",
-  lime: "#84cc16",
-  slate: "#64748b",
-  coral: "#f97316",
+  teal: "#2fa58f",
+  sky: "#4a94d6",
+  violet: "#8566d6",
+  rose: "#dc5470",
+  amber: "#e3a33b",
+  lime: "#7fb043",
+  slate: "#5b6b80",
+  coral: "#e4714f",
 };
+
+/** A color mixed `amount` of the way towards the app's page charcoal. */
+function toward(hex: string, amount: number): string {
+  const page = [0x0f, 0x12, 0x15];
+  const mixed = [1, 3, 5].map((at, i) => {
+    const c = parseInt(hex.slice(at, at + 2), 16);
+    return Math.round(c + (page[i]! - c) * amount);
+  });
+  return `#${mixed.map((c) => c.toString(16).padStart(2, "0")).join("")}`;
+}
+
+/** The tile's corner radius, out of 40: a rounded square, not a disc. */
+export const TILE_RADIUS = 11;
+
+/** The face parts' box, shrunk about the head's middle to leave room for shoulders. */
+export const FACE = "translate(2 0) scale(0.9)";
+
+/** The head's outline in the face box: rounded cheeks narrowing to a soft jaw. */
+export const HEAD =
+  "M20 10.2 C27.6 10.2 32.2 14.8 32.2 21.6 C32.2 25.4 31.4 28.4 29.4 30.8 C27.2 33.4 23.8 34.8 20 34.8 C16.2 34.8 12.8 33.4 10.6 30.8 C8.6 28.4 7.8 25.4 7.8 21.6 C7.8 14.8 12.4 10.2 20 10.2 Z";
+
+/** The tile: the background with light falling from the top. */
+export function Tile({
+  background,
+  light,
+}: {
+  readonly background: Avatar["background"];
+  /** The id of a `TileLight` gradient. */
+  readonly light: string;
+}) {
+  return (
+    <>
+      <rect width={40} height={40} fill={BACKGROUND_COLORS[background]} />
+      <rect width={40} height={40} fill={`url(#${light})`} />
+    </>
+  );
+}
+
+/** The light over a tile, defined once per face (ids are page-wide). */
+export function TileLight({ id }: { readonly id: string }) {
+  return (
+    <linearGradient id={id} x1={0} y1={0} x2={0} y2={1}>
+      <stop offset={0} stopColor="#fff" stopOpacity={0.2} />
+      <stop offset={0.6} stopColor="#fff" stopOpacity={0} />
+      <stop offset={1} stopColor="#000" stopOpacity={0.12} />
+    </linearGradient>
+  );
+}
+
+/** Neck and shoulders, in the tile's own box: a top a shade under the background. */
+export function Bust({
+  skin,
+  background,
+}: {
+  readonly skin: Avatar["skin"];
+  readonly background: Avatar["background"];
+}) {
+  return (
+    <>
+      <rect x={16.2} y={25} width={7.6} height={12} rx={2.4} fill={SKIN[skin]} />
+      {/* The chin's shadow on the neck. */}
+      <rect x={16.2} y={27} width={7.6} height={5.4} fill="#000" opacity={0.16} />
+      <path
+        d="M1.5 41 C1.5 35.4 6.6 32.8 13.2 32.2 Q20 37.4 26.8 32.2 C33.4 32.8 38.5 35.4 38.5 41 Z"
+        fill={toward(BACKGROUND_COLORS[background], 0.42)}
+      />
+    </>
+  );
+}
+
+/** Ears and head, in the face box. */
+export function Head({ skin }: { readonly skin: Avatar["skin"] }) {
+  const fill = SKIN[skin];
+  return (
+    <>
+      {[7.9, 32.1].map((x) => (
+        <g key={x}>
+          <ellipse cx={x} cy={23} rx={2.2} ry={2.9} fill={fill} />
+          <ellipse cx={x} cy={23} rx={1} ry={1.6} fill="#000" opacity={0.12} />
+        </g>
+      ))}
+      <path d={HEAD} fill={fill} />
+    </>
+  );
+}
 
 /** Each skin's color. */
 export const SKIN: Record<Avatar["skin"], string> = {
@@ -41,7 +130,7 @@ export function Eyes({ eyes, ink }: { readonly eyes: Avatar["eyes"]; readonly in
   const at = [15.5, 24.5];
   switch (eyes) {
     case "dots":
-      return at.map((x) => <circle key={x} cx={x} cy={21} r={1.6} fill={ink} />);
+      return at.map((x) => <ellipse key={x} cx={x} cy={21} rx={1.5} ry={1.85} fill={ink} />);
     case "round":
       return at.map((x) => (
         <g key={x}>
@@ -174,12 +263,21 @@ function Mouth({ mouth, ink }: { readonly mouth: Avatar["mouth"]; readonly ink: 
 }
 
 /** A cap of hair over the top of the head, which several tops start from. */
-const HAIR_CAP = "M7.8 22 a12.2 12.2 0 0 1 24.4 0 q-4.6 -5.6 -12.2 -5.2 q-7.6 -0.4 -12.2 5.2 z";
+const HAIR_CAP = "M7.2 22.4 a12.8 12.8 0 0 1 25.6 0 q-4.8 -5.8 -12.8 -5.4 q-8 -0.4 -12.8 5.4 z";
 
-/** What sits behind the face: only long hair falls behind it. */
+/** Short hair: the cap, swept to one side from a parting. */
+const SWEPT =
+  "M7.6 22.6 C6.8 13.6 12.4 9 20.2 9 C28 9 33.4 13.6 32.4 22.6 C31.4 19 29.6 16.6 27 15.6 C23.4 18.4 16.4 18.8 12 17 C10 18.4 8.6 20.2 7.6 22.6 Z";
+
+/** What sits behind the face: only long hair falls behind it, onto the shoulders. */
 export function TopBehind({ top }: { readonly top: Avatar["top"] }) {
   if (top !== "long") return null;
-  return <path d="M7 22 q0 -13 13 -13 q13 0 13 13 v12 h-26 z" fill={HAIR} />;
+  return (
+    <path
+      d="M6.4 23 q0 -14 13.6 -14 q13.6 0 13.6 14 v12 q0 3.6 -3.6 3.6 h-20 q-3.6 0 -3.6 -3.6 z"
+      fill={HAIR}
+    />
+  );
 }
 
 export function Top({ top }: { readonly top: Avatar["top"] }) {
@@ -187,6 +285,7 @@ export function Top({ top }: { readonly top: Avatar["top"] }) {
     case "none":
       return null;
     case "short":
+      return <path d={SWEPT} fill={HAIR} />;
     case "long":
       return <path d={HAIR_CAP} fill={HAIR} />;
     case "bun":
@@ -266,8 +365,10 @@ export function AvatarFace({
   readonly className?: string;
 }): React.ReactElement {
   const ink = inkOn(avatar.skin);
-  // Each face clips to its own disc: ids are page-wide, and there are many faces.
-  const disc = useId();
+  // Each face has its own clips and light: ids are page-wide, and there are many faces.
+  const id = useId();
+  const tile = `${id}tile`;
+  const light = `${id}light`;
   return (
     <svg
       width={size}
@@ -277,16 +378,24 @@ export function AvatarFace({
       {...(label ? { role: "img", "aria-label": label } : { "aria-hidden": true })}
       data-avatar={Object.values(avatar).join(" ")}
     >
-      <clipPath id={disc}>
-        <circle cx={20} cy={20} r={20} />
-      </clipPath>
-      <g clipPath={`url(#${disc})`}>
-        <circle cx={20} cy={20} r={20} fill={BACKGROUND_COLORS[avatar.background]} />
-        <TopBehind top={avatar.top} />
-        <circle cx={20} cy={22.4} r={12.2} fill={SKIN[avatar.skin]} />
-        <Top top={avatar.top} />
-        <Eyes eyes={avatar.eyes} ink={ink} />
-        <Mouth mouth={avatar.mouth} ink={ink} />
+      <defs>
+        <clipPath id={tile}>
+          <rect width={40} height={40} rx={TILE_RADIUS} />
+        </clipPath>
+        <TileLight id={light} />
+      </defs>
+      <g clipPath={`url(#${tile})`}>
+        <Tile background={avatar.background} light={light} />
+        <g transform={FACE}>
+          <TopBehind top={avatar.top} />
+        </g>
+        <Bust skin={avatar.skin} background={avatar.background} />
+        <g transform={FACE}>
+          <Head skin={avatar.skin} />
+          <Top top={avatar.top} />
+          <Eyes eyes={avatar.eyes} ink={ink} />
+          <Mouth mouth={avatar.mouth} ink={ink} />
+        </g>
       </g>
     </svg>
   );

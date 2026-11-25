@@ -9,7 +9,7 @@
 
 /** Every part an avatar is made of, and the ids each may take. */
 export const AVATAR_PARTS = {
-  /** The disc behind the face. */
+  /** The tile behind the face. */
   background: ["teal", "sky", "violet", "rose", "amber", "lime", "slate", "coral"],
   skin: ["porcelain", "peach", "sand", "olive", "umber", "cocoa", "mint", "lilac"],
   eyes: ["dots", "round", "sleepy", "wink", "glasses", "shades", "stars", "lashes"],

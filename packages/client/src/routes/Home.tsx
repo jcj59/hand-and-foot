@@ -497,7 +497,7 @@ function Faces({ names }: { readonly names: readonly string[] }): React.ReactEle
       {names.slice(0, 4).map((n, i) => (
         <span
           key={`${n}${i}`}
-          className={`rounded-full border-2 border-surface ${i > 0 ? "-ml-2" : ""}`}
+          className={`rounded-[30%] border-2 border-surface ${i > 0 ? "-ml-2" : ""}`}
         >
           <AvatarFace avatar={faceOf({ name: n })} size={26} />
         </span>

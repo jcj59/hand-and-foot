@@ -65,7 +65,7 @@ export function PlayerCard({
             <Icon name="check" size={14} />@{account}
           </span>
         )}
-        <span className="mt-2 rounded-full bg-white/15 p-2">
+        <span className="mt-2 rounded-[39px] bg-white/15 p-2">
           <AvatarFace avatar={face} size={112} label={`${name.trim() || "Your"} picture`} />
         </span>
         <p className="m-0 font-display text-[32px] font-bold">{name.trim()}</p>
@@ -97,7 +97,7 @@ export function PlayerCard({
     >
       <CornerIndex initial={initial} />
       <div className="relative mt-2">
-        <span className="block rounded-full bg-black/20 p-2">
+        <span className="block rounded-[39px] bg-black/20 p-2">
           <AvatarFace avatar={face} size={112} label={`${name.trim() || "Your"} picture`} />
         </span>
         <button
