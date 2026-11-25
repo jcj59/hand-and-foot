@@ -886,10 +886,10 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   A bar along the bottom edge lifts it by its height (and any gap below it) through the callback
   ref `useReportLift()` returns (CSS var `--report-lift`, the highest bar wins): the phone's
   `TabBar`, the `Player`'s playback bar, and `RoundResult` (its hidden bar, and its sheet on a
-  phone). On a phone table the foot
-  sits by the hand's first row (`self-start`) and the footer has 3.5rem of bottom padding, so neither
-  the foot nor the last card row is under the button. The table menu's and Profile's "Report a bug"
-  entries stay. Tests: `ReportButton.test.tsx`, `ReportSheet.test.tsx` "from the corner button".
+  phone). On a phone table the foot sits by the hand's first row (`self-start`) and the footer has
+  3.5rem of bottom padding, so neither the foot nor the last card row is under the button. The
+  table menu's and Profile's "Report a bug" entries stay. Tests: `ReportButton.test.tsx`,
+  `ReportSheet.test.tsx` "from the corner button".
 - **Scenario library and autoplay viewer (roadmap item 1).** Three layers, kept apart on purpose:
   - **Engine, `playback.ts`:** `buildTimeline(GameLog)` takes any `{ config, setup: {seed,
     playerCount} | {state}, actions, names?, moments? }` — a scenario, a golden game, a recorded
