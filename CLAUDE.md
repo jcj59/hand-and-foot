@@ -883,8 +883,10 @@ once broke becomes a permanent regression test) or as a focused `reducer.*.test.
   `ReportSheet`. At a table it attaches the table's details through `report/reportSource.ts`
   (`useTableReportSource`, called by `TableHeader` with its `report` prop; the newest mounted table
   wins and an unmount clears only its own; `currentTableReport()` is read as the button is pressed).
-  A bar along the bottom edge lifts it by its height with `useReportLift(ref)` (CSS var
-  `--report-lift`): the phone's `TabBar` and the `Player`'s playback bar. On a phone table the foot
+  A bar along the bottom edge lifts it by its height (and any gap below it) through the callback
+  ref `useReportLift()` returns (CSS var `--report-lift`, the highest bar wins): the phone's
+  `TabBar`, the `Player`'s playback bar, and `RoundResult` (its hidden bar, and its sheet on a
+  phone). On a phone table the foot
   sits by the hand's first row (`self-start`) and the footer has 3.5rem of bottom padding, so neither
   the foot nor the last card row is under the button. The table menu's and Profile's "Report a bug"
   entries stay. Tests: `ReportButton.test.tsx`, `ReportSheet.test.tsx` "from the corner button".
